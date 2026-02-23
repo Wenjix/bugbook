@@ -7,32 +7,29 @@ struct BlockEditorView: View {
     @State private var activeDropIndex: Int?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Drop zone before first block
-                DropZoneView(isActive: activeDropIndex == 0) { droppedId in
-                    handleDrop(droppedId: droppedId, targetIndex: 0)
+        VStack(alignment: .leading, spacing: 0) {
+            // Drop zone before first block
+            DropZoneView(isActive: activeDropIndex == 0) { droppedId in
+                handleDrop(droppedId: droppedId, targetIndex: 0)
+            } onTargetChanged: { targeted in
+                activeDropIndex = targeted ? 0 : (activeDropIndex == 0 ? nil : activeDropIndex)
+            }
+
+            ForEach(Array(document.blocks.enumerated()), id: \.element.id) { index, block in
+                BlockCellView(document: document, block: block)
+                    .padding(.vertical, 1)
+
+                // Drop zone after each block
+                DropZoneView(isActive: activeDropIndex == index + 1) { droppedId in
+                    handleDrop(droppedId: droppedId, targetIndex: index + 1)
                 } onTargetChanged: { targeted in
-                    activeDropIndex = targeted ? 0 : (activeDropIndex == 0 ? nil : activeDropIndex)
-                }
-
-                ForEach(Array(document.blocks.enumerated()), id: \.element.id) { index, block in
-                    BlockCellView(document: document, block: block)
-                        .padding(.vertical, 1)
-
-                    // Drop zone after each block
-                    DropZoneView(isActive: activeDropIndex == index + 1) { droppedId in
-                        handleDrop(droppedId: droppedId, targetIndex: index + 1)
-                    } onTargetChanged: { targeted in
-                        let idx = index + 1
-                        activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
-                    }
+                    let idx = index + 1
+                    activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 }
             }
-            .padding(.horizontal, 48)
-            .padding(.vertical, 20)
         }
-        .background(Color.fallbackEditorBg)
+        .padding(.horizontal, 48)
+        .padding(.vertical, 20)
         .onChange(of: document.blocks) { _, _ in
             onTextChange?()
         }

@@ -48,7 +48,7 @@ struct BlockCellView: View {
                 get: { document.blockMenuBlockId == block.id },
                 set: { if !$0 { document.dismissBlockMenu() } }
             ),
-            arrowEdge: .trailing
+            arrowEdge: .leading
         ) {
             BlockMenuView(document: document, blockId: block.id)
         }

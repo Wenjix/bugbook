@@ -5,7 +5,7 @@ struct ContentView: View {
     @StateObject private var fileSystem = FileSystemService()
     @State private var showSettings = false
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
-    @State private var saveGeneration: Int = 0
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -112,24 +112,51 @@ struct ContentView: View {
     @ViewBuilder
     private func editorView(for tab: OpenFile) -> some View {
         if let document = blockDocuments[tab.id] {
-            BlockEditorView(
-                document: document,
-                onTextChange: {
-                    guard appState.activeTabIndex < appState.openTabs.count else { return }
-                    // Only mark dirty — don't serialize on every keystroke
-                    if !appState.openTabs[appState.activeTabIndex].isDirty {
-                        appState.openTabs[appState.activeTabIndex].isDirty = true
-                    }
-                    scheduleSave()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    PageHeaderView(
+                        icon: Binding(
+                            get: { document.icon },
+                            set: { document.icon = $0; scheduleSave() }
+                        ),
+                        coverUrl: Binding(
+                            get: { document.coverUrl },
+                            set: { document.coverUrl = $0; scheduleSave() }
+                        ),
+                        fullWidth: document.fullWidth
+                    )
+
+                    BlockEditorView(
+                        document: document,
+                        onTextChange: {
+                            guard appState.activeTabIndex < appState.openTabs.count else { return }
+                            if !appState.openTabs[appState.activeTabIndex].isDirty {
+                                appState.openTabs[appState.activeTabIndex].isDirty = true
+                            }
+                            scheduleSave()
+                        }
+                    )
                 }
-            )
+            }
+            .background(Color.fallbackEditorBg)
         } else {
             Color.fallbackEditorBg
                 .onAppear {
                     if blockDocuments[tab.id] == nil {
-                        blockDocuments[tab.id] = BlockDocument(markdown: tab.content)
+                        let doc = BlockDocument(markdown: tab.content)
+                        wireUpDatabaseCallback(doc)
+                        blockDocuments[tab.id] = doc
                     }
                 }
+        }
+    }
+
+    private func wireUpDatabaseCallback(_ doc: BlockDocument) {
+        doc.onCreateDatabase = { [weak appState] name in
+            guard let workspace = appState?.workspacePath else { return nil }
+            let path = try? fileSystem.createDatabase(in: workspace, name: name)
+            if path != nil { refreshFileTree() }
+            return path
         }
     }
 
@@ -157,7 +184,9 @@ struct ContentView: View {
             if let index = appState.openTabs.firstIndex(where: { $0.path == entry.path }) {
                 appState.openTabs[index].content = content
                 appState.openTabs[index].isDirty = false
-                blockDocuments[appState.openTabs[index].id] = BlockDocument(markdown: content)
+                let doc = BlockDocument(markdown: content)
+                wireUpDatabaseCallback(doc)
+                blockDocuments[appState.openTabs[index].id] = doc
             }
         } catch {
             print("Failed to load file: \(error)")
@@ -206,12 +235,23 @@ struct ContentView: View {
     private func scheduleSave() {
         guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
         let tabId = tab.id
-        saveGeneration += 1
-        let generation = saveGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            // Only run if no newer save was scheduled (debounce)
-            guard generation == self.saveGeneration else { return }
-            self.performSave(tabId: tabId)
+        // Capture reference types and a snapshot of blockDocuments (values are class refs)
+        let appState = self.appState
+        let fileSystem = self.fileSystem
+        let docs = self.blockDocuments
+
+        saveTask?.cancel()
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard let index = appState.openTabs.firstIndex(where: { $0.id == tabId }),
+                  appState.openTabs[index].isDirty else { return }
+            if let document = docs[tabId] {
+                let content = document.markdown
+                appState.openTabs[index].content = content
+                try? fileSystem.saveFile(at: appState.openTabs[index].path, content: content)
+            }
+            appState.openTabs[index].isDirty = false
         }
     }
 

@@ -10,16 +10,38 @@ class BlockDocument: ObservableObject {
     @Published var slashMenuSelectedIndex: Int = 0
     @Published var slashMenuFilter: String = ""
     @Published var blockMenuBlockId: UUID?
+    @Published var icon: String?
+    @Published var coverUrl: String?
+    @Published var coverPosition: Double = 50
+    @Published var fullWidth: Bool = false
+
+    var onCreateDatabase: ((String) -> String?)?
 
     private var undoStack: [[Block]] = []
     private var redoStack: [[Block]] = []
 
     var markdown: String {
-        MarkdownBlockParser.serialize(blocks)
+        let metadata = MarkdownBlockParser.Metadata(
+            icon: icon,
+            coverUrl: coverUrl,
+            coverPosition: coverPosition,
+            fullWidth: fullWidth
+        )
+        let metaStr = MarkdownBlockParser.serializeMetadata(metadata)
+        let blockStr = MarkdownBlockParser.serialize(blocks)
+        if metaStr.isEmpty {
+            return blockStr
+        }
+        return metaStr + "\n" + blockStr
     }
 
     init(markdown: String) {
-        self.blocks = MarkdownBlockParser.parse(markdown)
+        let (metadata, content) = MarkdownBlockParser.parseMetadata(markdown)
+        self.icon = metadata.icon
+        self.coverUrl = metadata.coverUrl
+        self.coverPosition = metadata.coverPosition
+        self.fullWidth = metadata.fullWidth
+        self.blocks = MarkdownBlockParser.parse(content)
     }
 
     func block(for id: UUID) -> Block? {
@@ -219,6 +241,7 @@ class BlockDocument: ObservableObject {
         SlashCommand(name: "Quote", icon: "text.quote", type: .blockquote, headingLevel: 0),
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", type: .codeBlock, headingLevel: 0),
         SlashCommand(name: "Divider", icon: "minus", type: .horizontalRule, headingLevel: 0),
+        SlashCommand(name: "Database", icon: "tablecells", type: .databaseEmbed, headingLevel: 0),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -238,6 +261,18 @@ class BlockDocument: ObservableObject {
 
         if let blockIdx = index(for: blockId) {
             blocks[blockIdx].text = ""
+        }
+
+        // Database command needs special handling — creates files via callback
+        if command.type == .databaseEmbed {
+            if let blockIdx = index(for: blockId),
+               let createDb = onCreateDatabase,
+               let dbPath = createDb("Untitled Database") {
+                blocks[blockIdx].type = .databaseEmbed
+                blocks[blockIdx].databasePath = dbPath
+            }
+            dismissSlashMenu()
+            return
         }
 
         changeBlockType(id: blockId, to: command.type)

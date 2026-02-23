@@ -2,20 +2,19 @@ import SwiftUI
 import AppKit
 
 struct PageHeaderView: View {
-    @Binding var title: String
     @Binding var icon: String?
     @Binding var coverUrl: String?
     var fullWidth: Bool
-    var onTitleCommit: () -> Void
 
     @State private var showIconPicker = false
     @State private var showCoverPicker = false
-    @State private var isHovering = false
     @State private var coverYPosition: Double = 50
     @State private var isDraggingCover = false
     @State private var dragStartY: CGFloat = 0
 
     private var horizontalPadding: CGFloat { fullWidth ? 40 : 80 }
+    private var needsIcon: Bool { icon == nil || icon?.isEmpty == true }
+    private var needsCover: Bool { coverUrl == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -24,44 +23,62 @@ struct PageHeaderView: View {
                 coverImageView(path: coverPath)
             }
 
-            // Hover action buttons (Add icon / Add cover)
-            if isHovering {
-                hoverButtons
-                    .padding(.horizontal, horizontalPadding)
-                    .padding(.top, coverUrl != nil ? 8 : 12)
-                    .transition(.opacity)
-            }
-
-            // Icon + Title row
-            HStack(alignment: .top, spacing: 8) {
-                // Icon
-                if let iconValue = icon, !iconValue.isEmpty {
-                    Button(action: { showIconPicker.toggle() }) {
-                        iconDisplay(iconValue)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showIconPicker) {
-                        FullEmojiPickerView(
-                            selectedEmoji: $icon,
-                            onCustomIconSelected: { path in
-                                icon = "custom:\(path)"
+            // Action buttons — always visible when missing icon/cover, just subtle
+            if needsIcon || needsCover {
+                HStack(spacing: 8) {
+                    if needsIcon {
+                        Button { showIconPicker = true } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "face.smiling").font(.system(size: 12))
+                                Text("Add icon").font(.system(size: 12))
                             }
-                        )
+                            .foregroundColor(.secondary.opacity(0.6))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
                     }
-                }
 
-                // Title
-                TextField("Untitled", text: $title, onCommit: onTitleCommit)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 32, weight: .bold))
+                    if needsCover {
+                        Button { showCoverPicker = true } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "photo").font(.system(size: 12))
+                                Text("Add cover").font(.system(size: 12))
+                            }
+                            .foregroundColor(.secondary.opacity(0.6))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, coverUrl != nil ? 8 : 12)
             }
-            .padding(.horizontal, horizontalPadding)
-            .padding(.top, icon != nil ? 4 : (coverUrl != nil ? 12 : (isHovering ? 4 : 40)))
+
+            // Icon (clickable to change)
+            if let iconValue = icon, !iconValue.isEmpty {
+                Button(action: { showIconPicker.toggle() }) {
+                    iconDisplay(iconValue)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, 4)
+            }
         }
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
-            }
+        // Popovers anchored to stable outer view
+        .popover(isPresented: $showIconPicker, arrowEdge: .bottom) {
+            FullEmojiPickerView(
+                selectedEmoji: $icon,
+                onCustomIconSelected: { path in
+                    icon = "custom:\(path)"
+                }
+            )
+        }
+        .popover(isPresented: $showCoverPicker, arrowEdge: .bottom) {
+            CoverPickerView(coverUrl: $coverUrl, coverYPosition: $coverYPosition)
         }
     }
 
@@ -135,26 +152,20 @@ struct PageHeaderView: View {
                     }
             )
 
-            if isHovering {
-                HStack(spacing: 4) {
-                    Button(action: { showCoverPicker = true }) {
-                        Label("Reposition", systemImage: "arrow.up.and.down")
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(CoverActionButtonStyle())
-
-                    Button(action: { coverUrl = nil; coverYPosition = 50 }) {
-                        Label("Remove", systemImage: "xmark")
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(CoverActionButtonStyle())
+            HStack(spacing: 4) {
+                Button(action: { showCoverPicker = true }) {
+                    Label("Change", systemImage: "photo")
+                        .font(.system(size: 11))
                 }
-                .padding(8)
-                .transition(.opacity)
+                .buttonStyle(CoverActionButtonStyle())
+
+                Button(action: { coverUrl = nil; coverYPosition = 50 }) {
+                    Label("Remove", systemImage: "xmark")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(CoverActionButtonStyle())
             }
-        }
-        .popover(isPresented: $showCoverPicker) {
-            CoverPickerView(coverUrl: $coverUrl, coverYPosition: $coverYPosition)
+            .padding(8)
         }
     }
 
@@ -164,62 +175,6 @@ struct PageHeaderView: View {
         let maxOffset = (imageSize.height - containerHeight) / scale
         let normalizedPosition = coverYPosition / 100.0
         return -maxOffset * normalizedPosition
-    }
-
-    // MARK: - Hover Buttons
-
-    private var hoverButtons: some View {
-        HStack(spacing: 8) {
-            if icon == nil || icon?.isEmpty == true {
-                HoverActionButton(title: "Add icon", systemImage: "face.smiling") {
-                    showIconPicker = true
-                }
-                .popover(isPresented: $showIconPicker) {
-                    FullEmojiPickerView(
-                        selectedEmoji: $icon,
-                        onCustomIconSelected: { path in
-                            icon = "custom:\(path)"
-                        }
-                    )
-                }
-            }
-
-            if coverUrl == nil {
-                HoverActionButton(title: "Add cover", systemImage: "photo") {
-                    showCoverPicker = true
-                }
-                .popover(isPresented: $showCoverPicker) {
-                    CoverPickerView(coverUrl: $coverUrl, coverYPosition: $coverYPosition)
-                }
-            }
-
-            Spacer()
-        }
-    }
-}
-
-// MARK: - Supporting Views
-
-private struct HoverActionButton: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 12))
-                Text(title)
-                    .font(.system(size: 12))
-            }
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.gray.opacity(0.08))
-            .cornerRadius(4)
-        }
-        .buttonStyle(.plain)
     }
 }
 

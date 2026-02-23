@@ -2,6 +2,82 @@ import Foundation
 
 enum MarkdownBlockParser {
 
+    // MARK: - Metadata
+
+    struct Metadata {
+        var icon: String?
+        var coverUrl: String?
+        var coverPosition: Double = 50
+        var fullWidth: Bool = false
+    }
+
+    /// Parse file-level metadata comments from the top of the markdown string.
+    /// Returns the metadata and the remaining markdown content after metadata lines.
+    static func parseMetadata(_ markdown: String) -> (Metadata, String) {
+        var metadata = Metadata()
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var contentStartIndex = 0
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // icon metadata
+            if trimmed.hasPrefix("<!-- icon:") && trimmed.hasSuffix("-->") {
+                let inner = trimmed.dropFirst(10).dropLast(3).trimmingCharacters(in: .whitespaces)
+                if !inner.isEmpty {
+                    metadata.icon = inner
+                }
+                contentStartIndex += 1
+                continue
+            }
+
+            // cover metadata
+            if trimmed.hasPrefix("<!-- cover:") && trimmed.hasSuffix("-->") {
+                let inner = trimmed.dropFirst(11).dropLast(3).trimmingCharacters(in: .whitespaces)
+                if let atRange = inner.range(of: "@", options: .backwards) {
+                    let path = String(inner[..<atRange.lowerBound])
+                    let posStr = String(inner[atRange.upperBound...])
+                    metadata.coverUrl = path
+                    metadata.coverPosition = Double(posStr) ?? 50
+                } else {
+                    metadata.coverUrl = inner.isEmpty ? nil : inner
+                }
+                contentStartIndex += 1
+                continue
+            }
+
+            // full-width metadata
+            if trimmed == "<!-- full-width -->" {
+                metadata.fullWidth = true
+                contentStartIndex += 1
+                continue
+            }
+
+            // Stop at first non-metadata line
+            break
+        }
+
+        let remainingLines = Array(lines.dropFirst(contentStartIndex))
+        let remaining = remainingLines.joined(separator: "\n")
+        return (metadata, remaining)
+    }
+
+    /// Serialize metadata to comment lines prepended to content.
+    static func serializeMetadata(_ metadata: Metadata) -> String {
+        var lines: [String] = []
+        if let icon = metadata.icon, !icon.isEmpty {
+            lines.append("<!-- icon:\(icon) -->")
+        }
+        if let cover = metadata.coverUrl, !cover.isEmpty {
+            let pos = Int(metadata.coverPosition)
+            lines.append("<!-- cover:\(cover)@\(pos) -->")
+        }
+        if metadata.fullWidth {
+            lines.append("<!-- full-width -->")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Parse
 
     static func parse(_ markdown: String) -> [Block] {

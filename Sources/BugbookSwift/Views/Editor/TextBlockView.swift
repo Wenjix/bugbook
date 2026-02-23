@@ -70,7 +70,8 @@ struct TextBlockView: View {
 
     private var titlePlaceholder: String? {
         guard block.type == .heading, block.headingLevel == 1 else { return nil }
-        guard document.blocks.first?.id == block.id else { return nil }
+        let blocks = document.blocks
+        guard !blocks.isEmpty, blocks[0].id == block.id else { return nil }
         return "New page"
     }
 

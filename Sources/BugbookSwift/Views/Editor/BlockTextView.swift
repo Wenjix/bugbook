@@ -20,7 +20,7 @@ struct BlockTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> BlockNSTextView {
         let textView = BlockNSTextView()
         textView.delegate = context.coordinator
-        textView.isRichText = true
+        textView.isRichText = false
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -33,23 +33,15 @@ struct BlockTextView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.font = font
+        textView.textColor = textColor
         textView.allowsUndo = false // We handle undo at document level
-        textView.isAutomaticLinkDetectionEnabled = false
 
         // Prevent NSTextView from accepting drag-and-drop (avoids UUID string insertion)
         textView.unregisterDraggedTypes()
 
-        // Set the default typing attributes
-        textView.typingAttributes = [
-            .font: font,
-            .foregroundColor: textColor
-        ]
-
         if let block = document.block(for: blockId) {
-            let attrStr = AttributedStringConverter.attributedString(
-                from: block.text, font: font, textColor: textColor
-            )
-            textView.textStorage?.setAttributedString(attrStr)
+            textView.string = block.text
         }
 
         textView.placeholderString = placeholder
@@ -83,11 +75,9 @@ struct BlockTextView: NSViewRepresentable {
     func updateNSView(_ textView: BlockNSTextView, context: Context) {
         context.coordinator.parent = self
 
-        // Update default typing attributes
-        textView.typingAttributes = [
-            .font: font,
-            .foregroundColor: textColor
-        ]
+        // Update font and color
+        textView.font = font
+        textView.textColor = textColor
 
         // Update placeholder
         textView.placeholderString = placeholder
@@ -97,10 +87,7 @@ struct BlockTextView: NSViewRepresentable {
         if let block = document.block(for: blockId),
            !context.coordinator.isEditing,
            textView.string != block.text {
-            let attrStr = AttributedStringConverter.attributedString(
-                from: block.text, font: font, textColor: textColor
-            )
-            textView.textStorage?.setAttributedString(attrStr)
+            textView.string = block.text
             DispatchQueue.main.async {
                 self.recalculateHeight(textView)
             }
@@ -155,27 +142,16 @@ struct BlockTextView: NSViewRepresentable {
         // MARK: - Formatting Actions
 
         func toggleBold() {
-            guard let textView = textView else { return }
-            AttributedStringConverter.toggleBold(in: textView, font: parent.font)
-            syncTextToDocument()
+            // TODO: WYSIWYG formatting disabled pending AttributedStringConverter fix
         }
 
         func toggleItalic() {
-            guard let textView = textView else { return }
-            AttributedStringConverter.toggleItalic(in: textView, font: parent.font)
-            syncTextToDocument()
         }
 
         func toggleCode() {
-            guard let textView = textView else { return }
-            AttributedStringConverter.toggleCode(in: textView, font: parent.font)
-            syncTextToDocument()
         }
 
         func toggleStrikethrough() {
-            guard let textView = textView else { return }
-            AttributedStringConverter.toggleStrikethrough(in: textView)
-            syncTextToDocument()
         }
 
         func promptLink() {
@@ -194,21 +170,10 @@ struct BlockTextView: NSViewRepresentable {
             if alert.runModal() == .alertFirstButtonReturn {
                 let url = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !url.isEmpty {
-                    AttributedStringConverter.applyLink(in: textView, url: url)
-                    syncTextToDocument()
+                    let range = textView.selectedRange()
+                    let linkText = (textView.string as NSString).substring(with: range)
+                    textView.insertText("[\(linkText)](\(url))", replacementRange: range)
                 }
-            }
-        }
-
-        /// Sync the current attributed string back to the document as markdown.
-        private func syncTextToDocument() {
-            guard let textView = textView,
-                  let textStorage = textView.textStorage else { return }
-            isEditing = true
-            defer { isEditing = false }
-            let md = AttributedStringConverter.markdown(from: textStorage)
-            if let idx = parent.document.index(for: parent.blockId) {
-                parent.document.blocks[idx].text = md
             }
         }
 
@@ -218,12 +183,9 @@ struct BlockTextView: NSViewRepresentable {
             isEditing = true
             defer { isEditing = false }
 
-            // Convert attributed string to markdown for storage
-            if let textStorage = textView.textStorage {
-                let md = AttributedStringConverter.markdown(from: textStorage)
-                if let idx = parent.document.index(for: parent.blockId) {
-                    parent.document.blocks[idx].text = md
-                }
+            // Store plain text directly
+            if let idx = parent.document.index(for: parent.blockId) {
+                parent.document.blocks[idx].text = textView.string
             }
 
             // Slash command detection
