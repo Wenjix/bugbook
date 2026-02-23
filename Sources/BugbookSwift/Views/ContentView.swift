@@ -48,8 +48,7 @@ struct ContentView: View {
                                 onOpenFolder: { Task { await openWorkspace() } }
                             )
                         } else if tab.isDatabase {
-                            Text("Database: \(tab.displayName ?? tab.path)")
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            DatabaseFullPageView(dbPath: tab.path)
                         } else {
                             editorView(for: tab)
                         }

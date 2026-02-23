@@ -32,7 +32,7 @@ struct RowPageView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Text(row.title)
+                Text(row.title.isEmpty ? "Untitled" : row.title)
                     .font(.body)
                     .foregroundColor(.secondary)
 
@@ -46,8 +46,12 @@ struct RowPageView: View {
                         onSave(row)
                     }
                 )) {
-                    Text("Full width")
-                        .font(.caption)
+                    HStack(spacing: 4) {
+                        Image(systemName: row.fullWidth ? "arrow.left.and.right" : "arrow.right.and.line.vertical.and.arrow.left")
+                            .font(.caption)
+                        Text("Full width")
+                            .font(.caption)
+                    }
                 }
                 .toggleStyle(.checkbox)
             }
@@ -71,10 +75,15 @@ struct RowPageView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(schema.properties) { prop in
                             HStack(alignment: .top) {
-                                Text(prop.name)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 120, alignment: .leading)
+                                HStack(spacing: 4) {
+                                    Image(systemName: iconForPropertyType(prop.type))
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(prop.name)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(width: 140, alignment: .leading)
 
                                 let propValue = Binding<PropertyValue>(
                                     get: { row.properties[prop.name] ?? .empty },
@@ -113,6 +122,19 @@ struct RowPageView: View {
         }
         .onChange(of: row.id) {
             editingTitle = row.title
+        }
+    }
+
+    private func iconForPropertyType(_ type: PropertyType) -> String {
+        switch type {
+        case .text: return "textformat"
+        case .number: return "number"
+        case .select: return "tag"
+        case .multiSelect: return "tag"
+        case .date: return "calendar"
+        case .checkbox: return "checkmark.square"
+        case .url: return "link"
+        case .email: return "envelope"
         }
     }
 }

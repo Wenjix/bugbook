@@ -9,6 +9,7 @@ class FileSystemService: ObservableObject {
     private let fileManager = FileManager.default
     private let recentWorkspacesKey = "recentWorkspaces"
     private let maxRecentWorkspaces = 20
+    private let customOrderPrefix = "sidebarOrder_"
 
     init() {
         loadRecentWorkspaces()
@@ -273,6 +274,69 @@ class FileSystemService: ObservableObject {
         return String(match[start..<end])
     }
 
+    // MARK: - Custom File Order (Drag & Drop)
+
+    /// Returns the UserDefaults key for a given parent directory path.
+    private func orderKey(for parentPath: String) -> String {
+        let key = parentPath.isEmpty ? "__root__" : parentPath
+        return "\(customOrderPrefix)\(key)"
+    }
+
+    /// Get the saved custom order for entries in a directory.
+    func customOrder(for parentPath: String) -> [String]? {
+        UserDefaults.standard.stringArray(forKey: orderKey(for: parentPath))
+    }
+
+    /// Save a custom order for entries in a directory (by file name).
+    func saveCustomOrder(_ names: [String], for parentPath: String) {
+        UserDefaults.standard.set(names, forKey: orderKey(for: parentPath))
+    }
+
+    /// Sort entries using custom order if available, falling back to directories-first then alphabetical.
+    func sortedEntries(_ entries: [FileEntry], parentPath: String) -> [FileEntry] {
+        guard let order = customOrder(for: parentPath), !order.isEmpty else {
+            return defaultSortedEntries(entries)
+        }
+
+        let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        return entries.sorted { a, b in
+            let idxA = orderMap[a.name]
+            let idxB = orderMap[b.name]
+            switch (idxA, idxB) {
+            case let (.some(ia), .some(ib)):
+                return ia < ib
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            case (.none, .none):
+                return defaultCompare(a, b)
+            }
+        }
+    }
+
+    /// Default sort: directories first, then alphabetical.
+    func defaultSortedEntries(_ entries: [FileEntry]) -> [FileEntry] {
+        entries.sorted { defaultCompare($0, $1) }
+    }
+
+    private func defaultCompare(_ a: FileEntry, _ b: FileEntry) -> Bool {
+        if a.isDirectory != b.isDirectory {
+            return a.isDirectory
+        }
+        return a.name.localizedStandardCompare(b.name) == .orderedAscending
+    }
+
+    /// Reorder an entry within its sibling list. Saves the new order.
+    func reorderEntry(named name: String, toIndex newIndex: Int, inParent parentPath: String, siblings: [FileEntry]) {
+        var names = siblings.map(\.name)
+        guard let currentIndex = names.firstIndex(of: name) else { return }
+        names.remove(at: currentIndex)
+        let insertAt = min(newIndex, names.count)
+        names.insert(name, at: insertAt)
+        saveCustomOrder(names, for: parentPath)
+    }
+
     // MARK: - Helpers
 
     private func companionFolderPath(for mdPath: String) -> String {
@@ -315,5 +379,51 @@ class FileSystemService: ObservableObject {
             counter += 1
         }
         return name
+    }
+
+    // MARK: - App Data Directories (Icons & Covers)
+
+    private static var appSupportDirectory: String {
+        let fm = FileManager.default
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("BugbookSwift").path
+    }
+
+    static var iconsDirectory: String {
+        let path = (appSupportDirectory as NSString).appendingPathComponent("icons")
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        return path
+    }
+
+    static var coversDirectory: String {
+        let path = (appSupportDirectory as NSString).appendingPathComponent("covers")
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        return path
+    }
+
+    /// Copy an image file to the icons directory. Returns the saved file path, or nil on failure.
+    static func saveIcon(from sourceURL: URL) -> String? {
+        let ext = sourceURL.pathExtension.isEmpty ? "png" : sourceURL.pathExtension
+        let filename = "\(UUID().uuidString).\(ext)"
+        let destPath = (iconsDirectory as NSString).appendingPathComponent(filename)
+        do {
+            try FileManager.default.copyItem(atPath: sourceURL.path, toPath: destPath)
+            return destPath
+        } catch {
+            return nil
+        }
+    }
+
+    /// Copy an image file to the covers directory. Returns the saved file path, or nil on failure.
+    static func saveCover(from sourceURL: URL) -> String? {
+        let ext = sourceURL.pathExtension.isEmpty ? "png" : sourceURL.pathExtension
+        let filename = "\(UUID().uuidString).\(ext)"
+        let destPath = (coversDirectory as NSString).appendingPathComponent(filename)
+        do {
+            try FileManager.default.copyItem(atPath: sourceURL.path, toPath: destPath)
+            return destPath
+        } catch {
+            return nil
+        }
     }
 }

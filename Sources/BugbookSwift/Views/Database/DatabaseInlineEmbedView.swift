@@ -12,6 +12,7 @@ struct DatabaseInlineEmbedView: View {
     @State private var schema: DatabaseSchema?
     @State private var rows: [DatabaseRow] = []
     @State private var error: String?
+    @State private var hoveredRowId: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -103,8 +104,7 @@ struct DatabaseInlineEmbedView: View {
                             .lineLimit(1)
                             .frame(width: 140, alignment: .leading)
                         ForEach(displayProps) { prop in
-                            Text(displayValue(row.properties[prop.name] ?? .empty, prop: prop))
-                                .lineLimit(1)
+                            cellContent(row.properties[prop.name] ?? .empty, prop: prop)
                                 .frame(width: 100, alignment: .leading)
                         }
                     }
@@ -112,8 +112,12 @@ struct DatabaseInlineEmbedView: View {
                     .foregroundColor(.primary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
+                    .background(hoveredRowId == row.id ? Color.gray.opacity(0.08) : Color.clear)
                 }
                 .buttonStyle(.plain)
+                .onHover { isHovered in
+                    hoveredRowId = isHovered ? row.id : nil
+                }
 
                 if row.id != rows.prefix(maxRows).last?.id {
                     Divider().padding(.leading, 8)
@@ -132,6 +136,34 @@ struct DatabaseInlineEmbedView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func cellContent(_ value: PropertyValue, prop: PropertyDefinition) -> some View {
+        switch value {
+        case .select(let id):
+            if let option = prop.options?.first(where: { $0.id == id }) {
+                Text(option.name)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(colorFromString(option.color).opacity(0.15))
+                    .foregroundColor(colorFromString(option.color))
+                    .cornerRadius(3)
+            } else {
+                Text(id).lineLimit(1)
+            }
+        case .date(let s):
+            Text(formattedDate(s))
+                .lineLimit(1)
+        case .checkbox(let b):
+            Image(systemName: b ? "checkmark.square.fill" : "square")
+                .foregroundColor(b ? .accentColor : .secondary)
+        default:
+            Text(displayValue(value, prop: prop))
+                .lineLimit(1)
         }
     }
 
@@ -158,6 +190,31 @@ struct DatabaseInlineEmbedView: View {
         case .url(let s): return s
         case .email(let s): return s
         case .empty: return ""
+        }
+    }
+
+    private func formattedDate(_ dateString: String) -> String {
+        let inFmt = DateFormatter()
+        inFmt.dateFormat = "yyyy-MM-dd"
+        guard let date = inFmt.date(from: dateString) else { return dateString }
+        let outFmt = DateFormatter()
+        outFmt.dateStyle = .medium
+        return outFmt.string(from: date)
+    }
+
+    private func colorFromString(_ name: String) -> Color {
+        switch name.lowercased() {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        case "pink": return .pink
+        case "gray", "grey": return .gray
+        case "brown": return .brown
+        case "teal", "cyan": return .teal
+        default: return .accentColor
         }
     }
 }

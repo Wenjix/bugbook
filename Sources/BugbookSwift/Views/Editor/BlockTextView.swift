@@ -3,6 +3,7 @@ import AppKit
 
 /// NSViewRepresentable wrapping NSTextView for per-block text editing.
 /// Handles keyboard intercepts for block splitting, merging, and navigation.
+/// Supports rich text with WYSIWYG inline formatting (bold, italic, code, strikethrough, links).
 struct BlockTextView: NSViewRepresentable {
     @ObservedObject var document: BlockDocument
     let blockId: UUID
@@ -19,7 +20,7 @@ struct BlockTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> BlockNSTextView {
         let textView = BlockNSTextView()
         textView.delegate = context.coordinator
-        textView.isRichText = false
+        textView.isRichText = true
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -32,15 +33,23 @@ struct BlockTextView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.font = font
-        textView.textColor = textColor
         textView.allowsUndo = false // We handle undo at document level
+        textView.isAutomaticLinkDetectionEnabled = false
 
         // Prevent NSTextView from accepting drag-and-drop (avoids UUID string insertion)
         textView.unregisterDraggedTypes()
 
+        // Set the default typing attributes
+        textView.typingAttributes = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
+
         if let block = document.block(for: blockId) {
-            textView.string = block.text
+            let attrStr = AttributedStringConverter.attributedString(
+                from: block.text, font: font, textColor: textColor
+            )
+            textView.textStorage?.setAttributedString(attrStr)
         }
 
         textView.placeholderString = placeholder
@@ -49,6 +58,18 @@ struct BlockTextView: NSViewRepresentable {
         let coordinator = context.coordinator
         textView.onBecomeFirstResponder = { [weak coordinator] in
             coordinator?.handleBecomeFirstResponder()
+        }
+        textView.formatBoldAction = { [weak coordinator] in
+            coordinator?.toggleBold()
+        }
+        textView.formatItalicAction = { [weak coordinator] in
+            coordinator?.toggleItalic()
+        }
+        textView.formatCodeAction = { [weak coordinator] in
+            coordinator?.toggleCode()
+        }
+        textView.formatLinkAction = { [weak coordinator] in
+            coordinator?.promptLink()
         }
         context.coordinator.textView = textView
 
@@ -62,13 +83,11 @@ struct BlockTextView: NSViewRepresentable {
     func updateNSView(_ textView: BlockNSTextView, context: Context) {
         context.coordinator.parent = self
 
-        // Update font/color
-        if textView.font != font {
-            textView.font = font
-        }
-        if textView.textColor != textColor {
-            textView.textColor = textColor
-        }
+        // Update default typing attributes
+        textView.typingAttributes = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
 
         // Update placeholder
         textView.placeholderString = placeholder
@@ -78,7 +97,10 @@ struct BlockTextView: NSViewRepresentable {
         if let block = document.block(for: blockId),
            !context.coordinator.isEditing,
            textView.string != block.text {
-            textView.string = block.text
+            let attrStr = AttributedStringConverter.attributedString(
+                from: block.text, font: font, textColor: textColor
+            )
+            textView.textStorage?.setAttributedString(attrStr)
             DispatchQueue.main.async {
                 self.recalculateHeight(textView)
             }
@@ -130,14 +152,78 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
+        // MARK: - Formatting Actions
+
+        func toggleBold() {
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleBold(in: textView, font: parent.font)
+            syncTextToDocument()
+        }
+
+        func toggleItalic() {
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleItalic(in: textView, font: parent.font)
+            syncTextToDocument()
+        }
+
+        func toggleCode() {
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleCode(in: textView, font: parent.font)
+            syncTextToDocument()
+        }
+
+        func toggleStrikethrough() {
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleStrikethrough(in: textView)
+            syncTextToDocument()
+        }
+
+        func promptLink() {
+            guard let textView = textView, textView.selectedRange().length > 0 else { return }
+
+            let alert = NSAlert()
+            alert.messageText = "Insert Link"
+            alert.informativeText = "Enter URL:"
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Cancel")
+
+            let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+            input.placeholderString = "https://"
+            alert.accessoryView = input
+
+            if alert.runModal() == .alertFirstButtonReturn {
+                let url = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !url.isEmpty {
+                    AttributedStringConverter.applyLink(in: textView, url: url)
+                    syncTextToDocument()
+                }
+            }
+        }
+
+        /// Sync the current attributed string back to the document as markdown.
+        private func syncTextToDocument() {
+            guard let textView = textView,
+                  let textStorage = textView.textStorage else { return }
+            isEditing = true
+            defer { isEditing = false }
+            let md = AttributedStringConverter.markdown(from: textStorage)
+            if let idx = parent.document.index(for: parent.blockId) {
+                parent.document.blocks[idx].text = md
+            }
+        }
+
         func textDidChange(_ notification: Notification) {
             guard !suppressChanges else { return }
             guard let textView = notification.object as? NSTextView else { return }
             isEditing = true
             defer { isEditing = false }
 
-            if let idx = parent.document.index(for: parent.blockId) {
-                parent.document.blocks[idx].text = textView.string
+            // Convert attributed string to markdown for storage
+            if let textStorage = textView.textStorage {
+                let md = AttributedStringConverter.markdown(from: textStorage)
+                if let idx = parent.document.index(for: parent.blockId) {
+                    parent.document.blocks[idx].text = md
+                }
             }
 
             // Slash command detection
@@ -248,7 +334,12 @@ struct BlockTextView: NSViewRepresentable {
             }
 
             suppressChanges = true
-            textView.string = newText
+            textView.textStorage?.setAttributedString(
+                NSAttributedString(string: newText, attributes: [
+                    .font: parent.font,
+                    .foregroundColor: parent.textColor
+                ])
+            )
             textView.setSelectedRange(NSRange(location: newText.count, length: 0))
             suppressChanges = false
         }
@@ -385,12 +476,18 @@ struct BlockTextView: NSViewRepresentable {
     }
 }
 
-// MARK: - Custom NSTextView for focus tracking
+// MARK: - Custom NSTextView for focus tracking and keyboard shortcuts
 
 class BlockNSTextView: NSTextView {
     var onBecomeFirstResponder: (() -> Void)?
     var placeholderString: String?
     var placeholderFont: NSFont?
+
+    // Formatting action closures
+    var formatBoldAction: (() -> Void)?
+    var formatItalicAction: (() -> Void)?
+    var formatCodeAction: (() -> Void)?
+    var formatLinkAction: (() -> Void)?
 
     override func didChangeText() {
         super.didChangeText()
@@ -428,5 +525,32 @@ class BlockNSTextView: NSTextView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         return []
+    }
+
+    // MARK: - Keyboard Shortcuts for Formatting
+
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        if flags == .command {
+            switch event.charactersIgnoringModifiers {
+            case "b":
+                formatBoldAction?()
+                return
+            case "i":
+                formatItalicAction?()
+                return
+            case "e":
+                formatCodeAction?()
+                return
+            case "k":
+                formatLinkAction?()
+                return
+            default:
+                break
+            }
+        }
+
+        super.keyDown(with: event)
     }
 }

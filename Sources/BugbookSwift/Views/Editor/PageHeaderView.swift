@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct PageHeaderView: View {
     @Binding var title: String
@@ -8,37 +9,45 @@ struct PageHeaderView: View {
     var onTitleCommit: () -> Void
 
     @State private var showIconPicker = false
+    @State private var showCoverPicker = false
+    @State private var isHovering = false
+    @State private var coverYPosition: Double = 50
+    @State private var isDraggingCover = false
+    @State private var dragStartY: CGFloat = 0
+
+    private var horizontalPadding: CGFloat { fullWidth ? 40 : 80 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Cover image (if set)
-            if let cover = coverUrl, let url = URL(string: cover) {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle().fill(Color.gray.opacity(0.2))
-                }
-                .frame(height: 200)
-                .clipped()
+        VStack(alignment: .leading, spacing: 0) {
+            // Cover image
+            if let coverPath = coverUrl {
+                coverImageView(path: coverPath)
             }
 
+            // Hover action buttons (Add icon / Add cover)
+            if isHovering {
+                hoverButtons
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, coverUrl != nil ? 8 : 12)
+                    .transition(.opacity)
+            }
+
+            // Icon + Title row
             HStack(alignment: .top, spacing: 8) {
                 // Icon
-                Button(action: { showIconPicker.toggle() }) {
-                    if let icon = icon, !icon.isEmpty {
-                        Text(icon).font(.system(size: 40))
-                    } else {
-                        Image(systemName: "face.smiling")
-                            .font(.system(size: 20))
-                            .foregroundColor(.secondary)
-                            .padding(8)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(6)
+                if let iconValue = icon, !iconValue.isEmpty {
+                    Button(action: { showIconPicker.toggle() }) {
+                        iconDisplay(iconValue)
                     }
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showIconPicker) {
-                    EmojiPickerView(selectedEmoji: $icon)
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showIconPicker) {
+                        FullEmojiPickerView(
+                            selectedEmoji: $icon,
+                            onCustomIconSelected: { path in
+                                icon = "custom:\(path)"
+                            }
+                        )
+                    }
                 }
 
                 // Title
@@ -46,53 +55,181 @@ struct PageHeaderView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 32, weight: .bold))
             }
-            .padding(.horizontal, fullWidth ? 40 : 80)
-            .padding(.top, coverUrl != nil ? 12 : 40)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.top, icon != nil ? 4 : (coverUrl != nil ? 12 : (isHovering ? 4 : 40)))
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
+    }
+
+    // MARK: - Icon Display
+
+    @ViewBuilder
+    private func iconDisplay(_ value: String) -> some View {
+        if value.hasPrefix("sf:") {
+            let symbolName = String(value.dropFirst(3))
+            Image(systemName: symbolName)
+                .font(.system(size: 32))
+                .frame(width: 48, height: 48)
+        } else if value.hasPrefix("custom:") {
+            let path = String(value.dropFirst(7))
+            if let nsImage = NSImage(contentsOfFile: path) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Text(value).font(.system(size: 40))
+            }
+        } else {
+            Text(value).font(.system(size: 40))
+        }
+    }
+
+    // MARK: - Cover Image
+
+    @ViewBuilder
+    private func coverImageView(path: String) -> some View {
+        let coverHeight: CGFloat = 200
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let nsImage = NSImage(contentsOfFile: path) {
+                    GeometryReader { geo in
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width, height: coverHeight)
+                            .offset(y: coverOffset(imageSize: nsImage.size, containerHeight: coverHeight))
+                            .clipped()
+                    }
+                    .frame(height: coverHeight)
+                } else if let url = URL(string: path) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(Color.gray.opacity(0.2))
+                    }
+                    .frame(height: coverHeight)
+                    .clipped()
+                }
+            }
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        if !isDraggingCover {
+                            isDraggingCover = true
+                            dragStartY = value.startLocation.y
+                        }
+                        let delta = value.location.y - dragStartY
+                        let sensitivity = 0.5
+                        let newPosition = coverYPosition - delta * sensitivity
+                        coverYPosition = min(100, max(0, newPosition))
+                        dragStartY = value.location.y
+                    }
+                    .onEnded { _ in
+                        isDraggingCover = false
+                    }
+            )
+
+            if isHovering {
+                HStack(spacing: 4) {
+                    Button(action: { showCoverPicker = true }) {
+                        Label("Reposition", systemImage: "arrow.up.and.down")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(CoverActionButtonStyle())
+
+                    Button(action: { coverUrl = nil; coverYPosition = 50 }) {
+                        Label("Remove", systemImage: "xmark")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(CoverActionButtonStyle())
+                }
+                .padding(8)
+                .transition(.opacity)
+            }
+        }
+        .popover(isPresented: $showCoverPicker) {
+            CoverPickerView(coverUrl: $coverUrl, coverYPosition: $coverYPosition)
+        }
+    }
+
+    private func coverOffset(imageSize: NSSize, containerHeight: CGFloat) -> CGFloat {
+        guard imageSize.height > 0 else { return 0 }
+        let scale = max(1.0, imageSize.height / containerHeight)
+        let maxOffset = (imageSize.height - containerHeight) / scale
+        let normalizedPosition = coverYPosition / 100.0
+        return -maxOffset * normalizedPosition
+    }
+
+    // MARK: - Hover Buttons
+
+    private var hoverButtons: some View {
+        HStack(spacing: 8) {
+            if icon == nil || icon?.isEmpty == true {
+                HoverActionButton(title: "Add icon", systemImage: "face.smiling") {
+                    showIconPicker = true
+                }
+                .popover(isPresented: $showIconPicker) {
+                    FullEmojiPickerView(
+                        selectedEmoji: $icon,
+                        onCustomIconSelected: { path in
+                            icon = "custom:\(path)"
+                        }
+                    )
+                }
+            }
+
+            if coverUrl == nil {
+                HoverActionButton(title: "Add cover", systemImage: "photo") {
+                    showCoverPicker = true
+                }
+                .popover(isPresented: $showCoverPicker) {
+                    CoverPickerView(coverUrl: $coverUrl, coverYPosition: $coverYPosition)
+                }
+            }
+
+            Spacer()
         }
     }
 }
 
-// Simple emoji picker grid
-struct EmojiPickerView: View {
-    @Binding var selectedEmoji: String?
-    @Environment(\.dismiss) private var dismiss
+// MARK: - Supporting Views
 
-    private let commonEmojis = [
-        "\u{1F4DD}", "\u{1F4D6}", "\u{1F4DA}", "\u{1F4D3}", "\u{1F4D2}", "\u{1F4D5}", "\u{1F4D7}", "\u{1F4D8}", "\u{1F4D9}",
-        "\u{1F5C2}\u{FE0F}", "\u{1F4C1}", "\u{1F4C2}", "\u{1F5C3}\u{FE0F}", "\u{1F4CB}", "\u{1F4CC}", "\u{1F4CE}", "\u{1F517}",
-        "\u{1F4A1}", "\u{2B50}", "\u{1F525}", "\u{1F48E}", "\u{1F3AF}", "\u{1F680}", "\u{26A1}", "\u{1F527}",
-        "\u{1F41B}", "\u{1F41E}", "\u{1F98B}", "\u{1F31F}", "\u{1F308}", "\u{1F3A8}", "\u{1F3B5}", "\u{1F3AE}",
-        "\u{2764}\u{FE0F}", "\u{1F49A}", "\u{1F499}", "\u{1F49C}", "\u{1F9E1}", "\u{1F49B}", "\u{1F90D}", "\u{1F5A4}",
-        "\u{2705}", "\u{274C}", "\u{26A0}\u{FE0F}", "\u{1F4AC}", "\u{1F514}", "\u{1F4CA}", "\u{1F4C8}", "\u{1F5D3}\u{FE0F}"
-    ]
+private struct HoverActionButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            Text("Choose Icon").font(.headline).padding(.top, 8)
-
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(36)), count: 8), spacing: 4) {
-                ForEach(commonEmojis, id: \.self) { emoji in
-                    Button(action: {
-                        selectedEmoji = emoji
-                        dismiss()
-                    }) {
-                        Text(emoji).font(.system(size: 24))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(4)
-                    .background(selectedEmoji == emoji ? Color.accentColor.opacity(0.2) : Color.clear)
-                    .cornerRadius(4)
-                }
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12))
+                Text(title)
+                    .font(.system(size: 12))
             }
+            .foregroundColor(.secondary)
             .padding(.horizontal, 8)
-
-            Button("Remove Icon") {
-                selectedEmoji = nil
-                dismiss()
-            }
-            .padding(.bottom, 8)
+            .padding(.vertical, 4)
+            .background(Color.gray.opacity(0.08))
+            .cornerRadius(4)
         }
-        .frame(width: 320)
-        .padding(8)
+        .buttonStyle(.plain)
+    }
+}
+
+private struct CoverActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(configuration.isPressed ? 0.6 : 0.4))
+            .cornerRadius(4)
     }
 }

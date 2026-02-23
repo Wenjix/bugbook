@@ -123,6 +123,82 @@ class DatabaseService: ObservableObject {
         try saveSchema(schema, at: dbPath)
     }
 
+    func renameProperty(_ propertyId: String, to newName: String, in schema: inout DatabaseSchema, rows: inout [DatabaseRow], at dbPath: String) throws {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        let oldName = schema.properties[idx].name
+        schema.properties[idx].name = newName
+        try saveSchema(schema, at: dbPath)
+        // Migrate row data from old key to new key
+        for i in rows.indices {
+            if let val = rows[i].properties.removeValue(forKey: oldName) {
+                rows[i].properties[newName] = val
+            }
+            try saveRow(rows[i], schema: schema, at: dbPath)
+        }
+    }
+
+    func changePropertyType(_ propertyId: String, to newType: PropertyType, in schema: inout DatabaseSchema, rows: inout [DatabaseRow], at dbPath: String) throws {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        let propName = schema.properties[idx].name
+        let oldType = schema.properties[idx].type
+        schema.properties[idx].type = newType
+        // Add empty options array for select/multiSelect types
+        if newType == .select || newType == .multiSelect {
+            if schema.properties[idx].options == nil {
+                schema.properties[idx].options = []
+            }
+        } else {
+            schema.properties[idx].options = nil
+        }
+        try saveSchema(schema, at: dbPath)
+        // Convert existing values where possible
+        for i in rows.indices {
+            if let val = rows[i].properties[propName] {
+                rows[i].properties[propName] = convertValue(val, from: oldType, to: newType)
+                try saveRow(rows[i], schema: schema, at: dbPath)
+            }
+        }
+    }
+
+    func addSelectOption(_ option: SelectOption, toProperty propertyId: String, in schema: inout DatabaseSchema, at dbPath: String) throws {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if schema.properties[idx].options == nil {
+            schema.properties[idx].options = []
+        }
+        schema.properties[idx].options?.append(option)
+        try saveSchema(schema, at: dbPath)
+    }
+
+    // MARK: - Private: Value Conversion
+
+    private func convertValue(_ value: PropertyValue, from oldType: PropertyType, to newType: PropertyType) -> PropertyValue {
+        // Extract string representation
+        let str: String
+        switch value {
+        case .text(let s): str = s
+        case .number(let n): str = n == n.rounded() ? String(Int(n)) : String(n)
+        case .select(let s): str = s
+        case .multiSelect(let arr): str = arr.joined(separator: ", ")
+        case .date(let s): str = s
+        case .checkbox(let b): str = b ? "true" : "false"
+        case .url(let s): str = s
+        case .email(let s): str = s
+        case .empty: return .empty
+        }
+
+        // Convert to new type
+        switch newType {
+        case .text: return .text(str)
+        case .number: return .number(Double(str) ?? 0)
+        case .checkbox: return .checkbox(str == "true" || str == "1")
+        case .date: return .date(str)
+        case .url: return .url(str)
+        case .email: return .email(str)
+        case .select: return .text(str) // Can't auto-create options, store as text
+        case .multiSelect: return .text(str)
+        }
+    }
+
     func reorderProperties(_ orderedIds: [String], in schema: inout DatabaseSchema, at dbPath: String) throws {
         let byId = Dictionary(uniqueKeysWithValues: schema.properties.map { ($0.id, $0) })
         schema.properties = orderedIds.compactMap { byId[$0] }

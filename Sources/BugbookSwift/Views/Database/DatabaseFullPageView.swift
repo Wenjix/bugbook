@@ -11,6 +11,8 @@ struct DatabaseFullPageView: View {
     @State private var editingTitle: String = ""
     @State private var showPropertyManager = false
     @State private var showFilterSort = false
+    @State private var renamingPropertyId: String? = nil
+    @State private var renamingPropertyName: String = ""
 
     private var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
@@ -77,6 +79,18 @@ struct DatabaseFullPageView: View {
                 ), dbPath: dbPath, dbService: dbService)
             }
         }
+        .sheet(item: $renamingPropertyId) { propId in
+            if let s = schema, let prop = s.properties.first(where: { $0.id == propId }) {
+                RenamePropertySheet(
+                    propertyName: prop.name,
+                    onRename: { newName in
+                        renameProperty(propId, to: newName)
+                        renamingPropertyId = nil
+                    },
+                    onCancel: { renamingPropertyId = nil }
+                )
+            }
+        }
         .task {
             await loadData()
         }
@@ -96,6 +110,10 @@ struct DatabaseFullPageView: View {
             .fontWeight(.bold)
             .textFieldStyle(.plain)
             Spacer()
+
+            Text("\(rows.count) rows")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -272,7 +290,13 @@ struct DatabaseFullPageView: View {
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in saveRow(row) },
                 onDelete: { row in deleteRow(row) },
-                onToggleColumn: { propId in toggleColumnVisibility(propId) }
+                onToggleColumn: { propId in toggleColumnVisibility(propId) },
+                onAddProperty: { addPropertyFromTable() },
+                onRenameProperty: { propId, _ in
+                    renamingPropertyId = propId
+                },
+                onDeleteProperty: { propId in deleteProperty(propId) },
+                onChangePropertyType: { propId, newType in changePropertyType(propId, to: newType) }
             )
         case .kanban:
             KanbanView(
@@ -280,7 +304,9 @@ struct DatabaseFullPageView: View {
                 rows: boundRows,
                 viewConfig: activeView ?? defaultViewConfig(),
                 onOpenRow: { row in openRow(row) },
-                onSave: { row in saveRow(row) }
+                onSave: { row in saveRow(row) },
+                onUpdateGroupBy: { propId in updateGroupBy(propId) },
+                onAddSelectOption: { propId, option in addSelectOption(propId, option: option) }
             )
         case .list:
             ListView(
@@ -371,6 +397,63 @@ struct DatabaseFullPageView: View {
     private func openRow(_ row: DatabaseRow) {
         if let idx = rows.firstIndex(where: { $0.id == row.id }) {
             selectedRowIndex = idx
+        }
+    }
+
+    // MARK: - Property Operations
+
+    private func addPropertyFromTable() {
+        guard var s = schema else { return }
+        let prop = PropertyDefinition(
+            id: "prop_\(UUID().uuidString)",
+            name: "New Property",
+            type: .text,
+            options: nil
+        )
+        Task {
+            try? dbService.addProperty(prop, to: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func renameProperty(_ propertyId: String, to newName: String) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.renameProperty(propertyId, to: newName, in: &s, rows: &rows, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func deleteProperty(_ propertyId: String) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.deleteProperty(propertyId, from: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func changePropertyType(_ propertyId: String, to newType: PropertyType) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.changePropertyType(propertyId, to: newType, in: &s, rows: &rows, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func addSelectOption(_ propertyId: String, option: SelectOption) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.addSelectOption(option, toProperty: propertyId, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func updateGroupBy(_ propertyId: String) {
+        guard var s = schema, var view = activeView else { return }
+        view.groupByPropertyId = propertyId
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
         }
     }
 
@@ -576,4 +659,41 @@ private struct PropertyManagerSheet: View {
             try? dbService.saveSchema(schema, at: dbPath)
         }
     }
+}
+
+// MARK: - Rename Property Sheet
+
+private struct RenamePropertySheet: View {
+    @State var propertyName: String
+    let onRename: (String) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Rename Property")
+                .font(.headline)
+
+            TextField("Property name", text: $propertyName)
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 12) {
+                Button("Cancel") { onCancel() }
+                Button("Rename") {
+                    let trimmed = propertyName.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty {
+                        onRename(trimmed)
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(propertyName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding()
+        .frame(minWidth: 280)
+    }
+}
+
+// Make String identifiable for .sheet(item:)
+extension String: @retroactive Identifiable {
+    public var id: String { self }
 }

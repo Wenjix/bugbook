@@ -95,6 +95,46 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Column block
+            if line.trimmingCharacters(in: .whitespaces) == "<!-- columns -->" {
+                var columnChildren: [Block] = []
+                i += 1
+                while i < lines.count {
+                    let colLine = lines[i]
+                    if colLine.trimmingCharacters(in: .whitespaces) == "<!-- /columns -->" {
+                        i += 1
+                        break
+                    }
+                    if colLine.trimmingCharacters(in: .whitespaces) == "<!-- column-separator -->" {
+                        i += 1
+                        continue
+                    }
+                    // Parse each line inside columns as a child block
+                    let childBlocks = parse(colLine)
+                    columnChildren.append(contentsOf: childBlocks)
+                    i += 1
+                }
+                blocks.append(Block(type: .column, children: columnChildren))
+                continue
+            }
+
+            // Color comment (applies to next block)
+            if let (textColor, bgColor) = parseColorComment(line) {
+                i += 1
+                if i < lines.count {
+                    // Parse the next line as a block and apply colors
+                    let nextLine = lines[i]
+                    var nextBlocks = parse(nextLine)
+                    if !nextBlocks.isEmpty {
+                        nextBlocks[0].textColor = textColor
+                        nextBlocks[0].backgroundColor = bgColor
+                        blocks.append(contentsOf: nextBlocks)
+                    }
+                    i += 1
+                }
+                continue
+            }
+
             // Paragraph (including empty lines)
             blocks.append(Block(type: .paragraph, text: line))
             i += 1
@@ -113,6 +153,19 @@ enum MarkdownBlockParser {
         var lines: [String] = []
 
         for (i, block) in blocks.enumerated() {
+            // Emit color comment before blocks that have non-default colors
+            let hasColor = block.textColor != .default || block.backgroundColor != .default
+            if hasColor, block.type != .column {
+                var parts: [String] = []
+                if block.textColor != .default {
+                    parts.append("color:\(block.textColor.rawValue)")
+                }
+                if block.backgroundColor != .default {
+                    parts.append("bg:\(block.backgroundColor.rawValue)")
+                }
+                lines.append("<!-- \(parts.joined(separator: " ")) -->")
+            }
+
             switch block.type {
             case .paragraph:
                 lines.append(block.text)
@@ -155,6 +208,16 @@ enum MarkdownBlockParser {
 
             case .databaseEmbed:
                 lines.append("<!-- database: \(block.databasePath) -->")
+
+            case .column:
+                lines.append("<!-- columns -->")
+                for (ci, child) in block.children.enumerated() {
+                    if ci > 0 {
+                        lines.append("<!-- column-separator -->")
+                    }
+                    lines.append(serialize([child]))
+                }
+                lines.append("<!-- /columns -->")
             }
         }
 
@@ -261,6 +324,31 @@ enum MarkdownBlockParser {
         guard pathStart < pathEnd else { return nil }
         let path = String(trimmed[pathStart..<pathEnd]).trimmingCharacters(in: .whitespaces)
         return path.isEmpty ? nil : path
+    }
+
+    private static func parseColorComment(_ line: String) -> (BlockColor, BlockColor)? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->") else { return nil }
+        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        // Must contain color: or bg: but not "database:" or "columns"
+        guard inner.contains("color:") || inner.contains("bg:") else { return nil }
+        guard !inner.contains("database:") else { return nil }
+
+        var textColor: BlockColor = .default
+        var bgColor: BlockColor = .default
+        let parts = inner.split(separator: " ")
+        for part in parts {
+            if part.hasPrefix("color:") {
+                let value = String(part.dropFirst(6))
+                textColor = BlockColor(rawValue: value) ?? .default
+            } else if part.hasPrefix("bg:") {
+                let value = String(part.dropFirst(3))
+                bgColor = BlockColor(rawValue: value) ?? .default
+            }
+        }
+        // Only return if at least one non-default color was found
+        guard textColor != .default || bgColor != .default else { return nil }
+        return (textColor, bgColor)
     }
 
     // MARK: - Helpers

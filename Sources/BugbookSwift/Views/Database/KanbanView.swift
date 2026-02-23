@@ -6,20 +6,30 @@ struct KanbanView: View {
     let viewConfig: ViewConfig
     var onOpenRow: (DatabaseRow) -> Void
     var onSave: (DatabaseRow) -> Void
+    var onUpdateGroupBy: ((String) -> Void)?
+    var onAddSelectOption: ((String, SelectOption) -> Void)?
+
+    @State private var newOptionName: String = ""
+    @State private var addingOptionForColumn: Bool = false
+    @State private var newCardTitle: String = ""
+    @State private var addingCardInColumn: String? = nil
+
+    private var selectProperties: [PropertyDefinition] {
+        schema.properties.filter { $0.type == .select }
+    }
 
     private var groupProperty: PropertyDefinition? {
         guard let groupId = viewConfig.groupByPropertyId else {
-            // Default to first select property
             return schema.properties.first(where: { $0.type == .select })
         }
         return schema.properties.first(where: { $0.id == groupId })
     }
 
-    private var columns: [(id: String, name: String)] {
+    private var columns: [(id: String, name: String, color: String)] {
         guard let prop = groupProperty else { return [] }
-        var cols: [(id: String, name: String)] = [("__none__", "No \(prop.name)")]
+        var cols: [(id: String, name: String, color: String)] = [("__none__", "No \(prop.name)", "gray")]
         if let options = prop.options {
-            cols += options.map { ($0.id, $0.name) }
+            cols += options.map { ($0.id, $0.name, $0.color) }
         }
         return cols
     }
@@ -36,19 +46,125 @@ struct KanbanView: View {
     }
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(alignment: .top, spacing: 12) {
-                ForEach(columns, id: \.id) { column in
-                    kanbanColumn(column)
+        VStack(spacing: 0) {
+            // GroupBy selector
+            if selectProperties.count > 1 {
+                HStack(spacing: 8) {
+                    Text("Group by:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Menu {
+                        ForEach(selectProperties) { prop in
+                            Button {
+                                onUpdateGroupBy?(prop.id)
+                            } label: {
+                                HStack {
+                                    Text(prop.name)
+                                    if prop.id == groupProperty?.id {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(groupProperty?.name ?? "Select property")
+                                .font(.caption)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+
+                    Spacer()
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
-            .padding(12)
+
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(columns, id: \.id) { column in
+                        kanbanColumn(column)
+                    }
+
+                    // Add new option column
+                    if groupProperty != nil {
+                        addOptionColumn
+                    }
+                }
+                .padding(12)
+            }
         }
     }
 
-    private func kanbanColumn(_ column: (id: String, name: String)) -> some View {
+    // MARK: - Add Option Column
+
+    private var addOptionColumn: some View {
+        VStack(spacing: 8) {
+            if addingOptionForColumn {
+                VStack(spacing: 6) {
+                    TextField("Option name", text: $newOptionName, onCommit: {
+                        createNewOption()
+                    })
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+
+                    HStack(spacing: 6) {
+                        Button("Add") { createNewOption() }
+                            .font(.caption)
+                            .disabled(newOptionName.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                        Button("Cancel") {
+                            newOptionName = ""
+                            addingOptionForColumn = false
+                        }
+                        .font(.caption)
+                    }
+                }
+                .padding(8)
+            } else {
+                Button {
+                    addingOptionForColumn = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("Add Status")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: 200)
+        .padding(.vertical, 8)
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(8)
+    }
+
+    private func createNewOption() {
+        let name = newOptionName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, let prop = groupProperty else { return }
+        let colors = ["blue", "green", "red", "yellow", "purple", "pink", "orange", "teal"]
+        let randomColor = colors.randomElement() ?? "blue"
+        let option = SelectOption(id: "opt_\(UUID().uuidString)", name: name, color: randomColor)
+        onAddSelectOption?(prop.id, option)
+        newOptionName = ""
+        addingOptionForColumn = false
+    }
+
+    // MARK: - Kanban Column
+
+    private func kanbanColumn(_ column: (id: String, name: String, color: String)) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
+                Circle()
+                    .fill(colorForName(column.color))
+                    .frame(width: 8, height: 8)
+
                 Text(column.name)
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -57,6 +173,10 @@ struct KanbanView: View {
                 Text("\(rowsForColumn(column.id).count)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.gray.opacity(0.15))
+                    .cornerRadius(4)
             }
             .padding(.horizontal, 8)
 
@@ -69,6 +189,45 @@ struct KanbanView: View {
                                 .background(.ultraThinMaterial)
                                 .cornerRadius(6)
                         }
+                }
+
+                // Inline add card
+                if addingCardInColumn == column.id {
+                    VStack(spacing: 4) {
+                        TextField("Card title", text: $newCardTitle, onCommit: {
+                            addCardInColumn(column.id)
+                        })
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+
+                        HStack(spacing: 6) {
+                            Button("Add") { addCardInColumn(column.id) }
+                                .font(.caption)
+                                .disabled(newCardTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                            Button("Cancel") {
+                                newCardTitle = ""
+                                addingCardInColumn = nil
+                            }
+                            .font(.caption)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                } else {
+                    Button {
+                        addingCardInColumn = column.id
+                        newCardTitle = ""
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                            Text("New")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .dropDestination(for: String.self) { droppedIds, _ in
@@ -89,6 +248,31 @@ struct KanbanView: View {
         .cornerRadius(8)
     }
 
+    private func addCardInColumn(_ columnId: String) {
+        let title = newCardTitle.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return }
+        let now = Date()
+        var properties: [String: PropertyValue] = [:]
+        if let prop = groupProperty, columnId != "__none__" {
+            properties[prop.name] = .select(columnId)
+        }
+        let newRow = DatabaseRow(
+            id: "row_\(UUID().uuidString)",
+            title: title,
+            properties: properties,
+            body: "\n# \(title)\n",
+            createdAt: now,
+            updatedAt: now,
+            fullWidth: false
+        )
+        rows.append(newRow)
+        onSave(newRow)
+        newCardTitle = ""
+        addingCardInColumn = nil
+    }
+
+    // MARK: - Kanban Card
+
     private func kanbanCard(_ row: DatabaseRow) -> some View {
         Button {
             onOpenRow(row)
@@ -100,8 +284,8 @@ struct KanbanView: View {
                     .lineLimit(2)
                     .foregroundColor(.primary)
 
-                // Show a couple of properties
-                let displayProps = schema.properties.prefix(2).filter { $0.type != .select || $0.id != groupProperty?.id }
+                // Show a couple of properties (excluding the group property)
+                let displayProps = schema.properties.prefix(3).filter { $0.type != .select || $0.id != groupProperty?.id }
                 ForEach(displayProps) { prop in
                     if let val = row.properties[prop.name], val != .empty {
                         HStack(spacing: 4) {
@@ -124,6 +308,8 @@ struct KanbanView: View {
         .padding(.horizontal, 6)
     }
 
+    // MARK: - Helpers
+
     private func displayValue(_ value: PropertyValue, prop: PropertyDefinition) -> String {
         switch value {
         case .text(let s): return s
@@ -137,6 +323,20 @@ struct KanbanView: View {
         case .url(let s): return s
         case .email(let s): return s
         case .empty: return ""
+        }
+    }
+
+    private func colorForName(_ name: String) -> Color {
+        switch name {
+        case "blue": return .blue
+        case "green": return .green
+        case "red": return .red
+        case "yellow": return .yellow
+        case "purple": return .purple
+        case "pink": return .pink
+        case "orange": return .orange
+        case "teal": return .teal
+        default: return .gray
         }
     }
 }

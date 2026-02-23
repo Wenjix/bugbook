@@ -92,6 +92,10 @@ struct TextBlockView: View {
     }
 
     private var nsTextColor: NSColor {
+        // Block-level text color takes priority
+        if block.textColor != .default {
+            return block.textColor.nsTextColor
+        }
         switch block.type {
         case .blockquote:
             return .secondaryLabelColor

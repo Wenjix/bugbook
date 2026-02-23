@@ -4,11 +4,20 @@ struct SettingsView: View {
     @ObservedObject var appState: AppState
     @State private var selectedTab = "general"
 
+    private let tabs = [
+        ("general", "General"),
+        ("appearance", "Appearance"),
+        ("ai", "AI"),
+        ("agents", "Agents"),
+        ("shortcuts", "Shortcuts"),
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
             Picker("", selection: $selectedTab) {
-                Text("General").tag("general")
-                Text("Appearance").tag("appearance")
+                ForEach(tabs, id: \.0) { tag, label in
+                    Text(label).tag(tag)
+                }
             }
             .pickerStyle(.segmented)
             .padding()
@@ -19,9 +28,15 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     switch selectedTab {
                     case "general":
-                        generalSettings
+                        GeneralSettingsView(appState: appState)
                     case "appearance":
-                        appearanceSettings
+                        AppearanceSettingsView(appState: appState)
+                    case "ai":
+                        AISettingsView(appState: appState)
+                    case "agents":
+                        AgentsSettingsView(appState: appState)
+                    case "shortcuts":
+                        ShortcutsSettingsView()
                     default:
                         EmptyView()
                     }
@@ -30,40 +45,32 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .keyboardShortcut(for: "1") { selectedTab = "general" }
+        .keyboardShortcut(for: "2") { selectedTab = "appearance" }
+        .keyboardShortcut(for: "3") { selectedTab = "ai" }
+        .keyboardShortcut(for: "4") { selectedTab = "agents" }
+        .keyboardShortcut(for: "5") { selectedTab = "shortcuts" }
     }
+}
 
-    @ViewBuilder
-    private var generalSettings: some View {
-        GroupBox("Workspace") {
-            VStack(alignment: .leading, spacing: 8) {
-                if let path = appState.workspacePath {
-                    Text("Current: \(path)")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                Button("Switch Workspace...") {
-                    // TODO: Open folder picker
-                }
-            }
-            .padding(8)
-        }
+// MARK: - Keyboard shortcut helper
+
+private struct TabShortcutModifier: ViewModifier {
+    let key: KeyEquivalent
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Button("") { action() }
+                    .keyboardShortcut(key, modifiers: .command)
+                    .hidden()
+            )
     }
+}
 
-    @ViewBuilder
-    private var appearanceSettings: some View {
-        GroupBox("Theme") {
-            Picker("Theme", selection: $appState.settings.theme) {
-                Text("Light").tag(ThemeMode.light)
-                Text("Dark").tag(ThemeMode.dark)
-                Text("System").tag(ThemeMode.system)
-            }
-            .pickerStyle(.segmented)
-            .padding(8)
-        }
-
-        GroupBox("Editor") {
-            Toggle("Focus mode while typing", isOn: $appState.settings.focusModeOnType)
-                .padding(8)
-        }
+private extension View {
+    func keyboardShortcut(for key: String, action: @escaping () -> Void) -> some View {
+        modifier(TabShortcutModifier(key: KeyEquivalent(key.first!), action: action))
     }
 }

@@ -9,6 +9,7 @@ class BlockDocument: ObservableObject {
     @Published var slashMenuBlockId: UUID?
     @Published var slashMenuSelectedIndex: Int = 0
     @Published var slashMenuFilter: String = ""
+    @Published var blockMenuBlockId: UUID?
 
     private var undoStack: [[Block]] = []
     private var redoStack: [[Block]] = []
@@ -144,6 +145,46 @@ class BlockDocument: ObservableObject {
         let focusIdx = min(idx, blocks.count - 1)
         focusedBlockId = blocks[focusIdx].id
         cursorPosition = 0
+    }
+
+    func duplicateBlock(id: UUID) {
+        guard let idx = index(for: id) else { return }
+        saveUndo()
+        var copy = blocks[idx]
+        copy = Block(
+            type: copy.type,
+            text: copy.text,
+            headingLevel: copy.headingLevel,
+            listDepth: copy.listDepth,
+            isChecked: copy.isChecked,
+            language: copy.language,
+            imageSource: copy.imageSource,
+            imageAlt: copy.imageAlt,
+            imageWidth: copy.imageWidth,
+            databasePath: copy.databasePath,
+            textColor: copy.textColor,
+            backgroundColor: copy.backgroundColor,
+            children: copy.children
+        )
+        blocks.insert(copy, at: idx + 1)
+        focusedBlockId = copy.id
+        cursorPosition = 0
+    }
+
+    func setTextColor(id: UUID, color: BlockColor) {
+        guard let idx = index(for: id) else { return }
+        saveUndo()
+        blocks[idx].textColor = color
+    }
+
+    func setBackgroundColor(id: UUID, color: BlockColor) {
+        guard let idx = index(for: id) else { return }
+        saveUndo()
+        blocks[idx].backgroundColor = color
+    }
+
+    func dismissBlockMenu() {
+        blockMenuBlockId = nil
     }
 
     func undo() {

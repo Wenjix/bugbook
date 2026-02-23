@@ -1,0 +1,71 @@
+import SwiftUI
+
+struct AISettingsView: View {
+    @ObservedObject var appState: AppState
+    @State private var claudeAvailable = false
+    @State private var codexAvailable = false
+
+    var body: some View {
+        GroupBox("Engine Status") {
+            VStack(alignment: .leading, spacing: 8) {
+                engineRow("Claude CLI", available: claudeAvailable)
+                engineRow("Codex CLI", available: codexAvailable)
+            }
+            .padding(8)
+        }
+
+        GroupBox("Preferred Engine") {
+            Picker("Engine", selection: $appState.settings.preferredAIEngine) {
+                ForEach(PreferredAIEngine.allCases, id: \.self) { engine in
+                    Text(engine.rawValue).tag(engine)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(8)
+        }
+
+        GroupBox("Execution Policy") {
+            Picker("Policy", selection: $appState.settings.executionPolicy) {
+                ForEach(ExecutionPolicy.allCases, id: \.self) { policy in
+                    Text(policy.rawValue).tag(policy)
+                }
+            }
+            .padding(8)
+        }
+        .onAppear { detectEngines() }
+    }
+
+    @ViewBuilder
+    private func engineRow(_ name: String, available: Bool) -> some View {
+        HStack {
+            Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle")
+                .foregroundColor(available ? .green : .secondary)
+            Text(name)
+                .font(.system(size: 13))
+            Spacer()
+            Text(available ? "Installed" : "Not Found")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func detectEngines() {
+        claudeAvailable = cliExists("claude")
+        codexAvailable = cliExists("codex")
+    }
+
+    private func cliExists(_ name: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = [name]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+}

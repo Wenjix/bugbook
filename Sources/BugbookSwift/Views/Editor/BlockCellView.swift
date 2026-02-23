@@ -8,13 +8,16 @@ struct BlockCellView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
-            // Drag handle
+            // Drag handle — click to open block menu
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .frame(width: 20, height: 24)
                 .opacity(isHovering ? 1 : 0)
                 .contentShape(Rectangle())
+                .onTapGesture {
+                    document.blockMenuBlockId = block.id
+                }
                 .draggable(block.id.uuidString)
 
             // Block content
@@ -22,6 +25,12 @@ struct BlockCellView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 4)
+        .background(
+            block.backgroundColor != .default
+                ? block.backgroundColor.backgroundColor
+                : Color.clear
+        )
+        .cornerRadius(block.backgroundColor != .default ? 4 : 0)
         .onHover { hovering in
             isHovering = hovering
         }
@@ -33,6 +42,15 @@ struct BlockCellView: View {
             arrowEdge: .bottom
         ) {
             SlashCommandMenu(document: document)
+        }
+        .popover(
+            isPresented: Binding(
+                get: { document.blockMenuBlockId == block.id },
+                set: { if !$0 { document.dismissBlockMenu() } }
+            ),
+            arrowEdge: .trailing
+        ) {
+            BlockMenuView(document: document, blockId: block.id)
         }
     }
 
@@ -53,6 +71,9 @@ struct BlockCellView: View {
 
         case .databaseEmbed:
             DatabaseEmbedBlockView(block: block)
+
+        case .column:
+            ColumnBlockView(document: document, block: block)
         }
     }
 }

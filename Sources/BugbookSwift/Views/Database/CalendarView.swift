@@ -8,11 +8,19 @@ struct CalendarView: View {
     var onCreateRow: (String) -> Void // date string YYYY-MM-DD
 
     @State private var displayMonth: Date = Date()
+    @State private var selectedDatePropertyId: String?
 
     private let calendar = Calendar.current
     private let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
+    private var dateProperties: [PropertyDefinition] {
+        schema.properties.filter { $0.type == .date }
+    }
+
     private var dateProperty: PropertyDefinition? {
+        if let selectedId = selectedDatePropertyId {
+            return schema.properties.first(where: { $0.id == selectedId })
+        }
         if let dateId = viewConfig.datePropertyId {
             return schema.properties.first(where: { $0.id == dateId })
         }
@@ -25,6 +33,12 @@ struct CalendarView: View {
         return formatter.string(from: displayMonth)
     }
 
+    private var todayString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
     private var daysInMonth: [DayCell] {
         guard let range = calendar.range(of: .day, in: .month, for: displayMonth) else { return [] }
         let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: displayMonth))!
@@ -34,17 +48,19 @@ struct CalendarView: View {
 
         // Leading empty cells
         for i in 0..<firstWeekday {
-            cells.append(DayCell(id: "empty_\(i)", day: 0, dateString: "", isCurrentMonth: false))
+            cells.append(DayCell(id: "empty_\(i)", day: 0, dateString: "", isCurrentMonth: false, isToday: false))
         }
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        let today = todayString
 
         for day in range {
             var components = calendar.dateComponents([.year, .month], from: displayMonth)
             components.day = day
             let date = calendar.date(from: components) ?? Date()
-            cells.append(DayCell(id: formatter.string(from: date), day: day, dateString: formatter.string(from: date), isCurrentMonth: true))
+            let dateStr = formatter.string(from: date)
+            cells.append(DayCell(id: dateStr, day: day, dateString: dateStr, isCurrentMonth: true, isToday: dateStr == today))
         }
 
         return cells
@@ -62,7 +78,7 @@ struct CalendarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Navigation
+            // Navigation bar
             HStack {
                 Button {
                     displayMonth = calendar.date(byAdding: .month, value: -1, to: displayMonth) ?? displayMonth
@@ -81,8 +97,58 @@ struct CalendarView: View {
                     Image(systemName: "chevron.right")
                 }
                 .buttonStyle(.plain)
+
+                Spacer()
+
+                // Today button
+                Button("Today") {
+                    displayMonth = Date()
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundColor(.accentColor)
+
+                // Date property selector
+                if dateProperties.count > 1 {
+                    Menu {
+                        ForEach(dateProperties) { prop in
+                            Button {
+                                selectedDatePropertyId = prop.id
+                            } label: {
+                                HStack {
+                                    Text(prop.name)
+                                    if prop.id == dateProperty?.id {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                            Text(dateProperty?.name ?? "Date")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
             }
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
+
+            // Large dataset warning
+            if rows.count >= 2000 {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text("Large dataset (\(rows.count) rows) - performance may be affected")
+                }
+                .font(.caption)
+                .foregroundColor(.orange)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+            }
 
             // Day names header
             HStack(spacing: 0) {
@@ -113,7 +179,10 @@ struct CalendarView: View {
                 HStack {
                     Text("\(cell.day)")
                         .font(.caption)
-                        .fontWeight(.medium)
+                        .fontWeight(cell.isToday ? .bold : .medium)
+                        .foregroundColor(cell.isToday ? .white : .primary)
+                        .frame(width: 22, height: 22)
+                        .background(cell.isToday ? Circle().fill(Color.accentColor) : Circle().fill(Color.clear))
                     Spacer()
                     Button {
                         onCreateRow(cell.dateString)
@@ -134,8 +203,19 @@ struct CalendarView: View {
                             .font(.caption2)
                             .lineLimit(1)
                             .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.accentColor.opacity(0.1))
+                            .cornerRadius(3)
                     }
                     .buttonStyle(.plain)
+                    .draggable(row.id) {
+                        Text(row.title)
+                            .padding(6)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(4)
+                    }
                 }
                 if dayRows.count > 3 {
                     Text("+\(dayRows.count - 3) more")
@@ -145,11 +225,21 @@ struct CalendarView: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
         .padding(4)
-        .background(cell.isCurrentMonth ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+        .background(cell.isToday ? Color.accentColor.opacity(0.05) : (cell.isCurrentMonth ? Color(nsColor: .controlBackgroundColor) : Color.clear))
         .cornerRadius(4)
+        .dropDestination(for: String.self) { droppedIds, _ in
+            guard let prop = dateProperty, cell.isCurrentMonth else { return false }
+            for droppedId in droppedIds {
+                if let idx = rows.firstIndex(where: { $0.id == droppedId }) {
+                    rows[idx].properties[prop.name] = .date(cell.dateString)
+                }
+            }
+            return true
+        }
     }
+
 }
 
 private struct DayCell: Identifiable {
@@ -157,4 +247,5 @@ private struct DayCell: Identifiable {
     let day: Int
     let dateString: String
     let isCurrentMonth: Bool
+    let isToday: Bool
 }

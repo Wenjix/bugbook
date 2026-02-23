@@ -11,6 +11,7 @@ enum BlockType: Equatable {
     case horizontalRule
     case image
     case databaseEmbed
+    case column
 }
 
 struct Block: Identifiable, Equatable {
@@ -25,6 +26,9 @@ struct Block: Identifiable, Equatable {
     var imageAlt: String
     var imageWidth: Int?
     var databasePath: String
+    var textColor: BlockColor
+    var backgroundColor: BlockColor
+    var children: [Block]
 
     init(
         id: UUID = UUID(),
@@ -37,7 +41,10 @@ struct Block: Identifiable, Equatable {
         imageSource: String = "",
         imageAlt: String = "",
         imageWidth: Int? = nil,
-        databasePath: String = ""
+        databasePath: String = "",
+        textColor: BlockColor = .default,
+        backgroundColor: BlockColor = .default,
+        children: [Block] = []
     ) {
         self.id = id
         self.type = type
@@ -50,5 +57,8 @@ struct Block: Identifiable, Equatable {
         self.imageAlt = imageAlt
         self.imageWidth = imageWidth
         self.databasePath = databasePath
+        self.textColor = textColor
+        self.backgroundColor = backgroundColor
+        self.children = children
     }
 }

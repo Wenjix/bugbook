@@ -59,6 +59,7 @@ struct FileTreeItemView: View {
                     activeFilePath: activeFilePath,
                     fileSystem: fileSystem,
                     workspacePath: workspacePath,
+                    parentPath: entry.path,
                     onSelectFile: onSelectFile,
                     onRefreshTree: onRefreshTree
                 )

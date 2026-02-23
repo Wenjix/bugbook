@@ -50,7 +50,7 @@ struct PropertyEditorView: View {
         .textFieldStyle(.plain)
     }
 
-    // MARK: - Select
+    // MARK: - Select (colored badges)
 
     private var selectEditor: some View {
         let options = definition.options ?? []
@@ -58,22 +58,41 @@ struct PropertyEditorView: View {
             if case .select(let s) = value { return s }
             return ""
         }()
+        let currentOption = options.first(where: { $0.id == currentValue })
 
         return Menu {
             Button("None") { value = .empty }
             Divider()
             ForEach(options) { option in
-                Button(option.name) { value = .select(option.id) }
+                Button {
+                    value = .select(option.id)
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(colorForName(option.color))
+                            .frame(width: 8, height: 8)
+                        Text(option.name)
+                    }
+                }
             }
         } label: {
-            let displayName = options.first(where: { $0.id == currentValue })?.name ?? currentValue
-            Text(displayName.isEmpty ? "Select..." : displayName)
-                .foregroundColor(displayName.isEmpty ? .secondary : .primary)
+            if let opt = currentOption {
+                Text(opt.name)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(colorForName(opt.color).opacity(0.2))
+                    .foregroundColor(colorForName(opt.color))
+                    .cornerRadius(4)
+            } else {
+                Text("Select...")
+                    .foregroundColor(.secondary)
+            }
         }
         .menuStyle(.borderlessButton)
     }
 
-    // MARK: - Multi Select
+    // MARK: - Multi Select (tags with X buttons)
 
     private var multiSelectEditor: some View {
         let options = definition.options ?? []
@@ -82,39 +101,66 @@ struct PropertyEditorView: View {
             return []
         }()
 
-        return Menu {
-            ForEach(options) { option in
-                let isSelected = selectedIds.contains(option.id)
-                Button {
-                    var updated = selectedIds
-                    if isSelected {
-                        updated.removeAll { $0 == option.id }
-                    } else {
-                        updated.append(option.id)
-                    }
-                    value = updated.isEmpty ? .empty : .multiSelect(updated)
-                } label: {
-                    HStack {
+        return HStack(spacing: 4) {
+            // Show selected tags
+            ForEach(selectedIds, id: \.self) { id in
+                if let option = options.first(where: { $0.id == id }) {
+                    HStack(spacing: 2) {
                         Text(option.name)
+                            .font(.caption2)
+                        Button {
+                            var updated = selectedIds
+                            updated.removeAll { $0 == id }
+                            value = updated.isEmpty ? .empty : .multiSelect(updated)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(colorForName(option.color).opacity(0.2))
+                    .foregroundColor(colorForName(option.color))
+                    .cornerRadius(4)
+                }
+            }
+
+            // Add menu
+            Menu {
+                ForEach(options) { option in
+                    let isSelected = selectedIds.contains(option.id)
+                    Button {
+                        var updated = selectedIds
                         if isSelected {
-                            Image(systemName: "checkmark")
+                            updated.removeAll { $0 == option.id }
+                        } else {
+                            updated.append(option.id)
+                        }
+                        value = updated.isEmpty ? .empty : .multiSelect(updated)
+                    } label: {
+                        HStack {
+                            Circle()
+                                .fill(colorForName(option.color))
+                                .frame(width: 8, height: 8)
+                            Text(option.name)
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
-            }
-        } label: {
-            if selectedIds.isEmpty {
-                Text("Select...")
+            } label: {
+                Image(systemName: "plus")
+                    .font(.caption2)
                     .foregroundColor(.secondary)
-            } else {
-                let names = selectedIds.compactMap { id in options.first(where: { $0.id == id })?.name }
-                Text(names.joined(separator: ", "))
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
-        .menuStyle(.borderlessButton)
     }
 
-    // MARK: - Date
+    // MARK: - Date (native DatePicker)
 
     private var dateEditor: some View {
         let dateBinding = Binding<Date>(
@@ -147,33 +193,73 @@ struct PropertyEditorView: View {
         .toggleStyle(.checkbox)
     }
 
-    // MARK: - URL
+    // MARK: - URL (with validation indicator)
 
     private var urlEditor: some View {
-        HStack(spacing: 4) {
+        let urlString = { () -> String in
+            if case .url(let s) = value { return s }
+            return ""
+        }()
+        let isValid = urlString.isEmpty || urlString.hasPrefix("http://") || urlString.hasPrefix("https://")
+
+        return HStack(spacing: 4) {
             Image(systemName: "link")
-                .foregroundColor(.secondary)
+                .foregroundColor(isValid ? .secondary : .red)
                 .font(.caption)
             TextField("https://...", text: Binding(
-                get: { if case .url(let s) = value { return s } else { return "" } },
+                get: { urlString },
                 set: { value = $0.isEmpty ? .empty : .url($0) }
             ))
             .textFieldStyle(.plain)
+            if !urlString.isEmpty && !isValid {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .help("URL should start with http:// or https://")
+            }
         }
     }
 
-    // MARK: - Email
+    // MARK: - Email (with validation indicator)
 
     private var emailEditor: some View {
-        HStack(spacing: 4) {
+        let emailString = { () -> String in
+            if case .email(let s) = value { return s }
+            return ""
+        }()
+        let isValid = emailString.isEmpty || emailString.contains("@")
+
+        return HStack(spacing: 4) {
             Image(systemName: "envelope")
-                .foregroundColor(.secondary)
+                .foregroundColor(isValid ? .secondary : .red)
                 .font(.caption)
             TextField("email@...", text: Binding(
-                get: { if case .email(let s) = value { return s } else { return "" } },
+                get: { emailString },
                 set: { value = $0.isEmpty ? .empty : .email($0) }
             ))
             .textFieldStyle(.plain)
+            if !emailString.isEmpty && !isValid {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .help("Enter a valid email address")
+            }
+        }
+    }
+
+    // MARK: - Color Helper
+
+    private func colorForName(_ name: String) -> Color {
+        switch name {
+        case "blue": return .blue
+        case "green": return .green
+        case "red": return .red
+        case "yellow": return .yellow
+        case "purple": return .purple
+        case "pink": return .pink
+        case "orange": return .orange
+        case "teal": return .teal
+        default: return .gray
         }
     }
 }
