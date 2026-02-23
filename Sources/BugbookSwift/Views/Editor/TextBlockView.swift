@@ -15,16 +15,27 @@ struct TextBlockView: View {
 
             prefixView
 
-            BlockTextView(
-                document: document,
-                blockId: block.id,
-                isMultiline: false,
-                font: nsFont,
-                textColor: nsTextColor,
-                placeholder: titlePlaceholder,
-                textHeight: $textHeight
-            )
-            .frame(height: textHeight)
+            ZStack(alignment: .topLeading) {
+                BlockTextView(
+                    document: document,
+                    blockId: block.id,
+                    isMultiline: false,
+                    font: nsFont,
+                    textColor: nsTextColor,
+                    placeholder: nil,
+                    textHeight: $textHeight
+                )
+                .frame(height: textHeight)
+
+                // SwiftUI placeholder overlay — more reliable than NSTextView draw override
+                if let placeholder = titlePlaceholder, block.text.isEmpty {
+                    Text(placeholder)
+                        .font(swiftUIFont)
+                        .foregroundColor(Color(nsColor: .placeholderTextColor))
+                        .padding(.top, 2) // match textContainerInset
+                        .allowsHitTesting(false)
+                }
+            }
         }
     }
 
@@ -73,6 +84,20 @@ struct TextBlockView: View {
         let blocks = document.blocks
         guard !blocks.isEmpty, blocks[0].id == block.id else { return nil }
         return "New page"
+    }
+
+    private var swiftUIFont: Font {
+        switch block.type {
+        case .heading:
+            switch block.headingLevel {
+            case 1: return .system(size: 30, weight: .bold)
+            case 2: return .system(size: 24, weight: .semibold)
+            case 3: return .system(size: 20, weight: .semibold)
+            default: return .system(size: 15)
+            }
+        default:
+            return .system(size: 15)
+        }
     }
 
     private var nsFont: NSFont {

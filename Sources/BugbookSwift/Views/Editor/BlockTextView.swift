@@ -63,6 +63,12 @@ struct BlockTextView: NSViewRepresentable {
         textView.formatLinkAction = { [weak coordinator] in
             coordinator?.promptLink()
         }
+        textView.undoAction = { [weak coordinator] in
+            coordinator?.parent.document.undo()
+        }
+        textView.redoAction = { [weak coordinator] in
+            coordinator?.parent.document.redo()
+        }
         context.coordinator.textView = textView
 
         DispatchQueue.main.async {
@@ -97,10 +103,22 @@ struct BlockTextView: NSViewRepresentable {
         if document.focusedBlockId == blockId,
            context.coordinator.lastFocusedSelf != true {
             context.coordinator.lastFocusedSelf = true
+            let cursorPos = self.document.cursorPosition
+            // Retry with short delay — view may not have a window yet on first render
+            func attemptFocus(retries: Int = 3) {
+                guard retries > 0 else { return }
+                if textView.window != nil {
+                    textView.window?.makeFirstResponder(textView)
+                    let pos = min(cursorPos, textView.string.count)
+                    textView.setSelectedRange(NSRange(location: pos, length: 0))
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        attemptFocus(retries: retries - 1)
+                    }
+                }
+            }
             DispatchQueue.main.async {
-                textView.window?.makeFirstResponder(textView)
-                let pos = min(self.document.cursorPosition, textView.string.count)
-                textView.setSelectedRange(NSRange(location: pos, length: 0))
+                attemptFocus()
             }
         } else if document.focusedBlockId != blockId {
             context.coordinator.lastFocusedSelf = false
@@ -112,7 +130,12 @@ struct BlockTextView: NSViewRepresentable {
               let textContainer = textView.textContainer else { return }
         layoutManager.ensureLayout(for: textContainer)
         let rect = layoutManager.usedRect(for: textContainer)
-        let newHeight = max(ceil(rect.height) + textView.textContainerInset.height * 2, 24)
+        let insets = textView.textContainerInset.height * 2
+        // Use font-based minimum so empty headings aren't squished to 24px
+        let fontSize = textView.font?.pointSize ?? 15
+        let fontBasedMin = ceil(fontSize * 1.4) + insets
+        let minHeight = max(24, fontBasedMin)
+        let newHeight = max(ceil(rect.height) + insets, minHeight)
         if abs(newHeight - textHeight) > 0.5 {
             textHeight = newHeight
         }
@@ -188,8 +211,9 @@ struct BlockTextView: NSViewRepresentable {
                 parent.document.blocks[idx].text = textView.string
             }
 
-            // Slash command detection
-            if textView.string.hasPrefix("/") {
+            // Slash command detection (skip title block)
+            let isTitleBlock = parent.document.titleBlock?.id == parent.blockId
+            if !isTitleBlock, textView.string.hasPrefix("/") {
                 if parent.document.slashMenuBlockId != parent.blockId {
                     parent.document.slashMenuBlockId = parent.blockId
                     parent.document.slashMenuSelectedIndex = 0
@@ -344,6 +368,11 @@ struct BlockTextView: NSViewRepresentable {
             if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
                 let range = textView.selectedRange()
                 if range.location == 0, range.length == 0 {
+                    // Title block: don't convert type or merge
+                    if parent.document.index(for: parent.blockId) == 0,
+                       parent.document.titleBlock != nil {
+                        return true
+                    }
                     if let block = parent.document.block(for: parent.blockId),
                        block.type != .paragraph {
                         parent.document.changeBlockType(id: parent.blockId, to: .paragraph)
@@ -450,6 +479,8 @@ class BlockNSTextView: NSTextView {
     var formatItalicAction: (() -> Void)?
     var formatCodeAction: (() -> Void)?
     var formatLinkAction: (() -> Void)?
+    var undoAction: (() -> Void)?
+    var redoAction: (() -> Void)?
 
     override func didChangeText() {
         super.didChangeText()
@@ -496,6 +527,9 @@ class BlockNSTextView: NSTextView {
 
         if flags == .command {
             switch event.charactersIgnoringModifiers {
+            case "z":
+                undoAction?()
+                return
             case "b":
                 formatBoldAction?()
                 return
@@ -507,6 +541,16 @@ class BlockNSTextView: NSTextView {
                 return
             case "k":
                 formatLinkAction?()
+                return
+            default:
+                break
+            }
+        }
+
+        if flags == [.command, .shift] {
+            switch event.charactersIgnoringModifiers {
+            case "z":
+                redoAction?()
                 return
             default:
                 break

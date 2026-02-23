@@ -15,6 +15,12 @@ class BlockDocument: ObservableObject {
     @Published var coverPosition: Double = 50
     @Published var fullWidth: Bool = false
 
+    var titleBlock: Block? {
+        guard let first = blocks.first,
+              first.type == .heading, first.headingLevel == 1 else { return nil }
+        return first
+    }
+
     var onCreateDatabase: ((String) -> String?)?
 
     private var undoStack: [[Block]] = []

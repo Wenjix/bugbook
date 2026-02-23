@@ -126,6 +126,14 @@ struct ContentView: View {
                         fullWidth: document.fullWidth
                     )
 
+                    // Title — rendered outside the block editor (no drag handle or block menu)
+                    if let titleBlock = document.titleBlock {
+                        TextBlockView(document: document, block: titleBlock)
+                            .padding(.leading, 76)
+                            .padding(.trailing, 52)
+                            .padding(.top, 8)
+                    }
+
                     BlockEditorView(
                         document: document,
                         onTextChange: {

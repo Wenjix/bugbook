@@ -11,6 +11,7 @@ struct PageHeaderView: View {
     @State private var coverYPosition: Double = 50
     @State private var isDraggingCover = false
     @State private var dragStartY: CGFloat = 0
+    @State private var isHovering = false
 
     private var horizontalPadding: CGFloat { fullWidth ? 40 : 80 }
     private var needsIcon: Bool { icon == nil || icon?.isEmpty == true }
@@ -23,7 +24,7 @@ struct PageHeaderView: View {
                 coverImageView(path: coverPath)
             }
 
-            // Action buttons — always visible when missing icon/cover, just subtle
+            // Action buttons — show on hover when missing icon/cover
             if needsIcon || needsCover {
                 HStack(spacing: 8) {
                     if needsIcon {
@@ -56,6 +57,8 @@ struct PageHeaderView: View {
                 }
                 .padding(.horizontal, horizontalPadding)
                 .padding(.top, coverUrl != nil ? 8 : 12)
+                .opacity(isHovering || showIconPicker || showCoverPicker ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: isHovering)
             }
 
             // Icon (clickable to change)
@@ -67,6 +70,10 @@ struct PageHeaderView: View {
                 .padding(.horizontal, horizontalPadding)
                 .padding(.top, 4)
             }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
         }
         // Popovers anchored to stable outer view
         .popover(isPresented: $showIconPicker, arrowEdge: .bottom) {
@@ -115,23 +122,25 @@ struct PageHeaderView: View {
         ZStack(alignment: .bottomTrailing) {
             Group {
                 if let nsImage = NSImage(contentsOfFile: path) {
-                    GeometryReader { geo in
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geo.size.width, height: coverHeight)
-                            .offset(y: coverOffset(imageSize: nsImage.size, containerHeight: coverHeight))
-                            .clipped()
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: coverHeight)
+                        .frame(maxWidth: .infinity)
+                        .offset(y: coverOffset(imageSize: nsImage.size, containerHeight: coverHeight))
+                        .clipped()
+                } else {
+                    // Local paths need fileURLWithPath (handles spaces); remote URLs use URL(string:)
+                    let url: URL? = path.hasPrefix("/") ? URL(fileURLWithPath: path) : URL(string: path)
+                    if let url = url {
+                        AsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Rectangle().fill(Color.gray.opacity(0.2))
+                        }
+                        .frame(height: coverHeight)
+                        .clipped()
                     }
-                    .frame(height: coverHeight)
-                } else if let url = URL(string: path) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(Color.gray.opacity(0.2))
-                    }
-                    .frame(height: coverHeight)
-                    .clipped()
                 }
             }
             .gesture(

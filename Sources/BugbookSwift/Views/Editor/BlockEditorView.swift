@@ -7,15 +7,18 @@ struct BlockEditorView: View {
     @State private var activeDropIndex: Int?
 
     var body: some View {
+        // Skip the title block (first heading-1) — it's rendered separately above
+        let startIndex = document.titleBlock != nil ? 1 : 0
+
         VStack(alignment: .leading, spacing: 0) {
-            // Drop zone before first block
-            DropZoneView(isActive: activeDropIndex == 0) { droppedId in
-                handleDrop(droppedId: droppedId, targetIndex: 0)
+            // Drop zone before first visible block
+            DropZoneView(isActive: activeDropIndex == startIndex) { droppedId in
+                handleDrop(droppedId: droppedId, targetIndex: startIndex)
             } onTargetChanged: { targeted in
-                activeDropIndex = targeted ? 0 : (activeDropIndex == 0 ? nil : activeDropIndex)
+                activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
             }
 
-            ForEach(Array(document.blocks.enumerated()), id: \.element.id) { index, block in
+            ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
                 BlockCellView(document: document, block: block)
                     .padding(.vertical, 1)
 
@@ -43,6 +46,7 @@ struct BlockEditorView: View {
 }
 
 /// Thin drop zone between blocks that shows a blue line when a drag hovers over it.
+/// Height is constant to prevent layout shifts that cause flickering.
 struct DropZoneView: View {
     let isActive: Bool
     let onDrop: (UUID) -> Void
@@ -50,9 +54,15 @@ struct DropZoneView: View {
 
     var body: some View {
         Rectangle()
-            .fill(isActive ? Color.accentColor : Color.clear)
-            .frame(height: isActive ? 2 : 8)
+            .fill(Color.clear)
+            .frame(height: 8)
             .frame(maxWidth: .infinity)
+            .overlay {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+                    .opacity(isActive ? 1 : 0)
+            }
             .contentShape(Rectangle())
             .dropDestination(for: String.self) { items, _ in
                 guard let idStr = items.first,

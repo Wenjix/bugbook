@@ -73,16 +73,9 @@ struct SidebarView: View {
     }
 
     private func createFile() {
-        guard let workspace = appState.workspacePath else { return }
-        if let path = try? fileSystem.createNewFile(in: workspace) {
-            refreshTree()
-            let entry = FileEntry(
-                id: path, name: (path as NSString).lastPathComponent,
-                path: path, isDirectory: false, isDatabase: false,
-                icon: nil, children: nil
-            )
-            appState.openFile(entry)
-        }
+        // Use the shared createNewFile path via notification so the document
+        // is loaded and the title block gets focus + placeholder
+        NotificationCenter.default.post(name: .newNote, object: nil)
     }
 
     private func createDatabase() {
