@@ -6,31 +6,53 @@ struct SidebarView: View {
     var onSelectFile: (FileEntry) -> Void
     var onToggleSidebar: () -> Void
 
+    private let settingsTabs: [(id: String, label: String, icon: String)] = [
+        ("general", "General", "gearshape"),
+        ("appearance", "Appearance", "paintbrush"),
+        ("ai", "AI", "cpu"),
+        ("agents", "Agents", "person.2"),
+        ("shortcuts", "Shortcuts", "keyboard"),
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text(workspaceName)
-                    .font(.headline)
-                    .lineLimit(1)
+            if appState.showSettings {
+                settingsNav
+            } else {
+                fileTreeNav
+            }
+        }
+        .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
+        .background(Color.fallbackSidebarBg)
+    }
+
+    // MARK: - File Tree (default sidebar)
+
+    private var fileTreeNav: some View {
+        VStack(spacing: 0) {
+            // Traffic light spacing
+            Spacer().frame(height: 12)
+
+            // Action buttons
+            HStack(spacing: 12) {
                 Spacer()
                 Button(action: createFile) {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 14))
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.borderless)
                 .help("New Page")
                 Button(action: onToggleSidebar) {
                     Image(systemName: "sidebar.left")
-                        .font(.system(size: 14))
+                        .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.borderless)
                 .help("Toggle Sidebar")
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.bottom, 6)
 
             Divider()
 
@@ -64,9 +86,65 @@ struct SidebarView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
-        .background(Color.fallbackSidebarBg)
     }
+
+    // MARK: - Settings Nav
+
+    private var settingsNav: some View {
+        VStack(spacing: 0) {
+            // Traffic light spacing
+            Spacer().frame(height: 12)
+
+            // Back button
+            Button(action: { appState.showSettings = false }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 13))
+                    Text("Back to app")
+                        .font(.system(size: 13))
+                    Spacer()
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Settings categories
+            VStack(spacing: 2) {
+                ForEach(settingsTabs, id: \.id) { tab in
+                    Button(action: { appState.selectedSettingsTab = tab.id }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 14))
+                                .frame(width: 20)
+                            Text(tab.label)
+                                .font(.system(size: 13))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            appState.selectedSettingsTab == tab.id
+                                ? Color.primary.opacity(0.08)
+                                : Color.clear
+                        )
+                        .cornerRadius(6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.primary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Helpers
 
     private var workspaceName: String {
         guard let path = appState.workspacePath else { return "Workspace" }
@@ -79,8 +157,6 @@ struct SidebarView: View {
     }
 
     private func createFile() {
-        // Use the shared createNewFile path via notification so the document
-        // is loaded and the title block gets focus + placeholder
         NotificationCenter.default.post(name: .newNote, object: nil)
     }
 

@@ -136,7 +136,7 @@ struct PageHeaderView: View {
                         AsyncImage(url: url) { image in
                             image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: {
-                            Rectangle().fill(Color.gray.opacity(0.2))
+                            Rectangle().fill(Color.fallbackBgSecondary)
                         }
                         .frame(height: coverHeight)
                         .clipped()

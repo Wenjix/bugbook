@@ -31,11 +31,11 @@ struct CodeBlockView: View {
             .padding(.vertical, block.language.isEmpty ? 12 : 4)
             .padding(.bottom, 8)
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .background(Color.fallbackBgSecondary)
         .cornerRadius(6)
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.gray.opacity(0.15), lineWidth: 1)
+                .stroke(Color.fallbackBorderColor, lineWidth: 1)
         )
     }
 }

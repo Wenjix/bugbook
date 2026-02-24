@@ -70,7 +70,7 @@ struct TextBlockView: View {
 
         case .blockquote:
             RoundedRectangle(cornerRadius: 1)
-                .fill(Color.gray.opacity(0.4))
+                .fill(Color.fallbackBadgeBg)
                 .frame(width: 3)
                 .padding(.vertical, 2)
 

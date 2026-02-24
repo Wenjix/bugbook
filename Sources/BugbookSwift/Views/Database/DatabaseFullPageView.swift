@@ -298,7 +298,7 @@ struct DatabaseFullPageView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color.gray.opacity(0.04))
+        .background(Color.fallbackSurfaceSubtle)
     }
 
     private func filterRow(_ filter: FilterConfig, schema: DatabaseSchema) -> some View {
@@ -317,7 +317,7 @@ struct DatabaseFullPageView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color.fallbackSurfaceSubtle)
                     .cornerRadius(4)
             }
             .menuStyle(.borderlessButton)
@@ -333,7 +333,7 @@ struct DatabaseFullPageView: View {
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color.fallbackSurfaceSubtle)
                     .cornerRadius(4)
             }
             .menuStyle(.borderlessButton)
@@ -369,7 +369,7 @@ struct DatabaseFullPageView: View {
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color.fallbackSurfaceSubtle)
                     .cornerRadius(4)
             }
             .menuStyle(.borderlessButton)
@@ -383,7 +383,7 @@ struct DatabaseFullPageView: View {
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color.fallbackSurfaceSubtle)
                     .cornerRadius(4)
             }
             .menuStyle(.borderlessButton)
@@ -419,7 +419,7 @@ struct DatabaseFullPageView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color.fallbackSurfaceSubtle)
                     .cornerRadius(4)
             }
             .menuStyle(.borderlessButton)
@@ -436,7 +436,7 @@ struct DatabaseFullPageView: View {
                 .font(.caption)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(Color.gray.opacity(0.1))
+                .background(Color.fallbackSurfaceSubtle)
                 .cornerRadius(4)
             }
             .buttonStyle(.plain)

@@ -24,21 +24,43 @@ extension Color {
     static let editorBg = Color("editorBg", bundle: nil)
 }
 
-// MARK: - Fallback colors for use without asset catalog
+// MARK: - Notion-inspired palette
+//
+// Two core tones:
+//   Chrome (#202020 dark / #f7f7f5 light) — sidebar, tab bar, breadcrumbs
+//   Canvas (#191919 dark / #ffffff light) — main page, active tab
 
 extension Color {
-    static let fallbackBgPrimary = Color(light: .white, dark: Color(hex: "1e1e1e"))
-    static let fallbackBgSecondary = Color(light: Color(hex: "f5f5f5"), dark: Color(hex: "252525"))
-    static let fallbackBgTertiary = Color(light: Color(hex: "e8e8e8"), dark: Color(hex: "2d2d2d"))
-    static let fallbackTextPrimary = Color(light: Color(hex: "1a1a1a"), dark: Color(hex: "e0e0e0"))
-    static let fallbackTextSecondary = Color(light: Color(hex: "555555"), dark: Color(hex: "a0a0a0"))
-    static let fallbackTextMuted = Color(light: Color(hex: "999999"), dark: Color(hex: "666666"))
-    static let fallbackAccent = Color(light: Color(hex: "2563eb"), dark: Color(hex: "3b82f6"))
+    // Canvas — the main page background
+    static let fallbackBgPrimary   = Color(light: .white,               dark: Color(hex: "191919"))
+    // Chrome — sidebar, tab bar, breadcrumbs
+    static let fallbackBgSecondary = Color(light: Color(hex: "f7f7f5"), dark: Color(hex: "202020"))
+    // Elevated — cards, code blocks, hover states
+    static let fallbackBgTertiary  = Color(light: Color(hex: "eeeeec"), dark: Color(hex: "2f2f2f"))
+
+    // Text (Notion values)
+    static let fallbackTextPrimary   = Color(light: Color(hex: "1f1f1f"), dark: Color(hex: "F0EFEC"))
+    static let fallbackTextSecondary = Color(light: Color(hex: "6b6b6b"), dark: Color(hex: "9b9b9b"))
+    static let fallbackTextMuted     = Color(light: Color(hex: "9b9b9b"), dark: Color(hex: "373737"))
+
+    // Accent
+    static let fallbackAccent      = Color(light: Color(hex: "2383e2"), dark: Color(hex: "528bcc"))
     static let fallbackAccentLight = Color(light: Color(hex: "dbeafe"), dark: Color(hex: "1e3a5f"))
-    static let fallbackBorderColor = Color(light: Color(hex: "e0e0e0"), dark: Color(hex: "3a3a3a"))
-    static let fallbackDividerColor = Color(light: Color(hex: "eeeeee"), dark: Color(hex: "333333"))
-    static let fallbackSidebarBg = Color(light: Color(hex: "f7f7f7"), dark: Color(hex: "1a1a1a"))
-    static let fallbackEditorBg = Color(light: .white, dark: Color(hex: "1e1e1e"))
+
+    // Borders & dividers
+    static let fallbackBorderColor  = Color(light: Color(hex: "e8e8e5"), dark: Color(hex: "2e2e2e"))
+    static let fallbackDividerColor = Color(light: Color(hex: "eeeeec"), dark: Color(hex: "2e2e2e"))
+
+    // Sidebar = chrome
+    static let fallbackSidebarBg = Color(light: Color(hex: "f7f7f5"), dark: Color(hex: "202020"))
+    // Editor = canvas
+    static let fallbackEditorBg  = Color(light: .white, dark: Color(hex: "191919"))
+
+    // Semantic surfaces
+    static let fallbackCardBg        = Color(light: .white,               dark: Color(hex: "202020"))
+    static let fallbackSurfaceHover  = Color(light: Color(hex: "0000000A"), dark: Color(hex: "ffffff0A"))
+    static let fallbackSurfaceSubtle = Color(light: Color(hex: "00000008"), dark: Color(hex: "ffffff08"))
+    static let fallbackBadgeBg       = Color(light: Color(hex: "0000001A"), dark: Color(hex: "ffffff1A"))
 }
 
 // MARK: - Helpers
@@ -48,14 +70,23 @@ extension Color {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
         Scanner(string: hex).scanHexInt64(&int)
-        let r, g, b: UInt64
-        (r, g, b) = (int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+
+        let r, g, b, a: UInt64
+        switch hex.count {
+        case 6:
+            (r, g, b, a) = (int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF, 255)
+        case 8:
+            (r, g, b, a) = (int >> 24 & 0xFF, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (r, g, b, a) = (0, 0, 0, 255)
+        }
+
         self.init(
             .sRGB,
             red: Double(r) / 255,
             green: Double(g) / 255,
             blue: Double(b) / 255,
-            opacity: 1
+            opacity: Double(a) / 255
         )
     }
 

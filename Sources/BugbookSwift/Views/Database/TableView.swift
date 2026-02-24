@@ -128,7 +128,7 @@ struct TableView: View {
             .frame(width: 8)
             .overlay {
                 Rectangle()
-                    .fill(showVerticalLines ? Color.gray.opacity(0.2) : Color.clear)
+                    .fill(showVerticalLines ? Color.fallbackBadgeBg : Color.clear)
                     .frame(width: 1)
             }
             .contentShape(Rectangle())
@@ -191,7 +191,7 @@ struct TableView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(isHovered ? Color.gray.opacity(0.04) : Color.clear)
+        .background(isHovered ? Color.fallbackSurfaceHover : Color.clear)
         .onHover { hoveredRowId = $0 ? row.wrappedValue.id : nil }
     }
 

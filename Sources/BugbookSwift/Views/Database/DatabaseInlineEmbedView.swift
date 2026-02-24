@@ -86,7 +86,12 @@ struct DatabaseInlineEmbedView: View {
                 .padding(8)
             }
         }
-        .background(Color.clear)
+        .background(Color.fallbackCardBg)
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.fallbackBorderColor, lineWidth: 1)
+        )
         .task {
             await loadData()
         }
@@ -229,7 +234,7 @@ struct DatabaseInlineEmbedView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color.gray.opacity(0.04))
+        .background(Color.fallbackSurfaceSubtle)
     }
 
     private func inlineFilterRow(_ filter: FilterConfig, schema: DatabaseSchema) -> some View {
@@ -245,7 +250,7 @@ struct DatabaseInlineEmbedView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color.fallbackSurfaceSubtle)
                     .cornerRadius(4)
             }
             .menuStyle(.borderlessButton)

@@ -2,30 +2,23 @@ import SwiftUI
 
 struct ShortcutsSettingsView: View {
     var body: some View {
-        GroupBox("Editor") {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsSection("Editor") {
                 shortcutRow("Save", "Cmd + S")
                 shortcutRow("New Note", "Cmd + N")
                 shortcutRow("Slash Command", "/")
             }
-            .padding(8)
-        }
 
-        GroupBox("Navigation") {
-            VStack(alignment: .leading, spacing: 4) {
+            SettingsSection("Navigation") {
                 shortcutRow("Quick Open", "Cmd + K")
                 shortcutRow("Toggle Sidebar", "Cmd + .")
                 shortcutRow("New Tab", "Cmd + T")
                 shortcutRow("Close Tab", "Cmd + W")
             }
-            .padding(8)
-        }
 
-        GroupBox("General") {
-            VStack(alignment: .leading, spacing: 4) {
+            SettingsSection("General") {
                 shortcutRow("Settings", "Cmd + ,")
             }
-            .padding(8)
         }
     }
 
@@ -38,10 +31,10 @@ struct ShortcutsSettingsView: View {
             Text(shortcut)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.primary.opacity(0.06))
+                .cornerRadius(5)
         }
     }
 }

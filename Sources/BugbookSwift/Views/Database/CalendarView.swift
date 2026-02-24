@@ -240,7 +240,7 @@ struct CalendarView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(height: height)
         .padding(4)
-        .background(cell.isToday ? Color.accentColor.opacity(0.05) : (cell.isCurrentMonth ? Color(nsColor: .controlBackgroundColor) : Color.clear))
+        .background(cell.isToday ? Color.accentColor.opacity(0.05) : (cell.isCurrentMonth ? Color.fallbackCardBg : Color.clear))
         .cornerRadius(4)
         .dropDestination(for: String.self) { droppedIds, _ in
             guard let prop = dateProperty, cell.isCurrentMonth else { return false }

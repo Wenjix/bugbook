@@ -5,23 +5,30 @@ struct GeneralSettingsView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        GroupBox("Workspace") {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsSection("Workspace") {
                 if let path = appState.workspacePath {
-                    Text("Current: \(path)")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                Button("Switch Workspace...") {
-                    Task { await switchWorkspace() }
+                    HStack {
+                        Text(path)
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Change...") {
+                            Task { await switchWorkspace() }
+                        }
+                    }
+                } else {
+                    Button("Select Workspace...") {
+                        Task { await switchWorkspace() }
+                    }
                 }
             }
-            .padding(8)
-        }
 
-        GroupBox("Editor") {
-            Toggle("Focus mode while typing", isOn: $appState.settings.focusModeOnType)
-                .padding(8)
+            SettingsSection("Editor") {
+                Toggle("Focus mode while typing", isOn: $appState.settings.focusModeOnType)
+            }
         }
     }
 

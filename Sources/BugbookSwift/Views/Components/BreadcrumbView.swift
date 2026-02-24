@@ -28,6 +28,6 @@ struct BreadcrumbView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-        .background(Color.fallbackBgSecondary)
+        .background(Color.fallbackSidebarBg)
     }
 }

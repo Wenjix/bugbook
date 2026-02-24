@@ -710,7 +710,7 @@ struct FullEmojiPickerView: View {
                 }
             }
             .padding(8)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(Color.fallbackBgSecondary)
             .cornerRadius(6)
             .padding(.horizontal, 8)
             .padding(.top, 8)
@@ -844,7 +844,7 @@ struct FullEmojiPickerView: View {
                             .foregroundColor(.primary)
                     }
                     .buttonStyle(.plain)
-                    .background(Color.gray.opacity(0.05))
+                    .background(Color.fallbackSurfaceSubtle)
                     .cornerRadius(4)
                     .help(name)
                 }

@@ -10,7 +10,7 @@ struct ContentView: View {
     var body: some View {
         ZStack(alignment: .leading) {
             HStack(spacing: 0) {
-                // Sidebar or thin strip
+                // Sidebar
                 if appState.sidebarOpen {
                     SidebarView(
                         appState: appState,
@@ -120,7 +120,6 @@ struct ContentView: View {
             // Command palette overlay
             if appState.commandPaletteOpen {
                 Color.black.opacity(0.3)
-                    .ignoresSafeArea()
                     .onTapGesture { appState.commandPaletteOpen = false }
 
                 VStack {
@@ -137,8 +136,15 @@ struct ContentView: View {
                 }
             }
         }
+        .ignoresSafeArea()
         .frame(minWidth: 800, minHeight: 500)
-        .onAppear { initializeWorkspace() }
+        .onAppear {
+            initializeWorkspace()
+            applyTheme(appState.settings.theme)
+        }
+        .onChange(of: appState.settings.theme) { _, newTheme in
+            applyTheme(newTheme)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .newNote)) { _ in
             createNewFile()
         }
@@ -152,7 +158,9 @@ struct ContentView: View {
             forceSave()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-            appState.sidebarOpen.toggle()
+            if !appState.showSettings {
+                appState.sidebarOpen.toggle()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
             appState.commandPaletteOpen.toggle()
@@ -240,6 +248,19 @@ struct ContentView: View {
             let name = (dbPath as NSString).lastPathComponent
             let entry = FileEntry(id: dbPath, name: name, path: dbPath, isDirectory: true, isDatabase: true)
             appState.openFile(entry)
+        }
+    }
+
+    // MARK: - Theme
+
+    private func applyTheme(_ theme: ThemeMode) {
+        switch theme {
+        case .light:
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        case .system:
+            NSApp.appearance = nil
         }
     }
 

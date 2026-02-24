@@ -5,13 +5,9 @@ struct TabBarView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Left padding to avoid overlapping traffic light buttons
-            Color.clear
-                .frame(width: 72, height: 34)
-
+        HStack(alignment: .bottom, spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
+                HStack(alignment: .bottom, spacing: 0) {
                     ForEach(Array(appState.openTabs.enumerated()), id: \.element.id) { index, tab in
                         TabItemView(
                             tab: tab,
@@ -21,20 +17,21 @@ struct TabBarView: View {
                         )
                     }
 
-                    // New tab button
                     Button(action: { appState.newEmptyTab() }) {
                         Image(systemName: "plus")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundColor(.secondary)
-                            .padding(6)
+                            .frame(width: 28, height: 28)
                     }
                     .buttonStyle(.plain)
+                    .padding(.bottom, 2)
                 }
+                .padding(.leading, 8)
             }
+            Spacer()
         }
-        .frame(height: 34)
-        .background(WindowDragArea())
-        .background(Color.fallbackBgSecondary)
+        .frame(height: 36)
+        .background(Color.fallbackSidebarBg)
     }
 }
 
@@ -47,34 +44,49 @@ struct TabItemView: View {
     var body: some View {
         HStack(spacing: 6) {
             if tab.path == "__settings__" {
-                Image(systemName: "gearshape").font(.system(size: 10))
+                Image(systemName: "gearshape").font(.system(size: 11))
             } else if tab.isDatabase {
-                Image(systemName: "tablecells").font(.system(size: 10))
+                Image(systemName: "tablecells").font(.system(size: 11))
             } else {
-                Image(systemName: "doc.text").font(.system(size: 10))
+                Image(systemName: "doc.text").font(.system(size: 11))
             }
 
             Text(tabName)
                 .font(.system(size: 12))
                 .lineLimit(1)
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(.secondary)
+            if isActive {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .opacity(isActive ? 1 : 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(isActive ? Color.fallbackBgPrimary : Color.clear)
+        .padding(.horizontal, 14)
+        .frame(height: isActive ? 30 : 28)
+        .background(
+            Group {
+                if isActive {
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 8,
+                        bottomLeadingRadius: 0,
+                        bottomTrailingRadius: 0,
+                        topTrailingRadius: 8
+                    )
+                    .fill(Color.fallbackEditorBg)
+                } else {
+                    Color.clear
+                }
+            }
+        )
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
     }
 
     private var tabName: String {
-        if tab.isEmptyTab { return "Local-first notes for agents and humans" }
+        if tab.isEmptyTab { return "New tab" }
         if let displayName = tab.displayName { return displayName }
         let name = (tab.path as NSString).lastPathComponent
         return name.hasSuffix(".md") ? String(name.dropLast(3)) : name

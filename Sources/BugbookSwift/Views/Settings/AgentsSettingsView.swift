@@ -7,8 +7,8 @@ struct AgentsSettingsView: View {
     @State private var saveGeneration: Int = 0
 
     var body: some View {
-        GroupBox("Installed Agents") {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsSection("Installed Agents") {
                 if installedAgents.isEmpty {
                     Text("No agents detected")
                         .font(.system(size: 13))
@@ -30,27 +30,29 @@ struct AgentsSettingsView: View {
                     }
                 }
 
-                HStack {
-                    Button("Refresh") { scanAgents() }
-                }
+                Button("Refresh") { scanAgents() }
             }
-            .padding(8)
-        }
 
-        GroupBox("Bugbook Skill") {
-            Toggle("Install bugbook skill for agents", isOn: $appState.settings.bugbookSkillEnabled)
-                .padding(8)
-        }
+            SettingsSection("Bugbook Skill") {
+                Toggle("Install bugbook skill for agents", isOn: $appState.settings.bugbookSkillEnabled)
+            }
 
-        GroupBox("AGENTS.md") {
-            VStack(alignment: .leading, spacing: 4) {
+            SettingsSection("AGENTS.md") {
                 Text("Custom agent instructions (auto-saved)")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
 
                 TextEditor(text: $agentsMdText)
                     .font(.system(size: 13, design: .monospaced))
-                    .frame(minHeight: 150)
+                    .frame(minHeight: 180)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(Color.primary.opacity(0.03))
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
                     .onChange(of: agentsMdText) { _, _ in
                         scheduleSave()
                     }
@@ -63,7 +65,6 @@ struct AgentsSettingsView: View {
                     }
                 }
             }
-            .padding(8)
         }
         .onAppear {
             scanAgents()

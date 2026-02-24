@@ -63,6 +63,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
+
+        // Observe new windows to configure their title bars
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+
+        // Configure any existing windows
+        DispatchQueue.main.async { self.configureWindows() }
+    }
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        configureWindows()
+    }
+
+    private func configureWindows() {
+        for window in NSApplication.shared.windows {
+            guard !window.titlebarAppearsTransparent else { continue }
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.styleMask.insert(.fullSizeContentView)
+            window.isMovableByWindowBackground = true
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
