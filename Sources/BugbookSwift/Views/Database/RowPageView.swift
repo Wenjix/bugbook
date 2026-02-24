@@ -7,6 +7,8 @@ struct RowPageView: View {
     var onSave: (DatabaseRow) -> Void
     var onBack: () -> Void
     var onAddOption: ((String, SelectOption) -> Void)?
+    var onUpdateOption: ((String, String, String?, String?) -> Void)?
+    var onDeleteOption: ((String, String) -> Void)?
 
     @State private var editingTitle: String = ""
 
@@ -79,7 +81,7 @@ struct RowPageView: View {
                                         onSave(row)
                                     }
                                 )
-                                PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddOption)
+                                PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddOption, onUpdateOption: onUpdateOption, onDeleteOption: onDeleteOption)
                             }
                             .padding(.vertical, 2)
                         }

@@ -8,7 +8,7 @@ struct BugbookSwiftApp: App {
         WindowGroup {
             ContentView()
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) {

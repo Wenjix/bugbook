@@ -14,11 +14,12 @@ struct TableView: View {
     var onDeleteProperty: ((String) -> Void)?
     var onChangePropertyType: ((String, PropertyType) -> Void)?
     var onAddSelectOption: ((String, SelectOption) -> Void)?
+    var onUpdateSelectOption: ((String, String, String?, String?) -> Void)?
+    var onDeleteSelectOption: ((String, String) -> Void)?
     var onResizeColumn: ((String, CGFloat) -> Void)?
+    var showVerticalLines: Bool = true
 
     @State private var dragWidths: [String: CGFloat] = [:]
-    @State private var selectedRowIds: Set<String> = []
-    @State private var editingCellKey: String? = nil
     @State private var hoveredRowId: String?
 
     private let titleColumnKey = "__title__"
@@ -47,10 +48,6 @@ struct TableView: View {
                 .background(Color.orange.opacity(0.08))
             }
 
-            if !selectedRowIds.isEmpty {
-                bulkActionsBar
-            }
-
             // Header
             headerRow
             Divider()
@@ -67,78 +64,33 @@ struct TableView: View {
         }
     }
 
-    // MARK: - Bulk Actions
-
-    private var bulkActionsBar: some View {
-        HStack(spacing: 12) {
-            Text("\(selectedRowIds.count) selected")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            Button {
-                bulkDelete()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "trash")
-                    Text("Delete")
-                }
-                .font(.caption)
-                .foregroundColor(.red)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Button("Deselect all") {
-                selectedRowIds.removeAll()
-            }
-            .font(.caption)
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color.accentColor.opacity(0.06))
-    }
-
     // MARK: - Header
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            // Select-all
-            Toggle("", isOn: Binding(
-                get: { !rows.isEmpty && selectedRowIds.count == rows.count },
-                set: { selectAll in
-                    selectedRowIds = selectAll ? Set(rows.map(\.id)) : []
+            // Title column header
+            Text(schema.titleProperty?.name ?? "Name")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 8)
+                .frame(width: titleColumnWidth)
+                .overlay(alignment: .trailing) {
+                    resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 240)
                 }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
-            .frame(width: 32)
-            .padding(.vertical, 6)
-
-            // Title column header + resize handle
-            HStack(spacing: 0) {
-                Text(schema.titleProperty?.name ?? "Name")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                    .frame(width: titleColumnWidth - 4, alignment: .leading)
-                    .padding(.leading, 8)
-
-                resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 240)
-            }
 
             // Property column headers
             ForEach(visibleProperties) { prop in
-                HStack(spacing: 0) {
-                    Text(prop.name)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                        .frame(width: columnWidth(for: prop) - 4, alignment: .leading)
-                        .padding(.leading, 8)
-                        .contextMenu { columnContextMenu(for: prop) }
-
+                ColumnHeaderCell(
+                    prop: prop,
+                    onRename: onRenameProperty,
+                    onChangeType: onChangePropertyType,
+                    onToggleColumn: onToggleColumn,
+                    onDelete: onDeleteProperty
+                )
+                .frame(width: columnWidth(for: prop))
+                .overlay(alignment: .trailing) {
                     resizeHandle(key: prop.id, baseWidth: viewConfig.columnWidths?[prop.id] ?? 150)
                 }
             }
@@ -160,43 +112,26 @@ struct TableView: View {
                     .foregroundStyle(.tertiary)
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 32)
+            .menuIndicator(.hidden)
+            .fixedSize()
             .help("Add property")
 
-            // Column visibility
-            if let onToggle = onToggleColumn {
-                Menu {
-                    ForEach(schema.properties.filter({ $0.type != .title })) { prop in
-                        let isHidden = (viewConfig.hiddenColumns ?? []).contains(prop.id)
-                        Button {
-                            onToggle(prop.id)
-                        } label: {
-                            HStack {
-                                Text(prop.name)
-                                if !isHidden { Image(systemName: "checkmark") }
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "eye")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .menuStyle(.borderlessButton)
-                .frame(width: 32)
-                .help("Toggle columns")
-            }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
-    // MARK: - Resize Handle
+    // MARK: - Resize Handle (overlaid on column trailing edge)
 
     private func resizeHandle(key: String, baseWidth: Double) -> some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.2))
-            .frame(width: 2, height: 18)
+        Color.clear
+            .frame(width: 8)
+            .overlay {
+                Rectangle()
+                    .fill(showVerticalLines ? Color.gray.opacity(0.2) : Color.clear)
+                    .frame(width: 1)
+            }
+            .contentShape(Rectangle())
             .cursor(.resizeLeftRight)
             .gesture(
                 DragGesture(minimumDistance: 1)
@@ -209,75 +144,54 @@ struct TableView: View {
                         }
                     }
             )
-            .padding(.horizontal, 1)
-    }
-
-    // MARK: - Column Context Menu
-
-    @ViewBuilder
-    private func columnContextMenu(for prop: PropertyDefinition) -> some View {
-        Button("Rename") {
-            onRenameProperty?(prop.id, prop.name)
-        }
-        Menu("Change Type") {
-            ForEach(PropertyType.allCases, id: \.rawValue) { type in
-                if type != prop.type && type != .title {
-                    Button(type.rawValue.capitalized) {
-                        onChangePropertyType?(prop.id, type)
-                    }
-                }
-            }
-        }
-        Divider()
-        if let onToggle = onToggleColumn {
-            Button("Hide Column") { onToggle(prop.id) }
-        }
-        Divider()
-        Button("Delete Property", role: .destructive) {
-            onDeleteProperty?(prop.id)
-        }
     }
 
     // MARK: - Data Row
 
     private func dataRow(_ row: Binding<DatabaseRow>) -> some View {
-        let isSelected = selectedRowIds.contains(row.wrappedValue.id)
         let isHovered = hoveredRowId == row.wrappedValue.id
 
         return HStack(spacing: 0) {
-            // Checkbox
-            Toggle("", isOn: Binding(
-                get: { isSelected },
-                set: { selected in
-                    if selected { selectedRowIds.insert(row.wrappedValue.id) }
-                    else { selectedRowIds.remove(row.wrappedValue.id) }
-                }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
-            .frame(width: 32)
-
             // Title cell
             titleCell(row)
-                .frame(width: titleColumnWidth, alignment: .leading)
                 .padding(.horizontal, 8)
+                .frame(width: titleColumnWidth, alignment: .leading)
+                .contentShape(Rectangle())
+                .cursor(.pointingHand)
+                .overlay(alignment: .trailing) {
+                    if showVerticalLines {
+                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
+                            .padding(.vertical, -7)
+                    }
+                }
 
             // Property cells
             ForEach(visibleProperties) { prop in
                 let propValue = Binding<PropertyValue>(
                     get: { row.wrappedValue.properties[prop.id] ?? .empty },
                     set: { newVal in
-                        row.wrappedValue.properties[prop.id] = newVal
-                        onSave(row.wrappedValue)
+                        var updatedRow = row.wrappedValue
+                        updatedRow.properties[prop.id] = newVal
+                        row.wrappedValue = updatedRow
+                        onSave(updatedRow)
                     }
                 )
-                PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddSelectOption)
-                    .frame(width: columnWidth(for: prop), alignment: .leading)
+                PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddSelectOption, onUpdateOption: onUpdateSelectOption, onDeleteOption: onDeleteSelectOption)
                     .padding(.horizontal, 8)
+                    .frame(width: columnWidth(for: prop), alignment: .leading)
+                    .contentShape(Rectangle())
+                    .cursor(.pointingHand)
+                    .overlay(alignment: .trailing) {
+                        if showVerticalLines {
+                            Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
+                                .padding(.vertical, -7)
+                        }
+                    }
             }
         }
+        .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(isSelected ? Color.accentColor.opacity(0.06) : isHovered ? Color.gray.opacity(0.04) : Color.clear)
+        .background(isHovered ? Color.gray.opacity(0.04) : Color.clear)
         .onHover { hoveredRowId = $0 ? row.wrappedValue.id : nil }
     }
 
@@ -285,81 +199,184 @@ struct TableView: View {
 
     @ViewBuilder
     private func titleCell(_ row: Binding<DatabaseRow>) -> some View {
-        let cellKey = "\(row.wrappedValue.id)_title"
         let titlePropId = schema.titleProperty?.id
-        let rawTitle = rawTitleText(row.wrappedValue)
-        let displayTitle = row.wrappedValue.title(schema: schema)
 
-        if editingCellKey == cellKey {
+        HStack(spacing: 6) {
+            // Open page icon (only on hover)
+            if hoveredRowId == row.wrappedValue.id {
+                Button {
+                    onOpenRow(row.wrappedValue)
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Open page")
+            }
+
             TextField("New Page", text: Binding(
-                get: { rawTitle },
+                get: {
+                    guard let propId = titlePropId,
+                          let val = row.wrappedValue.properties[propId],
+                          case .text(let s) = val else { return "" }
+                    return s
+                },
                 set: { newVal in
-                    if let propId = titlePropId {
-                        row.wrappedValue.properties[propId] = .text(newVal)
-                    }
+                    guard let propId = titlePropId else { return }
+                    var updatedRow = row.wrappedValue
+                    updatedRow.properties[propId] = .text(newVal)
+                    row.wrappedValue = updatedRow
+                    onSave(updatedRow)
                 }
-            ), onCommit: {
-                editingCellKey = nil
-                onSave(row.wrappedValue)
-            })
+            ))
             .textFieldStyle(.plain)
-            .font(.body)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 3)
-                    .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
-            )
-        } else {
-            HStack(spacing: 6) {
-                // Open page icon (only on hover)
-                if hoveredRowId == row.wrappedValue.id {
-                    Button {
-                        onOpenRow(row.wrappedValue)
-                    } label: {
-                        Image(systemName: "arrow.up.right.square")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Open page")
-                }
-
-                Text(displayTitle)
-                    .lineLimit(1)
-                    .foregroundColor(rawTitle.isEmpty ? .secondary : .primary)
-
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                editingCellKey = cellKey
-            }
+            .foregroundColor(.primary)
         }
-    }
-
-    private func rawTitleText(_ row: DatabaseRow) -> String {
-        guard let titlePropId = schema.titleProperty?.id,
-              let val = row.properties[titlePropId],
-              case .text(let s) = val else { return "" }
-        return s
     }
 
     // MARK: - Helpers
-
-    private func bulkDelete() {
-        guard let onDel = onDelete else { return }
-        for row in rows where selectedRowIds.contains(row.id) {
-            onDel(row)
-        }
-        selectedRowIds.removeAll()
-    }
 
     private func columnWidth(for prop: PropertyDefinition) -> CGFloat {
         dragWidths[prop.id] ?? viewConfig.columnWidths?[prop.id] ?? 150
     }
 
     private func iconForPropertyType(_ type: PropertyType) -> String {
+        switch type {
+        case .title: return "textformat"
+        case .text: return "doc.text"
+        case .number: return "number"
+        case .select: return "list.bullet"
+        case .multiSelect: return "tag"
+        case .date: return "calendar"
+        case .checkbox: return "checkmark.square"
+        case .url: return "link"
+        case .email: return "envelope"
+        case .relation: return "arrow.triangle.branch"
+        }
+    }
+}
+
+// MARK: - Column Header Cell (own View for independent popover)
+
+private struct ColumnHeaderCell: View {
+    let prop: PropertyDefinition
+    var onRename: ((String, String) -> Void)?
+    var onChangeType: ((String, PropertyType) -> Void)?
+    var onToggleColumn: ((String) -> Void)?
+    var onDelete: ((String) -> Void)?
+
+    @State private var isHovered = false
+    @State private var showPopover = false
+    @State private var editingName: String = ""
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: iconForType(prop.type))
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text(prop.name)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            isHovered = inside
+            if inside { NSCursor.pointingHand.push() }
+            else { NSCursor.pop() }
+        }
+        .onTapGesture {
+            editingName = prop.name
+            showPopover = true
+        }
+        .popover(isPresented: $showPopover, arrowEdge: .bottom) {
+            popoverContent
+        }
+    }
+
+    private var popoverContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Property name", text: $editingName)
+                .textFieldStyle(.roundedBorder)
+                .font(.callout)
+                .onSubmit {
+                    let trimmed = editingName.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty && trimmed != prop.name {
+                        onRename?(prop.id, trimmed)
+                    }
+                    showPopover = false
+                }
+
+            HStack {
+                Text("Type")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Menu {
+                    ForEach(PropertyType.allCases, id: \.rawValue) { type in
+                        if type != prop.type && type != .title {
+                            Button {
+                                onChangeType?(prop.id, type)
+                                showPopover = false
+                            } label: {
+                                Label(type.rawValue.capitalized, systemImage: iconForType(type))
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: iconForType(prop.type))
+                            .font(.caption)
+                        Text(prop.type.rawValue.capitalized)
+                            .font(.callout)
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+
+            Divider()
+
+            if onToggleColumn != nil {
+                Button {
+                    onToggleColumn?(prop.id)
+                    showPopover = false
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "eye.slash")
+                            .font(.caption)
+                        Text("Hide property")
+                            .font(.callout)
+                    }
+                    .foregroundColor(.primary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                onDelete?(prop.id)
+                showPopover = false
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                    Text("Delete property")
+                        .font(.callout)
+                }
+                .foregroundColor(.red)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .frame(width: 220)
+    }
+
+    private func iconForType(_ type: PropertyType) -> String {
         switch type {
         case .title: return "textformat"
         case .text: return "doc.text"

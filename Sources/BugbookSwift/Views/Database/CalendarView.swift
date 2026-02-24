@@ -10,9 +10,11 @@ struct CalendarView: View {
 
     @State private var displayMonth: Date = Date()
     @State private var selectedDatePropertyId: String?
+    @State private var morePopoverDate: String? = nil
 
     private let calendar = Calendar.current
     private let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private let maxVisibleEvents = 3
 
     private var dateProperties: [PropertyDefinition] {
         schema.properties.filter { $0.type == .date }
@@ -163,18 +165,23 @@ struct CalendarView: View {
             }
             .padding(.bottom, 4)
 
-            // Grid
+            // Grid — use GeometryReader to fill available space
             let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 1), count: 7)
-            LazyVGrid(columns: gridColumns, spacing: 1) {
-                ForEach(daysInMonth) { cell in
-                    dayCell(cell)
+            GeometryReader { geo in
+                let numberOfRows = max(1, Int(ceil(Double(daysInMonth.count) / 7.0)))
+                let cellHeight = max(110, (geo.size.height - CGFloat(numberOfRows - 1)) / CGFloat(numberOfRows))
+                LazyVGrid(columns: gridColumns, spacing: 1) {
+                    ForEach(daysInMonth) { cell in
+                        dayCell(cell, height: cellHeight)
+                    }
                 }
             }
         }
         .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func dayCell(_ cell: DayCell) -> some View {
+    private func dayCell(_ cell: DayCell, height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if cell.isCurrentMonth {
                 HStack {
@@ -196,38 +203,42 @@ struct CalendarView: View {
                 }
 
                 let dayRows = rowsForDate(cell.dateString)
-                ForEach(dayRows.prefix(3)) { row in
-                    let title = row.title(schema: schema)
+                ForEach(dayRows.prefix(maxVisibleEvents)) { row in
+                    eventPill(row)
+                }
+                if dayRows.count > maxVisibleEvents {
+                    let extra = dayRows.count - maxVisibleEvents
                     Button {
-                        onOpenRow(row)
+                        morePopoverDate = cell.dateString
                     } label: {
-                        Text(title)
+                        Text("+\(extra) more")
                             .font(.caption2)
-                            .lineLimit(1)
-                            .foregroundColor(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.accentColor.opacity(0.1))
-                            .cornerRadius(3)
+                            .foregroundColor(.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .draggable(row.id) {
-                        Text(title)
-                            .padding(6)
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(4)
+                    .popover(isPresented: Binding(
+                        get: { morePopoverDate == cell.dateString },
+                        set: { if !$0 { morePopoverDate = nil } }
+                    )) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(cell.dateString)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                            Divider()
+                            ForEach(dayRows) { row in
+                                eventPill(row)
+                            }
+                        }
+                        .padding(8)
+                        .frame(minWidth: 180)
                     }
-                }
-                if dayRows.count > 3 {
-                    Text("+\(dayRows.count - 3) more")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
                 }
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: height)
         .padding(4)
         .background(cell.isToday ? Color.accentColor.opacity(0.05) : (cell.isCurrentMonth ? Color(nsColor: .controlBackgroundColor) : Color.clear))
         .cornerRadius(4)
@@ -239,6 +250,31 @@ struct CalendarView: View {
                 }
             }
             return true
+        }
+    }
+
+    private func eventPill(_ row: DatabaseRow) -> some View {
+        let title = row.title(schema: schema)
+        return Button {
+            onOpenRow(row)
+        } label: {
+            Text(title.isEmpty ? "Untitled" : title)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundColor(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.accentColor.opacity(0.12))
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+        .draggable(row.id) {
+            Text(title)
+                .padding(6)
+                .background(.ultraThinMaterial)
+                .cornerRadius(4)
         }
     }
 

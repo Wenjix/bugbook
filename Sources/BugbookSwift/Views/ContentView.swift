@@ -3,14 +3,14 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var appState = AppState()
     @StateObject private var fileSystem = FileSystemService()
-    @State private var showSettings = false
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
+    @State private var sidebarPeekVisible = false
 
     var body: some View {
-        ZStack {
-            HSplitView {
-                // Sidebar
+        ZStack(alignment: .leading) {
+            HStack(spacing: 0) {
+                // Sidebar or thin strip
                 if appState.sidebarOpen {
                     SidebarView(
                         appState: appState,
@@ -21,6 +21,26 @@ struct ContentView: View {
                         },
                         onToggleSidebar: { appState.sidebarOpen.toggle() }
                     )
+                } else {
+                    // Thin strip with toggle button
+                    VStack {
+                        Button(action: { appState.sidebarOpen = true }) {
+                            Image(systemName: "sidebar.left")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .padding(.top, 12)
+                        .help("Open Sidebar")
+                        Spacer()
+                    }
+                    .frame(width: 32)
+                    .background(Color.fallbackSidebarBg.opacity(0.5))
+                    .onHover { hovering in
+                        if hovering {
+                            sidebarPeekVisible = true
+                        }
+                    }
                 }
 
                 // Main content
@@ -31,7 +51,7 @@ struct ContentView: View {
                     }
 
                     // Breadcrumbs
-                    if let tab = appState.activeTab, !tab.isEmptyTab {
+                    if let tab = appState.activeTab, !tab.isEmptyTab, tab.path != "__settings__" {
                         BreadcrumbView(
                             items: breadcrumbs(for: tab),
                             onNavigate: { _ in }
@@ -39,10 +59,10 @@ struct ContentView: View {
                     }
 
                     // Content area
-                    if showSettings {
-                        SettingsView(appState: appState)
-                    } else if let tab = appState.activeTab {
-                        if tab.isEmptyTab {
+                    if let tab = appState.activeTab {
+                        if tab.path == "__settings__" {
+                            SettingsView(appState: appState)
+                        } else if tab.isEmptyTab {
                             WelcomeView(
                                 onNewNote: { createNewFile() },
                                 onOpenFolder: { Task { await openWorkspace() } }
@@ -60,6 +80,41 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            // Sidebar peek overlay (when sidebar is closed and hovering)
+            if !appState.sidebarOpen && sidebarPeekVisible {
+                HStack(spacing: 0) {
+                    SidebarView(
+                        appState: appState,
+                        fileSystem: fileSystem,
+                        onSelectFile: { entry in
+                            appState.openFile(entry)
+                            loadFileContent(for: entry)
+                            sidebarPeekVisible = false
+                        },
+                        onToggleSidebar: {
+                            appState.sidebarOpen = true
+                            sidebarPeekVisible = false
+                        }
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 8, x: 4, y: 0)
+                    .transition(.move(edge: .leading))
+
+                    // Invisible area to detect mouse leaving
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            sidebarPeekVisible = false
+                        }
+                }
+                .onHover { hovering in
+                    if !hovering {
+                        sidebarPeekVisible = false
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: sidebarPeekVisible)
             }
 
             // Command palette overlay
@@ -103,7 +158,17 @@ struct ContentView: View {
             appState.commandPaletteOpen.toggle()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
-            showSettings.toggle()
+            openSettingsTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .databaseNameDidChange)) { notification in
+            guard let dbPath = notification.userInfo?["dbPath"] as? String,
+                  let newName = notification.userInfo?["newName"] as? String else { return }
+            // Update tab displayName
+            for i in appState.openTabs.indices where appState.openTabs[i].path == dbPath {
+                appState.openTabs[i].displayName = newName
+            }
+            // Refresh sidebar file tree
+            refreshFileTree()
         }
     }
 
@@ -179,6 +244,17 @@ struct ContentView: View {
     }
 
     // MARK: - Actions
+
+    private func openSettingsTab() {
+        // Check if settings tab already open
+        if let index = appState.openTabs.firstIndex(where: { $0.path == "__settings__" }) {
+            appState.activeTabIndex = index
+            return
+        }
+        let tab = OpenFile(id: UUID(), path: "__settings__", content: "", isDirty: false, isEmptyTab: false, isDatabase: false, displayName: "Settings", openerPagePath: nil)
+        appState.openTabs.append(tab)
+        appState.activeTabIndex = appState.openTabs.count - 1
+    }
 
     private func initializeWorkspace() {
         let defaultPath = fileSystem.defaultWorkspacePath()

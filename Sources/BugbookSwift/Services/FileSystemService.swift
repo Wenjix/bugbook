@@ -252,18 +252,41 @@ class FileSystemService: ObservableObject {
             currentPath = (currentPath as NSString).appendingPathComponent(part)
 
             if i < parts.count - 1 {
-                // Folder segment - link to parent page .md if it exists
-                let parentPagePath = (currentPath as NSString).deletingLastPathComponent
-                let pagePath = (parentPagePath as NSString).appendingPathComponent("\(part).md")
+                // Folder segment
+                var segmentName = part
+                var segmentPath: String
+                if isDatabaseFolder(at: currentPath) {
+                    // Database folder - use schema name and link to the database itself
+                    let schemaPath = (currentPath as NSString).appendingPathComponent("_schema.json")
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let schemaName = json["name"] as? String {
+                        segmentName = schemaName
+                    }
+                    segmentPath = currentPath
+                } else {
+                    // Regular folder - link to parent page .md if it exists
+                    let parentPagePath = (currentPath as NSString).deletingLastPathComponent
+                    segmentPath = (parentPagePath as NSString).appendingPathComponent("\(part).md")
+                }
                 breadcrumbs.append(BreadcrumbItem(
                     id: currentPath,
-                    name: part,
-                    path: pagePath,
-                    icon: parseIconFromFile(at: pagePath)
+                    name: segmentName,
+                    path: segmentPath,
+                    icon: parseIconFromFile(at: segmentPath)
                 ))
             } else {
                 // The file itself
-                let displayName = part.hasSuffix(".md") ? String(part.dropLast(3)) : part
+                var displayName = part.hasSuffix(".md") ? String(part.dropLast(3)) : part
+                // For database folders, use schema name instead of folder name
+                if isDatabaseFolder(at: currentPath) {
+                    let schemaPath = (currentPath as NSString).appendingPathComponent("_schema.json")
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let schemaName = json["name"] as? String {
+                        displayName = schemaName
+                    }
+                }
                 breadcrumbs.append(BreadcrumbItem(
                     id: currentPath,
                     name: displayName,
