@@ -103,7 +103,7 @@ struct ListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.fallbackCardBg)
         .cornerRadius(6)
         .contentShape(Rectangle())
         .draggable(row.wrappedValue.id) {

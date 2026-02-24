@@ -6,31 +6,30 @@ struct AISettingsView: View {
     @State private var codexAvailable = false
 
     var body: some View {
-        GroupBox("Engine Status") {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsSection("Engine Status") {
                 engineRow("Claude CLI", available: claudeAvailable)
                 engineRow("Codex CLI", available: codexAvailable)
             }
-            .padding(8)
-        }
 
-        GroupBox("Preferred Engine") {
-            Picker("Engine", selection: $appState.settings.preferredAIEngine) {
-                ForEach(PreferredAIEngine.allCases, id: \.self) { engine in
-                    Text(engine.rawValue).tag(engine)
+            SettingsSection("Preferred Engine") {
+                Picker("Engine", selection: $appState.settings.preferredAIEngine) {
+                    ForEach(PreferredAIEngine.allCases, id: \.self) { engine in
+                        Text(engine.rawValue).tag(engine)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            .pickerStyle(.segmented)
-            .padding(8)
-        }
 
-        GroupBox("Execution Policy") {
-            Picker("Policy", selection: $appState.settings.executionPolicy) {
-                ForEach(ExecutionPolicy.allCases, id: \.self) { policy in
-                    Text(policy.rawValue).tag(policy)
+            SettingsSection("Execution Policy") {
+                Picker("Policy", selection: $appState.settings.executionPolicy) {
+                    ForEach(ExecutionPolicy.allCases, id: \.self) { policy in
+                        Text(policy.rawValue).tag(policy)
+                    }
                 }
+                .labelsHidden()
             }
-            .padding(8)
         }
         .onAppear { detectEngines() }
     }

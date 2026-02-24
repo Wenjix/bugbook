@@ -51,7 +51,7 @@ struct ImageBlockView: View {
 
     private var imagePlaceholder: some View {
         RoundedRectangle(cornerRadius: 4)
-            .fill(Color.gray.opacity(0.1))
+            .fill(Color.fallbackSurfaceSubtle)
             .frame(height: 100)
             .overlay(
                 Text("Image: \(block.imageSource)")

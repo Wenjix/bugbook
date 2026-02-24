@@ -175,7 +175,7 @@ struct KanbanView: View {
         }
         .frame(width: 200)
         .padding(.vertical, 8)
-        .background(Color.gray.opacity(0.05))
+        .background(Color.fallbackSurfaceSubtle)
         .cornerRadius(8)
     }
 
@@ -211,7 +211,7 @@ struct KanbanView: View {
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.gray.opacity(0.15))
+                    .background(Color.fallbackBadgeBg)
                     .cornerRadius(4)
             }
             .padding(.horizontal, 8)
@@ -285,7 +285,7 @@ struct KanbanView: View {
         }
         .frame(width: columnWidth)
         .padding(.vertical, 8)
-        .background(isTargeted ? colorForName(column.color).opacity(0.12) : colorForName(column.color).opacity(0.06))
+        .background(isTargeted ? colorForName(column.color).opacity(0.12) : Color.fallbackSurfaceSubtle)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -358,7 +358,7 @@ struct KanbanView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.fallbackCardBg)
         .cornerRadius(6)
         .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
         .contentShape(Rectangle())

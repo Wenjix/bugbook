@@ -10,6 +10,8 @@ class AppState: ObservableObject {
     @Published var fileTree: [FileEntry] = []
     @Published var settings: AppSettings = .default
     @Published var commandPaletteOpen: Bool = false
+    @Published var showSettings: Bool = false
+    @Published var selectedSettingsTab: String = "general"
 
     var activeTab: OpenFile? {
         guard activeTabIndex >= 0, activeTabIndex < openTabs.count else { return nil }
