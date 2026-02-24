@@ -15,7 +15,7 @@ struct WelcomeView: View {
             Text("Bugbook")
                 .font(.system(size: 28, weight: .bold))
 
-            Text("Local-first notes and knowledge workspace")
+            Text("Local-first notes for agents and humans")
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
 

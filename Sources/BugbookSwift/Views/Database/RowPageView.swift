@@ -1,15 +1,17 @@
 import SwiftUI
+import BugbookCore
 
 struct RowPageView: View {
     let schema: DatabaseSchema
     @Binding var row: DatabaseRow
     var onSave: (DatabaseRow) -> Void
     var onBack: () -> Void
+    var onAddOption: ((String, SelectOption) -> Void)?
 
     @State private var editingTitle: String = ""
 
-    private var contentMaxWidth: CGFloat {
-        row.fullWidth ? .infinity : 720
+    private var rowTitle: String {
+        row.title(schema: schema)
     }
 
     var body: some View {
@@ -32,28 +34,11 @@ struct RowPageView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Text(row.title.isEmpty ? "Untitled" : row.title)
+                Text(rowTitle)
                     .font(.body)
                     .foregroundColor(.secondary)
 
                 Spacer()
-
-                // Full-width toggle
-                Toggle(isOn: Binding(
-                    get: { row.fullWidth },
-                    set: { newVal in
-                        row.fullWidth = newVal
-                        onSave(row)
-                    }
-                )) {
-                    HStack(spacing: 4) {
-                        Image(systemName: row.fullWidth ? "arrow.left.and.right" : "arrow.right.and.line.vertical.and.arrow.left")
-                            .font(.caption)
-                        Text("Full width")
-                            .font(.caption)
-                    }
-                }
-                .toggleStyle(.checkbox)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -63,17 +48,19 @@ struct RowPageView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     // Title
-                    TextField("Untitled", text: $editingTitle, onCommit: {
-                        row.title = editingTitle
-                        onSave(row)
+                    TextField("New Page", text: $editingTitle, onCommit: {
+                        if let titleProp = schema.titleProperty {
+                            row.properties[titleProp.id] = .text(editingTitle)
+                            onSave(row)
+                        }
                     })
                     .font(.title)
                     .fontWeight(.bold)
                     .textFieldStyle(.plain)
 
-                    // Properties
+                    // Properties (skip title property — shown above)
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(schema.properties) { prop in
+                        ForEach(schema.properties.filter({ $0.type != .title })) { prop in
                             HStack(alignment: .top) {
                                 HStack(spacing: 4) {
                                     Image(systemName: iconForPropertyType(prop.type))
@@ -86,13 +73,13 @@ struct RowPageView: View {
                                 .frame(width: 140, alignment: .leading)
 
                                 let propValue = Binding<PropertyValue>(
-                                    get: { row.properties[prop.name] ?? .empty },
+                                    get: { row.properties[prop.id] ?? .empty },
                                     set: { newVal in
-                                        row.properties[prop.name] = newVal
+                                        row.properties[prop.id] = newVal
                                         onSave(row)
                                     }
                                 )
-                                PropertyEditorView(definition: prop, value: propValue)
+                                PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddOption)
                             }
                             .padding(.vertical, 2)
                         }
@@ -112,21 +99,22 @@ struct RowPageView: View {
                     .font(.body)
                     .frame(minHeight: 300)
                 }
-                .frame(maxWidth: contentMaxWidth)
+                .frame(maxWidth: 720)
                 .padding(24)
-                .frame(maxWidth: .infinity, alignment: row.fullWidth ? .leading : .center)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .onAppear {
-            editingTitle = row.title
+            editingTitle = rowTitle
         }
         .onChange(of: row.id) {
-            editingTitle = row.title
+            editingTitle = rowTitle
         }
     }
 
     private func iconForPropertyType(_ type: PropertyType) -> String {
         switch type {
+        case .title: return "textformat.abc"
         case .text: return "textformat"
         case .number: return "number"
         case .select: return "tag"
@@ -135,6 +123,7 @@ struct RowPageView: View {
         case .checkbox: return "checkmark.square"
         case .url: return "link"
         case .email: return "envelope"
+        case .relation: return "link"
         }
     }
 }

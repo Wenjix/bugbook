@@ -1,4 +1,5 @@
 import SwiftUI
+import BugbookCore
 
 struct ListView: View {
     let schema: DatabaseSchema
@@ -42,7 +43,8 @@ struct ListView: View {
     }
 
     private func listRow(_ row: Binding<DatabaseRow>) -> some View {
-        HStack(spacing: 8) {
+        let title = row.wrappedValue.title(schema: schema)
+        return HStack(spacing: 8) {
             // Drag handle with context menu
             Menu {
                 Button(role: .destructive) {
@@ -61,8 +63,10 @@ struct ListView: View {
 
             // Title (double-click to edit inline)
             if editingTitleId == row.wrappedValue.id {
-                TextField("Untitled", text: $editingTitleText, onCommit: {
-                    row.wrappedValue.title = editingTitleText
+                TextField("New Page", text: $editingTitleText, onCommit: {
+                    if let titleProp = schema.titleProperty {
+                        row.wrappedValue.properties[titleProp.id] = .text(editingTitleText)
+                    }
                     onSave(row.wrappedValue)
                     editingTitleId = nil
                 })
@@ -74,7 +78,7 @@ struct ListView: View {
                 Button {
                     onOpenRow(row.wrappedValue)
                 } label: {
-                    Text(row.wrappedValue.title.isEmpty ? "Untitled" : row.wrappedValue.title)
+                    Text(title.isEmpty ? "New Page" : title)
                         .font(.body)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
@@ -82,17 +86,17 @@ struct ListView: View {
                 }
                 .buttonStyle(.plain)
                 .onTapGesture(count: 2) {
-                    editingTitleText = row.wrappedValue.title
+                    editingTitleText = title
                     editingTitleId = row.wrappedValue.id
                 }
             }
 
             Spacer()
 
-            // Property previews (up to 3)
+            // Property previews (up to 3, excluding title)
             HStack(spacing: 8) {
-                ForEach(schema.properties.prefix(3)) { prop in
-                    propertyPreview(value: row.wrappedValue.properties[prop.name] ?? .empty, prop: prop)
+                ForEach(schema.properties.filter({ $0.type != .title }).prefix(3)) { prop in
+                    propertyPreview(value: row.wrappedValue.properties[prop.id] ?? .empty, prop: prop)
                 }
             }
         }
@@ -103,7 +107,7 @@ struct ListView: View {
         .cornerRadius(6)
         .contentShape(Rectangle())
         .draggable(row.wrappedValue.id) {
-            Text(row.wrappedValue.title)
+            Text(title)
                 .padding(8)
                 .background(.ultraThinMaterial)
                 .cornerRadius(6)

@@ -1,4 +1,5 @@
 import SwiftUI
+import BugbookCore
 
 struct KanbanView: View {
     let schema: DatabaseSchema
@@ -19,7 +20,7 @@ struct KanbanView: View {
     }
 
     private var groupProperty: PropertyDefinition? {
-        guard let groupId = viewConfig.groupByPropertyId else {
+        guard let groupId = viewConfig.groupBy else {
             return schema.properties.first(where: { $0.type == .select })
         }
         return schema.properties.first(where: { $0.id == groupId })
@@ -37,7 +38,7 @@ struct KanbanView: View {
     private func rowsForColumn(_ columnId: String) -> [DatabaseRow] {
         guard let prop = groupProperty else { return rows }
         return rows.filter { row in
-            guard let val = row.properties[prop.name] else { return columnId == "__none__" }
+            guard let val = row.properties[prop.id] else { return columnId == "__none__" }
             if case .select(let s) = val {
                 return s == columnId
             }
@@ -96,7 +97,9 @@ struct KanbanView: View {
                 }
                 .padding(12)
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Add Option Column
@@ -180,11 +183,12 @@ struct KanbanView: View {
             }
             .padding(.horizontal, 8)
 
-            LazyVStack(spacing: 6) {
+            VStack(spacing: 6) {
                 ForEach(rowsForColumn(column.id)) { row in
-                    kanbanCard(row)
+                    let title = row.title(schema: schema)
+                    kanbanCard(row, title: title)
                         .draggable(row.id) {
-                            Text(row.title)
+                            Text(title)
                                 .padding(8)
                                 .background(.ultraThinMaterial)
                                 .cornerRadius(6)
@@ -230,12 +234,14 @@ struct KanbanView: View {
                     .buttonStyle(.plain)
                 }
             }
+            .frame(minHeight: 60)
+            .contentShape(Rectangle())
             .dropDestination(for: String.self) { droppedIds, _ in
                 guard let prop = groupProperty else { return false }
                 for droppedId in droppedIds {
                     if let idx = rows.firstIndex(where: { $0.id == droppedId }) {
                         let newValue: PropertyValue = column.id == "__none__" ? .empty : .select(column.id)
-                        rows[idx].properties[prop.name] = newValue
+                        rows[idx].properties[prop.id] = newValue
                         onSave(rows[idx])
                     }
                 }
@@ -253,17 +259,20 @@ struct KanbanView: View {
         guard !title.isEmpty else { return }
         let now = Date()
         var properties: [String: PropertyValue] = [:]
-        if let prop = groupProperty, columnId != "__none__" {
-            properties[prop.name] = .select(columnId)
+        // Set the title property
+        if let titleProp = schema.titleProperty {
+            properties[titleProp.id] = .text(title)
         }
+        if let prop = groupProperty, columnId != "__none__" {
+            properties[prop.id] = .select(columnId)
+        }
+        let suffix = String((0..<6).map { _ in "abcdefghijklmnopqrstuvwxyz0123456789".randomElement()! })
         let newRow = DatabaseRow(
-            id: "row_\(UUID().uuidString)",
-            title: title,
+            id: "row_\(suffix)",
             properties: properties,
-            body: "\n# \(title)\n",
+            body: "",
             createdAt: now,
-            updatedAt: now,
-            fullWidth: false
+            updatedAt: now
         )
         rows.append(newRow)
         onSave(newRow)
@@ -273,21 +282,23 @@ struct KanbanView: View {
 
     // MARK: - Kanban Card
 
-    private func kanbanCard(_ row: DatabaseRow) -> some View {
+    private func kanbanCard(_ row: DatabaseRow, title: String) -> some View {
         Button {
             onOpenRow(row)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(row.title)
+                Text(title)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(2)
                     .foregroundColor(.primary)
 
-                // Show a couple of properties (excluding the group property)
-                let displayProps = schema.properties.prefix(3).filter { $0.type != .select || $0.id != groupProperty?.id }
+                // Show a couple of properties (excluding the group property and title)
+                let displayProps = schema.properties.prefix(4).filter {
+                    $0.type != .title && ($0.type != .select || $0.id != groupProperty?.id)
+                }
                 ForEach(displayProps) { prop in
-                    if let val = row.properties[prop.name], val != .empty {
+                    if let val = row.properties[prop.id], val != .empty {
                         HStack(spacing: 4) {
                             Text(prop.name)
                                 .font(.caption2)
@@ -322,6 +333,8 @@ struct KanbanView: View {
         case .checkbox(let b): return b ? "Yes" : "No"
         case .url(let s): return s
         case .email(let s): return s
+        case .relation(let s): return s
+        case .relationMany(let arr): return arr.joined(separator: ", ")
         case .empty: return ""
         }
     }

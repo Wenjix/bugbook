@@ -64,9 +64,13 @@ struct ImageBlockView: View {
 /// Database embed block — wraps existing DatabaseInlineEmbedView.
 struct DatabaseEmbedBlockView: View {
     let block: Block
+    var onOpenDatabaseTab: ((String) -> Void)?
 
     var body: some View {
-        DatabaseInlineEmbedView(dbPath: block.databasePath)
-            .padding(.vertical, 4)
+        DatabaseInlineEmbedView(
+            dbPath: block.databasePath,
+            onOpenDatabase: { onOpenDatabaseTab?(block.databasePath) }
+        )
+        .padding(.vertical, 4)
     }
 }

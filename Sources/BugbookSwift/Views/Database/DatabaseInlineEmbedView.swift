@@ -1,7 +1,8 @@
 import SwiftUI
+import BugbookCore
 
 /// Compact database embed for rendering inside a markdown page.
-/// Shows a simplified table or list view of the database rows.
+/// Interactive mini-table with editable titles, property editors, and inline row creation.
 struct DatabaseInlineEmbedView: View {
     let dbPath: String
     var maxRows: Int = 10
@@ -13,50 +14,27 @@ struct DatabaseInlineEmbedView: View {
     @State private var rows: [DatabaseRow] = []
     @State private var error: String?
     @State private var hoveredRowId: String?
+    @State private var editingRowId: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let error = error {
                 Text(error)
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundColor(.red)
                     .padding(8)
             } else if let schema = schema {
-                // Header
-                HStack {
-                    Button {
-                        onOpenDatabase?()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "tablecells")
-                                .font(.caption)
-                            Text(schema.name)
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundColor(.accentColor)
-                    }
-                    .buttonStyle(.plain)
-
-                    Spacer()
-
-                    Text("\(rows.count) rows")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-
+                headerBar(schema: schema)
                 Divider()
-
-                // Compact table
-                compactTable(schema: schema)
+                interactiveTable(schema: schema)
+                Divider()
+                newRowButton(schema: schema)
             } else {
-                HStack {
+                HStack(spacing: 6) {
                     ProgressView()
                         .scaleEffect(0.7)
                     Text("Loading...")
-                        .font(.caption)
+                        .font(.callout)
                         .foregroundColor(.secondary)
                 }
                 .padding(8)
@@ -66,61 +44,72 @@ struct DatabaseInlineEmbedView: View {
         .cornerRadius(6)
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                .stroke(Color.gray.opacity(0.15), lineWidth: 1)
         )
         .task {
             await loadData()
         }
     }
 
-    private func compactTable(schema: DatabaseSchema) -> some View {
-        let displayProps = Array(schema.properties.prefix(4))
+    // MARK: - Header
+
+    private func headerBar(schema: DatabaseSchema) -> some View {
+        HStack {
+            Button {
+                onOpenDatabase?()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "tablecells")
+                        .font(.callout)
+                    Text(schema.name)
+                        .font(.callout)
+                        .fontWeight(.semibold)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .foregroundColor(.accentColor)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text("\(rows.count) rows")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Table
+
+    private func interactiveTable(schema: DatabaseSchema) -> some View {
+        let displayProps = Array(schema.properties.filter({ $0.type != .title }).prefix(4))
 
         return VStack(alignment: .leading, spacing: 0) {
-            // Header
+            // Column headers
             HStack(spacing: 0) {
-                Text("Title")
-                    .frame(width: 140, alignment: .leading)
+                Text(schema.titleProperty?.name ?? "Name")
+                    .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
                 ForEach(displayProps) { prop in
                     Text(prop.name)
-                        .frame(width: 100, alignment: .leading)
+                        .frame(width: 140, alignment: .leading)
                 }
             }
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
 
-            Divider()
+            Divider().opacity(0.5)
 
             // Rows
-            ForEach(rows.prefix(maxRows)) { row in
-                Button {
-                    onOpenRow?(row)
-                } label: {
-                    HStack(spacing: 0) {
-                        Text(row.title)
-                            .lineLimit(1)
-                            .frame(width: 140, alignment: .leading)
-                        ForEach(displayProps) { prop in
-                            cellContent(row.properties[prop.name] ?? .empty, prop: prop)
-                                .frame(width: 100, alignment: .leading)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(hoveredRowId == row.id ? Color.gray.opacity(0.08) : Color.clear)
-                }
-                .buttonStyle(.plain)
-                .onHover { isHovered in
-                    hoveredRowId = isHovered ? row.id : nil
-                }
-
-                if row.id != rows.prefix(maxRows).last?.id {
-                    Divider().padding(.leading, 8)
+            ForEach(Array(rows.prefix(maxRows).enumerated()), id: \.element.id) { idx, row in
+                let globalIdx = rows.firstIndex(where: { $0.id == row.id })!
+                interactiveRow(globalIndex: globalIdx, schema: schema, displayProps: displayProps)
+                if idx < min(rows.count, maxRows) - 1 {
+                    Divider().opacity(0.3).padding(.leading, 12)
                 }
             }
 
@@ -128,42 +117,267 @@ struct DatabaseInlineEmbedView: View {
                 Button {
                     onOpenDatabase?()
                 } label: {
-                    Text("+\(rows.count - maxRows) more rows")
-                        .font(.caption2)
+                    Text("+\(rows.count - maxRows) more")
+                        .font(.callout)
                         .foregroundColor(.accentColor)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
         }
     }
 
-    @ViewBuilder
-    private func cellContent(_ value: PropertyValue, prop: PropertyDefinition) -> some View {
-        switch value {
-        case .select(let id):
-            if let option = prop.options?.first(where: { $0.id == id }) {
-                Text(option.name)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(colorFromString(option.color).opacity(0.15))
-                    .foregroundColor(colorFromString(option.color))
-                    .cornerRadius(3)
+    private func interactiveRow(globalIndex idx: Int, schema: DatabaseSchema, displayProps: [PropertyDefinition]) -> some View {
+        let row = rows[idx]
+        let isEditing = editingRowId == row.id
+        let isHovered = hoveredRowId == row.id
+
+        return HStack(spacing: 0) {
+            // Title cell
+            if isEditing {
+                TextField("New Page", text: Binding(
+                    get: { rawTitle(at: idx, schema: schema) },
+                    set: { newVal in
+                        if let titlePropId = schema.titleProperty?.id {
+                            rows[idx].properties[titlePropId] = .text(newVal)
+                        }
+                    }
+                ), onCommit: {
+                    saveRow(rows[idx], schema: schema)
+                    editingRowId = nil
+                })
+                .textFieldStyle(.plain)
+                .font(.body)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                )
+                .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
             } else {
-                Text(id).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(row.title(schema: schema))
+                        .font(.body)
+                        .lineLimit(1)
+                        .foregroundColor(rawTitle(at: idx, schema: schema).isEmpty ? .secondary : .primary)
+                    Spacer()
+                    if isHovered {
+                        Button {
+                            onOpenDatabase?()
+                        } label: {
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { editingRowId = row.id }
             }
-        case .date(let s):
-            Text(formattedDate(s))
-                .lineLimit(1)
-        case .checkbox(let b):
-            Image(systemName: b ? "checkmark.square.fill" : "square")
-                .foregroundColor(b ? .accentColor : .secondary)
+
+            // Property cells
+            ForEach(displayProps) { prop in
+                inlineCellEditor(rowIndex: idx, prop: prop, schema: schema)
+                    .frame(width: 140, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .background(isHovered ? Color.gray.opacity(0.04) : Color.clear)
+        .onHover { hoveredRowId = $0 ? row.id : nil }
+    }
+
+    // MARK: - New Row Button
+
+    private func newRowButton(schema: DatabaseSchema) -> some View {
+        Button {
+            addNewRow(schema: schema)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.caption)
+                Text("New")
+                    .font(.callout)
+            }
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Inline Cell Editor
+
+    private func rawTitle(at idx: Int, schema: DatabaseSchema) -> String {
+        guard let titlePropId = schema.titleProperty?.id,
+              let val = rows[idx].properties[titlePropId],
+              case .text(let s) = val else { return "" }
+        return s
+    }
+
+    @ViewBuilder
+    private func inlineCellEditor(rowIndex idx: Int, prop: PropertyDefinition, schema: DatabaseSchema) -> some View {
+        let value = rows[idx].properties[prop.id] ?? .empty
+
+        switch prop.type {
+        case .select:
+            inlineSelectCell(rowIndex: idx, prop: prop, value: value)
+        case .multiSelect:
+            inlineMultiSelectCell(rowIndex: idx, prop: prop, value: value)
+        case .checkbox:
+            Toggle("", isOn: Binding(
+                get: {
+                    if case .checkbox(let b) = rows[idx].properties[prop.id] ?? .empty { return b }
+                    return false
+                },
+                set: {
+                    rows[idx].properties[prop.id] = .checkbox($0)
+                    saveRow(rows[idx], schema: schema)
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+        case .date:
+            Text(formattedDate(value))
+                .font(.callout)
+                .foregroundColor(.secondary)
         default:
-            Text(displayValue(value, prop: prop))
-                .lineLimit(1)
+            TextField("", text: Binding(
+                get: { stringFromValue(value) },
+                set: { newVal in
+                    rows[idx].properties[prop.id] = prop.type == .number
+                        ? .number(Double(newVal) ?? 0)
+                        : .text(newVal)
+                }
+            ), onCommit: {
+                saveRow(rows[idx], schema: schema)
+            })
+            .textFieldStyle(.plain)
+            .font(.body)
+        }
+    }
+
+    // MARK: - Inline Select
+
+    private func inlineSelectCell(rowIndex idx: Int, prop: PropertyDefinition, value: PropertyValue) -> some View {
+        let options = prop.options ?? []
+        let currentId: String = {
+            if case .select(let s) = value { return s }
+            return ""
+        }()
+        let currentOption = options.first(where: { $0.id == currentId })
+
+        return Menu {
+            Button("None") {
+                rows[idx].properties[prop.id] = .empty
+                saveRow(rows[idx], schema: schema!)
+            }
+            ForEach(options) { option in
+                Button {
+                    rows[idx].properties[prop.id] = .select(option.id)
+                    saveRow(rows[idx], schema: schema!)
+                } label: {
+                    HStack(spacing: 4) {
+                        Circle().fill(colorFromString(option.color)).frame(width: 8, height: 8)
+                        Text(option.name)
+                    }
+                }
+            }
+        } label: {
+            if let opt = currentOption {
+                Text(opt.name)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(colorFromString(opt.color).opacity(0.12))
+                    .foregroundColor(colorFromString(opt.color))
+                    .cornerRadius(4)
+            } else {
+                Color.clear.frame(height: 22)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    // MARK: - Inline Multi-Select
+
+    private func inlineMultiSelectCell(rowIndex idx: Int, prop: PropertyDefinition, value: PropertyValue) -> some View {
+        let options = prop.options ?? []
+        let selectedIds: [String] = {
+            if case .multiSelect(let arr) = value { return arr }
+            return []
+        }()
+
+        return HStack(spacing: 3) {
+            ForEach(selectedIds.prefix(2), id: \.self) { id in
+                if let option = options.first(where: { $0.id == id }) {
+                    Text(option.name)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(colorFromString(option.color).opacity(0.12))
+                        .foregroundColor(colorFromString(option.color))
+                        .cornerRadius(3)
+                }
+            }
+            if selectedIds.count > 2 {
+                Text("+\(selectedIds.count - 2)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Menu {
+                ForEach(options) { option in
+                    let isSelected = selectedIds.contains(option.id)
+                    Button {
+                        var updated = selectedIds
+                        if isSelected {
+                            updated.removeAll { $0 == option.id }
+                        } else {
+                            updated.append(option.id)
+                        }
+                        rows[idx].properties[prop.id] = updated.isEmpty ? .empty : .multiSelect(updated)
+                        saveRow(rows[idx], schema: schema!)
+                    } label: {
+                        HStack {
+                            Circle().fill(colorFromString(option.color)).frame(width: 8, height: 8)
+                            Text(option.name)
+                            if isSelected { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    // MARK: - Data Operations
+
+    private func addNewRow(schema: DatabaseSchema) {
+        do {
+            let newRow = try dbService.createRow(in: dbPath, schema: schema)
+            rows.append(newRow)
+            editingRowId = newRow.id
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func saveRow(_ row: DatabaseRow, schema: DatabaseSchema) {
+        Task {
+            try? dbService.saveRow(row, schema: schema, at: dbPath)
         }
     }
 
@@ -177,26 +391,23 @@ struct DatabaseInlineEmbedView: View {
         }
     }
 
-    private func displayValue(_ value: PropertyValue, prop: PropertyDefinition) -> String {
+    // MARK: - Helpers
+
+    private func stringFromValue(_ value: PropertyValue) -> String {
         switch value {
         case .text(let s): return s
         case .number(let n): return n == n.rounded() ? String(Int(n)) : String(n)
-        case .select(let s):
-            return prop.options?.first(where: { $0.id == s })?.name ?? s
-        case .multiSelect(let arr):
-            return arr.compactMap { id in prop.options?.first(where: { $0.id == id })?.name }.joined(separator: ", ")
-        case .date(let s): return s
-        case .checkbox(let b): return b ? "Yes" : "No"
         case .url(let s): return s
         case .email(let s): return s
-        case .empty: return ""
+        default: return ""
         }
     }
 
-    private func formattedDate(_ dateString: String) -> String {
+    private func formattedDate(_ value: PropertyValue) -> String {
+        guard case .date(let s) = value else { return "" }
         let inFmt = DateFormatter()
         inFmt.dateFormat = "yyyy-MM-dd"
-        guard let date = inFmt.date(from: dateString) else { return dateString }
+        guard let date = inFmt.date(from: s) else { return s }
         let outFmt = DateFormatter()
         outFmt.dateStyle = .medium
         return outFmt.string(from: date)

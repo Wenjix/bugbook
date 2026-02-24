@@ -8,16 +8,10 @@ struct WikiLinkView: View {
     var body: some View {
         Button(action: onNavigate) {
             HStack(spacing: 4) {
-                if let icon = icon {
-                    Text(icon).font(.system(size: 12))
-                } else {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 10))
-                        .foregroundColor(.accentColor)
-                }
+                iconView
                 Text(pageName)
                     .font(.system(size: 14))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(.primary)
                     .underline()
             }
         }
@@ -29,5 +23,34 @@ struct WikiLinkView: View {
                 NSCursor.pop()
             }
         }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        if let icon = icon, !icon.isEmpty {
+            if icon.hasPrefix("custom:") {
+                let path = String(icon.dropFirst(7))
+                if let nsImage = NSImage(contentsOfFile: path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                } else {
+                    defaultPageIcon
+                }
+            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 12))
+            } else {
+                defaultPageIcon
+            }
+        } else {
+            defaultPageIcon
+        }
+    }
+
+    private var defaultPageIcon: some View {
+        Image(systemName: "doc.text")
+            .font(.system(size: 10))
+            .foregroundColor(.secondary)
     }
 }

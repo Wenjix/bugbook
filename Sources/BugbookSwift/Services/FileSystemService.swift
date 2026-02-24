@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import BugbookCore
 
 @MainActor
 class FileSystemService: ObservableObject {
@@ -59,7 +60,7 @@ class FileSystemService: ObservableObject {
 
         for name in contents {
             if name.hasPrefix(".") { continue }
-            if name == "_schema.md" || name == "_index.json" { continue }
+            if name == "_schema.json" || name == "_index.json" { continue }
 
             let fullPath = (path as NSString).appendingPathComponent(name)
             var isDir: ObjCBool = false
@@ -67,20 +68,13 @@ class FileSystemService: ObservableObject {
 
             if isDir.boolValue {
                 if isDatabaseFolder(at: fullPath) {
-                    // Database folder - read display name from schema
+                    // Database folder - read display name from _schema.json
                     var dbName = name
-                    let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.md")
-                    if let schemaContent = try? String(contentsOfFile: schemaPath, encoding: .utf8) {
-                        if schemaContent.hasPrefix("---") {
-                            if let endIdx = schemaContent.range(of: "\n---", range: schemaContent.index(schemaContent.startIndex, offsetBy: 3)..<schemaContent.endIndex) {
-                                let yamlStr = String(schemaContent[schemaContent.index(schemaContent.startIndex, offsetBy: 4)..<endIdx.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-                                if let data = yamlStr.data(using: .utf8),
-                                   let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                                   let schemaName = parsed["name"] as? String {
-                                    dbName = schemaName
-                                }
-                            }
-                        }
+                    let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let schemaName = json["name"] as? String {
+                        dbName = schemaName
                     }
                     // Treat database as a non-expandable item (like TS version)
                     folders.append(FileEntry(
@@ -148,7 +142,7 @@ class FileSystemService: ObservableObject {
         try content.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
-    func createNewFile(in directory: String, name: String = "Untitled") throws -> String {
+    func createNewFile(in directory: String, name: String = "New Page") throws -> String {
         let filename = uniqueFilename(in: directory, base: name, ext: "md")
         let filePath = (directory as NSString).appendingPathComponent(filename)
         try "# \n\n".write(toFile: filePath, atomically: true, encoding: .utf8)
@@ -204,18 +198,40 @@ class FileSystemService: ObservableObject {
         let folderPath = (directory as NSString).appendingPathComponent(name)
         try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
 
-        // Write _schema.md with default JSON schema in YAML frontmatter
-        let schemaContent = """
-        ---
-        {"name":"\(name)","properties":{"Name":{"type":"text","isPrimary":true},"Tags":{"type":"multi_select","options":[]},"Status":{"type":"select","options":["Not Started","In Progress","Done"]}}}
-        ---
-        """
-        let schemaPath = (folderPath as NSString).appendingPathComponent("_schema.md")
-        try schemaContent.write(toFile: schemaPath, atomically: true, encoding: .utf8)
+        let defaultViewId = "view_table"
+        let now = ISO8601DateFormatter().string(from: Date())
+        let schema = DatabaseSchema(
+            id: "db_\(name.lowercased().replacingOccurrences(of: " ", with: "_"))",
+            name: name,
+            version: 1,
+            properties: [
+                PropertyDefinition(id: "prop_title", name: "Name", type: .title),
+                PropertyDefinition(id: "prop_tags", name: "Tags", type: .multiSelect, config: PropertyConfig(options: [])),
+                PropertyDefinition(id: "prop_status", name: "Status", type: .select, config: PropertyConfig(options: [
+                    SelectOption(id: "opt_not_started", name: "Not Started", color: "gray"),
+                    SelectOption(id: "opt_in_progress", name: "In Progress", color: "blue"),
+                    SelectOption(id: "opt_done", name: "Done", color: "green"),
+                ])),
+            ],
+            views: [
+                ViewConfig(id: defaultViewId, name: "Table", type: .table, sorts: [], filters: [])
+            ],
+            defaultView: defaultViewId,
+            createdAt: now
+        )
+
+        // Write _schema.json
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let jsonData = try encoder.encode(schema)
+        let schemaPath = (folderPath as NSString).appendingPathComponent("_schema.json")
+        try jsonData.write(to: URL(fileURLWithPath: schemaPath), options: .atomic)
 
         // Write empty _index.json
         let indexPath = (folderPath as NSString).appendingPathComponent("_index.json")
-        try "[]".write(toFile: indexPath, atomically: true, encoding: .utf8)
+        let emptyIndex: [String: Any] = ["version": 1, "updated_at": now, "rows": [:] as [String: Any], "indexes": [:] as [String: Any]]
+        let indexData = try JSONSerialization.data(withJSONObject: emptyIndex, options: [.prettyPrinted, .sortedKeys])
+        try indexData.write(to: URL(fileURLWithPath: indexPath), options: .atomic)
 
         return folderPath
     }
@@ -349,7 +365,7 @@ class FileSystemService: ObservableObject {
     }
 
     private func isDatabaseFolder(at path: String) -> Bool {
-        let schemaPath = (path as NSString).appendingPathComponent("_schema.md")
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return fileManager.fileExists(atPath: schemaPath)
     }
 

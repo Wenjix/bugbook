@@ -11,6 +11,7 @@ enum BlockType: Equatable {
     case horizontalRule
     case image
     case databaseEmbed
+    case pageLink
     case column
 }
 
@@ -26,6 +27,7 @@ struct Block: Identifiable, Equatable {
     var imageAlt: String
     var imageWidth: Int?
     var databasePath: String
+    var pageLinkName: String
     var textColor: BlockColor
     var backgroundColor: BlockColor
     var children: [Block]
@@ -42,6 +44,7 @@ struct Block: Identifiable, Equatable {
         imageAlt: String = "",
         imageWidth: Int? = nil,
         databasePath: String = "",
+        pageLinkName: String = "",
         textColor: BlockColor = .default,
         backgroundColor: BlockColor = .default,
         children: [Block] = []
@@ -57,6 +60,7 @@ struct Block: Identifiable, Equatable {
         self.imageAlt = imageAlt
         self.imageWidth = imageWidth
         self.databasePath = databasePath
+        self.pageLinkName = pageLinkName
         self.textColor = textColor
         self.backgroundColor = backgroundColor
         self.children = children

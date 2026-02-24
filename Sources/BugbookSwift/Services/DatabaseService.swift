@@ -1,15 +1,24 @@
 import Foundation
+import BugbookCore
 
 @MainActor
 class DatabaseService: ObservableObject {
     private let fileManager = FileManager.default
 
+    // MARK: - ID Generation
+
+    private static let alphanumericChars = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+
+    private func randomAlphanumeric(_ length: Int) -> String {
+        String((0..<length).map { _ in Self.alphanumericChars.randomElement()! })
+    }
+
     // MARK: - Load Database
 
     func loadDatabase(at path: String) async throws -> (DatabaseSchema, [DatabaseRow]) {
-        let schemaPath = (path as NSString).appendingPathComponent("_schema.md")
-        let schemaContent = try String(contentsOfFile: schemaPath, encoding: .utf8)
-        let schema = try parseSchema(from: schemaContent)
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+        let schemaData = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
+        let schema = try JSONDecoder().decode(DatabaseSchema.self, from: schemaData)
         let rows = try loadRows(in: path, schema: schema)
         return (schema, rows)
     }
@@ -17,26 +26,26 @@ class DatabaseService: ObservableObject {
     // MARK: - Save Schema
 
     func saveSchema(_ schema: DatabaseSchema, at path: String) throws {
-        let schemaPath = (path as NSString).appendingPathComponent("_schema.md")
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let jsonData = try encoder.encode(schema)
-        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-        let content = "---\nschema: \(jsonString)\n---\n"
-        try content.write(toFile: schemaPath, atomically: true, encoding: .utf8)
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(schema)
+        try data.write(to: URL(fileURLWithPath: schemaPath), options: .atomic)
     }
 
     // MARK: - Save Row
 
     func saveRow(_ row: DatabaseRow, schema: DatabaseSchema, at dbPath: String) throws {
-        let filename = rowFilename(for: row)
+        let title = row.title(schema: schema)
+        let suffix = extractIdSuffix(from: row.id)
+        let filename = rowFilename(title: title, suffix: suffix)
         let filePath = (dbPath as NSString).appendingPathComponent(filename)
 
         // Remove old file if title changed (different filename)
         let contents = try? fileManager.contentsOfDirectory(atPath: dbPath)
         if let contents = contents {
             for name in contents {
-                if name.contains("(\(row.id))") && name != filename {
+                if name.contains("(\(suffix))") && name != filename {
                     let oldPath = (dbPath as NSString).appendingPathComponent(name)
                     try? fileManager.removeItem(atPath: oldPath)
                 }
@@ -45,17 +54,16 @@ class DatabaseService: ObservableObject {
 
         var frontmatter = "---\n"
         frontmatter += "id: \(row.id)\n"
-        frontmatter += "createdAt: \(dateString(from: row.createdAt))\n"
-        frontmatter += "updatedAt: \(dateString(from: row.updatedAt))\n"
-        frontmatter += "fullWidth: \(row.fullWidth)\n"
+        frontmatter += "created_at: \(iso8601String(from: row.createdAt))\n"
+        frontmatter += "updated_at: \(iso8601String(from: row.updatedAt))\n"
 
         if !row.properties.isEmpty {
             frontmatter += "properties:\n"
             for prop in schema.properties {
-                if let value = row.properties[prop.name] {
+                if let value = row.properties[prop.id] {
                     let serialized = serializePropertyValue(value)
                     if !serialized.isEmpty {
-                        frontmatter += "  \(prop.name): \(serialized)\n"
+                        frontmatter += "  \(prop.id): \(serialized)\n"
                     }
                 }
             }
@@ -65,7 +73,7 @@ class DatabaseService: ObservableObject {
 
         let bodyContent: String
         if row.body.isEmpty {
-            bodyContent = "\n# \(row.title)\n"
+            bodyContent = "\n"
         } else {
             bodyContent = "\n\(row.body)"
         }
@@ -78,26 +86,34 @@ class DatabaseService: ObservableObject {
 
     func createRow(in dbPath: String, schema: DatabaseSchema) throws -> DatabaseRow {
         let now = Date()
+        let suffix = randomAlphanumeric(6)
+        let rowId = "row_\(suffix)"
+
+        var properties: [String: PropertyValue] = [:]
+        // Set default title
+        if let titleProp = schema.titleProperty {
+            properties[titleProp.id] = .text("")
+        }
+
         let row = DatabaseRow(
-            id: "row_\(UUID().uuidString)",
-            title: "Untitled",
-            properties: [:],
+            id: rowId,
+            properties: properties,
             body: "",
             createdAt: now,
-            updatedAt: now,
-            fullWidth: false
+            updatedAt: now
         )
         try saveRow(row, schema: schema, at: dbPath)
-        try updateIndex(rows: try loadRows(in: dbPath, schema: schema), at: dbPath)
+        try updateIndex(rows: try loadRows(in: dbPath, schema: schema), schema: schema, at: dbPath)
         return row
     }
 
     // MARK: - Delete Row
 
     func deleteRow(_ rowId: String, in dbPath: String) throws {
+        let suffix = extractIdSuffix(from: rowId)
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return }
         for name in contents {
-            if name.contains("(\(rowId))") && name.hasSuffix(".md") {
+            if name.contains("(\(suffix))") && name.hasSuffix(".md") {
                 let filePath = (dbPath as NSString).appendingPathComponent(name)
                 try fileManager.removeItem(atPath: filePath)
                 break
@@ -125,36 +141,32 @@ class DatabaseService: ObservableObject {
 
     func renameProperty(_ propertyId: String, to newName: String, in schema: inout DatabaseSchema, rows: inout [DatabaseRow], at dbPath: String) throws {
         guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
-        let oldName = schema.properties[idx].name
         schema.properties[idx].name = newName
         try saveSchema(schema, at: dbPath)
-        // Migrate row data from old key to new key
+        // Row properties are keyed by ID, not name — no row migration needed.
+        // But re-save rows so filenames update if the title property was renamed.
         for i in rows.indices {
-            if let val = rows[i].properties.removeValue(forKey: oldName) {
-                rows[i].properties[newName] = val
-            }
             try saveRow(rows[i], schema: schema, at: dbPath)
         }
     }
 
     func changePropertyType(_ propertyId: String, to newType: PropertyType, in schema: inout DatabaseSchema, rows: inout [DatabaseRow], at dbPath: String) throws {
         guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
-        let propName = schema.properties[idx].name
         let oldType = schema.properties[idx].type
         schema.properties[idx].type = newType
-        // Add empty options array for select/multiSelect types
+        // Add empty options for select/multiSelect types
         if newType == .select || newType == .multiSelect {
-            if schema.properties[idx].options == nil {
-                schema.properties[idx].options = []
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(options: [])
+            } else if schema.properties[idx].config?.options == nil {
+                schema.properties[idx].config?.options = []
             }
-        } else {
-            schema.properties[idx].options = nil
         }
         try saveSchema(schema, at: dbPath)
         // Convert existing values where possible
         for i in rows.indices {
-            if let val = rows[i].properties[propName] {
-                rows[i].properties[propName] = convertValue(val, from: oldType, to: newType)
+            if let val = rows[i].properties[propertyId] {
+                rows[i].properties[propertyId] = convertValue(val, from: oldType, to: newType)
                 try saveRow(rows[i], schema: schema, at: dbPath)
             }
         }
@@ -162,17 +174,19 @@ class DatabaseService: ObservableObject {
 
     func addSelectOption(_ option: SelectOption, toProperty propertyId: String, in schema: inout DatabaseSchema, at dbPath: String) throws {
         guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
-        if schema.properties[idx].options == nil {
-            schema.properties[idx].options = []
+        if schema.properties[idx].config == nil {
+            schema.properties[idx].config = PropertyConfig(options: [])
         }
-        schema.properties[idx].options?.append(option)
+        if schema.properties[idx].config?.options == nil {
+            schema.properties[idx].config?.options = []
+        }
+        schema.properties[idx].config?.options?.append(option)
         try saveSchema(schema, at: dbPath)
     }
 
     // MARK: - Private: Value Conversion
 
     private func convertValue(_ value: PropertyValue, from oldType: PropertyType, to newType: PropertyType) -> PropertyValue {
-        // Extract string representation
         let str: String
         switch value {
         case .text(let s): str = s
@@ -183,19 +197,21 @@ class DatabaseService: ObservableObject {
         case .checkbox(let b): str = b ? "true" : "false"
         case .url(let s): str = s
         case .email(let s): str = s
+        case .relation(let s): str = s
+        case .relationMany(let arr): str = arr.joined(separator: ", ")
         case .empty: return .empty
         }
 
-        // Convert to new type
         switch newType {
-        case .text: return .text(str)
+        case .title, .text: return .text(str)
         case .number: return .number(Double(str) ?? 0)
         case .checkbox: return .checkbox(str == "true" || str == "1")
         case .date: return .date(str)
         case .url: return .url(str)
         case .email: return .email(str)
-        case .select: return .text(str) // Can't auto-create options, store as text
+        case .select: return .text(str)
         case .multiSelect: return .text(str)
+        case .relation: return .relation(str)
         }
     }
 
@@ -220,61 +236,96 @@ class DatabaseService: ObservableObject {
 
     func deleteView(_ viewId: String, from schema: inout DatabaseSchema, at dbPath: String) throws {
         schema.views.removeAll { $0.id == viewId }
-        if schema.defaultViewId == viewId, let first = schema.views.first {
-            schema.defaultViewId = first.id
+        if schema.defaultView == viewId, let first = schema.views.first {
+            schema.defaultView = first.id
         }
         try saveSchema(schema, at: dbPath)
     }
 
     func setDefaultView(_ viewId: String, in schema: inout DatabaseSchema, at dbPath: String) throws {
-        schema.defaultViewId = viewId
+        schema.defaultView = viewId
         try saveSchema(schema, at: dbPath)
     }
 
     // MARK: - Update Index
 
-    func updateIndex(rows: [DatabaseRow], at dbPath: String) throws {
+    func updateIndex(rows: [DatabaseRow], schema: DatabaseSchema, at dbPath: String) throws {
         let indexPath = (dbPath as NSString).appendingPathComponent("_index.json")
-        let entries: [[String: String]] = rows.map { row in
-            [
-                "id": row.id,
-                "title": row.title,
-                "updatedAt": dateString(from: row.updatedAt)
-            ]
-        }
-        let data = try JSONSerialization.data(withJSONObject: entries, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: URL(fileURLWithPath: indexPath))
-    }
 
-    // MARK: - Private: Parse Schema
+        // Build rows map
+        var rowsMap: [String: Any] = [:]
+        for row in rows {
+            let title = row.title(schema: schema)
+            let suffix = extractIdSuffix(from: row.id)
 
-    private func parseSchema(from content: String) throws -> DatabaseSchema {
-        guard content.hasPrefix("---") else {
-            throw DatabaseError.invalidSchema
-        }
-        let afterFirstMarker = content.index(content.startIndex, offsetBy: 3)
-        guard let endRange = content.range(of: "\n---", range: afterFirstMarker..<content.endIndex) else {
-            throw DatabaseError.invalidSchema
-        }
-        let yamlBlock = String(content[afterFirstMarker..<endRange.lowerBound])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Build serializable properties
+            var props: [String: Any] = [:]
+            for prop in schema.properties {
+                if let val = row.properties[prop.id] {
+                    props[prop.id] = serializePropertyValueForIndex(val)
+                }
+            }
 
-        // Find the JSON value after "schema: "
-        guard let schemaRange = yamlBlock.range(of: "schema: ") ?? yamlBlock.range(of: "schema:") else {
-            throw DatabaseError.invalidSchema
-        }
-        var jsonString = String(yamlBlock[schemaRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        // If the value doesn't start with {, it might be on the next line
-        if !jsonString.hasPrefix("{") {
-            throw DatabaseError.invalidSchema
-        }
-        // Trim anything after the closing brace at the right depth
-        jsonString = extractJSON(jsonString)
+            let filename = rowFilename(title: title, suffix: suffix).replacingOccurrences(of: ".md", with: "")
+            let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
+            let mtime: Int
+            if let attrs = try? fileManager.attributesOfItem(atPath: filePath),
+               let modDate = attrs[.modificationDate] as? Date {
+                mtime = Int(modDate.timeIntervalSince1970 * 1000)
+            } else {
+                mtime = Int(row.updatedAt.timeIntervalSince1970 * 1000)
+            }
 
-        guard let jsonData = jsonString.data(using: .utf8) else {
-            throw DatabaseError.invalidSchema
+            rowsMap[row.id] = [
+                "properties": props,
+                "created_at": iso8601String(from: row.createdAt),
+                "updated_at": iso8601String(from: row.updatedAt),
+                "filename": filename,
+                "mtime": mtime
+            ] as [String: Any]
         }
-        return try JSONDecoder().decode(DatabaseSchema.self, from: jsonData)
+
+        // Build reverse indexes for indexed property types
+        let indexedTypes: Set<PropertyType> = [.select, .multiSelect, .relation, .checkbox]
+        var indexes: [String: [String: [String]]] = [:]
+        for prop in schema.properties where indexedTypes.contains(prop.type) {
+            var propIndex: [String: [String]] = [:]
+            for row in rows {
+                guard let val = row.properties[prop.id] else { continue }
+                switch val {
+                case .select(let optId):
+                    propIndex[optId, default: []].append(row.id)
+                case .multiSelect(let optIds):
+                    for optId in optIds {
+                        propIndex[optId, default: []].append(row.id)
+                    }
+                case .relation(let rowId):
+                    propIndex[rowId, default: []].append(row.id)
+                case .relationMany(let rowIds):
+                    for rid in rowIds {
+                        propIndex[rid, default: []].append(row.id)
+                    }
+                case .checkbox(let b):
+                    let key = b ? "true" : "false"
+                    propIndex[key, default: []].append(row.id)
+                default:
+                    break
+                }
+            }
+            if !propIndex.isEmpty {
+                indexes[prop.id] = propIndex
+            }
+        }
+
+        let indexObj: [String: Any] = [
+            "version": 1,
+            "updated_at": iso8601String(from: Date()),
+            "rows": rowsMap,
+            "indexes": indexes
+        ]
+
+        let data = try JSONSerialization.data(withJSONObject: indexObj, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: URL(fileURLWithPath: indexPath), options: .atomic)
     }
 
     // MARK: - Private: Load Rows
@@ -284,7 +335,7 @@ class DatabaseService: ObservableObject {
         var rows: [DatabaseRow] = []
 
         for name in contents {
-            guard name.hasSuffix(".md"), name != "_schema.md" else { continue }
+            guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
             let filePath = (dbPath as NSString).appendingPathComponent(name)
             guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
             if let row = parseRow(from: content, schema: schema) {
@@ -308,27 +359,27 @@ class DatabaseService: ObservableObject {
         var id = ""
         var createdAt = Date()
         var updatedAt = Date()
-        var fullWidth = false
         var properties: [String: PropertyValue] = [:]
         var inProperties = false
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        dateFormatter.timeZone = TimeZone(identifier: "UTC")
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        let dateOnlyFormatter = DateFormatter()
+        dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
+        dateOnlyFormatter.timeZone = TimeZone(identifier: "UTC")
 
         for line in yamlBlock.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
 
             if inProperties {
-                // Property lines are indented with 2 spaces
                 if line.hasPrefix("  ") {
                     let propLine = String(line.dropFirst(2))
                     if let colonIdx = propLine.firstIndex(of: ":") {
                         let key = String(propLine[propLine.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
                         let rawValue = String(propLine[propLine.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
-                        // Find matching property definition
-                        if let propDef = schema.properties.first(where: { $0.name == key }) {
+                        // Look up by property ID
+                        if let propDef = schema.properties.first(where: { $0.id == key }) {
                             properties[key] = parsePropertyValue(rawValue, type: propDef.type)
                         }
                     }
@@ -342,32 +393,24 @@ class DatabaseService: ObservableObject {
                     inProperties = true
                 } else if trimmed.hasPrefix("id:") {
                     id = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                } else if trimmed.hasPrefix("createdAt:") {
-                    let val = String(trimmed.dropFirst(10)).trimmingCharacters(in: .whitespaces)
-                    createdAt = dateFormatter.date(from: val) ?? Date()
-                } else if trimmed.hasPrefix("updatedAt:") {
-                    let val = String(trimmed.dropFirst(10)).trimmingCharacters(in: .whitespaces)
-                    updatedAt = dateFormatter.date(from: val) ?? Date()
-                } else if trimmed.hasPrefix("fullWidth:") {
-                    let val = String(trimmed.dropFirst(10)).trimmingCharacters(in: .whitespaces)
-                    fullWidth = val == "true"
+                } else if trimmed.hasPrefix("created_at:") {
+                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
+                    createdAt = isoFormatter.date(from: val) ?? dateOnlyFormatter.date(from: val) ?? Date()
+                } else if trimmed.hasPrefix("updated_at:") {
+                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
+                    updatedAt = isoFormatter.date(from: val) ?? dateOnlyFormatter.date(from: val) ?? Date()
                 }
             }
         }
 
         guard !id.isEmpty else { return nil }
 
-        // Extract title from body (first # heading) or from filename
-        let title = extractTitle(from: body) ?? "Untitled"
-
         return DatabaseRow(
             id: id,
-            title: title,
             properties: properties,
             body: body,
             createdAt: createdAt,
-            updatedAt: updatedAt,
-            fullWidth: fullWidth
+            updatedAt: updatedAt
         )
     }
 
@@ -378,14 +421,13 @@ class DatabaseService: ObservableObject {
         if value.isEmpty { return .empty }
 
         switch type {
-        case .text:
+        case .title, .text:
             return .text(value)
         case .number:
             return .number(Double(value) ?? 0)
         case .select:
             return .select(value)
         case .multiSelect:
-            // Stored as comma-separated or JSON array
             if value.hasPrefix("[") {
                 let items = value.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
                     .components(separatedBy: ",")
@@ -402,6 +444,15 @@ class DatabaseService: ObservableObject {
             return .url(value)
         case .email:
             return .email(value)
+        case .relation:
+            if value.hasPrefix("[") {
+                let items = value.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+                    .components(separatedBy: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+                    .filter { !$0.isEmpty }
+                return .relationMany(items)
+            }
+            return .relation(value)
         }
     }
 
@@ -414,51 +465,52 @@ class DatabaseService: ObservableObject {
             }
             return String(n)
         case .select(let s): return s
-        case .multiSelect(let arr): return "[\(arr.map { "\"\($0)\"" }.joined(separator: ", "))]"
+        case .multiSelect(let arr): return "[\(arr.joined(separator: ", "))]"
         case .date(let s): return s
         case .checkbox(let b): return b ? "true" : "false"
         case .url(let s): return "\"\(s)\""
         case .email(let s): return "\"\(s)\""
+        case .relation(let s): return s
+        case .relationMany(let arr): return "[\(arr.joined(separator: ", "))]"
         case .empty: return ""
         }
     }
 
-    private func rowFilename(for row: DatabaseRow) -> String {
-        let sanitized = row.title
+    private func serializePropertyValueForIndex(_ value: PropertyValue) -> Any {
+        switch value {
+        case .text(let s): return s
+        case .number(let n): return n
+        case .select(let s): return s
+        case .multiSelect(let arr): return arr
+        case .date(let s): return s
+        case .checkbox(let b): return b
+        case .url(let s): return s
+        case .email(let s): return s
+        case .relation(let s): return s
+        case .relationMany(let arr): return arr
+        case .empty: return NSNull()
+        }
+    }
+
+    private func rowFilename(title: String, suffix: String) -> String {
+        let sanitized = title
             .replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
             .prefix(80)
-        return "\(sanitized) (\(row.id)).md"
+        return "\(sanitized) (\(suffix)).md"
     }
 
-    private func dateString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+    private func extractIdSuffix(from rowId: String) -> String {
+        // row_a1b2c3 -> a1b2c3
+        if rowId.hasPrefix("row_") {
+            return String(rowId.dropFirst(4))
+        }
+        return rowId
+    }
+
+    private func iso8601String(from date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: date)
-    }
-
-    private func extractTitle(from body: String) -> String? {
-        for line in body.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("# ") {
-                return String(trimmed.dropFirst(2))
-            }
-        }
-        return nil
-    }
-
-    private func extractJSON(_ input: String) -> String {
-        var depth = 0
-        var endIdx = input.startIndex
-        for (i, ch) in input.enumerated() {
-            if ch == "{" { depth += 1 }
-            else if ch == "}" { depth -= 1 }
-            if depth == 0 {
-                endIdx = input.index(input.startIndex, offsetBy: i + 1)
-                break
-            }
-        }
-        return String(input[input.startIndex..<endIdx])
     }
 }
 

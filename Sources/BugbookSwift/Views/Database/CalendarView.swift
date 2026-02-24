@@ -1,4 +1,5 @@
 import SwiftUI
+import BugbookCore
 
 struct CalendarView: View {
     let schema: DatabaseSchema
@@ -21,7 +22,7 @@ struct CalendarView: View {
         if let selectedId = selectedDatePropertyId {
             return schema.properties.first(where: { $0.id == selectedId })
         }
-        if let dateId = viewConfig.datePropertyId {
+        if let dateId = viewConfig.dateProperty {
             return schema.properties.first(where: { $0.id == dateId })
         }
         return schema.properties.first(where: { $0.type == .date })
@@ -69,7 +70,7 @@ struct CalendarView: View {
     private func rowsForDate(_ dateStr: String) -> [DatabaseRow] {
         guard let prop = dateProperty else { return [] }
         return rows.filter { row in
-            if let val = row.properties[prop.name], case .date(let d) = val {
+            if let val = row.properties[prop.id], case .date(let d) = val {
                 return d == dateStr
             }
             return false
@@ -196,10 +197,11 @@ struct CalendarView: View {
 
                 let dayRows = rowsForDate(cell.dateString)
                 ForEach(dayRows.prefix(3)) { row in
+                    let title = row.title(schema: schema)
                     Button {
                         onOpenRow(row)
                     } label: {
-                        Text(row.title)
+                        Text(title)
                             .font(.caption2)
                             .lineLimit(1)
                             .foregroundColor(.primary)
@@ -211,7 +213,7 @@ struct CalendarView: View {
                     }
                     .buttonStyle(.plain)
                     .draggable(row.id) {
-                        Text(row.title)
+                        Text(title)
                             .padding(6)
                             .background(.ultraThinMaterial)
                             .cornerRadius(4)
@@ -233,7 +235,7 @@ struct CalendarView: View {
             guard let prop = dateProperty, cell.isCurrentMonth else { return false }
             for droppedId in droppedIds {
                 if let idx = rows.firstIndex(where: { $0.id == droppedId }) {
-                    rows[idx].properties[prop.name] = .date(cell.dateString)
+                    rows[idx].properties[prop.id] = .date(cell.dateString)
                 }
             }
             return true

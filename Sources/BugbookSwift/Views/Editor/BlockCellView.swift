@@ -52,6 +52,31 @@ struct BlockCellView: View {
         ) {
             BlockMenuView(document: document, blockId: block.id)
         }
+        .popover(
+            isPresented: Binding(
+                get: { document.showPagePicker && document.pagePickerBlockId == block.id },
+                set: { if !$0 { document.dismissPagePicker() } }
+            ),
+            arrowEdge: .bottom
+        ) {
+            PagePickerView(document: document)
+        }
+    }
+
+    private func findPageIcon(named name: String) -> String? {
+        func search(in entries: [FileEntry]) -> String? {
+            for entry in entries {
+                let entryName = entry.name.replacingOccurrences(of: ".md", with: "")
+                if entryName.localizedCaseInsensitiveCompare(name) == .orderedSame {
+                    return entry.icon
+                }
+                if let children = entry.children, let found = search(in: children) {
+                    return found
+                }
+            }
+            return nil
+        }
+        return search(in: document.availablePages)
     }
 
     @ViewBuilder
@@ -70,7 +95,14 @@ struct BlockCellView: View {
             ImageBlockView(block: block)
 
         case .databaseEmbed:
-            DatabaseEmbedBlockView(block: block)
+            DatabaseEmbedBlockView(block: block, onOpenDatabaseTab: document.onOpenDatabaseTab)
+
+        case .pageLink:
+            WikiLinkView(
+                pageName: block.pageLinkName,
+                icon: findPageIcon(named: block.pageLinkName),
+                onNavigate: { document.onNavigateToPage?(block.pageLinkName) }
+            )
 
         case .column:
             ColumnBlockView(document: document, block: block)

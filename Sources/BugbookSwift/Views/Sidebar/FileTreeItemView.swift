@@ -78,14 +78,45 @@ struct FileTreeItemView: View {
     @ViewBuilder
     private var iconView: some View {
         if let icon = entry.icon, !icon.isEmpty {
-            if icon.unicodeScalars.first?.properties.isEmoji == true && icon.count <= 2 {
-                Text(icon).font(.system(size: 14))
-            } else {
-                Image(systemName: icon)
+            if icon.hasPrefix("custom:") {
+                // Custom uploaded icon image (custom:/path/to/image)
+                let path = String(icon.dropFirst(7))
+                if let nsImage = NSImage(contentsOfFile: path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                } else {
+                    defaultIcon
+                }
+            } else if icon.hasPrefix("sf:") {
+                // SF Symbol (sf:symbolName)
+                Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 14))
+            } else if FileManager.default.fileExists(atPath: icon) {
+                // Raw file path (legacy)
+                if let nsImage = NSImage(contentsOfFile: icon) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                } else {
+                    defaultIcon
+                }
+            } else {
+                defaultIcon
             }
-        } else if entry.isDatabase {
+        } else {
+            defaultIcon
+        }
+    }
+
+    @ViewBuilder
+    private var defaultIcon: some View {
+        if entry.isDatabase {
             Image(systemName: "tablecells")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
@@ -201,7 +232,7 @@ struct FileTreeItemView: View {
     }
 
     private func performCreateSubPage() {
-        if let path = try? fileSystem.createSubPage(under: entry.path, name: "Untitled") {
+        if let path = try? fileSystem.createSubPage(under: entry.path, name: "New Page") {
             onRefreshTree()
             if !isExpanded { toggleExpanded() }
             let sub = FileEntry(

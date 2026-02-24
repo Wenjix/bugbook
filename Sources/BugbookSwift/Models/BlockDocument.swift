@@ -14,6 +14,8 @@ class BlockDocument: ObservableObject {
     @Published var coverUrl: String?
     @Published var coverPosition: Double = 50
     @Published var fullWidth: Bool = false
+    @Published var showPagePicker: Bool = false
+    @Published var pagePickerBlockId: UUID?
 
     var titleBlock: Block? {
         guard let first = blocks.first,
@@ -22,6 +24,9 @@ class BlockDocument: ObservableObject {
     }
 
     var onCreateDatabase: ((String) -> String?)?
+    var onNavigateToPage: ((String) -> Void)?
+    var onOpenDatabaseTab: ((String) -> Void)?
+    var availablePages: [FileEntry] = []
 
     private var undoStack: [[Block]] = []
     private var redoStack: [[Block]] = []
@@ -190,6 +195,7 @@ class BlockDocument: ObservableObject {
             imageAlt: copy.imageAlt,
             imageWidth: copy.imageWidth,
             databasePath: copy.databasePath,
+            pageLinkName: copy.pageLinkName,
             textColor: copy.textColor,
             backgroundColor: copy.backgroundColor,
             children: copy.children
@@ -229,25 +235,30 @@ class BlockDocument: ObservableObject {
 
     // MARK: - Slash Commands
 
+    enum SlashCommandAction {
+        case blockType(BlockType, headingLevel: Int)
+        case linkToPage
+    }
+
     struct SlashCommand {
         let name: String
         let icon: String
-        let type: BlockType
-        let headingLevel: Int
+        let action: SlashCommandAction
     }
 
     static let slashCommands: [SlashCommand] = [
-        SlashCommand(name: "Text", icon: "text.alignleft", type: .paragraph, headingLevel: 0),
-        SlashCommand(name: "Heading 1", icon: "textformat.size.larger", type: .heading, headingLevel: 1),
-        SlashCommand(name: "Heading 2", icon: "textformat.size", type: .heading, headingLevel: 2),
-        SlashCommand(name: "Heading 3", icon: "textformat.size.smaller", type: .heading, headingLevel: 3),
-        SlashCommand(name: "Bullet List", icon: "list.bullet", type: .bulletListItem, headingLevel: 0),
-        SlashCommand(name: "Numbered List", icon: "list.number", type: .numberedListItem, headingLevel: 0),
-        SlashCommand(name: "To-do", icon: "checkmark.square", type: .taskItem, headingLevel: 0),
-        SlashCommand(name: "Quote", icon: "text.quote", type: .blockquote, headingLevel: 0),
-        SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", type: .codeBlock, headingLevel: 0),
-        SlashCommand(name: "Divider", icon: "minus", type: .horizontalRule, headingLevel: 0),
-        SlashCommand(name: "Database", icon: "tablecells", type: .databaseEmbed, headingLevel: 0),
+        SlashCommand(name: "Text", icon: "text.alignleft", action: .blockType(.paragraph, headingLevel: 0)),
+        SlashCommand(name: "Heading 1", icon: "textformat.size.larger", action: .blockType(.heading, headingLevel: 1)),
+        SlashCommand(name: "Heading 2", icon: "textformat.size", action: .blockType(.heading, headingLevel: 2)),
+        SlashCommand(name: "Heading 3", icon: "textformat.size.smaller", action: .blockType(.heading, headingLevel: 3)),
+        SlashCommand(name: "Bullet List", icon: "list.bullet", action: .blockType(.bulletListItem, headingLevel: 0)),
+        SlashCommand(name: "Numbered List", icon: "list.number", action: .blockType(.numberedListItem, headingLevel: 0)),
+        SlashCommand(name: "To-do", icon: "checkmark.square", action: .blockType(.taskItem, headingLevel: 0)),
+        SlashCommand(name: "Quote", icon: "text.quote", action: .blockType(.blockquote, headingLevel: 0)),
+        SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0)),
+        SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0)),
+        SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
+        SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -269,24 +280,51 @@ class BlockDocument: ObservableObject {
             blocks[blockIdx].text = ""
         }
 
-        // Database command needs special handling — creates files via callback
-        if command.type == .databaseEmbed {
-            if let blockIdx = index(for: blockId),
-               let createDb = onCreateDatabase,
-               let dbPath = createDb("Untitled Database") {
-                blocks[blockIdx].type = .databaseEmbed
-                blocks[blockIdx].databasePath = dbPath
-            }
+        switch command.action {
+        case .linkToPage:
+            pagePickerBlockId = blockId
+            showPagePicker = true
             dismissSlashMenu()
             return
-        }
 
-        changeBlockType(id: blockId, to: command.type)
-        if command.type == .heading {
-            setHeadingLevel(id: blockId, level: command.headingLevel)
+        case let .blockType(type, headingLevel):
+            // Database command needs special handling — creates files via callback
+            if type == .databaseEmbed {
+                if let blockIdx = index(for: blockId),
+                   let createDb = onCreateDatabase,
+                   let dbPath = createDb("Untitled Database") {
+                    blocks[blockIdx].type = .databaseEmbed
+                    blocks[blockIdx].databasePath = dbPath
+                }
+                dismissSlashMenu()
+                return
+            }
+
+            changeBlockType(id: blockId, to: type)
+            if type == .heading {
+                setHeadingLevel(id: blockId, level: headingLevel)
+            }
         }
 
         dismissSlashMenu()
+    }
+
+    func insertPageLink(name: String) {
+        guard let blockId = pagePickerBlockId,
+              let blockIdx = index(for: blockId) else {
+            dismissPagePicker()
+            return
+        }
+        saveUndo()
+        blocks[blockIdx].type = .pageLink
+        blocks[blockIdx].pageLinkName = name
+        blocks[blockIdx].text = ""
+        dismissPagePicker()
+    }
+
+    func dismissPagePicker() {
+        showPagePicker = false
+        pagePickerBlockId = nil
     }
 
     func dismissSlashMenu() {

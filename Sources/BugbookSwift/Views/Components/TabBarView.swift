@@ -64,7 +64,7 @@ struct TabItemView: View {
     }
 
     private var tabName: String {
-        if tab.isEmptyTab { return "New Tab" }
+        if tab.isEmptyTab { return "Local-first notes for agents and humans" }
         if let displayName = tab.displayName { return displayName }
         let name = (tab.path as NSString).lastPathComponent
         return name.hasSuffix(".md") ? String(name.dropLast(3)) : name

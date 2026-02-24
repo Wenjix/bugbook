@@ -171,6 +171,13 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Wiki link (page link) — line is exactly [[Page Name]]
+            if let name = parseWikiLink(line) {
+                blocks.append(Block(type: .pageLink, pageLinkName: name))
+                i += 1
+                continue
+            }
+
             // Column block
             if line.trimmingCharacters(in: .whitespaces) == "<!-- columns -->" {
                 var columnChildren: [Block] = []
@@ -284,6 +291,9 @@ enum MarkdownBlockParser {
 
             case .databaseEmbed:
                 lines.append("<!-- database: \(block.databasePath) -->")
+
+            case .pageLink:
+                lines.append("[[\(block.pageLinkName)]]")
 
             case .column:
                 lines.append("<!-- columns -->")
@@ -400,6 +410,13 @@ enum MarkdownBlockParser {
         guard pathStart < pathEnd else { return nil }
         let path = String(trimmed[pathStart..<pathEnd]).trimmingCharacters(in: .whitespaces)
         return path.isEmpty ? nil : path
+    }
+
+    private static func parseWikiLink(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("[["), trimmed.hasSuffix("]]") else { return nil }
+        let name = String(trimmed.dropFirst(2).dropLast(2))
+        return name.isEmpty ? nil : name
     }
 
     private static func parseColorComment(_ line: String) -> (BlockColor, BlockColor)? {

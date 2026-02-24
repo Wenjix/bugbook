@@ -152,19 +152,29 @@ struct ContentView: View {
                 .onAppear {
                     if blockDocuments[tab.id] == nil {
                         let doc = BlockDocument(markdown: tab.content)
-                        wireUpDatabaseCallback(doc)
+                        wireUpDocumentCallbacks(doc)
                         blockDocuments[tab.id] = doc
                     }
                 }
         }
     }
 
-    private func wireUpDatabaseCallback(_ doc: BlockDocument) {
+    private func wireUpDocumentCallbacks(_ doc: BlockDocument) {
         doc.onCreateDatabase = { [weak appState] name in
             guard let workspace = appState?.workspacePath else { return nil }
             let path = try? fileSystem.createDatabase(in: workspace, name: name)
             if path != nil { refreshFileTree() }
             return path
+        }
+        doc.availablePages = appState.fileTree
+        doc.onNavigateToPage = { pageName in
+            navigateToPage(named: pageName)
+        }
+        doc.onOpenDatabaseTab = { [weak appState] dbPath in
+            guard let appState else { return }
+            let name = (dbPath as NSString).lastPathComponent
+            let entry = FileEntry(id: dbPath, name: name, path: dbPath, isDirectory: true, isDatabase: true)
+            appState.openFile(entry)
         }
     }
 
@@ -193,7 +203,7 @@ struct ContentView: View {
                 appState.openTabs[index].content = content
                 appState.openTabs[index].isDirty = false
                 let doc = BlockDocument(markdown: content)
-                wireUpDatabaseCallback(doc)
+                wireUpDocumentCallbacks(doc)
                 blockDocuments[appState.openTabs[index].id] = doc
             }
         } catch {
@@ -277,6 +287,27 @@ struct ContentView: View {
     private func forceSave() {
         guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
         performSave(tabId: tab.id)
+    }
+
+    private func navigateToPage(named pageName: String) {
+        // Find the page in the file tree by name (case-insensitive, strip .md)
+        func findEntry(in entries: [FileEntry]) -> FileEntry? {
+            for entry in entries {
+                let entryName = entry.name.replacingOccurrences(of: ".md", with: "")
+                if entryName.localizedCaseInsensitiveCompare(pageName) == .orderedSame {
+                    return entry
+                }
+                if let children = entry.children, let found = findEntry(in: children) {
+                    return found
+                }
+            }
+            return nil
+        }
+
+        if let entry = findEntry(in: appState.fileTree) {
+            appState.openFile(entry)
+            loadFileContent(for: entry)
+        }
     }
 
     private func breadcrumbs(for tab: OpenFile) -> [BreadcrumbItem] {

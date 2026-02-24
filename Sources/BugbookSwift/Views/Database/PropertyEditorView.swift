@@ -1,12 +1,14 @@
 import SwiftUI
+import BugbookCore
 
 struct PropertyEditorView: View {
     let definition: PropertyDefinition
     @Binding var value: PropertyValue
+    var onAddOption: ((String, SelectOption) -> Void)?
 
     var body: some View {
         switch definition.type {
-        case .text:
+        case .title, .text:
             textEditor
         case .number:
             numberEditor
@@ -22,23 +24,26 @@ struct PropertyEditorView: View {
             urlEditor
         case .email:
             emailEditor
+        case .relation:
+            textEditor
         }
     }
 
     // MARK: - Text
 
     private var textEditor: some View {
-        TextField("Empty", text: Binding(
+        TextField("", text: Binding(
             get: { if case .text(let s) = value { return s } else { return "" } },
             set: { value = .text($0) }
         ))
         .textFieldStyle(.plain)
+        .foregroundColor(.primary)
     }
 
     // MARK: - Number
 
     private var numberEditor: some View {
-        TextField("0", text: Binding(
+        TextField("", text: Binding(
             get: {
                 if case .number(let n) = value {
                     return n == n.rounded() ? String(Int(n)) : String(n)
@@ -48,9 +53,13 @@ struct PropertyEditorView: View {
             set: { value = .number(Double($0) ?? 0) }
         ))
         .textFieldStyle(.plain)
+        .foregroundColor(.primary)
     }
 
-    // MARK: - Select (colored badges)
+    // MARK: - Select
+
+    @State private var showNewSelectOption: Bool = false
+    @State private var newSelectOptionName: String = ""
 
     private var selectEditor: some View {
         let options = definition.options ?? []
@@ -75,24 +84,38 @@ struct PropertyEditorView: View {
                     }
                 }
             }
+            if onAddOption != nil {
+                Divider()
+                Button("Create option...") {
+                    newSelectOptionName = ""
+                    showNewSelectOption = true
+                }
+            }
         } label: {
             if let opt = currentOption {
                 Text(opt.name)
-                    .font(.caption)
+                    .font(.callout)
+                    .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(colorForName(opt.color).opacity(0.2))
+                    .background(colorForName(opt.color).opacity(0.12))
                     .foregroundColor(colorForName(opt.color))
                     .cornerRadius(4)
             } else {
-                Text("Select...")
-                    .foregroundColor(.secondary)
+                Color.clear.frame(height: 22)
             }
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
+        .popover(isPresented: $showNewSelectOption, arrowEdge: .bottom) {
+            createOptionPopover(isSelect: true)
+        }
     }
 
-    // MARK: - Multi Select (tags with X buttons)
+    // MARK: - Multi Select
+
+    @State private var showNewTag: Bool = false
+    @State private var newTagName: String = ""
 
     private var multiSelectEditor: some View {
         let options = definition.options ?? []
@@ -101,32 +124,27 @@ struct PropertyEditorView: View {
             return []
         }()
 
-        return HStack(spacing: 4) {
-            // Show selected tags
-            ForEach(selectedIds, id: \.self) { id in
+        return HStack(spacing: 3) {
+            // Compact tag pills — no X buttons, remove via dropdown
+            ForEach(selectedIds.prefix(3), id: \.self) { id in
                 if let option = options.first(where: { $0.id == id }) {
-                    HStack(spacing: 2) {
-                        Text(option.name)
-                            .font(.caption2)
-                        Button {
-                            var updated = selectedIds
-                            updated.removeAll { $0 == id }
-                            value = updated.isEmpty ? .empty : .multiSelect(updated)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 8, weight: .bold))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(colorForName(option.color).opacity(0.2))
-                    .foregroundColor(colorForName(option.color))
-                    .cornerRadius(4)
+                    Text(option.name)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(colorForName(option.color).opacity(0.12))
+                        .foregroundColor(colorForName(option.color))
+                        .cornerRadius(4)
                 }
             }
+            if selectedIds.count > 3 {
+                Text("+\(selectedIds.count - 3)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
 
-            // Add menu
+            // Add/remove menu
             Menu {
                 ForEach(options) { option in
                     let isSelected = selectedIds.contains(option.id)
@@ -145,22 +163,89 @@ struct PropertyEditorView: View {
                                 .frame(width: 8, height: 8)
                             Text(option.name)
                             if isSelected {
+                                Spacer()
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
                 }
+                if onAddOption != nil {
+                    Divider()
+                    Button("Create tag...") {
+                        newTagName = ""
+                        showNewTag = true
+                    }
+                }
             } label: {
                 Image(systemName: "plus")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .popover(isPresented: $showNewTag, arrowEdge: .bottom) {
+                createOptionPopover(isSelect: false)
+            }
         }
     }
 
-    // MARK: - Date (native DatePicker)
+    // MARK: - Create Option Popover (shared by select & multiSelect)
+
+    private func createOptionPopover(isSelect: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isSelect ? "New option" : "New tag")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            TextField("Name", text: isSelect ? $newSelectOptionName : $newTagName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 180)
+                .onSubmit {
+                    commitNewOption(isSelect: isSelect)
+                }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    if isSelect { showNewSelectOption = false } else { showNewTag = false }
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+
+                Button("Add") {
+                    commitNewOption(isSelect: isSelect)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled((isSelect ? newSelectOptionName : newTagName).trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(12)
+    }
+
+    private func commitNewOption(isSelect: Bool) {
+        let name = (isSelect ? newSelectOptionName : newTagName).trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let colors = ["blue", "green", "purple", "orange", "pink", "teal", "yellow", "red"]
+        let color = colors.randomElement() ?? "blue"
+        let option = SelectOption(id: "opt_\(UUID().uuidString)", name: name, color: color)
+        onAddOption?(definition.id, option)
+
+        if isSelect {
+            value = .select(option.id)
+            showNewSelectOption = false
+            newSelectOptionName = ""
+        } else {
+            var current: [String] = []
+            if case .multiSelect(let arr) = value { current = arr }
+            current.append(option.id)
+            value = .multiSelect(current)
+            showNewTag = false
+            newTagName = ""
+        }
+    }
+
+    // MARK: - Date
 
     private var dateEditor: some View {
         let dateBinding = Binding<Date>(
@@ -193,57 +278,43 @@ struct PropertyEditorView: View {
         .toggleStyle(.checkbox)
     }
 
-    // MARK: - URL (with validation indicator)
+    // MARK: - URL
 
     private var urlEditor: some View {
         let urlString = { () -> String in
             if case .url(let s) = value { return s }
             return ""
         }()
-        let isValid = urlString.isEmpty || urlString.hasPrefix("http://") || urlString.hasPrefix("https://")
 
         return HStack(spacing: 4) {
             Image(systemName: "link")
-                .foregroundColor(isValid ? .secondary : .red)
+                .foregroundStyle(.tertiary)
                 .font(.caption)
-            TextField("https://...", text: Binding(
+            TextField("", text: Binding(
                 get: { urlString },
                 set: { value = $0.isEmpty ? .empty : .url($0) }
             ))
             .textFieldStyle(.plain)
-            if !urlString.isEmpty && !isValid {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
-                    .foregroundColor(.red)
-                    .help("URL should start with http:// or https://")
-            }
         }
     }
 
-    // MARK: - Email (with validation indicator)
+    // MARK: - Email
 
     private var emailEditor: some View {
         let emailString = { () -> String in
             if case .email(let s) = value { return s }
             return ""
         }()
-        let isValid = emailString.isEmpty || emailString.contains("@")
 
         return HStack(spacing: 4) {
             Image(systemName: "envelope")
-                .foregroundColor(isValid ? .secondary : .red)
+                .foregroundStyle(.tertiary)
                 .font(.caption)
-            TextField("email@...", text: Binding(
+            TextField("", text: Binding(
                 get: { emailString },
                 set: { value = $0.isEmpty ? .empty : .email($0) }
             ))
             .textFieldStyle(.plain)
-            if !emailString.isEmpty && !isValid {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
-                    .foregroundColor(.red)
-                    .help("Enter a valid email address")
-            }
         }
     }
 

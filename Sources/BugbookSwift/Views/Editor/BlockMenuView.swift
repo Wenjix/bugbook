@@ -53,14 +53,16 @@ struct BlockMenuView: View {
     @ViewBuilder
     private var turnIntoItems: some View {
         ForEach(BlockDocument.slashCommands, id: \.name) { command in
-            Button {
-                document.changeBlockType(id: blockId, to: command.type)
-                if command.type == .heading {
-                    document.setHeadingLevel(id: blockId, level: command.headingLevel)
+            if case let .blockType(type, headingLevel) = command.action {
+                Button {
+                    document.changeBlockType(id: blockId, to: type)
+                    if type == .heading {
+                        document.setHeadingLevel(id: blockId, level: headingLevel)
+                    }
+                    document.dismissBlockMenu()
+                } label: {
+                    Label(command.name, systemImage: command.icon)
                 }
-                document.dismissBlockMenu()
-            } label: {
-                Label(command.name, systemImage: command.icon)
             }
         }
     }

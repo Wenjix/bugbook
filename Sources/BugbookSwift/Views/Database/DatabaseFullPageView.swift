@@ -1,4 +1,5 @@
 import SwiftUI
+import BugbookCore
 
 struct DatabaseFullPageView: View {
     let dbPath: String
@@ -23,18 +24,16 @@ struct DatabaseFullPageView: View {
         var result = rows
 
         for filter in view.filters {
-            guard let prop = schema.properties.first(where: { $0.id == filter.propertyId }) else { continue }
             result = result.filter { row in
-                let val = row.properties[prop.name] ?? .empty
+                let val = row.properties[filter.property] ?? .empty
                 return matchesFilter(val, filter: filter)
             }
         }
 
         for sort in view.sorts.reversed() {
-            guard let prop = schema.properties.first(where: { $0.id == sort.propertyId }) else { continue }
             result.sort { a, b in
-                let va = a.properties[prop.name] ?? .empty
-                let vb = b.properties[prop.name] ?? .empty
+                let va = a.properties[sort.property] ?? .empty
+                let vb = b.properties[sort.property] ?? .empty
                 let cmp = compareValues(va, vb)
                 return sort.ascending ? cmp == .orderedAscending : cmp == .orderedDescending
             }
@@ -55,7 +54,8 @@ struct DatabaseFullPageView: View {
                         schema: schema,
                         row: $rows[rowIdx],
                         onSave: { row in saveRow(row) },
-                        onBack: { selectedRowIndex = nil }
+                        onBack: { selectedRowIndex = nil },
+                        onAddOption: { propId, option in addSelectOption(propId, option: option) }
                     )
                 } else {
                     titleBar
@@ -203,10 +203,10 @@ struct DatabaseFullPageView: View {
             if let view = activeView {
                 ForEach(view.filters) { filter in
                     HStack(spacing: 6) {
-                        let propName = schema.properties.first(where: { $0.id == filter.propertyId })?.name ?? "?"
+                        let propName = schema.properties.first(where: { $0.id == filter.property })?.name ?? "?"
                         Text(propName)
                             .font(.caption)
-                        Text(filter.operator.rawValue)
+                        Text(filter.op)
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Text(filter.value)
@@ -224,7 +224,7 @@ struct DatabaseFullPageView: View {
                 // Active sorts
                 ForEach(view.sorts) { sort in
                     HStack(spacing: 6) {
-                        let propName = schema.properties.first(where: { $0.id == sort.propertyId })?.name ?? "?"
+                        let propName = schema.properties.first(where: { $0.id == sort.property })?.name ?? "?"
                         Text("Sort: \(propName)")
                             .font(.caption)
                         Image(systemName: sort.ascending ? "arrow.up" : "arrow.down")
@@ -291,12 +291,14 @@ struct DatabaseFullPageView: View {
                 onSave: { row in saveRow(row) },
                 onDelete: { row in deleteRow(row) },
                 onToggleColumn: { propId in toggleColumnVisibility(propId) },
-                onAddProperty: { addPropertyFromTable() },
+                onAddProperty: { type in addPropertyFromTable(type: type) },
                 onRenameProperty: { propId, _ in
                     renamingPropertyId = propId
                 },
                 onDeleteProperty: { propId in deleteProperty(propId) },
-                onChangePropertyType: { propId, newType in changePropertyType(propId, to: newType) }
+                onChangePropertyType: { propId, newType in changePropertyType(propId, to: newType) },
+                onAddSelectOption: { propId, option in addSelectOption(propId, option: option) },
+                onResizeColumn: { propId, width in resizeColumn(propId, to: width) }
             )
         case .kanban:
             KanbanView(
@@ -334,7 +336,7 @@ struct DatabaseFullPageView: View {
             let (loadedSchema, loadedRows) = try await dbService.loadDatabase(at: dbPath)
             schema = loadedSchema
             rows = loadedRows
-            activeViewId = loadedSchema.defaultViewId
+            activeViewId = loadedSchema.defaultView
             editingTitle = loadedSchema.name
         } catch {
             self.error = error.localizedDescription
@@ -352,10 +354,11 @@ struct DatabaseFullPageView: View {
     }
 
     private func deleteRow(_ row: DatabaseRow) {
+        guard let schema = schema else { return }
         rows.removeAll { $0.id == row.id }
         Task {
             try? dbService.deleteRow(row.id, in: dbPath)
-            try? dbService.updateIndex(rows: rows, at: dbPath)
+            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
         }
     }
 
@@ -380,7 +383,7 @@ struct DatabaseFullPageView: View {
         Task {
             do {
                 var newRow = try dbService.createRow(in: dbPath, schema: schema)
-                newRow.properties[dateProp.name] = .date(dateStr)
+                newRow.properties[dateProp.id] = .date(dateStr)
                 try dbService.saveRow(newRow, schema: schema, at: dbPath)
                 if let idx = rows.firstIndex(where: { $0.id == newRow.id }) {
                     rows[idx] = newRow
@@ -402,16 +405,27 @@ struct DatabaseFullPageView: View {
 
     // MARK: - Property Operations
 
-    private func addPropertyFromTable() {
+    private func addPropertyFromTable(type: PropertyType) {
         guard var s = schema else { return }
+        let config: PropertyConfig? = (type == .select || type == .multiSelect) ? PropertyConfig(options: []) : nil
         let prop = PropertyDefinition(
             id: "prop_\(UUID().uuidString)",
-            name: "New Property",
-            type: .text,
-            options: nil
+            name: "New \(type.rawValue.capitalized)",
+            type: type,
+            config: config
         )
         Task {
             try? dbService.addProperty(prop, to: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func resizeColumn(_ propertyId: String, to width: CGFloat) {
+        guard var s = schema, var view = activeView else { return }
+        if view.columnWidths == nil { view.columnWidths = [:] }
+        view.columnWidths?[propertyId] = Double(width)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
         }
     }
@@ -450,7 +464,7 @@ struct DatabaseFullPageView: View {
 
     private func updateGroupBy(_ propertyId: String) {
         guard var s = schema, var view = activeView else { return }
-        view.groupByPropertyId = propertyId
+        view.groupBy = propertyId
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -467,8 +481,8 @@ struct DatabaseFullPageView: View {
             type: type,
             sorts: [],
             filters: [],
-            groupByPropertyId: type == .kanban ? s.properties.first(where: { $0.type == .select })?.id : nil,
-            datePropertyId: type == .calendar ? s.properties.first(where: { $0.type == .date })?.id : nil
+            groupBy: type == .kanban ? s.properties.first(where: { $0.type == .select })?.id : nil,
+            dateProperty: type == .calendar ? s.properties.first(where: { $0.type == .date })?.id : nil
         )
         Task {
             try? dbService.addView(view, to: &s, at: dbPath)
@@ -482,9 +496,8 @@ struct DatabaseFullPageView: View {
     private func addFilter(propertyId: String) {
         guard var s = schema, var view = activeView else { return }
         let filter = FilterConfig(
-            id: UUID().uuidString,
-            propertyId: propertyId,
-            operator: .isNotEmpty,
+            property: propertyId,
+            op: "is_not_empty",
             value: ""
         )
         view.filters.append(filter)
@@ -505,7 +518,7 @@ struct DatabaseFullPageView: View {
 
     private func addSort(propertyId: String, ascending: Bool) {
         guard var s = schema, var view = activeView else { return }
-        let sort = SortConfig(id: UUID().uuidString, propertyId: propertyId, ascending: ascending)
+        let sort = SortConfig(property: propertyId, direction: ascending ? "asc" : "desc")
         view.sorts.append(sort)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
@@ -554,15 +567,16 @@ struct DatabaseFullPageView: View {
 
     private func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
         let stringVal = stringFromValue(value)
-        switch filter.operator {
-        case .equals: return stringVal == filter.value
-        case .notEquals: return stringVal != filter.value
-        case .contains: return stringVal.localizedCaseInsensitiveContains(filter.value)
-        case .doesNotContain: return !stringVal.localizedCaseInsensitiveContains(filter.value)
-        case .isEmpty: return stringVal.isEmpty
-        case .isNotEmpty: return !stringVal.isEmpty
-        case .greaterThan: return stringVal > filter.value
-        case .lessThan: return stringVal < filter.value
+        switch filter.op {
+        case "equals": return stringVal == filter.value
+        case "not_equals": return stringVal != filter.value
+        case "contains": return stringVal.localizedCaseInsensitiveContains(filter.value)
+        case "not_contains": return !stringVal.localizedCaseInsensitiveContains(filter.value)
+        case "is_empty": return stringVal.isEmpty
+        case "is_not_empty": return !stringVal.isEmpty
+        case "greater_than": return stringVal > filter.value
+        case "less_than": return stringVal < filter.value
+        default: return true
         }
     }
 
@@ -580,6 +594,8 @@ struct DatabaseFullPageView: View {
         case .checkbox(let b): return b ? "1" : "0"
         case .url(let s): return s
         case .email(let s): return s
+        case .relation(let s): return s
+        case .relationMany(let arr): return arr.joined(separator: ",")
         case .empty: return ""
         }
     }
@@ -641,11 +657,12 @@ private struct PropertyManagerSheet: View {
     }
 
     private func addProperty(type: PropertyType) {
+        let config: PropertyConfig? = (type == .select || type == .multiSelect) ? PropertyConfig(options: []) : nil
         let prop = PropertyDefinition(
             id: "prop_\(UUID().uuidString)",
             name: "New \(type.rawValue.capitalized)",
             type: type,
-            options: (type == .select || type == .multiSelect) ? [] : nil
+            config: config
         )
         schema.properties.append(prop)
         Task {
