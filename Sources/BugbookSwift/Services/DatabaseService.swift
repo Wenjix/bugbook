@@ -184,6 +184,42 @@ class DatabaseService: ObservableObject {
         try saveSchema(schema, at: dbPath)
     }
 
+    func updateSelectOption(_ optionId: String, name: String?, color: String?, inProperty propertyId: String, in schema: inout DatabaseSchema, at dbPath: String) throws {
+        guard let propIdx = schema.properties.firstIndex(where: { $0.id == propertyId }),
+              let optIdx = schema.properties[propIdx].config?.options?.firstIndex(where: { $0.id == optionId }) else { return }
+        if let name = name {
+            schema.properties[propIdx].config?.options?[optIdx].name = name
+        }
+        if let color = color {
+            schema.properties[propIdx].config?.options?[optIdx].color = color
+        }
+        try saveSchema(schema, at: dbPath)
+    }
+
+    func deleteSelectOption(_ optionId: String, fromProperty propertyId: String, in schema: inout DatabaseSchema, rows: inout [DatabaseRow], at dbPath: String) throws {
+        guard let propIdx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        schema.properties[propIdx].config?.options?.removeAll { $0.id == optionId }
+        try saveSchema(schema, at: dbPath)
+        // Clear this option from any rows that reference it
+        for i in rows.indices {
+            guard let val = rows[i].properties[propertyId] else { continue }
+            switch val {
+            case .select(let id) where id == optionId:
+                rows[i].properties[propertyId] = .empty
+                try saveRow(rows[i], schema: schema, at: dbPath)
+            case .multiSelect(var ids):
+                let before = ids.count
+                ids.removeAll { $0 == optionId }
+                if ids.count != before {
+                    rows[i].properties[propertyId] = ids.isEmpty ? .empty : .multiSelect(ids)
+                    try saveRow(rows[i], schema: schema, at: dbPath)
+                }
+            default:
+                break
+            }
+        }
+    }
+
     // MARK: - Private: Value Conversion
 
     private func convertValue(_ value: PropertyValue, from oldType: PropertyType, to newType: PropertyType) -> PropertyValue {

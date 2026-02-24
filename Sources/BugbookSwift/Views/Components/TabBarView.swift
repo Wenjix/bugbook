@@ -1,31 +1,39 @@
 import SwiftUI
+import AppKit
 
 struct TabBarView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(Array(appState.openTabs.enumerated()), id: \.element.id) { index, tab in
-                    TabItemView(
-                        tab: tab,
-                        isActive: index == appState.activeTabIndex,
-                        onSelect: { appState.activeTabIndex = index },
-                        onClose: { appState.closeTab(at: index) }
-                    )
-                }
+        HStack(spacing: 0) {
+            // Left padding to avoid overlapping traffic light buttons
+            Color.clear
+                .frame(width: 72, height: 34)
 
-                // New tab button
-                Button(action: { appState.newEmptyTab() }) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .padding(6)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(appState.openTabs.enumerated()), id: \.element.id) { index, tab in
+                        TabItemView(
+                            tab: tab,
+                            isActive: index == appState.activeTabIndex,
+                            onSelect: { appState.activeTabIndex = index },
+                            onClose: { appState.closeTab(at: index) }
+                        )
+                    }
+
+                    // New tab button
+                    Button(action: { appState.newEmptyTab() }) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .padding(6)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .frame(height: 34)
+        .background(WindowDragArea())
         .background(Color.fallbackBgSecondary)
     }
 }
@@ -38,7 +46,9 @@ struct TabItemView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if tab.isDatabase {
+            if tab.path == "__settings__" {
+                Image(systemName: "gearshape").font(.system(size: 10))
+            } else if tab.isDatabase {
                 Image(systemName: "tablecells").font(.system(size: 10))
             } else {
                 Image(systemName: "doc.text").font(.system(size: 10))
@@ -68,5 +78,24 @@ struct TabItemView: View {
         if let displayName = tab.displayName { return displayName }
         let name = (tab.path as NSString).lastPathComponent
         return name.hasSuffix(".md") ? String(name.dropLast(3)) : name
+    }
+}
+
+// MARK: - Window Drag Area
+
+struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowDragNSView()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private class WindowDragNSView: NSView {
+    override public var mouseDownCanMoveWindow: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
     }
 }

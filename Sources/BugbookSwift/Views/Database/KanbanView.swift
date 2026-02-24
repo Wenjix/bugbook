@@ -15,6 +15,11 @@ struct KanbanView: View {
     @State private var newCardTitle: String = ""
     @State private var addingCardInColumn: String? = nil
 
+    // Custom drag state
+    @State private var draggingRowId: String? = nil
+    @State private var dragLocation: CGPoint = .zero
+    @State private var dragTargetColumn: String? = nil
+
     private var selectProperties: [PropertyDefinition] {
         schema.properties.filter { $0.type == .select }
     }
@@ -86,8 +91,8 @@ struct KanbanView: View {
 
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
-                    ForEach(columns, id: \.id) { column in
-                        kanbanColumn(column)
+                    ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
+                        kanbanColumn(column, index: index)
                     }
 
                     // Add new option column
@@ -96,10 +101,36 @@ struct KanbanView: View {
                     }
                 }
                 .padding(12)
+                .coordinateSpace(name: "kanban")
+                .overlay {
+                    // Floating drag preview
+                    if let dragId = draggingRowId,
+                       let row = rows.first(where: { $0.id == dragId }) {
+                        let title = row.title(schema: schema)
+                        dragPreview(title)
+                            .position(dragLocation)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Drag Preview
+
+    private func dragPreview(_ title: String) -> some View {
+        Text(title.isEmpty ? "Untitled" : title)
+            .font(.body)
+            .fontWeight(.medium)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(width: 220)
+            .background(.ultraThinMaterial)
+            .cornerRadius(6)
+            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 
     // MARK: - Add Option Column
@@ -161,8 +192,10 @@ struct KanbanView: View {
 
     // MARK: - Kanban Column
 
-    private func kanbanColumn(_ column: (id: String, name: String, color: String)) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int) -> some View {
+        let isTargeted = dragTargetColumn == column.id
+        let columnWidth: CGFloat = 250
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Circle()
                     .fill(colorForName(column.color))
@@ -183,17 +216,8 @@ struct KanbanView: View {
             }
             .padding(.horizontal, 8)
 
-            VStack(spacing: 6) {
-                ForEach(rowsForColumn(column.id)) { row in
-                    let title = row.title(schema: schema)
-                    kanbanCard(row, title: title)
-                        .draggable(row.id) {
-                            Text(title)
-                                .padding(8)
-                                .background(.ultraThinMaterial)
-                                .cornerRadius(6)
-                        }
-                }
+            VStack(spacing: 4) {
+                let columnRows = rowsForColumn(column.id)
 
                 // Inline add card
                 if addingCardInColumn == column.id {
@@ -233,25 +257,53 @@ struct KanbanView: View {
                     }
                     .buttonStyle(.plain)
                 }
-            }
-            .frame(minHeight: 60)
-            .contentShape(Rectangle())
-            .dropDestination(for: String.self) { droppedIds, _ in
-                guard let prop = groupProperty else { return false }
-                for droppedId in droppedIds {
-                    if let idx = rows.firstIndex(where: { $0.id == droppedId }) {
-                        let newValue: PropertyValue = column.id == "__none__" ? .empty : .select(column.id)
-                        rows[idx].properties[prop.id] = newValue
-                        onSave(rows[idx])
-                    }
+
+                ForEach(columnRows) { row in
+                    let title = row.title(schema: schema)
+                    kanbanCard(row, title: title)
+                        .opacity(draggingRowId == row.id ? 0.2 : 1)
+                        .gesture(
+                            DragGesture(coordinateSpace: .named("kanban"))
+                                .onChanged { value in
+                                    if draggingRowId == nil { draggingRowId = row.id }
+                                    dragLocation = value.location
+                                    let colIndex = Int(value.location.x / (columnWidth + 12))
+                                    let clampedIndex = max(0, min(colIndex, columns.count - 1))
+                                    dragTargetColumn = columns[clampedIndex].id
+                                }
+                                .onEnded { value in
+                                    if let targetCol = dragTargetColumn {
+                                        moveCard(row.id, toColumn: targetCol)
+                                    }
+                                    draggingRowId = nil
+                                    dragTargetColumn = nil
+                                }
+                        )
                 }
-                return true
             }
+            .frame(minHeight: 60, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: 250)
+        .frame(width: columnWidth)
         .padding(.vertical, 8)
-        .background(Color.gray.opacity(0.05))
+        .background(isTargeted ? colorForName(column.color).opacity(0.12) : colorForName(column.color).opacity(0.06))
         .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isTargeted ? colorForName(column.color).opacity(0.4) : Color.clear, lineWidth: 2)
+        )
+    }
+
+    // MARK: - Move Card
+
+    private func moveCard(_ rowId: String, toColumn columnId: String) {
+        guard let prop = groupProperty else { return }
+        guard let sourceIdx = rows.firstIndex(where: { $0.id == rowId }) else { return }
+        let newValue: PropertyValue = columnId == "__none__" ? .empty : .select(columnId)
+        var updated = rows
+        updated[sourceIdx].properties[prop.id] = newValue
+        let savedRow = updated[sourceIdx]
+        rows = updated
+        onSave(savedRow)
     }
 
     private func addCardInColumn(_ columnId: String) {
@@ -283,40 +335,98 @@ struct KanbanView: View {
     // MARK: - Kanban Card
 
     private func kanbanCard(_ row: DatabaseRow, title: String) -> some View {
-        Button {
-            onOpenRow(row)
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .lineLimit(2)
-                    .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.body)
+                .fontWeight(.medium)
+                .lineLimit(2)
+                .foregroundColor(.primary)
 
-                // Show a couple of properties (excluding the group property and title)
-                let displayProps = schema.properties.prefix(4).filter {
-                    $0.type != .title && ($0.type != .select || $0.id != groupProperty?.id)
-                }
-                ForEach(displayProps) { prop in
-                    if let val = row.properties[prop.id], val != .empty {
-                        HStack(spacing: 4) {
-                            Text(prop.name)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text(displayValue(val, prop: prop))
-                                .font(.caption2)
-                                .foregroundColor(.primary)
+            // Show properties (excluding the group property and title)
+            let displayProps = schema.properties.filter {
+                $0.type != .title && $0.id != groupProperty?.id
+            }.prefix(4)
+            if !displayProps.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(displayProps)) { prop in
+                        if let val = row.properties[prop.id], val != .empty {
+                            cardPropertyRow(prop: prop, value: val)
                         }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(6)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(6)
+        .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpenRow(row) }
         .padding(.horizontal, 6)
+    }
+
+    @ViewBuilder
+    private func cardPropertyRow(prop: PropertyDefinition, value: PropertyValue) -> some View {
+        switch value {
+        case .select(let optionId):
+            if let option = prop.options?.first(where: { $0.id == optionId }) {
+                HStack(spacing: 4) {
+                    Text(prop.name)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(option.name)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(colorForName(option.color).opacity(0.12))
+                        .foregroundColor(colorForName(option.color))
+                        .cornerRadius(3)
+                }
+            }
+        case .multiSelect(let ids):
+            let options = ids.compactMap { id in prop.options?.first(where: { $0.id == id }) }
+            if !options.isEmpty {
+                HStack(spacing: 4) {
+                    Text(prop.name)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    ForEach(options.prefix(3)) { option in
+                        Text(option.name)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(colorForName(option.color).opacity(0.12))
+                            .foregroundColor(colorForName(option.color))
+                            .cornerRadius(3)
+                    }
+                    if options.count > 3 {
+                        Text("+\(options.count - 3)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        case .checkbox(let b):
+            HStack(spacing: 4) {
+                Text(prop.name)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Image(systemName: b ? "checkmark.square.fill" : "square")
+                    .font(.caption2)
+                    .foregroundColor(b ? .accentColor : .secondary)
+            }
+        default:
+            HStack(spacing: 4) {
+                Text(prop.name)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(displayValue(value, prop: prop))
+                    .font(.caption2)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
+        }
     }
 
     // MARK: - Helpers

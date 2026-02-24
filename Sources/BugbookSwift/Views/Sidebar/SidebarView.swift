@@ -14,6 +14,13 @@ struct SidebarView: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
+                Button(action: createFile) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("New Page")
                 Button(action: onToggleSidebar) {
                     Image(systemName: "sidebar.left")
                         .font(.system(size: 14))
@@ -24,23 +31,6 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-
-            // Action buttons
-            HStack(spacing: 8) {
-                Button(action: createFile) {
-                    Label("New Page", systemImage: "doc.badge.plus")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.borderless)
-
-                Button(action: createDatabase) {
-                    Label("New Database", systemImage: "tablecells.badge.ellipsis")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.borderless)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
 
             Divider()
 
@@ -57,6 +47,22 @@ struct SidebarView: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 4)
             }
+
+            Divider()
+
+            // Bottom bar with settings
+            HStack {
+                Button(action: openSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Settings")
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
         .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
         .background(Color.fallbackSidebarBg)
@@ -78,16 +84,7 @@ struct SidebarView: View {
         NotificationCenter.default.post(name: .newNote, object: nil)
     }
 
-    private func createDatabase() {
-        guard let workspace = appState.workspacePath else { return }
-        if let path = try? fileSystem.createDatabase(in: workspace, name: "Untitled Database") {
-            refreshTree()
-            let entry = FileEntry(
-                id: path, name: "Untitled Database",
-                path: path, isDirectory: false, isDatabase: true,
-                icon: nil, children: nil
-            )
-            appState.openFile(entry)
-        }
+    private func openSettings() {
+        NotificationCenter.default.post(name: .openSettings, object: nil)
     }
 }

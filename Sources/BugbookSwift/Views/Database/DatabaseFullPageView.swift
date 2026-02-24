@@ -1,6 +1,11 @@
 import SwiftUI
 import BugbookCore
 
+extension Notification.Name {
+    static let databaseDidChange = Notification.Name("databaseDidChange")
+    static let databaseNameDidChange = Notification.Name("databaseNameDidChange")
+}
+
 struct DatabaseFullPageView: View {
     let dbPath: String
     @StateObject private var dbService = DatabaseService()
@@ -12,6 +17,7 @@ struct DatabaseFullPageView: View {
     @State private var editingTitle: String = ""
     @State private var showPropertyManager = false
     @State private var showFilterSort = false
+    @State private var showVerticalLines = true
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
 
@@ -55,7 +61,9 @@ struct DatabaseFullPageView: View {
                         row: $rows[rowIdx],
                         onSave: { row in saveRow(row) },
                         onBack: { selectedRowIndex = nil },
-                        onAddOption: { propId, option in addSelectOption(propId, option: option) }
+                        onAddOption: { propId, option in addSelectOption(propId, option: option) },
+                        onUpdateOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
+                        onDeleteOption: { propId, optId in deleteSelectOption(propId, optionId: optId) }
                     )
                 } else {
                     titleBar
@@ -76,7 +84,7 @@ struct DatabaseFullPageView: View {
                 PropertyManagerSheet(schema: Binding(
                     get: { s },
                     set: { s = $0; self.schema = $0 }
-                ), dbPath: dbPath, dbService: dbService)
+                ), rows: $rows, dbPath: dbPath, dbService: dbService)
             }
         }
         .sheet(item: $renamingPropertyId) { propId in
@@ -94,6 +102,15 @@ struct DatabaseFullPageView: View {
         .task {
             await loadData()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .databaseDidChange)) { notification in
+            guard let changedPath = notification.userInfo?["dbPath"] as? String,
+                  changedPath == dbPath else { return }
+            Task { await loadData() }
+        }
+    }
+
+    private func postChangeNotification() {
+        NotificationCenter.default.post(name: .databaseDidChange, object: nil, userInfo: ["dbPath": dbPath])
     }
 
     // MARK: - Title Bar
@@ -103,17 +120,21 @@ struct DatabaseFullPageView: View {
             TextField("Database Name", text: $editingTitle, onCommit: {
                 schema?.name = editingTitle
                 if let s = schema {
-                    Task { try? dbService.saveSchema(s, at: dbPath) }
+                    Task {
+                        try? dbService.saveSchema(s, at: dbPath)
+                        postChangeNotification()
+                        NotificationCenter.default.post(
+                            name: .databaseNameDidChange,
+                            object: nil,
+                            userInfo: ["dbPath": dbPath, "newName": editingTitle]
+                        )
+                    }
                 }
             })
             .font(.title2)
             .fontWeight(.bold)
             .textFieldStyle(.plain)
             Spacer()
-
-            Text("\(rows.count) rows")
-                .font(.caption)
-                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -127,6 +148,7 @@ struct DatabaseFullPageView: View {
             ForEach(schema.views) { view in
                 Button {
                     activeViewId = view.id
+                    persistActiveView(view.id)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: iconForViewType(view.type))
@@ -144,16 +166,56 @@ struct DatabaseFullPageView: View {
             // Add view
             Menu {
                 ForEach(ViewType.allCases, id: \.rawValue) { type in
-                    Button(type.rawValue.capitalized) { addNewView(type: type) }
+                    Button {
+                        addNewView(type: type)
+                    } label: {
+                        Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
+                    }
                 }
             } label: {
                 Image(systemName: "plus")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+
+            Spacer()
+
+            // Column visibility
+            Menu {
+                ForEach(schema.properties.filter({ $0.type != .title })) { prop in
+                    let isHidden = (activeView?.hiddenColumns ?? []).contains(prop.id)
+                    Button {
+                        toggleColumnVisibility(prop.id)
+                    } label: {
+                        HStack {
+                            Text(prop.name)
+                            if !isHidden { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+                if activeView?.type == .table {
+                    Divider()
+                    Button {
+                        showVerticalLines.toggle()
+                    } label: {
+                        HStack {
+                            Text("Grid lines")
+                            if showVerticalLines { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "eye")
                     .font(.caption)
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 20)
-
-            Spacer()
+            .menuIndicator(.hidden)
+            .fixedSize()
 
             // Filter/sort toggle
             Button {
@@ -178,18 +240,6 @@ struct DatabaseFullPageView: View {
                 .font(.caption)
             }
             .buttonStyle(.plain)
-
-            // New row
-            Button {
-                createNewRow()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                    Text("New")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -199,68 +249,247 @@ struct DatabaseFullPageView: View {
 
     private func filterSortBar(schema: DatabaseSchema) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Active filters
             if let view = activeView {
+                // Active filters
                 ForEach(view.filters) { filter in
-                    HStack(spacing: 6) {
-                        let propName = schema.properties.first(where: { $0.id == filter.property })?.name ?? "?"
-                        Text(propName)
-                            .font(.caption)
-                        Text(filter.op)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(filter.value)
-                            .font(.caption)
-                        Button {
-                            removeFilter(filter.id)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    filterRow(filter, schema: schema)
                 }
 
                 // Active sorts
                 ForEach(view.sorts) { sort in
-                    HStack(spacing: 6) {
-                        let propName = schema.properties.first(where: { $0.id == sort.property })?.name ?? "?"
-                        Text("Sort: \(propName)")
-                            .font(.caption)
-                        Image(systemName: sort.ascending ? "arrow.up" : "arrow.down")
-                            .font(.caption2)
-                        Button {
-                            removeSort(sort.id)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    sortRow(sort, schema: schema)
                 }
             }
 
             // Add buttons
             HStack(spacing: 12) {
-                Menu("+ Filter") {
-                    ForEach(schema.properties) { prop in
+                Menu {
+                    ForEach(schema.properties.filter({ $0.type != .title })) { prop in
                         Button(prop.name) { addFilter(propertyId: prop.id) }
                     }
-                }
-                .font(.caption)
-
-                Menu("+ Sort") {
-                    ForEach(schema.properties) { prop in
-                        Button("\(prop.name) Asc") { addSort(propertyId: prop.id, ascending: true) }
-                        Button("\(prop.name) Desc") { addSort(propertyId: prop.id, ascending: false) }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "plus")
+                        Text("Add filter")
                     }
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
                 }
-                .font(.caption)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+
+                Menu {
+                    ForEach(schema.properties.filter({ $0.type != .title })) { prop in
+                        Button(prop.name) { addSort(propertyId: prop.id, ascending: true) }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "plus")
+                        Text("Add sort")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+
+                Spacer()
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(Color.gray.opacity(0.05))
+        .padding(.vertical, 6)
+        .background(Color.gray.opacity(0.04))
+    }
+
+    private func filterRow(_ filter: FilterConfig, schema: DatabaseSchema) -> some View {
+        let prop = schema.properties.first(where: { $0.id == filter.property })
+        let ops = operatorsForType(prop?.type ?? .text)
+
+        return HStack(spacing: 6) {
+            // Property picker
+            Menu {
+                ForEach(schema.properties.filter({ $0.type != .title })) { p in
+                    Button(p.name) { updateFilter(filter.id, property: p.id, op: nil, value: nil) }
+                }
+            } label: {
+                Text(prop?.name ?? "Property")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(4)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            // Operator picker
+            Menu {
+                ForEach(ops, id: \.0) { (opKey, opLabel) in
+                    Button(opLabel) { updateFilter(filter.id, property: nil, op: opKey, value: nil) }
+                }
+            } label: {
+                Text(labelForOp(filter.op))
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(4)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            // Value input (only for ops that need a value)
+            if opNeedsValue(filter.op) {
+                filterValueInput(filter, prop: prop)
+            }
+
+            Spacer()
+
+            Button { removeFilter(filter.id) } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func filterValueInput(_ filter: FilterConfig, prop: PropertyDefinition?) -> some View {
+        if let prop = prop, (prop.type == .select || prop.type == .multiSelect), let options = prop.options {
+            // Select/multiSelect: show option picker
+            Menu {
+                ForEach(options) { option in
+                    Button(option.name) { updateFilter(filter.id, property: nil, op: nil, value: option.id) }
+                }
+            } label: {
+                let displayVal = prop.options?.first(where: { $0.id == filter.value })?.name ?? (filter.value.isEmpty ? "Pick value..." : filter.value)
+                Text(displayVal)
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(4)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } else if prop?.type == .checkbox {
+            Menu {
+                Button("Checked") { updateFilter(filter.id, property: nil, op: nil, value: "true") }
+                Button("Unchecked") { updateFilter(filter.id, property: nil, op: nil, value: "false") }
+            } label: {
+                Text(filter.value == "true" ? "Checked" : filter.value == "false" ? "Unchecked" : "Pick...")
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(4)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } else {
+            // Text/number/date/etc: text field
+            let binding = Binding<String>(
+                get: { filter.value },
+                set: { newVal in updateFilter(filter.id, property: nil, op: nil, value: newVal) }
+            )
+            TextField("Value", text: binding)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption)
+                .frame(width: 120)
+        }
+    }
+
+    private func sortRow(_ sort: SortConfig, schema: DatabaseSchema) -> some View {
+        let prop = schema.properties.first(where: { $0.id == sort.property })
+        return HStack(spacing: 6) {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            // Property picker
+            Menu {
+                ForEach(schema.properties.filter({ $0.type != .title })) { p in
+                    Button(p.name) { updateSort(sort.id, property: p.id, ascending: nil) }
+                }
+            } label: {
+                Text(prop?.name ?? "Property")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(4)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            // Direction toggle
+            Button {
+                updateSort(sort.id, property: nil, ascending: !sort.ascending)
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: sort.ascending ? "arrow.up" : "arrow.down")
+                    Text(sort.ascending ? "Ascending" : "Descending")
+                }
+                .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button { removeSort(sort.id) } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Filter/Sort Helpers
+
+    private func operatorsForType(_ type: PropertyType) -> [(String, String)] {
+        switch type {
+        case .text, .title, .url, .email:
+            return [("equals", "is"), ("not_equals", "is not"), ("contains", "contains"),
+                    ("not_contains", "doesn't contain"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .number:
+            return [("equals", "="), ("not_equals", "\u{2260}"), ("greater_than", ">"), ("less_than", "<"),
+                    ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .select, .multiSelect:
+            return [("equals", "is"), ("not_equals", "is not"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .date:
+            return [("equals", "is"), ("greater_than", "after"), ("less_than", "before"),
+                    ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .checkbox:
+            return [("equals", "is")]
+        case .relation:
+            return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        }
+    }
+
+    private func labelForOp(_ op: String) -> String {
+        switch op {
+        case "equals": return "is"
+        case "not_equals": return "is not"
+        case "contains": return "contains"
+        case "not_contains": return "doesn't contain"
+        case "greater_than": return ">"
+        case "less_than": return "<"
+        case "is_empty": return "is empty"
+        case "is_not_empty": return "is not empty"
+        default: return op
+        }
+    }
+
+    private func opNeedsValue(_ op: String) -> Bool {
+        op != "is_empty" && op != "is_not_empty"
     }
 
     // MARK: - View Content
@@ -292,13 +521,16 @@ struct DatabaseFullPageView: View {
                 onDelete: { row in deleteRow(row) },
                 onToggleColumn: { propId in toggleColumnVisibility(propId) },
                 onAddProperty: { type in addPropertyFromTable(type: type) },
-                onRenameProperty: { propId, _ in
-                    renamingPropertyId = propId
+                onRenameProperty: { propId, newName in
+                    renameProperty(propId, to: newName)
                 },
                 onDeleteProperty: { propId in deleteProperty(propId) },
                 onChangePropertyType: { propId, newType in changePropertyType(propId, to: newType) },
                 onAddSelectOption: { propId, option in addSelectOption(propId, option: option) },
-                onResizeColumn: { propId, width in resizeColumn(propId, to: width) }
+                onUpdateSelectOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
+                onDeleteSelectOption: { propId, optId in deleteSelectOption(propId, optionId: optId) },
+                onResizeColumn: { propId, width in resizeColumn(propId, to: width) },
+                showVerticalLines: showVerticalLines
             )
         case .kanban:
             KanbanView(
@@ -336,7 +568,9 @@ struct DatabaseFullPageView: View {
             let (loadedSchema, loadedRows) = try await dbService.loadDatabase(at: dbPath)
             schema = loadedSchema
             rows = loadedRows
-            activeViewId = loadedSchema.defaultView
+            if activeViewId.isEmpty {
+                activeViewId = loadedSchema.defaultView
+            }
             editingTitle = loadedSchema.name
         } catch {
             self.error = error.localizedDescription
@@ -350,6 +584,7 @@ struct DatabaseFullPageView: View {
         }
         Task {
             try? dbService.saveRow(row, schema: schema, at: dbPath)
+            postChangeNotification()
         }
     }
 
@@ -359,6 +594,7 @@ struct DatabaseFullPageView: View {
         Task {
             try? dbService.deleteRow(row.id, in: dbPath)
             try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+            postChangeNotification()
         }
     }
 
@@ -369,6 +605,7 @@ struct DatabaseFullPageView: View {
                 let newRow = try dbService.createRow(in: dbPath, schema: schema)
                 rows.append(newRow)
                 openRow(newRow)
+                postChangeNotification()
             } catch {
                 self.error = error.localizedDescription
             }
@@ -391,6 +628,7 @@ struct DatabaseFullPageView: View {
                     rows.append(newRow)
                 }
                 openRow(newRow)
+                postChangeNotification()
             } catch {
                 self.error = error.localizedDescription
             }
@@ -432,9 +670,14 @@ struct DatabaseFullPageView: View {
 
     private func renameProperty(_ propertyId: String, to newName: String) {
         guard var s = schema else { return }
+        guard let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        s.properties[idx].name = newName
+        schema = s
         Task {
-            try? dbService.renameProperty(propertyId, to: newName, in: &s, rows: &rows, at: dbPath)
-            schema = s
+            try? dbService.saveSchema(s, at: dbPath)
+            for row in rows {
+                try? dbService.saveRow(row, schema: s, at: dbPath)
+            }
         }
     }
 
@@ -462,6 +705,22 @@ struct DatabaseFullPageView: View {
         }
     }
 
+    private func updateSelectOption(_ propertyId: String, optionId: String, name: String?, color: String?) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.updateSelectOption(optionId, name: name, color: color, inProperty: propertyId, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func deleteSelectOption(_ propertyId: String, optionId: String) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.deleteSelectOption(optionId, fromProperty: propertyId, in: &s, rows: &rows, at: dbPath)
+            schema = s
+        }
+    }
+
     private func updateGroupBy(_ propertyId: String) {
         guard var s = schema, var view = activeView else { return }
         view.groupBy = propertyId
@@ -472,6 +731,14 @@ struct DatabaseFullPageView: View {
     }
 
     // MARK: - View Management
+
+    private func persistActiveView(_ viewId: String) {
+        guard var s = schema, s.defaultView != viewId else { return }
+        Task {
+            try? dbService.setDefaultView(viewId, in: &s, at: dbPath)
+            schema = s
+        }
+    }
 
     private func addNewView(type: ViewType) {
         guard var s = schema else { return }
@@ -495,12 +762,23 @@ struct DatabaseFullPageView: View {
 
     private func addFilter(propertyId: String) {
         guard var s = schema, var view = activeView else { return }
-        let filter = FilterConfig(
-            property: propertyId,
-            op: "is_not_empty",
-            value: ""
-        )
+        let prop = s.properties.first(where: { $0.id == propertyId })
+        let defaultOp = (prop?.type == .checkbox) ? "equals" : "is_not_empty"
+        let defaultValue = (prop?.type == .checkbox) ? "true" : ""
+        let filter = FilterConfig(property: propertyId, op: defaultOp, value: defaultValue)
         view.filters.append(filter)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func updateFilter(_ filterId: String, property: String?, op: String?, value: String?) {
+        guard var s = schema, var view = activeView,
+              let idx = view.filters.firstIndex(where: { $0.id == filterId }) else { return }
+        if let property = property { view.filters[idx].property = property }
+        if let op = op { view.filters[idx].op = op }
+        if let value = value { view.filters[idx].value = value }
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -520,6 +798,17 @@ struct DatabaseFullPageView: View {
         guard var s = schema, var view = activeView else { return }
         let sort = SortConfig(property: propertyId, direction: ascending ? "asc" : "desc")
         view.sorts.append(sort)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    private func updateSort(_ sortId: String, property: String?, ascending: Bool?) {
+        guard var s = schema, var view = activeView,
+              let idx = view.sorts.firstIndex(where: { $0.id == sortId }) else { return }
+        if let property = property { view.sorts[idx].property = property }
+        if let ascending = ascending { view.sorts[idx].direction = ascending ? "asc" : "desc" }
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -605,9 +894,11 @@ struct DatabaseFullPageView: View {
 
 private struct PropertyManagerSheet: View {
     @Binding var schema: DatabaseSchema
+    @Binding var rows: [DatabaseRow]
     let dbPath: String
     let dbService: DatabaseService
     @Environment(\.dismiss) private var dismiss
+    @State private var editingNames: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -620,20 +911,52 @@ private struct PropertyManagerSheet: View {
 
             List {
                 ForEach(schema.properties) { prop in
+                    let isTitle = prop.type == .title
                     HStack {
-                        Text(prop.name)
+                        TextField("Name", text: Binding(
+                            get: { editingNames[prop.id] ?? prop.name },
+                            set: { editingNames[prop.id] = $0 }
+                        ), onCommit: {
+                            let newName = (editingNames[prop.id] ?? prop.name).trimmingCharacters(in: .whitespaces)
+                            if !newName.isEmpty {
+                                renameProperty(prop.id, to: newName)
+                            }
+                            editingNames.removeValue(forKey: prop.id)
+                        })
+                        .textFieldStyle(.plain)
+
                         Spacer()
-                        Text(prop.type.rawValue)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Button {
-                            deleteProperty(prop.id)
-                        } label: {
-                            Image(systemName: "trash")
+
+                        if isTitle {
+                            Text(prop.type.rawValue.capitalized)
                                 .font(.caption)
-                                .foregroundColor(.red)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Menu {
+                                ForEach(PropertyType.allCases.filter({ $0 != .title }), id: \.rawValue) { type in
+                                    Button(type.rawValue.capitalized) {
+                                        changeType(prop.id, to: type)
+                                    }
+                                }
+                            } label: {
+                                Text(prop.type.rawValue.capitalized)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
                         }
-                        .buttonStyle(.plain)
+
+                        if !isTitle {
+                            Button {
+                                deleteProperty(prop.id)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .onMove { source, destination in
@@ -646,7 +969,7 @@ private struct PropertyManagerSheet: View {
             }
 
             Menu("+ Add Property") {
-                ForEach(PropertyType.allCases, id: \.rawValue) { type in
+                ForEach(PropertyType.allCases.filter({ $0 != .title }), id: \.rawValue) { type in
                     Button(type.rawValue.capitalized) { addProperty(type: type) }
                 }
             }
@@ -675,6 +998,25 @@ private struct PropertyManagerSheet: View {
         Task {
             try? dbService.saveSchema(schema, at: dbPath)
         }
+    }
+
+    private func renameProperty(_ propertyId: String, to newName: String) {
+        if let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) {
+            schema.properties[idx].name = newName
+            Task {
+                try? dbService.saveSchema(schema, at: dbPath)
+                NotificationCenter.default.post(name: .databaseDidChange, object: nil, userInfo: ["dbPath": dbPath])
+            }
+        }
+    }
+
+    private func changeType(_ propertyId: String, to newType: PropertyType) {
+        var s = schema
+        var r = rows
+        try? dbService.changePropertyType(propertyId, to: newType, in: &s, rows: &r, at: dbPath)
+        schema = s
+        rows = r
+        NotificationCenter.default.post(name: .databaseDidChange, object: nil, userInfo: ["dbPath": dbPath])
     }
 }
 
