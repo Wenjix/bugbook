@@ -633,4 +633,19 @@ class BlockDocument: ObservableObject {
         let range = min(anchorIdx, currentIdx)...max(anchorIdx, currentIdx)
         selectedBlockIds = Set(range.map { blocks[$0].id })
     }
+
+    func deleteSelectedBlocks() {
+        guard !selectedBlockIds.isEmpty else { return }
+        saveUndo()
+        blocks.removeAll { selectedBlockIds.contains($0.id) }
+        if blocks.isEmpty {
+            let titleBlock = Block(type: .heading, headingLevel: 1)
+            blocks.append(titleBlock)
+            focusedBlockId = titleBlock.id
+        } else {
+            focusedBlockId = blocks.first?.id
+        }
+        cursorPosition = 0
+        clearBlockSelection()
+    }
 }

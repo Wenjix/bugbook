@@ -399,6 +399,13 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            // Delete all selected blocks (e.g. Cmd+A then Backspace)
+            if commandSelector == #selector(NSResponder.deleteBackward(_:)),
+               !parent.document.selectedBlockIds.isEmpty {
+                parent.document.deleteSelectedBlocks()
+                return true
+            }
+
             // Slash menu intercepts (when active)
             if parent.document.slashMenuBlockId == parent.blockId {
                 if commandSelector == #selector(NSResponder.moveUp(_:)) {
