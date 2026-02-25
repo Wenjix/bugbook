@@ -33,6 +33,10 @@ class AppState: ObservableObject {
         return openTabs[activeTabIndex]
     }
 
+    private func cleanDisplayName(_ name: String) -> String {
+        name.hasSuffix(".md") ? String(name.dropLast(3)) : name
+    }
+
     func openFile(_ entry: FileEntry) {
         if let existingIndex = openTabs.firstIndex(where: { $0.path == entry.path }) {
             activeTabIndex = existingIndex
@@ -45,8 +49,9 @@ class AppState: ObservableObject {
             isDirty: false,
             isEmptyTab: false,
             isDatabase: entry.isDatabase,
-            displayName: entry.name,
-            openerPagePath: nil
+            displayName: cleanDisplayName(entry.name),
+            openerPagePath: nil,
+            icon: entry.icon
         )
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1
@@ -76,8 +81,9 @@ class AppState: ObservableObject {
             isDirty: false,
             isEmptyTab: false,
             isDatabase: entry.isDatabase,
-            displayName: entry.name,
-            openerPagePath: nil
+            displayName: cleanDisplayName(entry.name),
+            openerPagePath: nil,
+            icon: entry.icon
         )
         openTabs[activeTabIndex] = newTab
         return false
@@ -96,8 +102,9 @@ class AppState: ObservableObject {
             isDirty: false,
             isEmptyTab: false,
             isDatabase: entry.isDatabase,
-            displayName: entry.name,
-            openerPagePath: nil
+            displayName: cleanDisplayName(entry.name),
+            openerPagePath: nil,
+            icon: entry.icon
         )
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1
@@ -148,7 +155,8 @@ class AppState: ObservableObject {
             isEmptyTab: true,
             isDatabase: false,
             displayName: nil,
-            openerPagePath: nil
+            openerPagePath: nil,
+            icon: nil
         )
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1

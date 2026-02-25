@@ -635,7 +635,7 @@ struct FullEmojiPickerView: View {
                 ForEach(EmojiPickerTab.allCases, id: \.self) { tab in
                     Button(action: { selectedTab = tab }) {
                         Text(tab.rawValue)
-                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
+                            .font(.system(size: 13, weight: selectedTab == tab ? .semibold : .regular))
                             .foregroundColor(selectedTab == tab ? .accentColor : .secondary)
                             .padding(.vertical, 6)
                             .padding(.horizontal, 12)
@@ -666,7 +666,7 @@ struct FullEmojiPickerView: View {
                         Image(systemName: "shuffle")
                         Text("Random")
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                 }
                 .buttonStyle(.plain)
 
@@ -676,7 +676,7 @@ struct FullEmojiPickerView: View {
                     selectedEmoji = nil
                     dismiss()
                 }
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(.red)
             }
             .padding(.horizontal, 12)
@@ -696,15 +696,15 @@ struct FullEmojiPickerView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                 TextField("Search emoji...", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                     }
                     .buttonStyle(.plain)
                 }
@@ -723,7 +723,7 @@ struct FullEmojiPickerView: View {
                             if category == .recent && recentEmojis.isEmpty { EmptyView() } else {
                                 Button(action: { selectedCategory = category }) {
                                     Image(systemName: category.icon)
-                                        .font(.system(size: 13))
+                                        .font(.system(size: 14))
                                         .foregroundColor(selectedCategory == category ? .accentColor : .secondary)
                                         .frame(width: 26, height: 26)
                                         .background(selectedCategory == category ? Color.accentColor.opacity(0.15) : Color.clear)
@@ -751,7 +751,7 @@ struct FullEmojiPickerView: View {
                     if results.isEmpty {
                         Text("No emoji found")
                             .foregroundColor(.secondary)
-                            .font(.system(size: 13))
+                            .font(.system(size: 14))
                             .padding(.top, 40)
                     } else {
                         emojiGridItems(results.map(\.emoji))
@@ -768,7 +768,7 @@ struct FullEmojiPickerView: View {
             if category == .recent {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Recent")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
                         .padding(.leading, 4)
                     emojiGridItems(recentEmojis)
@@ -777,7 +777,7 @@ struct FullEmojiPickerView: View {
                 let items = EmojiData.categories.first(where: { $0.0 == category })?.1 ?? []
                 VStack(alignment: .leading, spacing: 4) {
                     Text(category.rawValue)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
                         .padding(.leading, 4)
                     emojiGridItems(items.map(\.emoji))
@@ -839,7 +839,7 @@ struct FullEmojiPickerView: View {
                         dismiss()
                     }) {
                         Image(systemName: name)
-                            .font(.system(size: 16))
+                            .font(.system(size: 17))
                             .frame(width: 36, height: 36)
                             .foregroundColor(.primary)
                     }
@@ -864,11 +864,11 @@ struct FullEmojiPickerView: View {
                 .foregroundColor(.secondary)
 
             Text("Upload a custom icon")
-                .font(.system(size: 14))
+                .font(.system(size: 15))
                 .foregroundColor(.secondary)
 
             Text("PNG, JPG, GIF, or WebP. Max 2MB.")
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundColor(.secondary.opacity(0.7))
 
             Button("Choose File") {

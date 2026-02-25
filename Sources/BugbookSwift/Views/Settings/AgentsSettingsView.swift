@@ -11,7 +11,7 @@ struct AgentsSettingsView: View {
             SettingsSection("Installed Agents") {
                 if installedAgents.isEmpty {
                     Text("No agents detected")
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .foregroundColor(.secondary)
                 } else {
                     ForEach(installedAgents, id: \.path) { agent in
@@ -19,10 +19,10 @@ struct AgentsSettingsView: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                             Text(agent.name)
-                                .font(.system(size: 13))
+                                .font(.system(size: 14))
                             Spacer()
                             Text(agent.path)
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -39,11 +39,11 @@ struct AgentsSettingsView: View {
 
             SettingsSection("AGENTS.md") {
                 Text("Custom agent instructions (auto-saved)")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
 
                 TextEditor(text: $agentsMdText)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(.system(size: 14, design: .monospaced))
                     .frame(minHeight: 180)
                     .scrollContentBackground(.hidden)
                     .padding(8)

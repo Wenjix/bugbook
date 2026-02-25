@@ -12,10 +12,10 @@ struct FormattingToolbar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            toolbarButton("B", font: .system(size: 13, weight: .bold), action: onBold)
-            toolbarButton("I", font: .system(size: 13).italic(), action: onItalic)
-            toolbarButton("</>" , font: .system(size: 11, design: .monospaced), action: onCode)
-            toolbarButton("S", font: .system(size: 13), strikethrough: true, action: onStrikethrough)
+            toolbarButton("B", font: .system(size: 14, weight: .bold), action: onBold)
+            toolbarButton("I", font: .system(size: 14).italic(), action: onItalic)
+            toolbarButton("</>" , font: .system(size: 12, design: .monospaced), action: onCode)
+            toolbarButton("S", font: .system(size: 14), strikethrough: true, action: onStrikethrough)
             Divider().frame(height: 20)
             toolbarButton("link", systemImage: "link", action: onLink)
         }
@@ -29,7 +29,7 @@ struct FormattingToolbar: View {
     @ViewBuilder
     private func toolbarButton(
         _ label: String,
-        font: Font = .system(size: 13),
+        font: Font = .system(size: 14),
         strikethrough: Bool = false,
         systemImage: String? = nil,
         action: @escaping () -> Void
@@ -38,7 +38,7 @@ struct FormattingToolbar: View {
             Group {
                 if let systemImage = systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                 } else {
                     Text(label)
                         .font(font)

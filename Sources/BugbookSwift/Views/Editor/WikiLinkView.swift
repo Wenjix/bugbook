@@ -10,7 +10,7 @@ struct WikiLinkView: View {
             HStack(spacing: 4) {
                 iconView
                 Text(pageName)
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundColor(.primary)
                     .underline()
             }
@@ -39,7 +39,7 @@ struct WikiLinkView: View {
                     defaultPageIcon
                 }
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 12))
+                Text(icon).font(.system(size: 13))
             } else {
                 defaultPageIcon
             }
@@ -50,7 +50,7 @@ struct WikiLinkView: View {
 
     private var defaultPageIcon: some View {
         Image(systemName: "doc.text")
-            .font(.system(size: 10))
+            .font(.system(size: 11))
             .foregroundColor(.secondary)
     }
 }

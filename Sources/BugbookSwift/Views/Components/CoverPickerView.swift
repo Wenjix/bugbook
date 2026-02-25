@@ -28,7 +28,7 @@ struct CoverPickerView: View {
                 // Reposition slider
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Vertical Position")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(.secondary)
                     Slider(value: $coverYPosition, in: 0...100)
                 }
@@ -46,7 +46,7 @@ struct CoverPickerView: View {
                     }
                     .foregroundColor(.red)
                 }
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .padding(.horizontal, 12)
             } else {
                 Image(systemName: "photo.on.rectangle")
@@ -54,11 +54,11 @@ struct CoverPickerView: View {
                     .foregroundColor(.secondary)
 
                 Text("Add a cover image")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(.secondary)
 
                 Text("PNG, JPG, GIF, or WebP.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary.opacity(0.7))
 
                 Button("Choose Image") {

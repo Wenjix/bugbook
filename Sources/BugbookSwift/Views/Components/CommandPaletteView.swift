@@ -43,7 +43,7 @@ private struct SectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.secondary)
             .padding(.horizontal, 12)
             .padding(.top, 8)
@@ -59,6 +59,7 @@ struct CommandPaletteView: View {
     @State private var selectedIndex = 0
     @State private var contentResults: [ContentMatch] = []
     @State private var contentSearchTask: Task<Void, Never>?
+    @FocusState private var isSearchFieldFocused: Bool
     @Binding var isPresented: Bool
     var onSelectFile: (FileEntry) -> Void
     var onSelectFileNewTab: ((FileEntry) -> Void)?
@@ -72,7 +73,8 @@ struct CommandPaletteView: View {
                     .foregroundColor(.secondary)
                 TextField(placeholderText, text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16))
+                    .font(.system(size: 17))
+                    .focused($isSearchFieldFocused)
                     .onSubmit { selectCurrent() }
             }
             .padding(12)
@@ -106,7 +108,7 @@ struct CommandPaletteView: View {
                 }
             }
         }
-        .frame(width: 500)
+        .frame(width: 600)
         .background(Color.fallbackBgPrimary)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
@@ -130,6 +132,7 @@ struct CommandPaletteView: View {
             if appState.commandPaletteMode == .commands {
                 searchText = ">"
             }
+            isSearchFieldFocused = true
         }
     }
 
@@ -238,39 +241,39 @@ struct CommandPaletteView: View {
             switch item {
             case .file(let entry):
                 Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                 Text(entry.name.replacingOccurrences(of: ".md", with: ""))
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                 Spacer()
                 Text(relativePath(for: entry))
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
 
             case .contentMatch(let match):
                 Image(systemName: "text.magnifyingglass")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(match.fileName.replacingOccurrences(of: ".md", with: ""))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                     highlightedLine(match)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .lineLimit(1)
                 }
                 Spacer()
 
             case .command(let cmd):
                 Image(systemName: cmd.icon)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .frame(width: 16)
                 Text(cmd.name)
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                 Spacer()
                 if let shortcut = cmd.shortcut {
                     Text(shortcut)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
@@ -280,24 +283,24 @@ struct CommandPaletteView: View {
 
             case .createPage(let name):
                 Image(systemName: "plus.circle")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.accentColor)
                 Text("Create new page: ")
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundColor(.secondary)
                 + Text(name)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                 Spacer()
 
             case .askAI(let query):
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 12))
-                    .foregroundColor(.purple)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
                 Text("Ask AI: ")
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundColor(.secondary)
                 + Text(query)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                 Spacer()
             }
         }

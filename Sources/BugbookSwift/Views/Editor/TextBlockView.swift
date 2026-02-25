@@ -44,14 +44,14 @@ struct TextBlockView: View {
         switch block.type {
         case .bulletListItem:
             Text("\u{2022}")
-                .font(.system(size: 15))
+                .font(.system(size: 16))
                 .foregroundColor(.secondary)
                 .frame(width: 20, alignment: .center)
                 .padding(.top, 2)
 
         case .numberedListItem:
             Text("\(computeNumber()).")
-                .font(.system(size: 15))
+                .font(.system(size: 16))
                 .foregroundColor(.secondary)
                 .frame(width: 24, alignment: .trailing)
                 .padding(.top, 2)
@@ -61,7 +61,7 @@ struct TextBlockView: View {
                 document.toggleCheck(id: block.id)
             } label: {
                 Image(systemName: block.isChecked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundColor(block.isChecked ? .accentColor : .secondary)
             }
             .buttonStyle(.plain)
@@ -92,11 +92,11 @@ struct TextBlockView: View {
             switch block.headingLevel {
             case 1: return .system(size: 30, weight: .bold)
             case 2: return .system(size: 24, weight: .semibold)
-            case 3: return .system(size: 20, weight: .semibold)
-            default: return .system(size: 15)
+            case 3: return .system(size: 21, weight: .semibold)
+            default: return .system(size: 16)
             }
         default:
-            return .system(size: 15)
+            return .system(size: 16)
         }
     }
 

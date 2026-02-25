@@ -174,7 +174,7 @@ struct DatabaseFullPageView: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())

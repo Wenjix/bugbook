@@ -206,10 +206,8 @@ struct BlockTextView: NSViewRepresentable {
             isEditing = true
             defer { isEditing = false }
 
-            // Store plain text directly
-            if let idx = parent.document.index(for: parent.blockId) {
-                parent.document.blocks[idx].text = textView.string
-            }
+            // Store plain text directly (works for both top-level and column children)
+            parent.document.updateBlockText(id: parent.blockId, text: textView.string)
 
             // Slash command detection (skip title block)
             let isTitleBlock = parent.document.titleBlock?.id == parent.blockId
@@ -307,16 +305,14 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         private func convertBlock(_ textView: NSTextView, stripping prefixLen: Int, to type: BlockType, headingLevel: Int = 1, checked: Bool = false) {
-            guard let idx = parent.document.index(for: parent.blockId) else { return }
+            guard parent.document.blockLocation(for: parent.blockId) != nil else { return }
             let newText = String(textView.string.dropFirst(prefixLen))
 
-            parent.document.blocks[idx].type = type
-            parent.document.blocks[idx].text = newText
-            if type == .heading {
-                parent.document.blocks[idx].headingLevel = headingLevel
-            }
-            if type == .taskItem {
-                parent.document.blocks[idx].isChecked = checked
+            parent.document.updateBlockProperty(id: parent.blockId) { block in
+                block.type = type
+                block.text = newText
+                if type == .heading { block.headingLevel = headingLevel }
+                if type == .taskItem { block.isChecked = checked }
             }
 
             suppressChanges = true
@@ -387,11 +383,27 @@ struct BlockTextView: NSViewRepresentable {
             // Arrow up — move to previous block if on first line
             if commandSelector == #selector(NSResponder.moveUp(_:)) {
                 if isOnFirstLine(textView) {
-                    if let idx = parent.document.index(for: parent.blockId), idx > 0 {
-                        let prev = parent.document.blocks[idx - 1]
-                        parent.document.focusedBlockId = prev.id
-                        parent.document.cursorPosition = prev.text.count
-                        return true
+                    if let loc = parent.document.blockLocation(for: parent.blockId) {
+                        if let childIdx = loc.child {
+                            // Inside column — navigate to previous block in same column
+                            let colBlock = parent.document.blocks[loc.topLevel]
+                            let myColIndex = colBlock.children[childIdx].columnIndex
+                            let prevInCol = colBlock.children[..<childIdx]
+                                .filter { $0.columnIndex == myColIndex }
+                                .last
+                            if let prev = prevInCol {
+                                parent.document.focusedBlockId = prev.id
+                                parent.document.cursorPosition = prev.text.count
+                                return true
+                            }
+                            return false
+                        }
+                        if loc.topLevel > 0 {
+                            let prev = parent.document.blocks[loc.topLevel - 1]
+                            parent.document.focusedBlockId = prev.id
+                            parent.document.cursorPosition = prev.text.count
+                            return true
+                        }
                     }
                 }
                 return false
@@ -400,12 +412,26 @@ struct BlockTextView: NSViewRepresentable {
             // Arrow down — move to next block if on last line
             if commandSelector == #selector(NSResponder.moveDown(_:)) {
                 if isOnLastLine(textView) {
-                    if let idx = parent.document.index(for: parent.blockId),
-                       idx < parent.document.blocks.count - 1 {
-                        let next = parent.document.blocks[idx + 1]
-                        parent.document.focusedBlockId = next.id
-                        parent.document.cursorPosition = 0
-                        return true
+                    if let loc = parent.document.blockLocation(for: parent.blockId) {
+                        if let childIdx = loc.child {
+                            // Inside column — navigate to next block in same column
+                            let colBlock = parent.document.blocks[loc.topLevel]
+                            let myColIndex = colBlock.children[childIdx].columnIndex
+                            let nextInCol = colBlock.children[(childIdx + 1)...]
+                                .first { $0.columnIndex == myColIndex }
+                            if let next = nextInCol {
+                                parent.document.focusedBlockId = next.id
+                                parent.document.cursorPosition = 0
+                                return true
+                            }
+                            return false
+                        }
+                        if loc.topLevel < parent.document.blocks.count - 1 {
+                            let next = parent.document.blocks[loc.topLevel + 1]
+                            parent.document.focusedBlockId = next.id
+                            parent.document.cursorPosition = 0
+                            return true
+                        }
                     }
                 }
                 return false

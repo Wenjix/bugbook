@@ -208,7 +208,7 @@ struct TableView: View {
                     onOpenRow(row.wrappedValue)
                 } label: {
                     Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)

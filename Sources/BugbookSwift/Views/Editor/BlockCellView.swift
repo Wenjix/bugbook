@@ -10,7 +10,7 @@ struct BlockCellView: View {
         HStack(alignment: .top, spacing: 4) {
             // Drag handle — click to open block menu
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .frame(width: 20, height: 24)
                 .opacity(isHovering ? 1 : 0)
@@ -25,12 +25,17 @@ struct BlockCellView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 4)
+        .padding(.vertical, 3)
         .background(
             block.backgroundColor != .default
                 ? block.backgroundColor.backgroundColor
                 : Color.clear
         )
         .cornerRadius(block.backgroundColor != .default ? 4 : 0)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            document.focusedBlockId = block.id
+        }
         .onHover { hovering in
             isHovering = hovering
         }

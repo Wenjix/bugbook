@@ -50,7 +50,7 @@ struct TabBarView: View {
 
                     Button(action: { appState.newEmptyTab() }) {
                         Image(systemName: "plus")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundColor(.secondary)
                             .frame(width: 28, height: 28)
                     }
@@ -63,7 +63,7 @@ struct TabBarView: View {
                         draggingTabId: $draggingTabId
                     ))
                 }
-                .padding(.leading, 8)
+                .padding(.leading, appState.sidebarOpen ? 8 : 120)
             }
             Spacer()
         }
@@ -119,29 +119,23 @@ struct TabItemView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if tab.path == "__settings__" {
-                Image(systemName: "gearshape").font(.system(size: 11))
-            } else if tab.isDatabase {
-                Image(systemName: "tablecells").font(.system(size: 11))
-            } else {
-                Image(systemName: "doc.text").font(.system(size: 11))
-            }
+            tabIcon
 
             Text(tabName)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .lineLimit(1)
 
             if isActive {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: isActive ? 30 : 28)
+        .frame(height: isActive ? 36 : 28)
         .background(
             Group {
                 if isActive {
@@ -159,6 +153,27 @@ struct TabItemView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
+    }
+
+    @ViewBuilder
+    private var tabIcon: some View {
+        if tab.path == "__settings__" {
+            Image(systemName: "gearshape").font(.system(size: 12))
+        } else if tab.isDatabase {
+            Image(systemName: "tablecells").font(.system(size: 12))
+        } else if let icon = tab.icon, !icon.isEmpty {
+            if icon.hasPrefix("sf:") {
+                Image(systemName: String(icon.dropFirst(3)))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 14))
+            } else {
+                Image(systemName: "doc.text").font(.system(size: 12))
+            }
+        } else {
+            Image(systemName: "doc.text").font(.system(size: 12))
+        }
     }
 
     private var tabName: String {

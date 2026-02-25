@@ -56,11 +56,182 @@ class BlockDocument: ObservableObject {
     }
 
     func block(for id: UUID) -> Block? {
-        blocks.first { $0.id == id }
+        for block in blocks {
+            if block.id == id { return block }
+            if block.type == .column {
+                if let child = block.children.first(where: { $0.id == id }) {
+                    return child
+                }
+            }
+        }
+        return nil
     }
 
     func index(for id: UUID) -> Int? {
         blocks.firstIndex { $0.id == id }
+    }
+
+    /// Locates a block in the hierarchy. Returns (topLevelIndex, childIndex).
+    /// childIndex is nil for top-level blocks, or the index within a column's children.
+    func blockLocation(for id: UUID) -> (topLevel: Int, child: Int?)? {
+        for (i, block) in blocks.enumerated() {
+            if block.id == id { return (i, nil) }
+            if block.type == .column {
+                if let childIdx = block.children.firstIndex(where: { $0.id == id }) {
+                    return (i, childIdx)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Safely update a block's text whether it's top-level or inside a column.
+    func updateBlockText(id: UUID, text: String) {
+        guard let loc = blockLocation(for: id) else { return }
+        if let childIdx = loc.child {
+            blocks[loc.topLevel].children[childIdx].text = text
+        } else {
+            blocks[loc.topLevel].text = text
+        }
+    }
+
+    /// Safely update a block's properties whether it's top-level or inside a column.
+    func updateBlockProperty(id: UUID, _ mutate: (inout Block) -> Void) {
+        guard let loc = blockLocation(for: id) else { return }
+        if let childIdx = loc.child {
+            mutate(&blocks[loc.topLevel].children[childIdx])
+        } else {
+            mutate(&blocks[loc.topLevel])
+        }
+    }
+
+    /// Remove a block from wherever it lives (top-level or column child).
+    /// Returns the extracted block with columnIndex reset. Auto-dissolves columns.
+    private func extractBlock(id: UUID) -> Block? {
+        guard let loc = blockLocation(for: id) else { return nil }
+        if let childIdx = loc.child {
+            var extracted = blocks[loc.topLevel].children.remove(at: childIdx)
+            extracted.columnIndex = 0
+            dissolveColumnIfNeeded(at: loc.topLevel)
+            return extracted
+        } else {
+            return blocks.remove(at: loc.topLevel)
+        }
+    }
+
+    /// If a column block has only one column of content left, unwrap all its children back to top level.
+    private func dissolveColumnIfNeeded(at index: Int) {
+        guard index < blocks.count, blocks[index].type == .column else { return }
+        if blocks[index].children.isEmpty {
+            blocks.remove(at: index)
+            return
+        }
+        let uniqueColumns = Set(blocks[index].children.map(\.columnIndex))
+        if uniqueColumns.count <= 1 {
+            // Only one column left — promote all children back to top level
+            let children = blocks[index].children.map { block -> Block in
+                var b = block
+                b.columnIndex = 0
+                return b
+            }
+            blocks.remove(at: index)
+            for (i, child) in children.enumerated() {
+                blocks.insert(child, at: index + i)
+            }
+        }
+    }
+
+    // MARK: - Column Creation (Drag-to-Right)
+
+    static let maxColumns = 5
+
+    /// Number of distinct columns in a column block.
+    private func columnCount(at index: Int) -> Int {
+        Set(blocks[index].children.map(\.columnIndex)).count
+    }
+
+    /// Creates or extends a column layout by dropping a block to the right of a target.
+    func createColumnFromDrop(droppedId: UUID, targetId: UUID) {
+        guard droppedId != targetId,
+              blockLocation(for: droppedId) != nil,
+              let targetLoc = blockLocation(for: targetId) else { return }
+
+        // Don't allow dropping column blocks or nested columns
+        let droppedBlock = block(for: droppedId)!
+        if droppedBlock.type == .column { return }
+
+        // If target is inside a column, add as a new column to that column block
+        if targetLoc.child != nil {
+            let columnIdx = targetLoc.topLevel
+            guard columnCount(at: columnIdx) < Self.maxColumns else { return }
+            saveUndo()
+            let columnBlockId = blocks[columnIdx].id
+            guard var extracted = extractBlock(id: droppedId) else { return }
+            // Re-find column (indices may have shifted after extraction)
+            if let newIdx = index(for: columnBlockId) {
+                let newColIndex = (blocks[newIdx].children.map(\.columnIndex).max() ?? -1) + 1
+                extracted.columnIndex = newColIndex
+                blocks[newIdx].children.append(extracted)
+            }
+            return
+        }
+
+        // Target is top-level
+        let targetBlock = blocks[targetLoc.topLevel]
+
+        if targetBlock.type == .column {
+            // Target IS a column block — add a new column to it
+            guard columnCount(at: targetLoc.topLevel) < Self.maxColumns else { return }
+            saveUndo()
+            guard var extracted = extractBlock(id: droppedId) else { return }
+            if let newIdx = index(for: targetBlock.id) {
+                let newColIndex = (blocks[newIdx].children.map(\.columnIndex).max() ?? -1) + 1
+                extracted.columnIndex = newColIndex
+                blocks[newIdx].children.append(extracted)
+            }
+        } else {
+            // Target is a regular block — wrap both in a new column
+            saveUndo()
+            guard var extracted = extractBlock(id: droppedId) else { return }
+            guard let newTargetIdx = index(for: targetId) else { return }
+            var target = blocks[newTargetIdx]
+            target.columnIndex = 0
+            extracted.columnIndex = 1
+            let columnBlock = Block(
+                type: .column,
+                children: [target, extracted]
+            )
+            blocks[newTargetIdx] = columnBlock
+        }
+    }
+
+    /// Adds a block into a specific column at a specific position within a column block.
+    func addBlockToColumn(blockId: UUID, columnBlockId: UUID, columnIndex: Int, position: Int) {
+        guard blockId != columnBlockId,
+              let colTopIdx = index(for: columnBlockId),
+              blocks[colTopIdx].type == .column else { return }
+
+        saveUndo()
+        guard var extracted = extractBlock(id: blockId) else { return }
+        extracted.columnIndex = columnIndex
+
+        // Re-find the column block (may have shifted)
+        guard let newColIdx = index(for: columnBlockId) else { return }
+
+        // Find insertion point: get children in this column, find the one at `position`
+        let sameColIndices = blocks[newColIdx].children.enumerated()
+            .filter { $0.element.columnIndex == columnIndex }
+            .map(\.offset)
+
+        let insertAt: Int
+        if position >= sameColIndices.count {
+            // Insert after the last block in this column
+            insertAt = (sameColIndices.last ?? blocks[newColIdx].children.count - 1) + 1
+        } else {
+            // Insert before the block at this position
+            insertAt = sameColIndices[position]
+        }
+        blocks[newColIdx].children.insert(extracted, at: min(insertAt, blocks[newColIdx].children.count))
     }
 
     // MARK: - Mutations
@@ -72,7 +243,25 @@ class BlockDocument: ObservableObject {
 
     @discardableResult
     func splitBlock(id: UUID, atOffset offset: Int) -> UUID {
-        guard let idx = index(for: id) else { return UUID() }
+        guard let loc = blockLocation(for: id) else { return UUID() }
+
+        // If inside a column, split creates a new block in the same column
+        if let childIdx = loc.child {
+            saveUndo()
+            let block = blocks[loc.topLevel].children[childIdx]
+            let clamped = min(offset, block.text.count)
+            let splitAt = block.text.index(block.text.startIndex, offsetBy: clamped)
+            let before = String(block.text[..<splitAt])
+            let after = String(block.text[splitAt...])
+            blocks[loc.topLevel].children[childIdx].text = before
+            let newBlock = Block(type: .paragraph, text: after, columnIndex: block.columnIndex)
+            blocks[loc.topLevel].children.insert(newBlock, at: childIdx + 1)
+            focusedBlockId = newBlock.id
+            cursorPosition = 0
+            return newBlock.id
+        }
+
+        let idx = loc.topLevel
         saveUndo()
 
         let block = blocks[idx]
@@ -110,7 +299,46 @@ class BlockDocument: ObservableObject {
 
     @discardableResult
     func mergeWithPrevious(id: UUID) -> Int? {
-        guard let idx = index(for: id), idx > 0 else { return nil }
+        guard let loc = blockLocation(for: id) else { return nil }
+
+        if let childIdx = loc.child {
+            let block = blocks[loc.topLevel].children[childIdx]
+            let colIndex = block.columnIndex
+
+            // Find previous block in same column
+            let prevInCol = blocks[loc.topLevel].children[..<childIdx]
+                .enumerated()
+                .filter { $0.element.columnIndex == colIndex }
+                .last
+
+            if let prev = prevInCol {
+                // Merge with previous block in same column
+                saveUndo()
+                let prevText = blocks[loc.topLevel].children[prev.offset].text
+                let curText = blocks[loc.topLevel].children[childIdx].text
+                let joinPoint = prevText.count
+                let prevId = blocks[loc.topLevel].children[prev.offset].id
+                blocks[loc.topLevel].children[prev.offset].text = prevText + curText
+                blocks[loc.topLevel].children.remove(at: childIdx)
+                focusedBlockId = prevId
+                cursorPosition = joinPoint
+                return joinPoint
+            } else {
+                // First block in this column — extract from column
+                saveUndo()
+                var extracted = blocks[loc.topLevel].children.remove(at: childIdx)
+                extracted.columnIndex = 0
+                dissolveColumnIfNeeded(at: loc.topLevel)
+                let insertIdx = loc.topLevel
+                blocks.insert(extracted, at: insertIdx)
+                focusedBlockId = extracted.id
+                cursorPosition = 0
+                return 0
+            }
+        }
+
+        let idx = loc.topLevel
+        guard idx > 0 else { return nil }
         saveUndo()
 
         let prevText = blocks[idx - 1].text
@@ -135,40 +363,70 @@ class BlockDocument: ObservableObject {
         blocks.insert(block, at: adjusted)
     }
 
-    func changeBlockType(id: UUID, to type: BlockType) {
-        guard let idx = index(for: id) else { return }
+    /// Move a block by ID to a target index, handling extraction from columns.
+    func moveBlockById(_ id: UUID, toIndex: Int) {
+        guard let loc = blockLocation(for: id) else { return }
         saveUndo()
-        blocks[idx].type = type
-        if type == .heading {
-            blocks[idx].headingLevel = 1
+        var extracted: Block
+        if let childIdx = loc.child {
+            extracted = blocks[loc.topLevel].children.remove(at: childIdx)
+            extracted.columnIndex = 0
+            dissolveColumnIfNeeded(at: loc.topLevel)
+        } else {
+            extracted = blocks.remove(at: loc.topLevel)
+        }
+        let adjustedIdx = min(toIndex, blocks.count)
+        blocks.insert(extracted, at: adjustedIdx)
+    }
+
+    func changeBlockType(id: UUID, to type: BlockType) {
+        guard blockLocation(for: id) != nil else { return }
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            block.type = type
+            if type == .heading { block.headingLevel = 1 }
         }
     }
 
     func setHeadingLevel(id: UUID, level: Int) {
-        guard let idx = index(for: id) else { return }
-        blocks[idx].type = .heading
-        blocks[idx].headingLevel = level
+        updateBlockProperty(id: id) { block in
+            block.type = .heading
+            block.headingLevel = level
+        }
     }
 
     func toggleCheck(id: UUID) {
-        guard let idx = index(for: id) else { return }
-        blocks[idx].isChecked.toggle()
+        updateBlockProperty(id: id) { block in
+            block.isChecked.toggle()
+        }
     }
 
     func indent(id: UUID) {
-        guard let idx = index(for: id) else { return }
-        blocks[idx].listDepth += 1
+        updateBlockProperty(id: id) { block in
+            block.listDepth += 1
+        }
     }
 
     func outdent(id: UUID) {
-        guard let idx = index(for: id) else { return }
-        if blocks[idx].listDepth > 0 {
-            blocks[idx].listDepth -= 1
+        updateBlockProperty(id: id) { block in
+            if block.listDepth > 0 { block.listDepth -= 1 }
         }
     }
 
     func deleteBlock(id: UUID) {
-        guard let idx = index(for: id) else { return }
+        guard let loc = blockLocation(for: id) else { return }
+
+        if let childIdx = loc.child {
+            saveUndo()
+            blocks[loc.topLevel].children.remove(at: childIdx)
+            dissolveColumnIfNeeded(at: loc.topLevel)
+            let focusIdx = min(loc.topLevel, blocks.count - 1)
+            focusedBlockId = blocks[focusIdx].id
+            cursorPosition = 0
+            return
+        }
+
+        let idx = loc.topLevel
         guard blocks.count > 1 else {
             blocks[idx] = Block(type: .paragraph)
             return
@@ -181,40 +439,45 @@ class BlockDocument: ObservableObject {
     }
 
     func duplicateBlock(id: UUID) {
-        guard let idx = index(for: id) else { return }
+        guard let loc = blockLocation(for: id) else { return }
+        guard let original = block(for: id) else { return }
         saveUndo()
-        var copy = blocks[idx]
-        copy = Block(
-            type: copy.type,
-            text: copy.text,
-            headingLevel: copy.headingLevel,
-            listDepth: copy.listDepth,
-            isChecked: copy.isChecked,
-            language: copy.language,
-            imageSource: copy.imageSource,
-            imageAlt: copy.imageAlt,
-            imageWidth: copy.imageWidth,
-            databasePath: copy.databasePath,
-            pageLinkName: copy.pageLinkName,
-            textColor: copy.textColor,
-            backgroundColor: copy.backgroundColor,
-            children: copy.children
+        let copy = Block(
+            type: original.type,
+            text: original.text,
+            headingLevel: original.headingLevel,
+            listDepth: original.listDepth,
+            isChecked: original.isChecked,
+            language: original.language,
+            imageSource: original.imageSource,
+            imageAlt: original.imageAlt,
+            imageWidth: original.imageWidth,
+            databasePath: original.databasePath,
+            pageLinkName: original.pageLinkName,
+            textColor: original.textColor,
+            backgroundColor: original.backgroundColor,
+            children: original.children,
+            columnIndex: original.columnIndex
         )
-        blocks.insert(copy, at: idx + 1)
+        if let childIdx = loc.child {
+            blocks[loc.topLevel].children.insert(copy, at: childIdx + 1)
+        } else {
+            blocks.insert(copy, at: loc.topLevel + 1)
+        }
         focusedBlockId = copy.id
         cursorPosition = 0
     }
 
     func setTextColor(id: UUID, color: BlockColor) {
-        guard let idx = index(for: id) else { return }
+        guard blockLocation(for: id) != nil else { return }
         saveUndo()
-        blocks[idx].textColor = color
+        updateBlockProperty(id: id) { $0.textColor = color }
     }
 
     func setBackgroundColor(id: UUID, color: BlockColor) {
-        guard let idx = index(for: id) else { return }
+        guard blockLocation(for: id) != nil else { return }
         saveUndo()
-        blocks[idx].backgroundColor = color
+        updateBlockProperty(id: id) { $0.backgroundColor = color }
     }
 
     func dismissBlockMenu() {
@@ -276,9 +539,7 @@ class BlockDocument: ObservableObject {
         }
         let command = commands[idx]
 
-        if let blockIdx = index(for: blockId) {
-            blocks[blockIdx].text = ""
-        }
+        updateBlockProperty(id: blockId) { $0.text = "" }
 
         switch command.action {
         case .linkToPage:
@@ -290,11 +551,13 @@ class BlockDocument: ObservableObject {
         case let .blockType(type, headingLevel):
             // Database command needs special handling — creates files via callback
             if type == .databaseEmbed {
-                if let blockIdx = index(for: blockId),
+                if blockLocation(for: blockId) != nil,
                    let createDb = onCreateDatabase,
                    let dbPath = createDb("Untitled Database") {
-                    blocks[blockIdx].type = .databaseEmbed
-                    blocks[blockIdx].databasePath = dbPath
+                    updateBlockProperty(id: blockId) { block in
+                        block.type = .databaseEmbed
+                        block.databasePath = dbPath
+                    }
                 }
                 dismissSlashMenu()
                 return
@@ -311,14 +574,16 @@ class BlockDocument: ObservableObject {
 
     func insertPageLink(name: String) {
         guard let blockId = pagePickerBlockId,
-              let blockIdx = index(for: blockId) else {
+              blockLocation(for: blockId) != nil else {
             dismissPagePicker()
             return
         }
         saveUndo()
-        blocks[blockIdx].type = .pageLink
-        blocks[blockIdx].pageLinkName = name
-        blocks[blockIdx].text = ""
+        updateBlockProperty(id: blockId) { block in
+            block.type = .pageLink
+            block.pageLinkName = name
+            block.text = ""
+        }
         dismissPagePicker()
     }
 

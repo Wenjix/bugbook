@@ -66,7 +66,7 @@ private struct ThemeCard: View {
                 }
 
                 Text(label)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .foregroundColor(isSelected ? .accentColor : .secondary)
             }
             .padding(8)

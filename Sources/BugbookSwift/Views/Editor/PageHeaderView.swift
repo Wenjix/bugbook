@@ -30,8 +30,8 @@ struct PageHeaderView: View {
                     if needsIcon {
                         Button { showIconPicker = true } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "face.smiling").font(.system(size: 12))
-                                Text("Add icon").font(.system(size: 12))
+                                Image(systemName: "face.smiling").font(.system(size: 13))
+                                Text("Add icon").font(.system(size: 13))
                             }
                             .foregroundColor(.secondary.opacity(0.6))
                             .padding(.horizontal, 8)
@@ -43,8 +43,8 @@ struct PageHeaderView: View {
                     if needsCover {
                         Button { showCoverPicker = true } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "photo").font(.system(size: 12))
-                                Text("Add cover").font(.system(size: 12))
+                                Image(systemName: "photo").font(.system(size: 13))
+                                Text("Add cover").font(.system(size: 13))
                             }
                             .foregroundColor(.secondary.opacity(0.6))
                             .padding(.horizontal, 8)
@@ -164,13 +164,13 @@ struct PageHeaderView: View {
             HStack(spacing: 4) {
                 Button(action: { showCoverPicker = true }) {
                     Label("Change", systemImage: "photo")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                 }
                 .buttonStyle(CoverActionButtonStyle())
 
                 Button(action: { coverUrl = nil; coverYPosition = 50 }) {
                     Label("Remove", systemImage: "xmark")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                 }
                 .buttonStyle(CoverActionButtonStyle())
             }

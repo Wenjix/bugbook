@@ -61,7 +61,7 @@ struct BlockMenuView: View {
                 } label: {
                     HStack {
                         Text("A")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(color.textColor)
                             .frame(width: 20)
                         Text(color.displayName)
@@ -115,7 +115,7 @@ struct BlockMenuView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .foregroundColor(.secondary)
             .padding(.horizontal, 12)
             .padding(.top, 6)
@@ -140,7 +140,7 @@ struct BlockMenuView: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(.secondary)
                     .frame(width: 16, height: 16)
                 Text(label)
@@ -179,7 +179,7 @@ struct BlockMenuView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.swap")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(.secondary)
                     .frame(width: 16, height: 16)
                 Text(currentBlockTypeName)
@@ -187,7 +187,7 @@ struct BlockMenuView: View {
                     .foregroundColor(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(Color.secondary.opacity(0.6))
                     .rotationEffect(.degrees(turnIntoExpanded ? 90 : 0))
             }
@@ -228,7 +228,7 @@ struct BlockMenuView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: item.icon)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .frame(width: 16, height: 16)
                 Text(item.name)
@@ -237,7 +237,7 @@ struct BlockMenuView: View {
                 Spacer()
                 if isCurrentType {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.accentColor)
                 }
             }
@@ -268,7 +268,7 @@ struct BlockMenuView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "paintpalette")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(.secondary)
                     .frame(width: 16, height: 16)
                 Text("Color")
@@ -276,7 +276,7 @@ struct BlockMenuView: View {
                     .foregroundColor(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(Color.secondary.opacity(0.6))
                     .rotationEffect(.degrees(colorExpanded ? 90 : 0))
             }
@@ -301,7 +301,7 @@ struct BlockMenuView: View {
             // Text color row
             VStack(alignment: .leading, spacing: 4) {
                 Text("TEXT")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                     .padding(.leading, 28)
 
@@ -317,7 +317,7 @@ struct BlockMenuView: View {
             // Background color row
             VStack(alignment: .leading, spacing: 4) {
                 Text("BACKGROUND")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                     .padding(.leading, 28)
 
@@ -356,7 +356,7 @@ struct BlockMenuView: View {
                 }
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(color == .default ? Color(nsColor: .windowBackgroundColor) : .white)
                 }
             }
@@ -390,7 +390,7 @@ struct BlockMenuView: View {
                 }
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.primary)
                 }
             }

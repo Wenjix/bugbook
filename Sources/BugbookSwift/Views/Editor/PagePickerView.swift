@@ -55,10 +55,10 @@ struct PagePickerView: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     if let icon = entry.icon {
-                                        Text(icon).font(.system(size: 12))
+                                        Text(icon).font(.system(size: 13))
                                     } else {
                                         Image(systemName: "doc.text")
-                                            .font(.system(size: 10))
+                                            .font(.system(size: 11))
                                             .foregroundColor(.secondary)
                                     }
                                     Text(entry.name.replacingOccurrences(of: ".md", with: ""))

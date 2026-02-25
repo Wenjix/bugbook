@@ -26,10 +26,10 @@ struct ShortcutsSettingsView: View {
     private func shortcutRow(_ label: String, _ shortcut: String) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
             Spacer()
             Text(shortcut)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: 13, design: .monospaced))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)

@@ -7,16 +7,20 @@ struct ContentView: View {
     @StateObject private var aiService = AiService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
-    @State private var sidebarPeekVisible = false
-
+    @State private var focusModeActive = false
+    @State private var focusModeTask: Task<Void, Never>?
+    @State private var focusModeSuppress = false
     var body: some View {
         ZStack(alignment: .leading) {
+            // Solid backdrop so the content area's rounded corner reveals sidebar color
+            Color.fallbackSidebarBg
+
             HStack(spacing: 0) {
                 sidebarSection
                 mainContentWithAiPanel
             }
 
-            sidebarPeekOverlay
+            sidebarToggleOverlay
             commandPaletteOverlay
         }
         .ignoresSafeArea()
@@ -90,54 +94,29 @@ struct ContentView: View {
                 },
                 onToggleSidebar: { appState.sidebarOpen.toggle() }
             )
-        } else {
-            VStack {
-                Button(action: { appState.sidebarOpen = true }) {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .padding(.top, 12)
-                .help("Open Sidebar")
-                Spacer()
-            }
-            .frame(width: 32)
-            .background(Color.fallbackSidebarBg.opacity(0.5))
-            .onHover { hovering in
-                if hovering { sidebarPeekVisible = true }
-            }
+            .layoutPriority(1)
         }
     }
 
     @ViewBuilder
-    private var sidebarPeekOverlay: some View {
-        if !appState.sidebarOpen && sidebarPeekVisible {
-            HStack(spacing: 0) {
-                SidebarView(
-                    appState: appState,
-                    fileSystem: fileSystem,
-                    onSelectFile: { entry in
-                        handleSidebarFileSelect(entry)
-                        sidebarPeekVisible = false
-                    },
-                    onToggleSidebar: {
-                        appState.sidebarOpen = true
-                        sidebarPeekVisible = false
+    private var sidebarToggleOverlay: some View {
+        if !appState.sidebarOpen {
+            VStack {
+                HStack {
+                    Button(action: { appState.sidebarOpen = true }) {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
                     }
-                )
-                .shadow(color: .black.opacity(0.15), radius: 8, x: 4, y: 0)
-                .transition(.move(edge: .leading))
-
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture { sidebarPeekVisible = false }
+                    .buttonStyle(.borderless)
+                    .help("Open Sidebar")
+                    Spacer()
+                }
+                .padding(.leading, 84)
+                .padding(.top, 10)
+                Spacer()
             }
-            .onHover { hovering in
-                if !hovering { sidebarPeekVisible = false }
-            }
-            .animation(.easeInOut(duration: 0.2), value: sidebarPeekVisible)
+            .opacity(focusModeActive ? 0.0 : 1.0)
         }
     }
 
@@ -148,22 +127,26 @@ struct ContentView: View {
                 .onTapGesture { appState.commandPaletteOpen = false }
 
             VStack {
-                CommandPaletteView(
-                    appState: appState,
-                    isPresented: $appState.commandPaletteOpen,
-                    onSelectFile: { entry in
-                        appState.openFile(entry)
-                        loadFileContent(for: entry)
-                    },
-                    onSelectFileNewTab: { entry in
-                        appState.openFileInNewTab(entry)
-                        loadFileContent(for: entry)
-                    },
-                    onCreateFile: { name in
-                        createNewFileWithName(name)
-                    }
-                )
-                .padding(.top, 80)
+                Spacer()
+                HStack {
+                    Spacer()
+                    CommandPaletteView(
+                        appState: appState,
+                        isPresented: $appState.commandPaletteOpen,
+                        onSelectFile: { entry in
+                            appState.openFile(entry)
+                            loadFileContent(for: entry)
+                        },
+                        onSelectFileNewTab: { entry in
+                            appState.openFileInNewTab(entry)
+                            loadFileContent(for: entry)
+                        },
+                        onCreateFile: { name in
+                            createNewFileWithName(name)
+                        }
+                    )
+                    Spacer()
+                }
                 Spacer()
             }
         }
@@ -175,13 +158,16 @@ struct ContentView: View {
     private var mainContentWithAiPanel: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                if appState.currentView == .chat {
+                if appState.showSettings {
+                    SettingsView(appState: appState)
+                } else if appState.currentView == .chat {
                     NotesChatView(appState: appState, aiService: aiService)
                 } else {
                     editorModeContent
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fallbackEditorBg)
 
             if appState.aiSidePanelOpen {
                 Divider()
@@ -190,19 +176,29 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: appState.sidebarOpen ? 14 : 0,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 0
+            )
+        )
     }
 
     @ViewBuilder
     private var editorModeContent: some View {
         if !appState.openTabs.isEmpty {
             TabBarView(appState: appState)
+                .opacity(focusModeActive ? 0.0 : 1.0)
         }
 
-        if let tab = appState.activeTab, !tab.isEmptyTab, tab.path != "__settings__" {
+        if let tab = appState.activeTab, !tab.isEmptyTab {
             BreadcrumbView(
                 items: breadcrumbs(for: tab),
                 onNavigate: { _ in }
             )
+            .opacity(focusModeActive ? 0.0 : 1.0)
         }
 
         activeTabContent
@@ -211,9 +207,7 @@ struct ContentView: View {
     @ViewBuilder
     private var activeTabContent: some View {
         if let tab = appState.activeTab {
-            if tab.path == "__settings__" {
-                SettingsView(appState: appState)
-            } else if tab.isEmptyTab {
+            if tab.isEmptyTab {
                 WelcomeView(
                     onNewNote: { createNewFile() },
                     onOpenFolder: { Task { await openWorkspace() } }
@@ -241,7 +235,13 @@ struct ContentView: View {
                     PageHeaderView(
                         icon: Binding(
                             get: { document.icon },
-                            set: { document.icon = $0; scheduleSave() }
+                            set: {
+                                document.icon = $0
+                                if appState.activeTabIndex < appState.openTabs.count {
+                                    appState.openTabs[appState.activeTabIndex].icon = $0
+                                }
+                                scheduleSave()
+                            }
                         ),
                         coverUrl: Binding(
                             get: { document.coverUrl },
@@ -265,8 +265,21 @@ struct ContentView: View {
                                 appState.openTabs[appState.activeTabIndex].isDirty = true
                             }
                             scheduleSave()
+                            triggerFocusMode()
                         }
                     )
+
+                    // Click target below blocks — focuses last block
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 200)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if let lastBlock = document.blocks.last {
+                                document.focusedBlockId = lastBlock.id
+                                document.cursorPosition = lastBlock.text.count
+                            }
+                        }
                 }
             }
             .background(Color.fallbackEditorBg)
@@ -323,9 +336,7 @@ struct ContentView: View {
             queue: .main
         ) { [appState] _ in
             Task { @MainActor in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    appState.aiSidePanelOpen.toggle()
-                }
+                appState.aiSidePanelOpen.toggle()
             }
         }
         NotificationCenter.default.addObserver(
@@ -359,13 +370,7 @@ struct ContentView: View {
     }
 
     private func openSettingsTab() {
-        if let index = appState.openTabs.firstIndex(where: { $0.path == "__settings__" }) {
-            appState.activeTabIndex = index
-            return
-        }
-        let tab = OpenFile(id: UUID(), path: "__settings__", content: "", isDirty: false, isEmptyTab: false, isDatabase: false, displayName: "Settings", openerPagePath: nil)
-        appState.openTabs.append(tab)
-        appState.activeTabIndex = appState.openTabs.count - 1
+        appState.showSettings = true
     }
 
     private func initializeWorkspace() {
@@ -385,6 +390,7 @@ struct ContentView: View {
 
     private func loadFileContent(for entry: FileEntry) {
         guard !entry.isDatabase else { return }
+        focusModeSuppress = true
         do {
             let content = try fileSystem.loadFile(at: entry.path)
             if let index = appState.openTabs.firstIndex(where: { $0.path == entry.path }) {
@@ -393,9 +399,15 @@ struct ContentView: View {
                 let doc = BlockDocument(markdown: content)
                 wireUpDocumentCallbacks(doc)
                 blockDocuments[appState.openTabs[index].id] = doc
+                // Sync icon from parsed document
+                appState.openTabs[index].icon = doc.icon
             }
         } catch {
             print("Failed to load file: \(error)")
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            focusModeSuppress = false
         }
     }
 
@@ -477,6 +489,23 @@ struct ContentView: View {
                 try? fileSystem.saveFile(at: appState.openTabs[index].path, content: content)
             }
             appState.openTabs[index].isDirty = false
+        }
+    }
+
+    private func triggerFocusMode() {
+        guard !focusModeSuppress else { return }
+        if !focusModeActive {
+            withAnimation(.easeInOut(duration: 0.6)) {
+                focusModeActive = true
+            }
+        }
+        focusModeTask?.cancel()
+        focusModeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.6)) {
+                focusModeActive = false
+            }
         }
     }
 

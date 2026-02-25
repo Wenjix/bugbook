@@ -10,7 +10,7 @@ struct GeneralSettingsView: View {
                 if let path = appState.workspacePath {
                     HStack {
                         Text(path)
-                            .font(.system(size: 13))
+                            .font(.system(size: 14))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)

@@ -40,10 +40,10 @@ struct AISettingsView: View {
             Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle")
                 .foregroundColor(available ? .green : .secondary)
             Text(name)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
             Spacer()
             Text(available ? "Installed" : "Not Found")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(.secondary)
         }
     }
@@ -55,8 +55,8 @@ struct AISettingsView: View {
 
     private func cliExists(_ name: String) -> Bool {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = [name]
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-l", "-c", "which \(name)"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do {

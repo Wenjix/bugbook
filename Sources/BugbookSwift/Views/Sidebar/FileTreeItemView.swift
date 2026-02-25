@@ -21,12 +21,10 @@ struct FileTreeItemView: View {
             HStack(spacing: 6) {
                 if entry.isDirectory && !entry.isDatabase {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .frame(width: 12)
                         .onTapGesture { toggleExpanded() }
-                } else {
-                    Spacer().frame(width: 12)
                 }
 
                 iconView
@@ -34,10 +32,10 @@ struct FileTreeItemView: View {
                 if isRenaming {
                     TextField("", text: $renameName, onCommit: { commitRename() })
                         .textFieldStyle(.plain)
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                 } else {
                     Text(displayName)
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -45,7 +43,7 @@ struct FileTreeItemView: View {
                 Spacer()
             }
             .padding(.vertical, 4)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
             .cornerRadius(4)
             .contentShape(Rectangle())
@@ -92,10 +90,10 @@ struct FileTreeItemView: View {
             } else if icon.hasPrefix("sf:") {
                 // SF Symbol (sf:symbolName)
                 Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 14))
+                Text(icon).font(.system(size: 15))
             } else if FileManager.default.fileExists(atPath: icon) {
                 // Raw file path (legacy)
                 if let nsImage = NSImage(contentsOfFile: icon) {
@@ -118,15 +116,15 @@ struct FileTreeItemView: View {
     private var defaultIcon: some View {
         if entry.isDatabase {
             Image(systemName: "tablecells")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(.secondary)
         } else if entry.isDirectory {
             Image(systemName: "folder")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(.secondary)
         } else {
             Image(systemName: "doc.text")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(.secondary)
         }
     }

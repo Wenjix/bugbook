@@ -90,17 +90,15 @@ class FileSystemService: ObservableObject {
                     // Companion folder - skip, its contents are handled by the parent .md file
                     continue
                 } else {
-                    // Regular directory - recurse
+                    // Regular directory - flatten into parent (no visible folders)
                     let children = buildFileTree(at: fullPath, depth: depth + 1)
-                    folders.append(FileEntry(
-                        id: fullPath,
-                        name: name,
-                        path: fullPath,
-                        isDirectory: true,
-                        isDatabase: false,
-                        icon: nil,
-                        children: children
-                    ))
+                    for child in children {
+                        if child.isDatabase {
+                            folders.append(child)
+                        } else {
+                            files.append(child)
+                        }
+                    }
                 }
             } else if name.hasSuffix(".md") {
                 let isDbFile = name.hasSuffix(".db.md")

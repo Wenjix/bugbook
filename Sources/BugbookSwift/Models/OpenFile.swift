@@ -9,4 +9,5 @@ struct OpenFile: Identifiable, Equatable {
     var isDatabase: Bool
     var displayName: String?
     var openerPagePath: String?
+    var icon: String?
 }

@@ -11,7 +11,7 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             if !block.language.isEmpty {
                 Text(block.language)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.top, 8)

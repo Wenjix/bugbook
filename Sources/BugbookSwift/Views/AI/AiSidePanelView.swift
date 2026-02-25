@@ -12,11 +12,11 @@ struct AiSidePanelView: View {
             // Header
             HStack {
                 Text("Ask AI")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Button(action: openFullChat) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.borderless)
@@ -24,7 +24,7 @@ struct AiSidePanelView: View {
 
                 Button(action: closePanel) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.borderless)
@@ -49,7 +49,7 @@ struct AiSidePanelView: View {
                                 ProgressView()
                                     .controlSize(.small)
                                 Text("Thinking...")
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 13))
                                     .foregroundColor(.secondary)
                             }
                             .padding(.horizontal, 14)
@@ -76,7 +76,7 @@ struct AiSidePanelView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Ask about your notes...", text: $inputText, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .lineLimit(1...5)
                     .focused($inputFocused)
                     .onSubmit {
@@ -86,7 +86,7 @@ struct AiSidePanelView: View {
 
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 21))
                         .foregroundColor(inputText.trimmingCharacters(in: .whitespaces).isEmpty ? .secondary : .accentColor)
                 }
                 .buttonStyle(.borderless)
@@ -115,7 +115,7 @@ struct AiSidePanelView: View {
                 if message.role == .user { Spacer(minLength: 40) }
 
                 Text(message.content)
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(message.role == .error ? .red : .primary)
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)

@@ -180,7 +180,9 @@ enum MarkdownBlockParser {
 
             // Column block
             if line.trimmingCharacters(in: .whitespaces) == "<!-- columns -->" {
-                var columnChildren: [Block] = []
+                var allChildren: [Block] = []
+                var currentColumnIndex = 0
+                var currentColumnLines: [String] = []
                 i += 1
                 while i < lines.count {
                     let colLine = lines[i]
@@ -189,15 +191,33 @@ enum MarkdownBlockParser {
                         break
                     }
                     if colLine.trimmingCharacters(in: .whitespaces) == "<!-- column-separator -->" {
+                        // Parse accumulated lines for current column
+                        if !currentColumnLines.isEmpty {
+                            let columnContent = currentColumnLines.joined(separator: "\n")
+                            var columnBlocks = parse(columnContent)
+                            for j in columnBlocks.indices {
+                                columnBlocks[j].columnIndex = currentColumnIndex
+                            }
+                            allChildren.append(contentsOf: columnBlocks)
+                        }
+                        currentColumnLines = []
+                        currentColumnIndex += 1
                         i += 1
                         continue
                     }
-                    // Parse each line inside columns as a child block
-                    let childBlocks = parse(colLine)
-                    columnChildren.append(contentsOf: childBlocks)
+                    currentColumnLines.append(colLine)
                     i += 1
                 }
-                blocks.append(Block(type: .column, children: columnChildren))
+                // Parse remaining lines for last column
+                if !currentColumnLines.isEmpty {
+                    let columnContent = currentColumnLines.joined(separator: "\n")
+                    var columnBlocks = parse(columnContent)
+                    for j in columnBlocks.indices {
+                        columnBlocks[j].columnIndex = currentColumnIndex
+                    }
+                    allChildren.append(contentsOf: columnBlocks)
+                }
+                blocks.append(Block(type: .column, children: allChildren))
                 continue
             }
 
@@ -297,11 +317,15 @@ enum MarkdownBlockParser {
 
             case .column:
                 lines.append("<!-- columns -->")
-                for (ci, child) in block.children.enumerated() {
-                    if ci > 0 {
+                let maxCol = block.children.map(\.columnIndex).max() ?? 0
+                for colIdx in 0...maxCol {
+                    if colIdx > 0 {
                         lines.append("<!-- column-separator -->")
                     }
-                    lines.append(serialize([child]))
+                    let colBlocks = block.children.filter { $0.columnIndex == colIdx }
+                    if !colBlocks.isEmpty {
+                        lines.append(serialize(colBlocks))
+                    }
                 }
                 lines.append("<!-- /columns -->")
             }

@@ -121,7 +121,7 @@ struct DatabaseInlineEmbedView: View {
                         .font(.callout)
                         .fontWeight(.semibold)
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                 }
                 .foregroundColor(.accentColor)
             }

@@ -31,6 +31,7 @@ struct Block: Identifiable, Equatable {
     var textColor: BlockColor
     var backgroundColor: BlockColor
     var children: [Block]
+    var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
 
     init(
         id: UUID = UUID(),
@@ -47,7 +48,8 @@ struct Block: Identifiable, Equatable {
         pageLinkName: String = "",
         textColor: BlockColor = .default,
         backgroundColor: BlockColor = .default,
-        children: [Block] = []
+        children: [Block] = [],
+        columnIndex: Int = 0
     ) {
         self.id = id
         self.type = type
@@ -64,5 +66,6 @@ struct Block: Identifiable, Equatable {
         self.textColor = textColor
         self.backgroundColor = backgroundColor
         self.children = children
+        self.columnIndex = columnIndex
     }
 }
