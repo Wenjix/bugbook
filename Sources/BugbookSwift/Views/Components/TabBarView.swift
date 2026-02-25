@@ -3,18 +3,49 @@ import AppKit
 
 struct TabBarView: View {
     @ObservedObject var appState: AppState
+    @State private var dragOverIndex: Int?
+    @State private var draggingTabId: UUID?
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .bottom, spacing: 0) {
                     ForEach(Array(appState.openTabs.enumerated()), id: \.element.id) { index, tab in
-                        TabItemView(
-                            tab: tab,
-                            isActive: index == appState.activeTabIndex,
-                            onSelect: { appState.activeTabIndex = index },
-                            onClose: { appState.closeTab(at: index) }
-                        )
+                        HStack(spacing: 0) {
+                            // Drop indicator before this tab
+                            if dragOverIndex == index {
+                                Rectangle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 2, height: 24)
+                                    .padding(.vertical, 4)
+                            }
+
+                            TabItemView(
+                                tab: tab,
+                                isActive: index == appState.activeTabIndex,
+                                onSelect: { appState.activeTabIndex = index },
+                                onClose: { appState.closeTab(at: index) }
+                            )
+                            .opacity(draggingTabId == tab.id ? 0.4 : 1.0)
+                            .onDrag {
+                                draggingTabId = tab.id
+                                return NSItemProvider(object: tab.path as NSString)
+                            }
+                            .onDrop(of: [.text], delegate: TabDropDelegate(
+                                targetIndex: index,
+                                appState: appState,
+                                dragOverIndex: $dragOverIndex,
+                                draggingTabId: $draggingTabId
+                            ))
+                        }
+                    }
+
+                    // Drop indicator after last tab
+                    if dragOverIndex == appState.openTabs.count {
+                        Rectangle()
+                            .fill(Color.accentColor)
+                            .frame(width: 2, height: 24)
+                            .padding(.vertical, 4)
                     }
 
                     Button(action: { appState.newEmptyTab() }) {
@@ -25,6 +56,12 @@ struct TabBarView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 2)
+                    .onDrop(of: [.text], delegate: TabDropDelegate(
+                        targetIndex: appState.openTabs.count,
+                        appState: appState,
+                        dragOverIndex: $dragOverIndex,
+                        draggingTabId: $draggingTabId
+                    ))
                 }
                 .padding(.leading, 8)
             }
@@ -32,6 +69,45 @@ struct TabBarView: View {
         }
         .frame(height: 36)
         .background(Color.fallbackSidebarBg)
+    }
+}
+
+// MARK: - Tab Drop Delegate
+
+struct TabDropDelegate: DropDelegate {
+    let targetIndex: Int
+    let appState: AppState
+    @Binding var dragOverIndex: Int?
+    @Binding var draggingTabId: UUID?
+
+    func dropEntered(info: DropInfo) {
+        dragOverIndex = targetIndex
+    }
+
+    func dropExited(info: DropInfo) {
+        if dragOverIndex == targetIndex {
+            dragOverIndex = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragOverIndex = nil
+        guard let draggingId = draggingTabId,
+              let sourceIndex = appState.openTabs.firstIndex(where: { $0.id == draggingId }) else {
+            draggingTabId = nil
+            return false
+        }
+        appState.reorderTab(from: sourceIndex, to: targetIndex)
+        draggingTabId = nil
+        return true
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        true
     }
 }
 

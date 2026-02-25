@@ -18,7 +18,7 @@ struct BugbookSwiftApp: App {
                 .keyboardShortcut("n")
 
                 Button("New Tab") {
-                    NotificationCenter.default.post(name: .newTab, object: nil)
+                    NotificationCenter.default.post(name: .quickOpenNewTab, object: nil)
                 }
                 .keyboardShortcut("t")
 
@@ -47,6 +47,11 @@ struct BugbookSwiftApp: App {
                     NotificationCenter.default.post(name: .quickOpen, object: nil)
                 }
                 .keyboardShortcut("k")
+
+                Button("Ask AI") {
+                    NotificationCenter.default.post(name: .openAIPanel, object: nil)
+                }
+                .keyboardShortcut("i")
             }
 
             CommandGroup(replacing: .appSettings) {
@@ -100,5 +105,10 @@ extension Notification.Name {
     static let saveFile = Notification.Name("saveFile")
     static let toggleSidebar = Notification.Name("toggleSidebar")
     static let quickOpen = Notification.Name("quickOpen")
+    static let quickOpenNewTab = Notification.Name("quickOpenNewTab")
     static let openSettings = Notification.Name("openSettings")
+    static let openAIPanel = Notification.Name("openAIPanel")
+    static let askAI = Notification.Name("askAI")
+    static let toggleTheme = Notification.Name("toggleTheme")
+    static let newDatabase = Notification.Name("newDatabase")
 }

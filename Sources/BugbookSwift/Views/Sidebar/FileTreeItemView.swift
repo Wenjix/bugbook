@@ -182,15 +182,33 @@ struct FileTreeItemView: View {
 
     @ViewBuilder
     private var contextMenuItems: some View {
-        Button("Rename") { startRename() }
-        Button("Duplicate") { performDuplicate() }
-        Divider()
-        if entry.isDirectory || entry.children != nil {
-            Button("New Sub-page") { performCreateSubPage() }
-            Button("New Database Inside") { performCreateDatabase() }
-            Divider()
+        Button { performCreateNote() } label: {
+            Label("New Note", systemImage: "doc.badge.plus")
         }
-        Button("Delete", role: .destructive) { showDeleteConfirmation = true }
+        Button { performCreateDatabase() } label: {
+            Label("New Database", systemImage: "tablecells")
+        }
+        if entry.isDirectory && !entry.isDatabase {
+            Button { performCreateFolder() } label: {
+                Label("New Folder", systemImage: "folder.badge.plus")
+            }
+        }
+        Divider()
+        Button { startRename() } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        Button { performDuplicate() } label: {
+            Label("Duplicate", systemImage: "doc.on.doc")
+        }
+        if entry.isDirectory || entry.children != nil {
+            Button { performCreateSubPage() } label: {
+                Label("New Sub-page", systemImage: "doc.text.below.ecg")
+            }
+        }
+        Divider()
+        Button(role: .destructive) { showDeleteConfirmation = true } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 
     // MARK: - Actions
@@ -229,6 +247,31 @@ struct FileTreeItemView: View {
             )
             onSelectFile(dup)
         }
+    }
+
+    private func performCreateNote() {
+        let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
+        do {
+            let path = try fileSystem.createNewFile(in: dir)
+            onRefreshTree()
+            if entry.isDirectory && !isExpanded { toggleExpanded() }
+            let name = (path as NSString).lastPathComponent
+            let note = FileEntry(
+                id: path, name: name, path: path,
+                isDirectory: false, isDatabase: false, icon: nil, children: nil
+            )
+            onSelectFile(note)
+        } catch {
+            print("Failed to create note: \(error)")
+        }
+    }
+
+    private func performCreateFolder() {
+        guard entry.isDirectory else { return }
+        let folderPath = (entry.path as NSString).appendingPathComponent("New Folder")
+        try? FileManager.default.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
+        onRefreshTree()
+        if !isExpanded { toggleExpanded() }
     }
 
     private func performCreateSubPage() {

@@ -56,6 +56,51 @@ struct SidebarView: View {
 
             Divider()
 
+            // Search & AI pills
+            VStack(spacing: 4) {
+                Button(action: { NotificationCenter.default.post(name: .quickOpen, object: nil) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Text("Search")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("⌘K")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color(nsColor: .tertiaryLabelColor))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.primary.opacity(0.04))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { NotificationCenter.default.post(name: .openAIPanel, object: nil) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Text("Ask AI")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("⌘I")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color(nsColor: .tertiaryLabelColor))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.primary.opacity(0.04))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
             // File tree
             ScrollView {
                 FileTreeView(
@@ -72,7 +117,7 @@ struct SidebarView: View {
 
             Divider()
 
-            // Bottom bar with settings
+            // Bottom bar with settings and chat
             HStack {
                 Button(action: openSettings) {
                     Image(systemName: "gearshape")
@@ -82,6 +127,13 @@ struct SidebarView: View {
                 .buttonStyle(.borderless)
                 .help("Settings")
                 Spacer()
+                Button(action: { appState.currentView = .chat }) {
+                    Image(systemName: "bubble.left.and.text.bubble.right")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Chat with Notes")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
