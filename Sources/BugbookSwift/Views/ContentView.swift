@@ -497,9 +497,37 @@ struct ContentView: View {
             if let document = docs[tabId] {
                 let content = document.markdown
                 appState.openTabs[index].content = content
-                try? fileSystem.saveFile(at: appState.openTabs[index].path, content: content)
+                let oldPath = appState.openTabs[index].path
+                try? fileSystem.saveFile(at: oldPath, content: content)
+
+                // Rename file on disk if title changed
+                if let title = document.titleBlock?.text, !title.isEmpty {
+                    let currentName = (oldPath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+                    if title != currentName {
+                        let dir = (oldPath as NSString).deletingLastPathComponent
+                        let sanitized = title.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
+                        let newPath = (dir as NSString).appendingPathComponent("\(sanitized).md")
+                        if !FileManager.default.fileExists(atPath: newPath) {
+                            try? fileSystem.renameFile(from: oldPath, to: newPath)
+                            appState.openTabs[index].path = newPath
+                            // Update any pageLink blocks in other open documents that reference old name
+                            updatePageLinks(oldName: currentName, newName: sanitized, docs: docs)
+                            refreshFileTree()
+                        }
+                    }
+                }
             }
             appState.openTabs[index].isDirty = false
+        }
+    }
+
+    private func updatePageLinks(oldName: String, newName: String, docs: [UUID: BlockDocument]) {
+        for (_, doc) in docs {
+            for i in doc.blocks.indices {
+                if doc.blocks[i].type == .pageLink && doc.blocks[i].pageLinkName == oldName {
+                    doc.blocks[i].pageLinkName = newName
+                }
+            }
         }
     }
 

@@ -187,8 +187,7 @@ class FileSystemService: ObservableObject {
         let filename = uniqueFilename(in: companion, base: sanitizedName, ext: "md")
         let filePath = (companion as NSString).appendingPathComponent(filename)
 
-        let parentName = (pagePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
-        try "# \(sanitizedName)\n<!-- parent:\(parentName) -->\n\n".write(toFile: filePath, atomically: true, encoding: .utf8)
+        try "# \(sanitizedName)\n\n".write(toFile: filePath, atomically: true, encoding: .utf8)
         return filePath
     }
 

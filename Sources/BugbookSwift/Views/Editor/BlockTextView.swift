@@ -76,6 +76,13 @@ struct BlockTextView: NSViewRepresentable {
         textView.onDragOutOfBlock = { [weak coordinator] in
             coordinator?.startBlockDragSelection()
         }
+        textView.onShiftClick = { [weak coordinator] in
+            guard let coordinator = coordinator else { return }
+            let doc = coordinator.parent.document
+            if let anchor = doc.focusedBlockId {
+                doc.selectBlockRange(from: anchor, to: coordinator.parent.blockId)
+            }
+        }
         context.coordinator.textView = textView
 
         DispatchQueue.main.async {
@@ -575,6 +582,7 @@ class BlockNSTextView: NSTextView {
     var redoAction: (() -> Void)?
     var selectAllBlocksAction: (() -> Void)?
     var onDragOutOfBlock: (() -> Void)?
+    var onShiftClick: (() -> Void)?
     var isInBlockSelection = false
 
     override func didChangeText() {
@@ -606,6 +614,15 @@ class BlockNSTextView: NSTextView {
         return result
     }
 
+    override func selectAll(_ sender: Any?) {
+        // If all text already selected (or empty), escalate to select all blocks
+        if string.isEmpty || selectedRange().length == string.count {
+            selectAllBlocksAction?()
+            return
+        }
+        super.selectAll(sender)
+    }
+
     // Reject all external drops to prevent UUID string insertion from drag-and-drop
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         return false
@@ -615,7 +632,15 @@ class BlockNSTextView: NSTextView {
         return []
     }
 
-    // MARK: - Cross-Block Drag Selection
+    // MARK: - Cross-Block Selection
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.shift) {
+            onShiftClick?()
+            return
+        }
+        super.mouseDown(with: event)
+    }
 
     override func mouseDragged(with event: NSEvent) {
         if isInBlockSelection {
@@ -645,13 +670,6 @@ class BlockNSTextView: NSTextView {
             case "z":
                 undoAction?()
                 return
-            case "a":
-                // If all text already selected (or empty), escalate to select all blocks
-                if string.isEmpty || selectedRange().length == string.count {
-                    selectAllBlocksAction?()
-                    return
-                }
-                // Fall through to super for normal select-all
             case "b":
                 formatBoldAction?()
                 return
