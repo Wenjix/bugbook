@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Result Types
 
@@ -129,10 +130,14 @@ struct CommandPaletteView: View {
             scheduleContentSearch(query: effectiveQuery(from: newValue))
         }
         .onAppear {
+            // Resign any AppKit first responder (e.g. block NSTextView) so TextField gets focus
+            NSApp.keyWindow?.makeFirstResponder(nil)
             if appState.commandPaletteMode == .commands {
                 searchText = ">"
             }
-            isSearchFieldFocused = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isSearchFieldFocused = true
+            }
         }
     }
 
@@ -240,9 +245,7 @@ struct CommandPaletteView: View {
         HStack(spacing: 8) {
             switch item {
             case .file(let entry):
-                Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                fileIcon(for: entry)
                 Text(entry.name.replacingOccurrences(of: ".md", with: ""))
                     .font(.system(size: 15))
                 Spacer()
@@ -494,5 +497,39 @@ struct CommandPaletteView: View {
     private func relativePath(for entry: FileEntry) -> String {
         guard let workspace = appState.workspacePath else { return "" }
         return entry.path.replacingOccurrences(of: workspace + "/", with: "")
+    }
+
+    @ViewBuilder
+    private func fileIcon(for entry: FileEntry) -> some View {
+        if let icon = entry.icon, !icon.isEmpty {
+            if icon.hasPrefix("custom:") {
+                let path = String(icon.dropFirst(7))
+                if let nsImage = NSImage(contentsOfFile: path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                } else {
+                    defaultFileIcon(for: entry)
+                }
+            } else if icon.hasPrefix("sf:") {
+                Image(systemName: String(icon.dropFirst(3)))
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 14))
+            } else {
+                defaultFileIcon(for: entry)
+            }
+        } else {
+            defaultFileIcon(for: entry)
+        }
+    }
+
+    @ViewBuilder
+    private func defaultFileIcon(for entry: FileEntry) -> some View {
+        Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+            .font(.system(size: 13))
+            .foregroundColor(.secondary)
     }
 }

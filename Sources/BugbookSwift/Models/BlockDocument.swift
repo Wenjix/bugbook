@@ -16,6 +16,8 @@ class BlockDocument: ObservableObject {
     @Published var fullWidth: Bool = false
     @Published var showPagePicker: Bool = false
     @Published var pagePickerBlockId: UUID?
+    @Published var selectedBlockIds: Set<UUID> = []
+    var blockSelectionAnchor: UUID?
 
     var titleBlock: Block? {
         guard let first = blocks.first,
@@ -24,6 +26,7 @@ class BlockDocument: ObservableObject {
     }
 
     var onCreateDatabase: ((String) -> String?)?
+    var onCreateSubPage: ((String) -> String?)?
     var onNavigateToPage: ((String) -> Void)?
     var onOpenDatabaseTab: ((String) -> Void)?
     var availablePages: [FileEntry] = []
@@ -501,6 +504,7 @@ class BlockDocument: ObservableObject {
     enum SlashCommandAction {
         case blockType(BlockType, headingLevel: Int)
         case linkToPage
+        case createPage
     }
 
     struct SlashCommand {
@@ -520,6 +524,7 @@ class BlockDocument: ObservableObject {
         SlashCommand(name: "Quote", icon: "text.quote", action: .blockType(.blockquote, headingLevel: 0)),
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0)),
         SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0)),
+        SlashCommand(name: "Page", icon: "doc.text", action: .createPage),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
     ]
@@ -542,6 +547,19 @@ class BlockDocument: ObservableObject {
         updateBlockProperty(id: blockId) { $0.text = "" }
 
         switch command.action {
+        case .createPage:
+            if let createPage = onCreateSubPage,
+               let pagePath = createPage("Untitled") {
+                let pageName = (pagePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+                saveUndo()
+                updateBlockProperty(id: blockId) { block in
+                    block.type = .pageLink
+                    block.pageLinkName = pageName
+                }
+            }
+            dismissSlashMenu()
+            return
+
         case .linkToPage:
             pagePickerBlockId = blockId
             showPagePicker = true
@@ -596,5 +614,23 @@ class BlockDocument: ObservableObject {
         slashMenuBlockId = nil
         slashMenuFilter = ""
         slashMenuSelectedIndex = 0
+    }
+
+    // MARK: - Block Selection
+
+    func selectAllBlocks() {
+        selectedBlockIds = Set(blocks.map(\.id))
+    }
+
+    func clearBlockSelection() {
+        selectedBlockIds.removeAll()
+        blockSelectionAnchor = nil
+    }
+
+    func selectBlockRange(from anchorId: UUID, to currentId: UUID) {
+        guard let anchorIdx = index(for: anchorId),
+              let currentIdx = index(for: currentId) else { return }
+        let range = min(anchorIdx, currentIdx)...max(anchorIdx, currentIdx)
+        selectedBlockIds = Set(range.map { blocks[$0].id })
     }
 }

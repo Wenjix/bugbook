@@ -46,6 +46,7 @@ struct BlockTextView: NSViewRepresentable {
 
         textView.placeholderString = placeholder
         textView.placeholderFont = font
+        textView.blockId = blockId
 
         let coordinator = context.coordinator
         textView.onBecomeFirstResponder = { [weak coordinator] in
@@ -68,6 +69,12 @@ struct BlockTextView: NSViewRepresentable {
         }
         textView.redoAction = { [weak coordinator] in
             coordinator?.parent.document.redo()
+        }
+        textView.selectAllBlocksAction = { [weak coordinator] in
+            coordinator?.parent.document.selectAllBlocks()
+        }
+        textView.onDragOutOfBlock = { [weak coordinator] in
+            coordinator?.startBlockDragSelection()
         }
         context.coordinator.textView = textView
 
@@ -155,10 +162,63 @@ struct BlockTextView: NSViewRepresentable {
             self.parent = parent
         }
 
+        private var dragMonitor: Any?
+
         func handleBecomeFirstResponder() {
             if parent.document.focusedBlockId != parent.blockId {
                 parent.document.focusedBlockId = parent.blockId
                 lastFocusedSelf = true
+            }
+            // Clear multi-block selection when a specific block gets focus
+            if !parent.document.selectedBlockIds.isEmpty {
+                parent.document.clearBlockSelection()
+            }
+        }
+
+        // MARK: - Block Drag Selection
+
+        func startBlockDragSelection() {
+            let anchorId = parent.blockId
+            parent.document.blockSelectionAnchor = anchorId
+            parent.document.selectedBlockIds = [anchorId]
+
+            dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+                guard let self = self else { return event }
+
+                if event.type == .leftMouseUp {
+                    self.endBlockDragSelection()
+                    return event
+                }
+
+                // Hit test to find which block is under the mouse
+                let point = event.locationInWindow
+                if let contentView = event.window?.contentView {
+                    let converted = contentView.convert(point, from: nil)
+                    if let hitView = contentView.hitTest(converted) {
+                        var view: NSView? = hitView
+                        while let v = view {
+                            if let blockTV = v as? BlockNSTextView,
+                               let targetId = blockTV.blockId {
+                                self.parent.document.selectBlockRange(from: anchorId, to: targetId)
+                                break
+                            }
+                            view = v.superview
+                        }
+                    }
+                }
+
+                return event
+            }
+        }
+
+        func endBlockDragSelection() {
+            if let monitor = dragMonitor {
+                NSEvent.removeMonitor(monitor)
+                dragMonitor = nil
+            }
+            parent.document.blockSelectionAnchor = nil
+            if let tv = textView as? BlockNSTextView {
+                tv.isInBlockSelection = false
             }
         }
 
@@ -205,6 +265,11 @@ struct BlockTextView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             isEditing = true
             defer { isEditing = false }
+
+            // Clear multi-block selection when typing
+            if !parent.document.selectedBlockIds.isEmpty {
+                parent.document.clearBlockSelection()
+            }
 
             // Store plain text directly (works for both top-level and column children)
             parent.document.updateBlockText(id: parent.blockId, text: textView.string)
@@ -501,12 +566,16 @@ class BlockNSTextView: NSTextView {
     var placeholderFont: NSFont?
 
     // Formatting action closures
+    var blockId: UUID?
     var formatBoldAction: (() -> Void)?
     var formatItalicAction: (() -> Void)?
     var formatCodeAction: (() -> Void)?
     var formatLinkAction: (() -> Void)?
     var undoAction: (() -> Void)?
     var redoAction: (() -> Void)?
+    var selectAllBlocksAction: (() -> Void)?
+    var onDragOutOfBlock: (() -> Void)?
+    var isInBlockSelection = false
 
     override func didChangeText() {
         super.didChangeText()
@@ -546,6 +615,26 @@ class BlockNSTextView: NSTextView {
         return []
     }
 
+    // MARK: - Cross-Block Drag Selection
+
+    override func mouseDragged(with event: NSEvent) {
+        if isInBlockSelection {
+            return // Block selection is active — don't do text selection
+        }
+        let localPoint = convert(event.locationInWindow, from: nil)
+        if !bounds.contains(localPoint) {
+            isInBlockSelection = true
+            onDragOutOfBlock?()
+            return
+        }
+        super.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        isInBlockSelection = false
+        super.mouseUp(with: event)
+    }
+
     // MARK: - Keyboard Shortcuts for Formatting
 
     override func keyDown(with event: NSEvent) {
@@ -556,6 +645,13 @@ class BlockNSTextView: NSTextView {
             case "z":
                 undoAction?()
                 return
+            case "a":
+                // If all text already selected (or empty), escalate to select all blocks
+                if string.isEmpty || selectedRange().length == string.count {
+                    selectAllBlocksAction?()
+                    return
+                }
+                // Fall through to super for normal select-all
             case "b":
                 formatBoldAction?()
                 return
@@ -564,9 +660,6 @@ class BlockNSTextView: NSTextView {
                 return
             case "e":
                 formatCodeAction?()
-                return
-            case "k":
-                formatLinkAction?()
                 return
             default:
                 break

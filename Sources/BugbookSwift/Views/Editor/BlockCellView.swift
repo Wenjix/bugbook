@@ -34,8 +34,21 @@ struct BlockCellView: View {
         .cornerRadius(block.backgroundColor != .default ? 4 : 0)
         .contentShape(Rectangle())
         .onTapGesture {
-            document.focusedBlockId = block.id
+            if NSEvent.modifierFlags.contains(.shift),
+               let anchor = document.focusedBlockId {
+                document.selectBlockRange(from: anchor, to: block.id)
+            } else {
+                document.clearBlockSelection()
+                document.focusedBlockId = block.id
+            }
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.accentColor.opacity(
+                    document.selectedBlockIds.contains(block.id) ? 0.15 : 0
+                ))
+                .allowsHitTesting(false)
+        )
         .onHover { hovering in
             isHovering = hovering
         }

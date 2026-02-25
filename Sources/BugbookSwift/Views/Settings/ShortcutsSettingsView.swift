@@ -4,13 +4,13 @@ struct ShortcutsSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             SettingsSection("Editor") {
-                shortcutRow("Save", "Cmd + S")
                 shortcutRow("New Note", "Cmd + N")
                 shortcutRow("Slash Command", "/")
+                shortcutRow("Select All (block → page)", "Cmd + A")
             }
 
             SettingsSection("Navigation") {
-                shortcutRow("Quick Open", "Cmd + K")
+                shortcutRow("Quick Open", "Cmd + K / Cmd + P")
                 shortcutRow("Toggle Sidebar", "Cmd + .")
                 shortcutRow("New Tab", "Cmd + T")
                 shortcutRow("Close Tab", "Cmd + W")

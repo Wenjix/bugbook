@@ -48,6 +48,11 @@ struct BugbookSwiftApp: App {
                 }
                 .keyboardShortcut("k")
 
+                Button("Quick Open (P)") {
+                    NotificationCenter.default.post(name: .quickOpen, object: nil)
+                }
+                .keyboardShortcut("p")
+
                 Button("Ask AI") {
                     NotificationCenter.default.post(name: .openAIPanel, object: nil)
                 }

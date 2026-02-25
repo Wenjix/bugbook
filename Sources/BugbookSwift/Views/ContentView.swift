@@ -302,6 +302,12 @@ struct ContentView: View {
             if path != nil { refreshFileTree() }
             return path
         }
+        doc.onCreateSubPage = { [weak appState] name in
+            guard let tab = appState?.activeTab else { return nil }
+            let path = try? fileSystem.createSubPage(under: tab.path, name: name)
+            if path != nil { refreshFileTree() }
+            return path
+        }
         doc.availablePages = appState.fileTree
         doc.onNavigateToPage = { pageName in
             navigateToPage(named: pageName)
@@ -354,6 +360,9 @@ struct ContentView: View {
     // MARK: - Actions
 
     private func handleSidebarFileSelect(_ entry: FileEntry) {
+        // Switch back to editor when selecting a file from sidebar
+        appState.currentView = .editor
+        appState.showSettings = false
         let cmdHeld = NSEvent.modifierFlags.contains(.command)
         if cmdHeld {
             appState.openFileInNewTab(entry)
