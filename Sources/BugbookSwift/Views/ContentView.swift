@@ -264,6 +264,8 @@ struct ContentView: View {
                             if !appState.openTabs[appState.activeTabIndex].isDirty {
                                 appState.openTabs[appState.activeTabIndex].isDirty = true
                             }
+                            // Sync title to tab, sidebar, and breadcrumbs in real time
+                            syncTitle(from: document)
                             scheduleSave()
                             triggerFocusMode()
                         }
@@ -554,9 +556,41 @@ struct ContentView: View {
         }
     }
 
+    private func syncTitle(from document: BlockDocument) {
+        guard appState.activeTabIndex < appState.openTabs.count else { return }
+        if let title = document.titleBlock?.text, !title.isEmpty {
+            // Update tab display name
+            appState.openTabs[appState.activeTabIndex].displayName = title
+            // Update sidebar file tree entry name
+            let path = appState.openTabs[appState.activeTabIndex].path
+            updateFileTreeName(path: path, newName: title)
+        }
+    }
+
+    private func updateFileTreeName(path: String, newName: String) {
+        func update(entries: inout [FileEntry]) {
+            for i in entries.indices {
+                if entries[i].path == path {
+                    entries[i].name = newName
+                    return
+                }
+                if var children = entries[i].children {
+                    update(entries: &children)
+                    entries[i].children = children
+                }
+            }
+        }
+        update(entries: &appState.fileTree)
+    }
+
     private func breadcrumbs(for tab: OpenFile) -> [BreadcrumbItem] {
         guard let workspace = appState.workspacePath else { return [] }
-        return fileSystem.getBreadcrumbs(for: tab.path, relativeTo: workspace)
+        var crumbs = fileSystem.getBreadcrumbs(for: tab.path, relativeTo: workspace)
+        // Use live title for the last breadcrumb
+        if let displayName = tab.displayName, !displayName.isEmpty, !crumbs.isEmpty {
+            crumbs[crumbs.count - 1].name = displayName
+        }
+        return crumbs
     }
 }
 
