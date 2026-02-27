@@ -173,8 +173,34 @@ enum MarkdownBlockParser {
 
             // Wiki link (page link) — line is exactly [[Page Name]]
             if let name = parseWikiLink(line) {
-                blocks.append(Block(type: .pageLink, pageLinkName: name))
+                if let dbPath = parseDatabaseSchemePath(name) {
+                    blocks.append(Block(type: .databaseEmbed, databasePath: dbPath))
+                } else {
+                    blocks.append(Block(type: .pageLink, pageLinkName: name))
+                }
                 i += 1
+                continue
+            }
+
+            // Toggle block
+            if line.trimmingCharacters(in: .whitespaces) == "<!-- toggle -->" || line.trimmingCharacters(in: .whitespaces) == "<!-- toggle collapsed -->" {
+                let collapsed = line.trimmingCharacters(in: .whitespaces).contains("collapsed")
+                i += 1
+                // First line is the toggle title
+                let title = i < lines.count ? lines[i] : ""
+                i += 1
+                // Remaining lines until <!-- /toggle --> are children
+                var childLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle -->" {
+                        i += 1
+                        break
+                    }
+                    childLines.append(lines[i])
+                    i += 1
+                }
+                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                blocks.append(Block(type: .toggle, text: title, children: children, isExpanded: !collapsed))
                 continue
             }
 
@@ -258,7 +284,7 @@ enum MarkdownBlockParser {
         for (i, block) in blocks.enumerated() {
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column {
+            if hasColor, block.type != .column, block.type != .toggle {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -314,6 +340,14 @@ enum MarkdownBlockParser {
 
             case .pageLink:
                 lines.append("[[\(block.pageLinkName)]]")
+
+            case .toggle:
+                lines.append(block.isExpanded ? "<!-- toggle -->" : "<!-- toggle collapsed -->")
+                lines.append(block.text)
+                if !block.children.isEmpty {
+                    lines.append(serialize(block.children))
+                }
+                lines.append("<!-- /toggle -->")
 
             case .column:
                 lines.append("<!-- columns -->")
@@ -427,13 +461,59 @@ enum MarkdownBlockParser {
 
     private static func parseDatabaseEmbed(_ line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->") else { return nil }
-        guard let colonRange = trimmed.range(of: "database:") else { return nil }
-        let pathStart = colonRange.upperBound
-        let pathEnd = trimmed.index(trimmed.endIndex, offsetBy: -3)
-        guard pathStart < pathEnd else { return nil }
-        let path = String(trimmed[pathStart..<pathEnd]).trimmingCharacters(in: .whitespaces)
-        return path.isEmpty ? nil : path
+        if trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->"),
+           let colonRange = trimmed.range(of: "database:") {
+            let pathStart = colonRange.upperBound
+            let pathEnd = trimmed.index(trimmed.endIndex, offsetBy: -3)
+            guard pathStart < pathEnd else { return nil }
+            let path = String(trimmed[pathStart..<pathEnd]).trimmingCharacters(in: .whitespaces)
+            return path.isEmpty ? nil : path
+        }
+
+        if let markdownLinkPath = parseDatabaseMarkdownLink(trimmed) {
+            return markdownLinkPath
+        }
+
+        return parseDatabaseSchemePath(trimmed)
+    }
+
+    private static func parseDatabaseMarkdownLink(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("["),
+              trimmed.hasSuffix(")"),
+              let split = trimmed.range(of: "](") else { return nil }
+        let urlPart = String(trimmed[split.upperBound..<trimmed.index(before: trimmed.endIndex)])
+        return parseDatabaseSchemePath(urlPart)
+    }
+
+    private static func parseDatabaseSchemePath(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.lowercased().hasPrefix("database:") else { return nil }
+
+        var target = String(trimmed.dropFirst("database:".count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if target.isEmpty { return nil }
+
+        if target.lowercased().hasPrefix("file://"), let url = URL(string: target) {
+            target = url.path
+        } else if target.hasPrefix("///") {
+            target = "/" + String(target.dropFirst(3))
+        } else if target.hasPrefix("//") {
+            target = "/" + String(target.dropFirst(2))
+        }
+
+        if target.hasPrefix("~") {
+            target = (target as NSString).expandingTildeInPath
+        }
+        if target.contains("%"), let decoded = target.removingPercentEncoding {
+            target = decoded
+        }
+        if target.hasSuffix("/_schema.json") {
+            target = (target as NSString).deletingLastPathComponent
+        }
+
+        guard target.hasPrefix("/") else { return nil }
+        return target
     }
 
     private static func parseWikiLink(_ line: String) -> String? {

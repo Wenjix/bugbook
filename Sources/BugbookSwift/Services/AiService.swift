@@ -67,13 +67,12 @@ class AiService: ObservableObject {
         error = nil
         defer { isRunning = false }
 
-        let escapedQuestion = question.replacingOccurrences(of: "\"", with: "\\\"")
         let command: String
         switch cli {
         case .claude:
-            command = "claude -p \"Given the notes in this workspace, answer: \(escapedQuestion)\""
+            command = "claude -p \(shellSingleQuoted("Given the notes in this workspace, answer:\n\(question)"))"
         case .codex:
-            command = "codex \"Given the notes in this workspace, answer: \(escapedQuestion)\""
+            command = "codex \(shellSingleQuoted("Given the notes in this workspace, answer:\n\(question)"))"
         case .auto:
             // Should not reach here after resolveEngine
             throw AiError.noEngineAvailable
@@ -115,6 +114,10 @@ class AiService: ObservableObject {
             if engineStatus.codexAvailable { return .codex }
             return nil
         }
+    }
+
+    private func shellSingleQuoted(_ text: String) -> String {
+        "'\(text.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
     }
 
     private func runCommand(_ command: String, cwd: String? = nil) async throws -> String {

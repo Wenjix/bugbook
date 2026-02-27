@@ -173,9 +173,7 @@ struct BlockMenuView: View {
 
     private var turnIntoToggle: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                turnIntoExpanded.toggle()
-            }
+            turnIntoExpanded.toggle()
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.swap")
@@ -262,9 +260,7 @@ struct BlockMenuView: View {
 
     private var colorToggle: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                colorExpanded.toggle()
-            }
+            colorExpanded.toggle()
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "paintpalette")
@@ -296,16 +292,17 @@ struct BlockMenuView: View {
         }
     }
 
+    private let colorGridColumns = Array(repeating: GridItem(.fixed(20), spacing: 6), count: 5)
+
     private var colorPalette: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Text color row
             VStack(alignment: .leading, spacing: 4) {
                 Text("TEXT")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                     .padding(.leading, 28)
 
-                HStack(spacing: 4) {
+                LazyVGrid(columns: colorGridColumns, spacing: 6) {
                     ForEach(BlockColor.allCases, id: \.rawValue) { color in
                         textColorDot(color)
                     }
@@ -314,14 +311,13 @@ struct BlockMenuView: View {
                 .padding(.trailing, 12)
             }
 
-            // Background color row
             VStack(alignment: .leading, spacing: 4) {
                 Text("BACKGROUND")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                     .padding(.leading, 28)
 
-                HStack(spacing: 4) {
+                LazyVGrid(columns: colorGridColumns, spacing: 6) {
                     ForEach(BlockColor.allCases, id: \.rawValue) { color in
                         backgroundColorSquare(color)
                     }
@@ -373,16 +369,15 @@ struct BlockMenuView: View {
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(color == .default ? Color.clear : color.backgroundColor)
+                    .fill(color == .default ? Color.clear : color.textColor.opacity(0.25))
                     .frame(width: 20, height: 20)
                 RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(
-                        Color.gray.opacity(color == .default ? 0.4 : 0.2),
+                        color == .default ? Color.gray.opacity(0.4) : color.textColor.opacity(0.4),
                         lineWidth: 1
                     )
                     .frame(width: 20, height: 20)
                 if color == .default {
-                    // Diagonal strikethrough for "no background"
                     Rectangle()
                         .fill(Color.gray.opacity(0.4))
                         .frame(width: 16, height: 1.5)
@@ -394,6 +389,7 @@ struct BlockMenuView: View {
                         .foregroundColor(.primary)
                 }
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(color.displayName)
@@ -445,6 +441,7 @@ struct BlockMenuView: View {
         case .image: return "Image"
         case .databaseEmbed: return "Database"
         case .pageLink: return "Page Link"
+        case .toggle: return "Toggle"
         case .column: return "Column"
         }
     }

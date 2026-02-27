@@ -4,6 +4,7 @@ import SwiftUI
 struct BlockEditorView: View {
     @ObservedObject var document: BlockDocument
     var onTextChange: (() -> Void)?
+    var onTyping: (() -> Void)?
     @State private var activeDropIndex: Int?
     @State private var columnDropTargetId: UUID?
 
@@ -20,7 +21,7 @@ struct BlockEditorView: View {
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
-                BlockCellView(document: document, block: block)
+                BlockCellView(document: document, block: block, onTyping: onTyping)
                     .padding(.vertical, 2)
                     .overlay(alignment: .trailing) {
                         // Right-side drop zone for column creation

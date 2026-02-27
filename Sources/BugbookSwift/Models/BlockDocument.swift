@@ -61,7 +61,7 @@ class BlockDocument: ObservableObject {
     func block(for id: UUID) -> Block? {
         for block in blocks {
             if block.id == id { return block }
-            if block.type == .column {
+            if block.type == .column || block.type == .toggle {
                 if let child = block.children.first(where: { $0.id == id }) {
                     return child
                 }
@@ -79,7 +79,7 @@ class BlockDocument: ObservableObject {
     func blockLocation(for id: UUID) -> (topLevel: Int, child: Int?)? {
         for (i, block) in blocks.enumerated() {
             if block.id == id { return (i, nil) }
-            if block.type == .column {
+            if block.type == .column || block.type == .toggle {
                 if let childIdx = block.children.firstIndex(where: { $0.id == id }) {
                     return (i, childIdx)
                 }
@@ -248,14 +248,27 @@ class BlockDocument: ObservableObject {
     func splitBlock(id: UUID, atOffset offset: Int) -> UUID {
         guard let loc = blockLocation(for: id) else { return UUID() }
 
-        // If inside a column, split creates a new block in the same column
+        // If inside a column or toggle, split creates a new block in the same parent
         if let childIdx = loc.child {
-            saveUndo()
-            let block = blocks[loc.topLevel].children[childIdx]
+            let parentBlock = blocks[loc.topLevel]
+            let block = parentBlock.children[childIdx]
             let clamped = min(offset, block.text.count)
             let splitAt = block.text.index(block.text.startIndex, offsetBy: clamped)
             let before = String(block.text[..<splitAt])
             let after = String(block.text[splitAt...])
+
+            // Empty child in toggle → exit toggle
+            if parentBlock.type == .toggle, before.isEmpty, after.isEmpty {
+                saveUndo()
+                blocks[loc.topLevel].children.remove(at: childIdx)
+                let newBlock = Block(type: .paragraph)
+                blocks.insert(newBlock, at: loc.topLevel + 1)
+                focusedBlockId = newBlock.id
+                cursorPosition = 0
+                return newBlock.id
+            }
+
+            saveUndo()
             blocks[loc.topLevel].children[childIdx].text = before
             let newBlock = Block(type: .paragraph, text: after, columnIndex: block.columnIndex)
             blocks[loc.topLevel].children.insert(newBlock, at: childIdx + 1)
@@ -265,13 +278,25 @@ class BlockDocument: ObservableObject {
         }
 
         let idx = loc.topLevel
-        saveUndo()
-
         let block = blocks[idx]
         let clamped = min(offset, block.text.count)
         let splitAt = block.text.index(block.text.startIndex, offsetBy: clamped)
         let before = String(block.text[..<splitAt])
         let after = String(block.text[splitAt...])
+
+        // Toggle title → Enter creates child inside toggle
+        if block.type == .toggle {
+            saveUndo()
+            blocks[idx].text = before
+            blocks[idx].isExpanded = true
+            let newChild = Block(type: .paragraph, text: after)
+            blocks[idx].children.insert(newChild, at: 0)
+            focusedBlockId = newChild.id
+            cursorPosition = 0
+            return newChild.id
+        }
+
+        saveUndo()
 
         let continuableTypes: [BlockType] = [.bulletListItem, .numberedListItem, .taskItem, .blockquote]
 
@@ -324,6 +349,16 @@ class BlockDocument: ObservableObject {
                 blocks[loc.topLevel].children[prev.offset].text = prevText + curText
                 blocks[loc.topLevel].children.remove(at: childIdx)
                 focusedBlockId = prevId
+                cursorPosition = joinPoint
+                return joinPoint
+            } else if blocks[loc.topLevel].type == .toggle {
+                // First child in toggle — merge into toggle title
+                saveUndo()
+                let childText = blocks[loc.topLevel].children[childIdx].text
+                let joinPoint = blocks[loc.topLevel].text.count
+                blocks[loc.topLevel].text += childText
+                blocks[loc.topLevel].children.remove(at: childIdx)
+                focusedBlockId = blocks[loc.topLevel].id
                 cursorPosition = joinPoint
                 return joinPoint
             } else {
@@ -460,7 +495,8 @@ class BlockDocument: ObservableObject {
             textColor: original.textColor,
             backgroundColor: original.backgroundColor,
             children: original.children,
-            columnIndex: original.columnIndex
+            columnIndex: original.columnIndex,
+            isExpanded: original.isExpanded
         )
         if let childIdx = loc.child {
             blocks[loc.topLevel].children.insert(copy, at: childIdx + 1)
@@ -524,6 +560,7 @@ class BlockDocument: ObservableObject {
         SlashCommand(name: "Quote", icon: "text.quote", action: .blockType(.blockquote, headingLevel: 0)),
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0)),
         SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0)),
+        SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0)),
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
@@ -619,7 +656,7 @@ class BlockDocument: ObservableObject {
     // MARK: - Block Selection
 
     func selectAllBlocks() {
-        selectedBlockIds = Set(blocks.map(\.id))
+        selectedBlockIds = Set(selectionOrder())
     }
 
     func clearBlockSelection() {
@@ -628,16 +665,26 @@ class BlockDocument: ObservableObject {
     }
 
     func selectBlockRange(from anchorId: UUID, to currentId: UUID) {
-        guard let anchorIdx = index(for: anchorId),
-              let currentIdx = index(for: currentId) else { return }
+        let ordered = selectionOrder()
+        guard let anchorIdx = ordered.firstIndex(of: anchorId),
+              let currentIdx = ordered.firstIndex(of: currentId) else { return }
         let range = min(anchorIdx, currentIdx)...max(anchorIdx, currentIdx)
-        selectedBlockIds = Set(range.map { blocks[$0].id })
+        selectedBlockIds = Set(range.map { ordered[$0] })
     }
 
     func deleteSelectedBlocks() {
         guard !selectedBlockIds.isEmpty else { return }
         saveUndo()
-        blocks.removeAll { selectedBlockIds.contains($0.id) }
+        let ordered = selectionOrder()
+        for blockId in ordered.reversed() where selectedBlockIds.contains(blockId) {
+            guard let loc = blockLocation(for: blockId) else { continue }
+            if let childIdx = loc.child {
+                blocks[loc.topLevel].children.remove(at: childIdx)
+                dissolveColumnIfNeeded(at: loc.topLevel)
+            } else {
+                blocks.remove(at: loc.topLevel)
+            }
+        }
         if blocks.isEmpty {
             let titleBlock = Block(type: .heading, headingLevel: 1)
             blocks.append(titleBlock)
@@ -647,5 +694,18 @@ class BlockDocument: ObservableObject {
         }
         cursorPosition = 0
         clearBlockSelection()
+    }
+
+    private func selectionOrder() -> [UUID] {
+        var ordered: [UUID] = []
+        for block in blocks {
+            ordered.append(block.id)
+            if block.type == .column {
+                ordered.append(contentsOf: block.children.map(\.id))
+            } else if block.type == .toggle, block.isExpanded {
+                ordered.append(contentsOf: block.children.map(\.id))
+            }
+        }
+        return ordered
     }
 }

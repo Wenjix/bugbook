@@ -51,3 +51,24 @@ echo '[{"op":"update","id":"row_x","set":{"status":"opt_done"}}]' | bugbook batc
 - Relations store row IDs: --set "project=row_proj_001"
 - Dates are YYYY-MM-DD: --set "due=2026-03-15"
 - Multi-select values are comma-separated: --set "tags=opt_bug,opt_feature"
+
+## Agent Workflow
+
+Initialize agent tracking files:
+  bugbook agent init --write-agents-md
+
+Task lifecycle:
+  bugbook agent task list
+  bugbook agent task create --title "Fix editor crash" --status todo --label bug --path Sources/BugbookSwift
+  bugbook agent task update <task_id> --status in_progress
+  bugbook agent task update <task_id> --status done
+
+Run lifecycle:
+  bugbook agent run start --task <task_id> --agent codex --cwd /path/to/repo --branch codex/fix-crash
+  bugbook agent event log --run <run_id> --level info --message "Added regression test"
+  bugbook agent run finish <run_id> --status succeeded --summary "Fixed crash" --commit abc1234
+
+Status values:
+  task statuses: backlog, todo, in_progress, blocked, done, cancelled
+  run statuses: running, succeeded, failed, cancelled
+  event levels: info, warning, error

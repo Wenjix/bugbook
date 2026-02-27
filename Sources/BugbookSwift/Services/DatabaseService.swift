@@ -369,22 +369,41 @@ class DatabaseService: ObservableObject {
     private func loadRows(in dbPath: String, schema: DatabaseSchema) throws -> [DatabaseRow] {
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return [] }
         var rows: [DatabaseRow] = []
+        var repairedRows: [DatabaseRow] = []
 
         for name in contents {
             guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
             let filePath = (dbPath as NSString).appendingPathComponent(name)
             guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
-            if let row = parseRow(from: content, schema: schema) {
-                rows.append(row)
+            if let parsed = parseRow(from: content, schema: schema) {
+                rows.append(parsed.row)
+                if parsed.repaired {
+                    repairedRows.append(parsed.row)
+                }
             }
         }
 
-        return rows.sorted { $0.createdAt < $1.createdAt }
+        let sortedRows = rows.sorted { $0.createdAt < $1.createdAt }
+
+        // If we repaired legacy properties during load, persist the mapped values.
+        if !repairedRows.isEmpty {
+            for row in repairedRows {
+                try? saveRow(row, schema: schema, at: dbPath)
+            }
+            try? updateIndex(rows: sortedRows, schema: schema, at: dbPath)
+        }
+
+        return sortedRows
     }
 
     // MARK: - Private: Parse Row
 
-    private func parseRow(from content: String, schema: DatabaseSchema) -> DatabaseRow? {
+    private struct ParsedRow {
+        let row: DatabaseRow
+        let repaired: Bool
+    }
+
+    private func parseRow(from content: String, schema: DatabaseSchema) -> ParsedRow? {
         guard content.hasPrefix("---") else { return nil }
         let afterFirstMarker = content.index(content.startIndex, offsetBy: 3)
         guard let endRange = content.range(of: "\n---", range: afterFirstMarker..<content.endIndex) else { return nil }
@@ -396,6 +415,7 @@ class DatabaseService: ObservableObject {
         var createdAt = Date()
         var updatedAt = Date()
         var properties: [String: PropertyValue] = [:]
+        var rawProperties: [String: String] = [:]
         var inProperties = false
 
         let isoFormatter = ISO8601DateFormatter()
@@ -414,6 +434,7 @@ class DatabaseService: ObservableObject {
                     if let colonIdx = propLine.firstIndex(of: ":") {
                         let key = String(propLine[propLine.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
                         let rawValue = String(propLine[propLine.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                        rawProperties[key] = rawValue
                         // Look up by property ID
                         if let propDef = schema.properties.first(where: { $0.id == key }) {
                             properties[key] = parsePropertyValue(rawValue, type: propDef.type)
@@ -440,17 +461,224 @@ class DatabaseService: ObservableObject {
         }
 
         guard !id.isEmpty else { return nil }
+        let repairedProperties = repairLegacyProperties(in: properties, rawProperties: rawProperties, schema: schema)
 
-        return DatabaseRow(
-            id: id,
-            properties: properties,
-            body: body,
-            createdAt: createdAt,
-            updatedAt: updatedAt
+        return ParsedRow(
+            row: DatabaseRow(
+                id: id,
+                properties: repairedProperties.properties,
+                body: body,
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            ),
+            repaired: repairedProperties.repaired
         )
     }
 
     // MARK: - Private Helpers
+
+    private func repairLegacyProperties(
+        in properties: [String: PropertyValue],
+        rawProperties: [String: String],
+        schema: DatabaseSchema
+    ) -> (properties: [String: PropertyValue], repaired: Bool) {
+        var repairedProps = properties
+        var didRepair = false
+
+        if let titleProp = schema.titleProperty,
+           !hasMeaningfulValue(repairedProps[titleProp.id]),
+           let inferredTitle = inferLegacyTitle(from: rawProperties) {
+            repairedProps[titleProp.id] = .text(inferredTitle)
+            didRepair = true
+        }
+
+        if let statusProp = schema.properties.first(where: { $0.type == .select }),
+           !hasMeaningfulValue(repairedProps[statusProp.id]),
+           let optionId = inferLegacySelectOption(for: statusProp, from: rawProperties) {
+            repairedProps[statusProp.id] = .select(optionId)
+            didRepair = true
+        }
+
+        if let tagsProp = schema.properties.first(where: { $0.type == .multiSelect }),
+           !hasMeaningfulValue(repairedProps[tagsProp.id]),
+           let rawMultiSelect = inferLegacyMultiSelect(from: rawProperties) {
+            let parsed = parsePropertyValue(rawMultiSelect, type: .multiSelect)
+            if hasMeaningfulValue(parsed) {
+                repairedProps[tagsProp.id] = parsed
+                didRepair = true
+            }
+        }
+
+        return (repairedProps, didRepair)
+    }
+
+    private func hasMeaningfulValue(_ value: PropertyValue?) -> Bool {
+        guard let value else { return false }
+        switch value {
+        case .empty:
+            return false
+        case .text(let text):
+            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .multiSelect(let values):
+            return !values.isEmpty
+        case .relationMany(let values):
+            return !values.isEmpty
+        case .select(let value), .date(let value), .url(let value), .email(let value), .relation(let value):
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .number:
+            return true
+        case .checkbox:
+            return true
+        }
+    }
+
+    private func inferLegacyTitle(from rawProperties: [String: String]) -> String? {
+        var bestMatch: (score: Int, value: String)?
+        for (key, rawValue) in rawProperties {
+            guard let candidate = scalarText(from: rawValue), !candidate.isEmpty else { continue }
+            if looksLikeIdentifier(candidate) { continue }
+            let normalizedCandidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalizedCandidate == "null" || normalizedCandidate == "nil" || normalizedCandidate == "none" {
+                continue
+            }
+
+            let keyLower = key.lowercased()
+            var score = 0
+            if keyLower.contains("title") || keyLower.contains("name") { score += 100 }
+            if rawValue.trimmingCharacters(in: .whitespaces).hasPrefix("\"") { score += 30 }
+            if candidate.contains(" ") { score += 10 }
+            if keyLower.contains("status") || keyLower.contains("tag") || keyLower.contains("label") {
+                score -= 40
+            }
+
+            if let best = bestMatch {
+                if score > best.score {
+                    bestMatch = (score, candidate)
+                }
+            } else {
+                bestMatch = (score, candidate)
+            }
+        }
+        return bestMatch?.value
+    }
+
+    private func inferLegacySelectOption(for property: PropertyDefinition, from rawProperties: [String: String]) -> String? {
+        guard let options = property.options, !options.isEmpty else { return nil }
+
+        var candidateValues: [String] = []
+        if let exact = rawProperties[property.id] {
+            candidateValues.append(exact)
+        }
+        for (key, value) in rawProperties where key.lowercased().contains("status") {
+            candidateValues.append(value)
+        }
+        for value in rawProperties.values where scalarToken(from: value).hasPrefix("opt_") {
+            candidateValues.append(value)
+        }
+
+        var seen: Set<String> = []
+        let uniqueCandidates = candidateValues.filter { seen.insert($0).inserted }
+        for candidate in uniqueCandidates {
+            let token = scalarToken(from: candidate)
+            guard !token.isEmpty else { continue }
+
+            if let exactMatch = options.first(where: { $0.id == token }) {
+                return exactMatch.id
+            }
+            if let mapped = mapLegacySelectToken(token, options: options) {
+                return mapped.id
+            }
+        }
+
+        return nil
+    }
+
+    private func inferLegacyMultiSelect(from rawProperties: [String: String]) -> String? {
+        for (key, value) in rawProperties {
+            if key.lowercased().contains("status") { continue }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("["), trimmed.hasSuffix("]"), trimmed.count > 2 {
+                return trimmed
+            }
+        }
+        return nil
+    }
+
+    private func mapLegacySelectToken(_ token: String, options: [SelectOption]) -> SelectOption? {
+        let normalizedToken = normalizeStatusToken(token)
+        let compactToken = normalizedToken.replacingOccurrences(of: " ", with: "")
+
+        for option in options {
+            let normalizedOption = normalizeStatusToken(option.name)
+            let compactOption = normalizedOption.replacingOccurrences(of: " ", with: "")
+            if normalizedOption == normalizedToken ||
+                compactOption == compactToken ||
+                compactToken.contains(compactOption) ||
+                compactOption.contains(compactToken) {
+                return option
+            }
+        }
+
+        guard let tokenBucket = statusBucket(for: normalizedToken) else { return nil }
+        return options.first { option in
+            let optionBucket = statusBucket(for: normalizeStatusToken(option.name))
+            return optionBucket == tokenBucket
+        }
+    }
+
+    private func statusBucket(for normalizedValue: String) -> String? {
+        let compact = normalizedValue.replacingOccurrences(of: " ", with: "")
+        if compact.contains("done") || compact.contains("complete") || compact.contains("closed") {
+            return "done"
+        }
+        if compact.contains("progress") || compact.contains("doing") || compact.contains("active") || compact.contains("review") {
+            return "in_progress"
+        }
+        if compact.contains("todo") || compact.contains("backlog") || compact.contains("notstarted") || compact.contains("queued") {
+            return "todo"
+        }
+        if compact.contains("block") || compact.contains("stuck") {
+            return "blocked"
+        }
+        if compact.contains("cancel") || compact.contains("wontdo") {
+            return "cancelled"
+        }
+        return nil
+    }
+
+    private func normalizeStatusToken(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func scalarText(from rawValue: String) -> String? {
+        let token = scalarToken(from: rawValue)
+        if token.isEmpty { return nil }
+        return token
+    }
+
+    private func scalarToken(from rawValue: String) -> String {
+        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("["), value.hasSuffix("]") {
+            return ""
+        }
+        if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
+            value = String(value.dropFirst().dropLast())
+        }
+        return value
+            .replacingOccurrences(of: "\\\"", with: "\"")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func looksLikeIdentifier(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        if lower.hasPrefix("opt_") || lower.hasPrefix("prop_") || lower.hasPrefix("row_") || lower.hasPrefix("db_") {
+            return true
+        }
+        return lower.range(of: "^[a-z0-9_-]{12,}$", options: .regularExpression) != nil
+    }
 
     private func parsePropertyValue(_ raw: String, type: PropertyType) -> PropertyValue {
         let value = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\""))

@@ -4,6 +4,7 @@ import SwiftUI
 struct BlockCellView: View {
     @ObservedObject var document: BlockDocument
     let block: Block
+    var onTyping: (() -> Void)? = nil
     @State private var isHovering = false
 
     var body: some View {
@@ -13,7 +14,7 @@ struct BlockCellView: View {
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .frame(width: 20, height: 24)
-                .opacity(isHovering ? 1 : 0)
+                .opacity(isHovering || document.blockMenuBlockId == block.id ? 1 : 0)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     document.blockMenuBlockId = block.id
@@ -101,10 +102,10 @@ struct BlockCellView: View {
     private var blockContent: some View {
         switch block.type {
         case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote:
-            TextBlockView(document: document, block: block)
+            TextBlockView(document: document, block: block, onTyping: onTyping)
 
         case .codeBlock:
-            CodeBlockView(document: document, block: block)
+            CodeBlockView(document: document, block: block, onTyping: onTyping)
 
         case .horizontalRule:
             HorizontalRuleView()
@@ -122,8 +123,11 @@ struct BlockCellView: View {
                 onNavigate: { document.onNavigateToPage?(block.pageLinkName) }
             )
 
+        case .toggle:
+            ToggleBlockView(document: document, block: block, onTyping: onTyping)
+
         case .column:
-            ColumnBlockView(document: document, block: block)
+            ColumnBlockView(document: document, block: block, onTyping: onTyping)
         }
     }
 }

@@ -3,6 +3,10 @@ import SwiftUI
 struct SidebarView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var fileSystem: FileSystemService
+    var canGoBack: Bool
+    var canGoForward: Bool
+    var onBack: () -> Void
+    var onForward: () -> Void
     var onSelectFile: (FileEntry) -> Void
     var onToggleSidebar: () -> Void
     @State private var hoveredButton: String?
@@ -45,24 +49,14 @@ struct SidebarView: View {
             Spacer().frame(height: 12)
 
             // Action buttons
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 if !isFullScreen {
                     Spacer()
                 }
-                Button(action: createFile) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("New Page")
-                Button(action: onToggleSidebar) {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Toggle Sidebar")
+                chromeButton(icon: "sidebar.left", help: "Toggle Sidebar", action: onToggleSidebar)
+                chromeButton(icon: "chevron.left", help: "Back", isEnabled: canGoBack, action: onBack)
+                chromeButton(icon: "chevron.right", help: "Forward", isEnabled: canGoForward, action: onForward)
+                chromeButton(icon: "square.and.pencil", help: "New Page", action: createFile)
                 if isFullScreen {
                     Spacer()
                 }
@@ -141,6 +135,25 @@ struct SidebarView: View {
 
             // Bottom bar with settings and chat
             VStack(spacing: 2) {
+                Button(action: { appState.openAgentHub() }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "list.bullet.clipboard")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        Text("Agent Hub")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(hoveredButton == "agentHub" ? Color.primary.opacity(0.06) : Color.clear)
+                    .cornerRadius(6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "agentHub" : nil }
+
                 Button(action: openSettings) {
                     HStack(spacing: 8) {
                         Image(systemName: "gearshape")
@@ -161,8 +174,7 @@ struct SidebarView: View {
                 .onHover { hovering in hoveredButton = hovering ? "settings" : nil }
 
                 Button(action: {
-                    appState.currentView = .chat
-                    appState.aiSidePanelOpen = false
+                    appState.openNotesChat()
                 }) {
                     HStack(spacing: 8) {
                         Image(systemName: "bubble.left.and.text.bubble.right")
@@ -261,5 +273,23 @@ struct SidebarView: View {
 
     private func openSettings() {
         NotificationCenter.default.post(name: .openSettings, object: nil)
+    }
+
+    @ViewBuilder
+    private func chromeButton(
+        icon: String,
+        help: String,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(isEnabled ? .secondary : .secondary.opacity(0.45))
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .disabled(!isEnabled)
     }
 }

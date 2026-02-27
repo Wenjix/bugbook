@@ -10,4 +10,6 @@ struct OpenFile: Identifiable, Equatable {
     var displayName: String?
     var openerPagePath: String?
     var icon: String?
+    var navigationHistory: [String] = []
+    var navigationHistoryIndex: Int = -1
 }

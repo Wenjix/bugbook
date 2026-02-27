@@ -43,6 +43,18 @@ struct BugbookSwiftApp: App {
                 }
                 .keyboardShortcut(".", modifiers: .command)
 
+                Divider()
+
+                Button("Back") {
+                    NotificationCenter.default.post(name: .navigateBack, object: nil)
+                }
+                .keyboardShortcut("[", modifiers: .command)
+
+                Button("Forward") {
+                    NotificationCenter.default.post(name: .navigateForward, object: nil)
+                }
+                .keyboardShortcut("]", modifiers: .command)
+
                 Button("Quick Open") {
                     NotificationCenter.default.post(name: .quickOpen, object: nil)
                 }
@@ -57,6 +69,70 @@ struct BugbookSwiftApp: App {
                     NotificationCenter.default.post(name: .openAIPanel, object: nil)
                 }
                 .keyboardShortcut("i")
+
+                Button("Open Agent Hub") {
+                    NotificationCenter.default.post(name: .openAgentHub, object: nil)
+                }
+                .keyboardShortcut("j", modifiers: [.command, .shift])
+
+                Button("Toggle Theme") {
+                    NotificationCenter.default.post(name: .toggleTheme, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+            }
+
+            // Block type shortcuts: Cmd+Shift+0-9
+            // Use shifted chars (!, @, #...) with .command — workaround for SwiftUI shift+number bug
+            CommandGroup(after: .textFormatting) {
+                Button("Text") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "paragraph")
+                }
+                .keyboardShortcut(")", modifiers: .command) // Shift+0
+
+                Button("Heading 1") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "heading1")
+                }
+                .keyboardShortcut("!", modifiers: .command) // Shift+1
+
+                Button("Heading 2") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "heading2")
+                }
+                .keyboardShortcut("@", modifiers: .command) // Shift+2
+
+                Button("Heading 3") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "heading3")
+                }
+                .keyboardShortcut("#", modifiers: .command) // Shift+3
+
+                Button("To-do") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "taskItem")
+                }
+                .keyboardShortcut("$", modifiers: .command) // Shift+4
+
+                Button("Bullet List") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "bulletListItem")
+                }
+                .keyboardShortcut("%", modifiers: .command) // Shift+5
+
+                Button("Numbered List") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "numberedListItem")
+                }
+                .keyboardShortcut("^", modifiers: .command) // Shift+6
+
+                Button("Toggle") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "toggle")
+                }
+                .keyboardShortcut("&", modifiers: .command) // Shift+7
+
+                Button("Code Block") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "codeBlock")
+                }
+                .keyboardShortcut("*", modifiers: .command) // Shift+8
+
+                Button("Page") {
+                    NotificationCenter.default.post(name: .blockTypeShortcut, object: "createPage")
+                }
+                .keyboardShortcut("(", modifiers: .command) // Shift+9
             }
 
             CommandGroup(replacing: .appSettings) {
@@ -84,6 +160,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Configure any existing windows
         DispatchQueue.main.async { self.configureWindows() }
+
+        // Cmd+Shift+0-9 block type shortcuts via local event monitor
+        // (SwiftUI .keyboardShortcut is unreliable for shifted number combos)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let isCommandShiftOnly = flags.contains([.command, .shift])
+                && !flags.contains(.option)
+                && !flags.contains(.control)
+            guard isCommandShiftOnly else { return event }
+
+            let keyToAction: [String: String] = [
+                "0": "paragraph",
+                "1": "heading1",
+                "2": "heading2",
+                "3": "heading3",
+                "4": "taskItem",
+                "5": "bulletListItem",
+                "6": "numberedListItem",
+                "7": "toggle",
+                "8": "codeBlock",
+                "9": "createPage",
+            ]
+            if let chars = event.charactersIgnoringModifiers?.lowercased(),
+               let action = keyToAction[chars] {
+                NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
+                return nil
+            }
+
+            let keyCodeToAction: [UInt16: String] = [
+                29: "paragraph",        // 0
+                18: "heading1",         // 1
+                19: "heading2",         // 2
+                20: "heading3",         // 3
+                21: "taskItem",         // 4
+                23: "bulletListItem",   // 5
+                22: "numberedListItem", // 6
+                26: "toggle",           // 7
+                28: "codeBlock",        // 8
+                25: "createPage",       // 9
+            ]
+
+            if let action = keyCodeToAction[event.keyCode] {
+                NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
+                return nil
+            }
+            return event
+        }
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -112,8 +235,12 @@ extension Notification.Name {
     static let quickOpen = Notification.Name("quickOpen")
     static let quickOpenNewTab = Notification.Name("quickOpenNewTab")
     static let openSettings = Notification.Name("openSettings")
+    static let openAgentHub = Notification.Name("openAgentHub")
     static let openAIPanel = Notification.Name("openAIPanel")
     static let askAI = Notification.Name("askAI")
     static let toggleTheme = Notification.Name("toggleTheme")
     static let newDatabase = Notification.Name("newDatabase")
+    static let blockTypeShortcut = Notification.Name("blockTypeShortcut")
+    static let navigateBack = Notification.Name("navigateBack")
+    static let navigateForward = Notification.Name("navigateForward")
 }

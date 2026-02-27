@@ -485,7 +485,7 @@ struct CommandPaletteView: View {
             NotificationCenter.default.post(
                 name: .askAI,
                 object: nil,
-                userInfo: ["query": query]
+                userInfo: ["prompt": query]
             )
         }
 

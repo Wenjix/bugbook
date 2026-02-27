@@ -6,27 +6,38 @@ struct BreadcrumbView: View {
     var onNavigate: (BreadcrumbItem) -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                if index > 0 {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-                Button(action: { onNavigate(item) }) {
-                    HStack(spacing: 3) {
-                        breadcrumbIcon(item.icon)
-                        Text(item.name)
-                            .font(.system(size: 13))
-                            .foregroundColor(index == items.count - 1 ? .primary : .secondary)
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary.opacity(0.8))
+                        }
+                        Button(action: { onNavigate(item) }) {
+                            HStack(spacing: 4) {
+                                breadcrumbIcon(item.icon)
+                                Text(item.name)
+                                    .font(.system(size: 13, weight: index == items.count - 1 ? .medium : .regular))
+                                    .foregroundColor(index == items.count - 1 ? .primary : .secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(index == items.count - 1)
                     }
                 }
-                .buttonStyle(.plain)
+                .padding(.trailing, 8)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(Color.fallbackEditorBg)
     }
 

@@ -289,8 +289,9 @@ struct FileTreeItemView: View {
         let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
         if let path = try? fileSystem.createDatabase(in: dir, name: "Untitled Database") {
             onRefreshTree()
+            let displayName = (path as NSString).lastPathComponent
             let db = FileEntry(
-                id: path, name: "Untitled Database",
+                id: path, name: displayName,
                 path: path, isDirectory: false, isDatabase: true,
                 icon: nil, children: nil
             )

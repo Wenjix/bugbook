@@ -20,6 +20,7 @@ struct DatabaseFullPageView: View {
     @State private var showVerticalLines = true
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
+    @State private var titleSaveTask: Task<Void, Never>? = nil
 
     private var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
@@ -102,6 +103,10 @@ struct DatabaseFullPageView: View {
         .task {
             await loadData()
         }
+        .onDisappear {
+            titleSaveTask?.cancel()
+            titleSaveTask = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: .databaseDidChange)) { notification in
             guard let changedPath = notification.userInfo?["dbPath"] as? String,
                   changedPath == dbPath else { return }
@@ -117,20 +122,13 @@ struct DatabaseFullPageView: View {
 
     private var titleBar: some View {
         HStack {
-            TextField("Database Name", text: $editingTitle, onCommit: {
-                schema?.name = editingTitle
-                if let s = schema {
-                    Task {
-                        try? dbService.saveSchema(s, at: dbPath)
-                        postChangeNotification()
-                        NotificationCenter.default.post(
-                            name: .databaseNameDidChange,
-                            object: nil,
-                            userInfo: ["dbPath": dbPath, "newName": editingTitle]
-                        )
-                    }
-                }
-            })
+            TextField("Database Name", text: $editingTitle)
+            .onSubmit {
+                persistDatabaseName(editingTitle)
+            }
+            .onChange(of: editingTitle) { _, newValue in
+                scheduleDatabaseNameSave(newValue)
+            }
             .font(.title2)
             .fontWeight(.bold)
             .textFieldStyle(.plain)
@@ -138,6 +136,39 @@ struct DatabaseFullPageView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
+    }
+
+    private func scheduleDatabaseNameSave(_ value: String) {
+        titleSaveTask?.cancel()
+        titleSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            persistDatabaseName(value)
+        }
+    }
+
+    private func persistDatabaseName(_ rawValue: String) {
+        guard var currentSchema = schema else { return }
+        let newName = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty else {
+            editingTitle = currentSchema.name
+            return
+        }
+        guard newName != currentSchema.name else { return }
+
+        currentSchema.name = newName
+        schema = currentSchema
+        editingTitle = newName
+
+        Task {
+            try? dbService.saveSchema(currentSchema, at: dbPath)
+            postChangeNotification()
+            NotificationCenter.default.post(
+                name: .databaseNameDidChange,
+                object: nil,
+                userInfo: ["dbPath": dbPath, "newName": newName]
+            )
+        }
     }
 
     // MARK: - Toolbar

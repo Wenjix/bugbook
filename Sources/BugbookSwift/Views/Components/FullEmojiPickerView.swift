@@ -17,6 +17,7 @@ struct EmojiItem: Identifiable, Equatable {
 
 enum EmojiCategory: String, CaseIterable, Identifiable {
     case recent = "Recent"
+    case all = "All"
     case smileys = "Smileys"
     case gestures = "Gestures"
     case hearts = "Hearts"
@@ -34,6 +35,7 @@ enum EmojiCategory: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .recent: return "clock"
+        case .all: return "square.grid.3x3.fill"
         case .smileys: return "face.smiling"
         case .gestures: return "hand.raised"
         case .hearts: return "heart"
@@ -224,7 +226,7 @@ struct EmojiData {
         EmojiItem("\u{1FA77}", keywords: ["pink", "heart"]),
         EmojiItem("\u{1F90D}", keywords: ["white", "heart"]),
         EmojiItem("\u{1F494}", keywords: ["broken", "heart"]),
-        EmojiItem("\u{2764}\u{FE0F}\u{200D}\u{1FA79}", keywords: ["heart", "on", "fire"]),
+        EmojiItem("\u{2764}\u{FE0F}\u{200D}\u{1F525}", keywords: ["heart", "on", "fire"]),
         EmojiItem("\u{2764}\u{FE0F}\u{200D}\u{1FA79}", keywords: ["mending", "heart"]),
         EmojiItem("\u{1F495}", keywords: ["two", "hearts"]),
         EmojiItem("\u{1F49E}", keywords: ["revolving", "hearts"]),
@@ -582,7 +584,95 @@ struct EmojiData {
     ]
 
     static var allEmojis: [EmojiItem] {
-        categories.flatMap { $0.1 }
+        var seen = Set<String>()
+        return categories
+            .flatMap { $0.1 }
+            .filter { seen.insert($0.emoji).inserted }
+    }
+
+    static var allEmojiCharacters: [String] {
+        uniqueEmojis(allEmojis.map(\.emoji) + EmojiUnicodeGenerator.generated)
+    }
+
+    static var searchableEmojis: [EmojiItem] {
+        var indexed: [String: EmojiItem] = [:]
+        for item in allEmojis where indexed[item.emoji] == nil {
+            indexed[item.emoji] = item
+        }
+        for emoji in allEmojiCharacters where indexed[emoji] == nil {
+            indexed[emoji] = EmojiItem(emoji, keywords: derivedKeywords(for: emoji))
+        }
+        return indexed.values.sorted { $0.emoji < $1.emoji }
+    }
+
+    private static func uniqueEmojis(_ source: [String]) -> [String] {
+        var seen = Set<String>()
+        return source.filter { seen.insert($0).inserted }
+    }
+
+    private static func derivedKeywords(for emoji: String) -> [String] {
+        let tokens = emoji.unicodeScalars
+            .compactMap { $0.properties.name?.lowercased() }
+            .flatMap { name in
+                name.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+            }
+        var seen = Set<String>()
+        return tokens.filter { seen.insert($0).inserted }
+    }
+}
+
+private enum EmojiUnicodeGenerator {
+    private static let sourceRanges: [ClosedRange<Int>] = [
+        0x00A9...0x00AE,
+        0x203C...0x3299,
+        0x1F000...0x1FAFF,
+    ]
+
+    private static let skinToneRange = 0x1F3FB...0x1F3FF
+    private static let regionalIndicatorRange = 0x1F1E6...0x1F1FF
+    private static let disallowedScalars: Set<UInt32> = [0x200D, 0x20E3, 0xFE0E, 0xFE0F]
+
+    static let generated: [String] = {
+        var result: [String] = []
+        var seen = Set<String>()
+
+        func append(_ emoji: String) {
+            guard seen.insert(emoji).inserted else { return }
+            result.append(emoji)
+        }
+
+        for range in sourceRanges {
+            for value in range {
+                guard let scalar = UnicodeScalar(value) else { continue }
+                if isSupportedStandaloneEmoji(scalar) {
+                    append(String(scalar))
+                }
+            }
+        }
+
+        for first in regionalIndicatorRange {
+            guard let left = UnicodeScalar(first) else { continue }
+            for second in regionalIndicatorRange {
+                guard let right = UnicodeScalar(second) else { continue }
+                append(String(left) + String(right))
+            }
+        }
+
+        let keycapBases = ["#", "*", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+        for base in keycapBases {
+            append(base + "\u{FE0F}\u{20E3}")
+        }
+
+        return result
+    }()
+
+    private static func isSupportedStandaloneEmoji(_ scalar: UnicodeScalar) -> Bool {
+        let value = Int(scalar.value)
+        if disallowedScalars.contains(scalar.value) { return false }
+        if skinToneRange.contains(value) { return false }
+        if regionalIndicatorRange.contains(value) { return false }
+        if value == 0x0023 || value == 0x002A || (0x0030...0x0039).contains(value) { return false }
+        return scalar.properties.isEmojiPresentation || scalar.properties.isEmoji
     }
 }
 
@@ -628,6 +718,8 @@ struct FullEmojiPickerView: View {
     @State private var selectedCategory: EmojiCategory = .smileys
     @State private var recentEmojis: [String] = []
 
+    private let emojiGridColumns = Array(repeating: GridItem(.fixed(36), spacing: 6), count: 8)
+
     var body: some View {
         VStack(spacing: 0) {
             // Tab bar
@@ -643,8 +735,9 @@ struct FullEmojiPickerView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 4)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
 
             Divider()
 
@@ -679,10 +772,10 @@ struct FullEmojiPickerView: View {
                 .font(.system(size: 13))
                 .foregroundColor(.red)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
         }
-        .frame(width: 340, height: 420)
+        .frame(width: 420, height: 520)
         .onAppear {
             recentEmojis = RecentEmojisManager.shared.getRecent()
         }
@@ -709,11 +802,11 @@ struct FullEmojiPickerView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(8)
+            .padding(10)
             .background(Color.fallbackBgSecondary)
             .cornerRadius(6)
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
 
             if searchText.isEmpty {
                 // Category bar
@@ -734,15 +827,17 @@ struct FullEmojiPickerView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 18)
                 }
-                .padding(.top, 4)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
 
                 // Emoji grid
                 ScrollView {
                     emojiGrid(for: selectedCategory)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 4)
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                        .padding(.bottom, 10)
                 }
             } else {
                 // Search results
@@ -754,9 +849,10 @@ struct FullEmojiPickerView: View {
                             .font(.system(size: 14))
                             .padding(.top, 40)
                     } else {
-                        emojiGridItems(results.map(\.emoji))
-                            .padding(.horizontal, 8)
-                            .padding(.top, 4)
+                        emojiGridItems(results)
+                            .padding(.horizontal, 18)
+                            .padding(.top, 8)
+                            .padding(.bottom, 10)
                     }
                 }
             }
@@ -773,6 +869,14 @@ struct FullEmojiPickerView: View {
                         .padding(.leading, 4)
                     emojiGridItems(recentEmojis)
                 }
+            } else if category == .all {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("All")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 4)
+                    emojiGridItems(EmojiData.allEmojiCharacters)
+                }
             } else {
                 let items = EmojiData.categories.first(where: { $0.0 == category })?.1 ?? []
                 VStack(alignment: .leading, spacing: 4) {
@@ -787,24 +891,32 @@ struct FullEmojiPickerView: View {
     }
 
     private func emojiGridItems(_ emojis: [String]) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(32)), count: 9), spacing: 2) {
-            ForEach(emojis, id: \.self) { emoji in
+        let uniqueEmojis = deduplicated(emojis)
+        return LazyVGrid(columns: emojiGridColumns, spacing: 6) {
+            ForEach(uniqueEmojis, id: \.self) { emoji in
                 Button(action: { selectEmoji(emoji) }) {
                     Text(emoji)
-                        .font(.system(size: 22))
-                        .frame(width: 32, height: 32)
+                        .font(.system(size: 24))
+                        .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.plain)
                 .background(selectedEmoji == emoji ? Color.accentColor.opacity(0.2) : Color.clear)
-                .cornerRadius(4)
+                .cornerRadius(6)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var searchResults: [EmojiItem] {
-        let query = searchText.lowercased()
-        return EmojiData.allEmojis.filter { item in
-            item.keywords.contains { $0.contains(query) } || item.emoji == query
+    private var searchResults: [String] {
+        let query = searchText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !query.isEmpty else { return [] }
+        return EmojiData.searchableEmojis.compactMap { item in
+            if item.emoji == query || item.keywords.contains(where: { $0.contains(query) }) {
+                return item.emoji
+            }
+            return nil
         }
     }
 
@@ -849,7 +961,7 @@ struct FullEmojiPickerView: View {
                     .help(name)
                 }
             }
-            .padding(8)
+            .padding(12)
         }
     }
 
@@ -880,6 +992,7 @@ struct FullEmojiPickerView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Actions
@@ -892,9 +1005,14 @@ struct FullEmojiPickerView: View {
     }
 
     private func selectRandomEmoji() {
-        if let random = EmojiData.allEmojis.randomElement() {
-            selectEmoji(random.emoji)
+        if let random = EmojiData.allEmojiCharacters.randomElement() {
+            selectEmoji(random)
         }
+    }
+
+    private func deduplicated(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
     }
 
     private func chooseCustomIcon() {

@@ -5,6 +5,7 @@ import AppKit
 struct CodeBlockView: View {
     @ObservedObject var document: BlockDocument
     let block: Block
+    var onTyping: (() -> Void)? = nil
     @State private var textHeight: CGFloat = 24
 
     var body: some View {
@@ -24,6 +25,7 @@ struct CodeBlockView: View {
                 isMultiline: true,
                 font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
                 textColor: .labelColor,
+                onTextChange: onTyping,
                 textHeight: $textHeight
             )
             .frame(height: textHeight)

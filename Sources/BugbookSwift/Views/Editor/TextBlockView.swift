@@ -5,6 +5,7 @@ import AppKit
 struct TextBlockView: View {
     @ObservedObject var document: BlockDocument
     let block: Block
+    var onTyping: (() -> Void)? = nil
     @State private var textHeight: CGFloat = 24
 
     var body: some View {
@@ -23,6 +24,7 @@ struct TextBlockView: View {
                     font: nsFont,
                     textColor: nsTextColor,
                     placeholder: nil,
+                    onTextChange: onTyping,
                     textHeight: $textHeight
                 )
                 .frame(height: textHeight)
@@ -108,12 +110,12 @@ struct TextBlockView: View {
             case 2: return .systemFont(ofSize: 24, weight: .semibold)
             case 3: return .systemFont(ofSize: 20, weight: .semibold)
             case 4: return .systemFont(ofSize: 17, weight: .semibold)
-            case 5: return .systemFont(ofSize: 15, weight: .semibold)
+            case 5: return .systemFont(ofSize: 16, weight: .semibold)
             case 6: return .systemFont(ofSize: 13, weight: .semibold)
-            default: return .systemFont(ofSize: 15)
+            default: return .systemFont(ofSize: 16)
             }
         default:
-            return .systemFont(ofSize: 15)
+            return .systemFont(ofSize: 16)
         }
     }
 

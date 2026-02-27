@@ -13,6 +13,7 @@ enum BlockType: Equatable {
     case databaseEmbed
     case pageLink
     case column
+    case toggle
 }
 
 struct Block: Identifiable, Equatable {
@@ -32,6 +33,7 @@ struct Block: Identifiable, Equatable {
     var backgroundColor: BlockColor
     var children: [Block]
     var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
+    var isExpanded: Bool
 
     init(
         id: UUID = UUID(),
@@ -49,7 +51,8 @@ struct Block: Identifiable, Equatable {
         textColor: BlockColor = .default,
         backgroundColor: BlockColor = .default,
         children: [Block] = [],
-        columnIndex: Int = 0
+        columnIndex: Int = 0,
+        isExpanded: Bool = true
     ) {
         self.id = id
         self.type = type
@@ -67,5 +70,6 @@ struct Block: Identifiable, Equatable {
         self.backgroundColor = backgroundColor
         self.children = children
         self.columnIndex = columnIndex
+        self.isExpanded = isExpanded
     }
 }

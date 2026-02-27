@@ -172,7 +172,6 @@ struct AiSidePanelView: View {
     }
 
     private func openFullChat() {
-        appState.aiSidePanelOpen = false
-        appState.currentView = .chat
+        appState.openNotesChat()
     }
 }

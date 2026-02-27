@@ -5,7 +5,26 @@ import PackageDescription
 let package = Package(
     name: "BugbookSwift",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
+        .iOS(.v17)
+    ],
+    products: [
+        .library(
+            name: "BugbookCore",
+            targets: ["BugbookCore"]
+        ),
+        .executable(
+            name: "BugbookCLI",
+            targets: ["BugbookCLI"]
+        ),
+        .executable(
+            name: "BugbookSwift",
+            targets: ["BugbookSwift"]
+        ),
+        .executable(
+            name: "BugbookMobile",
+            targets: ["BugbookMobile"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
@@ -30,6 +49,12 @@ let package = Package(
             name: "BugbookSwift",
             dependencies: ["BugbookCore"],
             path: "Sources/BugbookSwift"
+        ),
+        // iPhone-friendly SwiftUI app
+        .executableTarget(
+            name: "BugbookMobile",
+            dependencies: ["BugbookCore"],
+            path: "Sources/BugbookMobile"
         ),
     ]
 )

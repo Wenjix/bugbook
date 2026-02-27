@@ -4,6 +4,7 @@ import SwiftUI
 struct ColumnBlockView: View {
     @ObservedObject var document: BlockDocument
     let block: Block
+    var onTyping: (() -> Void)? = nil
     @State private var activeDropTarget: ColumnDropTarget?
 
     struct ColumnDropTarget: Equatable {
@@ -31,7 +32,7 @@ struct ColumnBlockView: View {
                     )
 
                     ForEach(Array(group.blocks.enumerated()), id: \.element.id) { blockIdx, child in
-                        BlockCellView(document: document, block: child)
+                        BlockCellView(document: document, block: child, onTyping: onTyping)
                             .padding(.vertical, 1)
 
                         // Drop zone after each block

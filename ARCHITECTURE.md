@@ -5,7 +5,7 @@ Local-first database engine. Agent-editable via CLI + skills. Human-readable fil
 ## Project Structure
 
 ```
-bugbook/
+bugbook-swift/
   Package.swift
 
   Sources/
@@ -15,12 +15,14 @@ bugbook/
         Row.swift              # DatabaseRow, PropertyValue enum
         Query.swift            # Filter, Sort, Pagination types
         View.swift             # ViewConfig, ViewType (table/kanban/calendar/list)
+        Agent.swift            # AgentTask, AgentRun, AgentEvent models
 
       Storage/
         DatabaseStore.swift    # discover databases, load/save schemas
         RowStore.swift         # read/write row .md files, atomic writes
         IndexManager.swift     # load/rebuild/patch _index.json with reverse indexes
         RowSerializer.swift    # YAML frontmatter <-> Row parsing
+        AgentWorkspaceStore.swift # task/run/event files in workspace
 
       Engine/
         QueryEngine.swift      # filter + sort against index, pagination
@@ -38,19 +40,18 @@ bugbook/
         UpdateCommand.swift    # update <db> <row_id> --set k=v
         DeleteCommand.swift    # delete <db> <row_id>
         BatchCommand.swift     # batch <db> < operations.json
+        AgentCommand.swift     # agent task/run/event/dashboard commands
 
-    BugbookApp/               # SwiftUI app
-      App.swift
+    BugbookSwift/             # macOS SwiftUI app (desktop)
+      App/
       Views/
-        DatabaseView.swift     # Notion-like table/kanban/calendar/list
-        RowPageView.swift      # row detail: properties grid + markdown editor
-        SchemaEditor.swift     # add/rename/reorder/delete properties
-        FilterSortBar.swift    # UI for building queries visually
       ViewModels/
-        DatabaseViewModel.swift  # wraps QueryEngine + MutationEngine for UI
-      Editor/
-        MarkdownEditor.swift   # row body editor
-        DatabaseEmbed.swift    # inline database embed in markdown pages
+
+    BugbookMobile/            # lightweight iPhone-first SwiftUI app
+      App/
+      Views/
+      ViewModels/
+      Services/
 
   skills/
     bugbook.md               # skill prompt teaching agents the CLI
@@ -63,6 +64,12 @@ bugbook/
 ```
 ~/Bugbook/                    # workspace root (configurable)
   bugbook.json                # workspace config: { "version": 1 }
+  AGENTS.md                   # optional workspace instructions for coding agents
+  .bugbook/
+    agents/
+      tasks.json              # canonical task list (JSON)
+      runs.jsonl              # run history (JSON Lines)
+      events.jsonl            # event/log history (JSON Lines)
   pages/
     My Note.md                # regular markdown pages
     My Note/                  # companion folder
@@ -79,6 +86,27 @@ bugbook/
 ```
 
 A folder is a database if and only if it contains `_schema.json`. No external registry.
+
+## Agent Ops Layer
+
+Agent collaboration is persisted as plain files in `.bugbook/agents`:
+
+- `tasks.json` is the editable source of truth for agent tasks.
+- `runs.jsonl` tracks each execution run (`start`/`finish`).
+- `events.jsonl` records progress logs tied to runs/tasks.
+
+CLI surface:
+
+- `bugbook agent init` to bootstrap files.
+- `bugbook agent task ...` for task lifecycle.
+- `bugbook agent run ...` for run lifecycle.
+- `bugbook agent event ...` for structured logs.
+- `bugbook agent dashboard` for a unified status view.
+
+UI surface:
+
+- Desktop app has an **Agent Hub** page in the sidebar.
+- Mobile app has an **Agent Hub** tab for iPhone workflows.
 
 ### _schema.json
 

@@ -63,7 +63,7 @@ struct TabBarView: View {
                         draggingTabId: $draggingTabId
                     ))
                 }
-                .padding(.leading, appState.sidebarOpen ? 8 : 120)
+                .padding(.leading, appState.sidebarOpen ? 2 : 88)
             }
             Spacer()
         }

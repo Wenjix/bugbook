@@ -1,6 +1,10 @@
 .build/
 .swiftpm/
 *.xcodeproj/
+!ios/BugbookMobile.xcodeproj/
+!ios/BugbookMobile.xcodeproj/project.pbxproj
+!ios/BugbookMobile.xcodeproj/project.xcworkspace/
+!ios/BugbookMobile.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 xcuserdata/
 DerivedData/
 .DS_Store

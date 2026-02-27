@@ -192,14 +192,17 @@ class FileSystemService: ObservableObject {
     }
 
     func createDatabase(in directory: String, name: String) throws -> String {
-        let folderPath = (directory as NSString).appendingPathComponent(name)
+        let sanitizedName = sanitizeDatabaseFolderName(name)
+        let folderPath = uniqueDirectoryPath(in: directory, base: sanitizedName)
         try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
 
         let defaultViewId = "view_table"
         let now = ISO8601DateFormatter().string(from: Date())
+        let schemaName = (folderPath as NSString).lastPathComponent
+        let dbId = "db_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
         let schema = DatabaseSchema(
-            id: "db_\(name.lowercased().replacingOccurrences(of: " ", with: "_"))",
-            name: name,
+            id: dbId,
+            name: schemaName,
             version: 1,
             properties: [
                 PropertyDefinition(id: "prop_title", name: "Name", type: .title),
@@ -415,6 +418,25 @@ class FileSystemService: ObservableObject {
             counter += 1
         }
         return name
+    }
+
+    private func uniqueDirectoryPath(in directory: String, base: String) -> String {
+        var folderName = base
+        var counter = 2
+        var path = (directory as NSString).appendingPathComponent(folderName)
+        while fileManager.fileExists(atPath: path) {
+            folderName = "\(base) \(counter)"
+            path = (directory as NSString).appendingPathComponent(folderName)
+            counter += 1
+        }
+        return path
+    }
+
+    private func sanitizeDatabaseFolderName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = trimmed.isEmpty ? "Untitled Database" : trimmed
+        let sanitized = fallback.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
+        return sanitized.isEmpty ? "Untitled Database" : sanitized
     }
 
     // MARK: - App Data Directories (Icons & Covers)

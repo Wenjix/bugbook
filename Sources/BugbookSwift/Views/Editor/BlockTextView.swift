@@ -8,9 +8,10 @@ struct BlockTextView: NSViewRepresentable {
     @ObservedObject var document: BlockDocument
     let blockId: UUID
     var isMultiline: Bool = false
-    var font: NSFont = .systemFont(ofSize: 15)
+    var font: NSFont = .systemFont(ofSize: 16)
     var textColor: NSColor = .labelColor
     var placeholder: String? = nil
+    var onTextChange: (() -> Void)? = nil
     @Binding var textHeight: CGFloat
 
     func makeCoordinator() -> Coordinator {
@@ -20,7 +21,7 @@ struct BlockTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> BlockNSTextView {
         let textView = BlockNSTextView()
         textView.delegate = context.coordinator
-        textView.isRichText = false
+        textView.isRichText = true
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -41,12 +42,21 @@ struct BlockTextView: NSViewRepresentable {
         textView.unregisterDraggedTypes()
 
         if let block = document.block(for: blockId) {
-            textView.string = block.text
+            let attributed = AttributedStringConverter.attributedString(
+                from: block.text,
+                font: font,
+                textColor: textColor
+            )
+            textView.textStorage?.setAttributedString(attributed)
         }
 
         textView.placeholderString = placeholder
         textView.placeholderFont = font
         textView.blockId = blockId
+        textView.typingAttributes = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
 
         let coordinator = context.coordinator
         textView.onBecomeFirstResponder = { [weak coordinator] in
@@ -105,9 +115,27 @@ struct BlockTextView: NSViewRepresentable {
 
         // Update text if changed externally (not from user editing)
         if let block = document.block(for: blockId),
-           !context.coordinator.isEditing,
-           textView.string != block.text {
-            textView.string = block.text
+           !context.coordinator.isEditing {
+            let currentMarkdown = context.coordinator.markdownFromTextView(textView)
+            if currentMarkdown != block.text {
+                let selected = textView.selectedRange()
+                let attributed = AttributedStringConverter.attributedString(
+                    from: block.text,
+                    font: font,
+                    textColor: textColor
+                )
+                context.coordinator.suppressChanges = true
+                textView.textStorage?.setAttributedString(attributed)
+                let textLength = (textView.string as NSString).length
+                let clampedLocation = min(selected.location, textLength)
+                let clampedLength = min(selected.length, max(0, textLength - clampedLocation))
+                textView.setSelectedRange(NSRange(location: clampedLocation, length: clampedLength))
+                textView.typingAttributes = [
+                    .font: font,
+                    .foregroundColor: textColor
+                ]
+                context.coordinator.suppressChanges = false
+            }
             DispatchQueue.main.async {
                 self.recalculateHeight(textView)
             }
@@ -146,7 +174,7 @@ struct BlockTextView: NSViewRepresentable {
         let rect = layoutManager.usedRect(for: textContainer)
         let insets = textView.textContainerInset.height * 2
         // Use font-based minimum so empty headings aren't squished to 24px
-        let fontSize = textView.font?.pointSize ?? 15
+        let fontSize = textView.font?.pointSize ?? 16
         let fontBasedMin = ceil(fontSize * 1.4) + insets
         let minHeight = max(24, fontBasedMin)
         let newHeight = max(ceil(rect.height) + insets, minHeight)
@@ -164,6 +192,7 @@ struct BlockTextView: NSViewRepresentable {
         var isEditing = false
         var suppressChanges = false
         var lastFocusedSelf: Bool?
+        var lastReplacementString: String?
 
         init(_ parent: BlockTextView) {
             self.parent = parent
@@ -199,7 +228,10 @@ struct BlockTextView: NSViewRepresentable {
 
                 // Hit test to find which block is under the mouse
                 let point = event.locationInWindow
-                if let contentView = event.window?.contentView {
+                if let window = event.window,
+                   let targetId = BlockNSTextView.blockId(atWindowPoint: point, in: window) {
+                    self.parent.document.selectBlockRange(from: anchorId, to: targetId)
+                } else if let contentView = event.window?.contentView {
                     let converted = contentView.convert(point, from: nil)
                     if let hitView = contentView.hitTest(converted) {
                         var view: NSView? = hitView
@@ -232,13 +264,39 @@ struct BlockTextView: NSViewRepresentable {
         // MARK: - Formatting Actions
 
         func toggleBold() {
-            // TODO: WYSIWYG formatting disabled pending AttributedStringConverter fix
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleBold(in: textView, font: parent.font)
+            textView.textStorage?.removeAttribute(
+                AttributedStringConverter.markdownSourceKey,
+                range: NSRange(location: 0, length: textView.string.count)
+            )
+            parent.document.updateBlockText(id: parent.blockId, text: markdownFromTextView(textView))
+            parent.recalculateHeight(textView)
+            parent.onTextChange?()
         }
 
         func toggleItalic() {
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleItalic(in: textView, font: parent.font)
+            textView.textStorage?.removeAttribute(
+                AttributedStringConverter.markdownSourceKey,
+                range: NSRange(location: 0, length: textView.string.count)
+            )
+            parent.document.updateBlockText(id: parent.blockId, text: markdownFromTextView(textView))
+            parent.recalculateHeight(textView)
+            parent.onTextChange?()
         }
 
         func toggleCode() {
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleCode(in: textView, font: parent.font)
+            textView.textStorage?.removeAttribute(
+                AttributedStringConverter.markdownSourceKey,
+                range: NSRange(location: 0, length: textView.string.count)
+            )
+            parent.document.updateBlockText(id: parent.blockId, text: markdownFromTextView(textView))
+            parent.recalculateHeight(textView)
+            parent.onTextChange?()
         }
 
         func toggleStrikethrough() {
@@ -267,19 +325,35 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
+        func textView(
+            _ textView: NSTextView,
+            shouldChangeTextIn affectedCharRange: NSRange,
+            replacementString: String?
+        ) -> Bool {
+            lastReplacementString = replacementString
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
             guard !suppressChanges else { return }
             guard let textView = notification.object as? NSTextView else { return }
             isEditing = true
             defer { isEditing = false }
 
+            textView.textStorage?.removeAttribute(
+                AttributedStringConverter.markdownSourceKey,
+                range: NSRange(location: 0, length: textView.string.count)
+            )
+
+            normalizeInlineMarkdownIfNeeded(textView)
+
             // Clear multi-block selection when typing
             if !parent.document.selectedBlockIds.isEmpty {
                 parent.document.clearBlockSelection()
             }
 
-            // Store plain text directly (works for both top-level and column children)
-            parent.document.updateBlockText(id: parent.blockId, text: textView.string)
+            // Persist block text in markdown form so inline styles round-trip to disk.
+            parent.document.updateBlockText(id: parent.blockId, text: markdownFromTextView(textView))
 
             // Slash command detection (skip title block)
             let isTitleBlock = parent.document.titleBlock?.id == parent.blockId
@@ -297,6 +371,7 @@ struct BlockTextView: NSViewRepresentable {
             autoDetectMarkdownPrefix(textView)
 
             parent.recalculateHeight(textView)
+            parent.onTextChange?()
         }
 
         // MARK: - Markdown shortcut auto-detection
@@ -389,13 +464,103 @@ struct BlockTextView: NSViewRepresentable {
 
             suppressChanges = true
             textView.textStorage?.setAttributedString(
-                NSAttributedString(string: newText, attributes: [
-                    .font: parent.font,
-                    .foregroundColor: parent.textColor
-                ])
+                AttributedStringConverter.attributedString(
+                    from: newText,
+                    font: parent.font,
+                    textColor: parent.textColor
+                )
             )
-            textView.setSelectedRange(NSRange(location: newText.count, length: 0))
+            textView.setSelectedRange(NSRange(location: (newText as NSString).length, length: 0))
+            textView.typingAttributes = [
+                .font: parent.font,
+                .foregroundColor: parent.textColor
+            ]
             suppressChanges = false
+        }
+
+        func markdownFromTextView(_ textView: NSTextView) -> String {
+            guard let storage = textView.textStorage else { return textView.string }
+            return AttributedStringConverter.markdown(from: storage)
+        }
+
+        private func normalizeInlineMarkdownIfNeeded(_ textView: NSTextView) {
+            guard shouldNormalizeInlineMarkdown() else { return }
+            guard let storage = textView.textStorage else { return }
+
+            let currentSelection = textView.selectedRange()
+            let markdownStart = markdownOffset(
+                forDisplayOffset: currentSelection.location,
+                in: storage
+            )
+            let markdownEnd = markdownOffset(
+                forDisplayOffset: currentSelection.location + currentSelection.length,
+                in: storage
+            )
+            let markdown = AttributedStringConverter.markdown(from: storage)
+            let normalized = AttributedStringConverter.attributedString(
+                from: markdown,
+                font: parent.font,
+                textColor: parent.textColor
+            )
+            let normalizedLength = (normalized.string as NSString).length
+            let needsRewrite = storage.string != normalized.string
+                || normalizedLength != (markdown as NSString).length
+            guard needsRewrite else { return }
+
+            let displayStart = displayOffset(forMarkdownOffset: markdownStart, markdown: markdown)
+            let displayEnd = displayOffset(forMarkdownOffset: markdownEnd, markdown: markdown)
+            let mappedLocation = min(displayStart, normalizedLength)
+            let mappedLength = min(max(0, displayEnd - displayStart), max(0, normalizedLength - mappedLocation))
+
+            suppressChanges = true
+            storage.setAttributedString(normalized)
+            textView.setSelectedRange(NSRange(location: mappedLocation, length: mappedLength))
+            textView.typingAttributes = [
+                .font: parent.font,
+                .foregroundColor: parent.textColor
+            ]
+            suppressChanges = false
+        }
+
+        private func shouldNormalizeInlineMarkdown() -> Bool {
+            let replacement = lastReplacementString ?? ""
+            defer { lastReplacementString = nil }
+
+            if replacement.contains("*") || replacement.contains("`") {
+                return true
+            }
+            // Handle paste operations where replacement string may be nil.
+            if replacement.isEmpty {
+                guard let textView = textView else { return false }
+                let nsString = textView.string as NSString
+                let cursor = textView.selectedRange().location
+                let scanStart = max(0, cursor - 3)
+                let scanLength = min(6, nsString.length - scanStart)
+                if scanLength > 0 {
+                    let neighborhood = nsString.substring(with: NSRange(location: scanStart, length: scanLength))
+                    return neighborhood.contains("*") || neighborhood.contains("`")
+                }
+            }
+            return false
+        }
+
+        private func markdownOffset(forDisplayOffset displayOffset: Int, in attributed: NSAttributedString) -> Int {
+            let clamped = max(0, min(displayOffset, attributed.length))
+            let prefix = attributed.attributedSubstring(from: NSRange(location: 0, length: clamped))
+            let markdownPrefix = AttributedStringConverter.markdown(from: prefix)
+            return (markdownPrefix as NSString).length
+        }
+
+        private func displayOffset(forMarkdownOffset markdownOffset: Int, markdown: String) -> Int {
+            let markdownNSString = markdown as NSString
+            let clamped = max(0, min(markdownOffset, markdownNSString.length))
+            let prefix = markdownNSString.substring(to: clamped)
+            let renderedPrefix = AttributedStringConverter.attributedString(
+                from: prefix,
+                font: parent.font,
+                textColor: parent.textColor
+            )
+            return renderedPrefix.length
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -575,6 +740,8 @@ struct BlockTextView: NSViewRepresentable {
 // MARK: - Custom NSTextView for focus tracking and keyboard shortcuts
 
 class BlockNSTextView: NSTextView {
+    private static let liveTextViews = NSHashTable<BlockNSTextView>.weakObjects()
+
     var onBecomeFirstResponder: (() -> Void)?
     var placeholderString: String?
     var placeholderFont: NSFont?
@@ -592,6 +759,19 @@ class BlockNSTextView: NSTextView {
     var onShiftClick: (() -> Void)?
     var isInBlockSelection = false
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            Self.liveTextViews.remove(self)
+        } else {
+            Self.liveTextViews.add(self)
+        }
+    }
+
+    deinit {
+        Self.liveTextViews.remove(self)
+    }
+
     override func didChangeText() {
         super.didChangeText()
         needsDisplay = true
@@ -601,7 +781,7 @@ class BlockNSTextView: NSTextView {
         super.draw(dirtyRect)
 
         if string.isEmpty, let placeholder = placeholderString {
-            let font = placeholderFont ?? .systemFont(ofSize: 15)
+            let font = placeholderFont ?? .systemFont(ofSize: 16)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: NSColor.placeholderTextColor
@@ -667,10 +847,14 @@ class BlockNSTextView: NSTextView {
         super.mouseUp(with: event)
     }
 
-    // MARK: - Keyboard Shortcuts for Formatting
+    // MARK: - Keyboard Shortcuts
 
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        if handleBlockTypeShortcut(event, flags: flags) {
+            return
+        }
 
         if flags == .command {
             switch event.charactersIgnoringModifiers {
@@ -691,16 +875,51 @@ class BlockNSTextView: NSTextView {
             }
         }
 
-        if flags == [.command, .shift] {
-            switch event.charactersIgnoringModifiers {
-            case "z":
+        if flags.contains([.command, .shift]) && !flags.contains(.option) && !flags.contains(.control) {
+            if let chars = event.charactersIgnoringModifiers?.lowercased(), chars == "z" {
                 redoAction?()
                 return
-            default:
-                break
             }
         }
 
         super.keyDown(with: event)
+    }
+
+    private func handleBlockTypeShortcut(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
+        let isCommandShiftOnly = flags.contains([.command, .shift])
+            && !flags.contains(.option)
+            && !flags.contains(.control)
+        guard isCommandShiftOnly else { return false }
+
+        let keyToAction: [String: String] = [
+            "0": "paragraph",
+            "1": "heading1",
+            "2": "heading2",
+            "3": "heading3",
+            "4": "taskItem",
+            "5": "bulletListItem",
+            "6": "numberedListItem",
+            "7": "toggle",
+            "8": "codeBlock",
+            "9": "createPage",
+        ]
+        guard let chars = event.charactersIgnoringModifiers?.lowercased(),
+              let action = keyToAction[chars] else { return false }
+
+        NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
+        return true
+    }
+
+    static func blockId(atWindowPoint point: NSPoint, in window: NSWindow) -> UUID? {
+        for textView in liveTextViews.allObjects.reversed() {
+            guard textView.window === window,
+                  !textView.isHiddenOrHasHiddenAncestor,
+                  let blockId = textView.blockId else { continue }
+            let frameInWindow = textView.convert(textView.bounds, to: nil)
+            if frameInWindow.contains(point) {
+                return blockId
+            }
+        }
+        return nil
     }
 }
