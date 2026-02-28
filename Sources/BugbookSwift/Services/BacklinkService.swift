@@ -1,5 +1,7 @@
 import Foundation
 
+private let backlinkLinkPattern = #"\[\[([^\]]+)\]\]"#
+
 struct Backlink: Identifiable {
     let sourcePath: String
     let sourceName: String
@@ -10,14 +12,41 @@ struct Backlink: Identifiable {
 class BacklinkService: ObservableObject {
     /// Maps page name (lowercased) → list of backlinks
     @Published private var index: [String: [Backlink]] = [:]
-
-    private static let linkPattern = #"\[\[([^\]]+)\]\]"#
+    private var indexedWorkspace: String?
+    private var rebuildingWorkspace: String?
+    private var rebuildTask: Task<Void, Never>?
 
     func rebuild(workspace: String) {
-        Task.detached {
-            let newIndex = Self.buildIndex(workspace: workspace)
-            await MainActor.run { self.index = newIndex }
+        ensureIndex(workspace: workspace)
+    }
+
+    func ensureIndex(workspace: String) {
+        if indexedWorkspace == workspace { return }
+        if rebuildingWorkspace == workspace { return }
+
+        rebuildTask?.cancel()
+        if indexedWorkspace != workspace {
+            index = [:]
+            indexedWorkspace = nil
         }
+
+        rebuildingWorkspace = workspace
+        rebuildTask = Task {
+            let newIndex = await Task.detached(priority: .utility) {
+                Self.buildIndex(workspace: workspace)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            index = newIndex
+            indexedWorkspace = workspace
+            rebuildingWorkspace = nil
+            rebuildTask = nil
+        }
+    }
+
+    func awaitIndex(workspace: String) async {
+        ensureIndex(workspace: workspace)
+        await rebuildTask?.value
     }
 
     func backlinksFor(pageName: String) -> [Backlink] {
@@ -26,6 +55,8 @@ class BacklinkService: ObservableObject {
 
     /// Incrementally update: remove old entries for a file, re-scan it, add new entries.
     func updateFile(at path: String, in workspace: String) {
+        guard indexedWorkspace == workspace, rebuildTask == nil else { return }
+
         let filename = (path as NSString).lastPathComponent
         guard filename.hasSuffix(".md") else { return }
         let sourceName = String(filename.dropLast(3))
@@ -42,7 +73,7 @@ class BacklinkService: ObservableObject {
         guard FileManager.default.fileExists(atPath: path),
               let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
 
-        guard let regex = try? NSRegularExpression(pattern: Self.linkPattern) else { return }
+        guard let regex = try? NSRegularExpression(pattern: backlinkLinkPattern) else { return }
         let range = NSRange(content.startIndex..., in: content)
         let matches = regex.matches(in: content, range: range)
 
@@ -64,7 +95,7 @@ class BacklinkService: ObservableObject {
     private nonisolated static func buildIndex(workspace: String) -> [String: [Backlink]] {
         let fm = FileManager.default
         var newIndex: [String: [Backlink]] = [:]
-        guard let regex = try? NSRegularExpression(pattern: linkPattern) else { return [:] }
+        guard let regex = try? NSRegularExpression(pattern: backlinkLinkPattern) else { return [:] }
         guard let enumerator = fm.enumerator(atPath: workspace) else { return [:] }
 
         while let relativePath = enumerator.nextObject() as? String {

@@ -318,6 +318,7 @@ struct GraphView: View {
     private func buildGraph() async {
         let workspace = workspacePath
         let service = backlinkService
+        await service.awaitIndex(workspace: workspace)
 
         // File walk off main thread
         let filePaths: [String] = await Task.detached {

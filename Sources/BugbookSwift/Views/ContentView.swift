@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var themeToast: ThemeMode?
     @State private var themeToastTask: Task<Void, Never>?
     @State private var formattingPanel: FormattingToolbarPanel?
+    @State private var aiInitTask: Task<Void, Never>?
+    @State private var aiInitCompleted = false
 
     var body: some View {
         configuredLayout
@@ -53,12 +55,22 @@ struct ContentView: View {
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
             }
-            .task {
-                await aiService.detectEngines()
-                Task { await aiService.prewarmSession() }
-            }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
+            }
+            .onChange(of: appState.aiSidePanelOpen) { _, isOpen in
+                if isOpen {
+                    ensureAiInitializedIfNeeded()
+                }
+            }
+            .onChange(of: appState.currentView) { _, newView in
+                if newView == .chat {
+                    ensureAiInitializedIfNeeded()
+                }
+            }
+            .onDisappear {
+                aiInitTask?.cancel()
+                aiInitTask = nil
             }
     }
 
@@ -121,11 +133,13 @@ struct ContentView: View {
     private func applyDatabaseNotifications<V: View>(to view: V) -> some View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .openAIPanel)) { _ in
+                ensureAiInitializedIfNeeded()
                 appState.toggleAiPanel()
             }
             .onReceive(NotificationCenter.default.publisher(for: .askAI)) { notification in
                 let prompt = notification.userInfo?["prompt"] as? String
                     ?? notification.userInfo?["query"] as? String
+                ensureAiInitializedIfNeeded()
                 appState.openAiPanel(prompt: prompt)
             }
             .onReceive(NotificationCenter.default.publisher(for: .blockTypeShortcut)) { notification in
@@ -653,8 +667,6 @@ struct ContentView: View {
         } else {
             refreshFileTree()
         }
-
-        backlinkService.rebuild(workspace: defaultPath)
     }
 
     private func refreshFileTree() {
@@ -924,7 +936,6 @@ struct ContentView: View {
         if let path = await fileSystem.openFolder() {
             appState.workspacePath = path
             refreshFileTree()
-            backlinkService.rebuild(workspace: path)
         }
     }
 
@@ -1017,6 +1028,20 @@ struct ContentView: View {
     private func forceSave() {
         guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
         performSave(tabId: tab.id)
+    }
+
+    private func ensureAiInitializedIfNeeded() {
+        if aiInitCompleted { return }
+        if aiInitTask != nil { return }
+
+        aiInitTask = Task {
+            await aiService.detectEngines()
+            guard !Task.isCancelled else { return }
+            await aiService.prewarmSession()
+            guard !Task.isCancelled else { return }
+            aiInitCompleted = true
+            aiInitTask = nil
+        }
     }
 
     private func navigateToPage(named pageName: String) {
@@ -1141,6 +1166,9 @@ struct ContentView: View {
     }
 
     private func currentPageBacklinks(for tab: OpenFile) -> [Backlink] {
+        guard let workspace = appState.workspacePath else { return [] }
+        backlinkService.ensureIndex(workspace: workspace)
+
         let filename = (tab.path as NSString).lastPathComponent
         guard filename.hasSuffix(".md") else { return [] }
         let pageName = String(filename.dropLast(3))

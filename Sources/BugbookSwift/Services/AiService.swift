@@ -26,6 +26,7 @@ class AiService: ObservableObject {
     @Published var engineStatus = AiEngineStatus()
     @Published var isRunning = false
     @Published var error: String?
+    private var hasDetectedEngines = false
 
     // MARK: - Engine Detection
 
@@ -52,11 +53,16 @@ class AiService: ObservableObject {
             codexAvailable: codexFound,
             codexVersion: codexVer
         )
+        hasDetectedEngines = true
     }
 
     // MARK: - Chat
 
     func chatWithNotes(engine: PreferredAIEngine, workspacePath: String, question: String) async throws -> String {
+        if !hasDetectedEngines {
+            await detectEngines()
+        }
+
         let resolvedEngine = resolveEngine(engine)
 
         guard let cli = resolvedEngine else {

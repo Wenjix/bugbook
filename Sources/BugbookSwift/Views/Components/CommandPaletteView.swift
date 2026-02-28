@@ -29,6 +29,14 @@ private struct ContentMatch {
     let lineText: String
 }
 
+private struct IndexedContentLine: Sendable {
+    let filePath: String
+    let fileName: String
+    let lineNumber: Int
+    let lineText: String
+    let lowercasedLine: String
+}
+
 private struct PaletteCommand {
     let id: String
     let name: String
@@ -60,6 +68,9 @@ struct CommandPaletteView: View {
     @State private var selectedIndex = 0
     @State private var contentResults: [ContentMatch] = []
     @State private var contentSearchTask: Task<Void, Never>?
+    @State private var contentIndex: [IndexedContentLine] = []
+    @State private var contentIndexWorkspace: String?
+    @State private var contentIndexTask: Task<[IndexedContentLine], Never>?
     @FocusState private var isSearchFieldFocused: Bool
     @Binding var isPresented: Bool
     var onSelectFile: (FileEntry) -> Void
@@ -138,6 +149,25 @@ struct CommandPaletteView: View {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
+            }
+            Task { @MainActor in
+                await warmContentIndexIfNeeded()
+            }
+        }
+        .onDisappear {
+            contentSearchTask?.cancel()
+            contentSearchTask = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
+        }
+        .onChange(of: appState.workspacePath) { _, _ in
+            contentIndex = []
+            contentIndexWorkspace = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
+            scheduleContentSearch(query: effectiveQuery(from: searchText))
+            Task { @MainActor in
+                await warmContentIndexIfNeeded()
             }
         }
     }
@@ -414,54 +444,134 @@ struct CommandPaletteView: View {
         }
     }
 
-    private func searchFileContents(query: String) async -> [ContentMatch] {
-        guard let workspace = appState.workspacePath else { return [] }
-        let lowerQuery = query.lowercased()
+    @MainActor
+    private func warmContentIndexIfNeeded() async {
+        guard let workspace = appState.workspacePath else { return }
+        _ = await ensureContentIndex(for: workspace)
+    }
 
-        return await Task.detached {
+    @MainActor
+    private func ensureContentIndex(for workspace: String) async -> [IndexedContentLine] {
+        if contentIndexWorkspace == workspace, contentIndexTask == nil {
+            return contentIndex
+        }
+
+        if contentIndexWorkspace == workspace, let pendingTask = contentIndexTask {
+            let indexed = await pendingTask.value
+            if appState.workspacePath == workspace {
+                contentIndex = indexed
+                contentIndexTask = nil
+            }
+            return indexed
+        }
+
+        contentIndexTask?.cancel()
+        let buildTask = Task<[IndexedContentLine], Never> {
+            await buildContentIndex(workspace: workspace)
+        }
+        contentIndexTask = buildTask
+
+        let indexed = await buildTask.value
+        guard !Task.isCancelled else { return [] }
+
+        if appState.workspacePath == workspace {
+            contentIndex = indexed
+            contentIndexWorkspace = workspace
+            contentIndexTask = nil
+        }
+
+        return indexed
+    }
+
+    private func buildContentIndex(workspace: String) async -> [IndexedContentLine] {
+        await Task.detached(priority: .utility) {
             let fm = FileManager.default
-            guard let enumerator = fm.enumerator(atPath: workspace) else { return [ContentMatch]() }
+            guard let enumerator = fm.enumerator(atPath: workspace) else { return [IndexedContentLine]() }
 
-            var matches: [ContentMatch] = []
-            let maxPerFile = 3
-            let maxTotal = 20
+            var excludedDirs: Set<String> = []
+            if let scanner = fm.enumerator(atPath: workspace) {
+                while let rel = scanner.nextObject() as? String {
+                    guard !Task.isCancelled else { return [] }
+                    let filename = (rel as NSString).lastPathComponent
+                    if filename == "_schema.json" || filename == "_canvas.json" {
+                        let dir = (rel as NSString).deletingLastPathComponent
+                        excludedDirs.insert(dir)
+                    }
+                }
+            }
+
+            var indexed: [IndexedContentLine] = []
+            let maxLineLength = 160
 
             while let relativePath = enumerator.nextObject() as? String {
                 guard !Task.isCancelled else { break }
                 let components = relativePath.components(separatedBy: "/")
                 if components.contains(where: { $0.hasPrefix(".") }) { continue }
+
                 let filename = (relativePath as NSString).lastPathComponent
                 guard filename.hasSuffix(".md") else { continue }
-                // Skip database row files and canvas node files
+
                 let parentDir = (relativePath as NSString).deletingLastPathComponent
-                if !parentDir.isEmpty {
-                    let parentFullPath = (workspace as NSString).appendingPathComponent(parentDir)
-                    let schemaPath = (parentFullPath as NSString).appendingPathComponent("_schema.json")
-                    let canvasPath = (parentFullPath as NSString).appendingPathComponent("_canvas.json")
-                    if fm.fileExists(atPath: schemaPath) || fm.fileExists(atPath: canvasPath) { continue }
-                }
+                if excludedDirs.contains(parentDir) { continue }
 
                 let fullPath = (workspace as NSString).appendingPathComponent(relativePath)
                 guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
 
                 let lines = content.components(separatedBy: .newlines)
-                var fileMatchCount = 0
                 for (lineIndex, line) in lines.enumerated() {
-                    let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                    guard trimmedLine.count > 2 else { continue }
-                    if trimmedLine.lowercased().range(of: lowerQuery) != nil {
-                        matches.append(ContentMatch(
+                    guard !Task.isCancelled else { break }
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    guard trimmed.count > 2 else { continue }
+
+                    indexed.append(
+                        IndexedContentLine(
                             filePath: fullPath,
                             fileName: filename,
                             lineNumber: lineIndex + 1,
-                            lineText: String(trimmedLine.prefix(120))
-                        ))
-                        fileMatchCount += 1
-                        if fileMatchCount >= maxPerFile { break }
-                    }
+                            lineText: String(trimmed.prefix(maxLineLength)),
+                            lowercasedLine: trimmed.lowercased()
+                        )
+                    )
                 }
+            }
 
-                if matches.count >= maxTotal { break }
+            return indexed
+        }.value
+    }
+
+    @MainActor
+    private func searchFileContents(query: String) async -> [ContentMatch] {
+        guard let workspace = appState.workspacePath else { return [] }
+        let indexed = await ensureContentIndex(for: workspace)
+        let lowerQuery = query.lowercased()
+        guard !indexed.isEmpty else { return [] }
+
+        return await Task.detached(priority: .userInitiated) {
+            var matches: [ContentMatch] = []
+            var matchesPerFile: [String: Int] = [:]
+            let maxPerFile = 3
+            let maxTotal = 20
+
+            for line in indexed {
+                guard !Task.isCancelled else { break }
+                guard line.lowercasedLine.contains(lowerQuery) else { continue }
+
+                let current = matchesPerFile[line.filePath, default: 0]
+                guard current < maxPerFile else { continue }
+
+                matches.append(
+                    ContentMatch(
+                        filePath: line.filePath,
+                        fileName: line.fileName,
+                        lineNumber: line.lineNumber,
+                        lineText: line.lineText
+                    )
+                )
+                matchesPerFile[line.filePath] = current + 1
+
+                if matches.count >= maxTotal {
+                    break
+                }
             }
 
             return matches

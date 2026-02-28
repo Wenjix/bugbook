@@ -21,13 +21,17 @@ struct DatabaseFullPageView: View {
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
     @State private var titleSaveTask: Task<Void, Never>? = nil
+    @State private var rowSaveTask: Task<Void, Never>? = nil
+    @State private var pendingRowSaves: [String: DatabaseRow] = [:]
+    @State private var loadTask: Task<Void, Never>? = nil
+    @State private var notificationOrigin = UUID().uuidString
 
     private var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
     }
 
     private var filteredAndSortedRows: [DatabaseRow] {
-        guard let view = activeView, let schema = schema else { return rows }
+        guard let view = activeView else { return rows }
         var result = rows
 
         for filter in view.filters {
@@ -86,7 +90,7 @@ struct DatabaseFullPageView: View {
                 PropertyManagerSheet(schema: Binding(
                     get: { s },
                     set: { s = $0; self.schema = $0 }
-                ), rows: $rows, dbPath: dbPath, dbService: dbService)
+                ), rows: $rows, dbPath: dbPath, dbService: dbService, notificationOrigin: notificationOrigin)
             }
         }
         .sheet(item: $renamingPropertyId) { propId in
@@ -107,16 +111,27 @@ struct DatabaseFullPageView: View {
         .onDisappear {
             titleSaveTask?.cancel()
             titleSaveTask = nil
+            rowSaveTask?.cancel()
+            rowSaveTask = nil
+            loadTask?.cancel()
+            loadTask = nil
+            flushPendingRowSavesSynchronously()
         }
         .onReceive(NotificationCenter.default.publisher(for: .databaseDidChange)) { notification in
             guard let changedPath = notification.userInfo?["dbPath"] as? String,
                   changedPath == dbPath else { return }
-            Task { @MainActor in loadData() }
+            let origin = notification.userInfo?["origin"] as? String
+            guard origin != notificationOrigin else { return }
+            loadData()
         }
     }
 
     private func postChangeNotification() {
-        NotificationCenter.default.post(name: .databaseDidChange, object: nil, userInfo: ["dbPath": dbPath])
+        NotificationCenter.default.post(
+            name: .databaseDidChange,
+            object: nil,
+            userInfo: ["dbPath": dbPath, "origin": notificationOrigin]
+        )
     }
 
     // MARK: - Title Bar
@@ -596,32 +611,80 @@ struct DatabaseFullPageView: View {
     // MARK: - Data Operations
 
     private func loadData() {
-        do {
-            let (loadedSchema, loadedRows) = try dbService.loadDatabase(at: dbPath)
-            schema = loadedSchema
-            rows = loadedRows
-            if activeViewId.isEmpty {
-                activeViewId = loadedSchema.defaultView
+        loadTask?.cancel()
+        error = nil
+
+        let path = dbPath
+        loadTask = Task {
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
+                do {
+                    return .success(try DatabaseService().loadDatabase(at: path))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            guard !Task.isCancelled else { return }
+
+            switch result {
+            case .success(let (loadedSchema, loadedRows)):
+                schema = loadedSchema
+                rows = loadedRows
+                if activeViewId.isEmpty || !loadedSchema.views.contains(where: { $0.id == activeViewId }) {
+                    activeViewId = loadedSchema.defaultView
+                }
+                editingTitle = loadedSchema.name
+            case .failure(let error):
+                self.error = error.localizedDescription
             }
-            editingTitle = loadedSchema.name
-        } catch {
-            self.error = error.localizedDescription
         }
     }
 
     private func saveRow(_ row: DatabaseRow) {
-        guard let schema = schema else { return }
+        guard schema != nil else { return }
         if let idx = rows.firstIndex(where: { $0.id == row.id }) {
             rows[idx] = row
         }
+        pendingRowSaves[row.id] = row
+        schedulePendingRowSave()
+    }
+
+    private func schedulePendingRowSave() {
+        rowSaveTask?.cancel()
+        rowSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            flushPendingRowSaves()
+        }
+    }
+
+    private func flushPendingRowSaves() {
+        guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
+        let rowsToPersist = Array(pendingRowSaves.values)
+        pendingRowSaves.removeAll()
+
         Task {
-            try? dbService.saveRow(row, schema: schema, at: dbPath)
+            for row in rowsToPersist {
+                try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
+            }
             postChangeNotification()
         }
     }
 
+    private func flushPendingRowSavesSynchronously() {
+        guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
+        let rowsToPersist = Array(pendingRowSaves.values)
+        pendingRowSaves.removeAll()
+
+        for row in rowsToPersist {
+            try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
+        }
+        postChangeNotification()
+    }
+
     private func deleteRow(_ row: DatabaseRow) {
         guard let schema = schema else { return }
+        pendingRowSaves.removeValue(forKey: row.id)
         rows.removeAll { $0.id == row.id }
         Task {
             try? dbService.deleteRow(row.id, in: dbPath)
@@ -929,6 +992,7 @@ private struct PropertyManagerSheet: View {
     @Binding var rows: [DatabaseRow]
     let dbPath: String
     let dbService: DatabaseService
+    let notificationOrigin: String
     @Environment(\.dismiss) private var dismiss
     @State private var editingNames: [String: String] = [:]
 
@@ -1037,7 +1101,11 @@ private struct PropertyManagerSheet: View {
             schema.properties[idx].name = newName
             Task {
                 try? dbService.saveSchema(schema, at: dbPath)
-                NotificationCenter.default.post(name: .databaseDidChange, object: nil, userInfo: ["dbPath": dbPath])
+                NotificationCenter.default.post(
+                    name: .databaseDidChange,
+                    object: nil,
+                    userInfo: ["dbPath": dbPath, "origin": notificationOrigin]
+                )
             }
         }
     }
@@ -1048,7 +1116,11 @@ private struct PropertyManagerSheet: View {
         try? dbService.changePropertyType(propertyId, to: newType, in: &s, rows: &r, at: dbPath)
         schema = s
         rows = r
-        NotificationCenter.default.post(name: .databaseDidChange, object: nil, userInfo: ["dbPath": dbPath])
+        NotificationCenter.default.post(
+            name: .databaseDidChange,
+            object: nil,
+            userInfo: ["dbPath": dbPath, "origin": notificationOrigin]
+        )
     }
 }
 

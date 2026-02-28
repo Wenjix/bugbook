@@ -1,7 +1,6 @@
 import Foundation
 import BugbookCore
 
-@MainActor
 class DatabaseService: ObservableObject {
     private let fileManager = FileManager.default
 
