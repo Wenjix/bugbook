@@ -33,6 +33,7 @@ struct FileTreeItemView: View {
                     TextField("", text: $renameName, onCommit: { commitRename() })
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
+                        .onExitCommand { isRenaming = false }
                 } else {
                     Text(displayName)
                         .font(.system(size: 14))
@@ -47,6 +48,7 @@ struct FileTreeItemView: View {
             .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
             .cornerRadius(4)
             .contentShape(Rectangle())
+            .accessibilityIdentifier("file-tree-item-\(displayName)")
             .onTapGesture { handleTap() }
             .contextMenu { contextMenuItems }
 
@@ -114,7 +116,11 @@ struct FileTreeItemView: View {
 
     @ViewBuilder
     private var defaultIcon: some View {
-        if entry.isDatabase {
+        if entry.isCanvas {
+            Image(systemName: "rectangle.on.rectangle.angled")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+        } else if entry.isDatabase {
             Image(systemName: "tablecells")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
@@ -186,6 +192,9 @@ struct FileTreeItemView: View {
         Button { performCreateDatabase() } label: {
             Label("New Database", systemImage: "tablecells")
         }
+        Button { performCreateCanvas() } label: {
+            Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
+        }
         if entry.isDirectory && !entry.isDatabase {
             Button { performCreateFolder() } label: {
                 Label("New Folder", systemImage: "folder.badge.plus")
@@ -222,10 +231,15 @@ struct FileTreeItemView: View {
         guard !trimmed.isEmpty, trimmed != displayName else { return }
 
         let dir = (entry.path as NSString).deletingLastPathComponent
-        let ext = entry.isDatabase ? "" : ".md"
+        let ext = (entry.isDatabase || entry.isCanvas || entry.isDirectory) ? "" : ".md"
         let newPath = (dir as NSString).appendingPathComponent("\(trimmed)\(ext)")
 
         try? fileSystem.renameFile(from: entry.path, to: newPath)
+        if entry.isDatabase {
+            try? fileSystem.updateDatabaseDisplayName(at: newPath, name: trimmed)
+        } else if entry.isCanvas {
+            try? fileSystem.updateCanvasDisplayName(at: newPath, name: trimmed)
+        }
         onRefreshTree()
     }
 
@@ -240,7 +254,9 @@ struct FileTreeItemView: View {
             let name = (newPath as NSString).lastPathComponent
             let dup = FileEntry(
                 id: newPath, name: name, path: newPath,
-                isDirectory: false, isDatabase: entry.isDatabase,
+                isDirectory: entry.isDirectory,
+                isDatabase: entry.isDatabase,
+                isCanvas: entry.isCanvas,
                 icon: nil, children: nil
             )
             onSelectFile(dup)
@@ -296,6 +312,20 @@ struct FileTreeItemView: View {
                 icon: nil, children: nil
             )
             onSelectFile(db)
+        }
+    }
+
+    private func performCreateCanvas() {
+        let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
+        if let path = try? fileSystem.createCanvas(in: dir, name: "Untitled Canvas") {
+            onRefreshTree()
+            let displayName = "Untitled Canvas"
+            let canvas = FileEntry(
+                id: path, name: displayName,
+                path: path, isDirectory: false, isDatabase: false,
+                isCanvas: true, icon: nil, children: nil
+            )
+            onSelectFile(canvas)
         }
     }
 }

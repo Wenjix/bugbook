@@ -29,7 +29,45 @@ struct GeneralSettingsView: View {
             SettingsSection("Editor") {
                 Toggle("Focus mode while typing", isOn: $appState.settings.focusModeOnType)
             }
+
+            SettingsSection("App") {
+                infoRow(label: "Bundle ID", value: bundleIdentifier)
+                infoRow(label: "Version", value: appVersion)
+                infoRow(label: "Build", value: appBuild)
+                infoRow(label: "Executable", value: executableName)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func infoRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 84, alignment: .leading)
+            Text(value)
+                .font(.system(size: 13))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+        }
+    }
+
+    private var bundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? "Unknown"
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    }
+
+    private var appBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
+    }
+
+    private var executableName: String {
+        Bundle.main.executableURL?.lastPathComponent ?? "Unknown"
     }
 
     private func switchWorkspace() async {

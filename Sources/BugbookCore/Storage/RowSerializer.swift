@@ -97,7 +97,14 @@ public struct RowSerializer {
     // MARK: - Private
 
     private static func parseValue(_ raw: String, type: PropertyType) -> PropertyValue {
-        let value = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        var value = raw
+        // Strip one pair of surrounding quotes
+        if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+            value = String(value.dropFirst().dropLast())
+        }
+        // Unescape backslash sequences
+        value = value.replacingOccurrences(of: "\\\"", with: "\"")
+                     .replacingOccurrences(of: "\\\\", with: "\\")
         if value.isEmpty { return .empty }
 
         switch type {
@@ -136,9 +143,14 @@ public struct RowSerializer {
         }
     }
 
+    private static func yamlEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     private static func serializeValue(_ value: PropertyValue) -> String {
         switch value {
-        case .text(let s): return "\"\(s)\""
+        case .text(let s): return "\"\(yamlEscape(s))\""
         case .number(let n):
             if n == n.rounded() && n < 1e15 { return String(Int(n)) }
             return String(n)
@@ -146,8 +158,8 @@ public struct RowSerializer {
         case .multiSelect(let arr): return "[\(arr.joined(separator: ", "))]"
         case .date(let s): return s
         case .checkbox(let b): return b ? "true" : "false"
-        case .url(let s): return "\"\(s)\""
-        case .email(let s): return "\"\(s)\""
+        case .url(let s): return "\"\(yamlEscape(s))\""
+        case .email(let s): return "\"\(yamlEscape(s))\""
         case .relation(let s): return s
         case .relationMany(let arr): return "[\(arr.joined(separator: ", "))]"
         case .empty: return ""

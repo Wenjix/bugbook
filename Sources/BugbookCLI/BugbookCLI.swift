@@ -7,7 +7,7 @@ struct Bugbook: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "bugbook",
         abstract: "Local-first database CLI",
-        subcommands: [DB.self, QueryCmd.self, Get.self, Create.self, Update.self, Delete.self, Batch.self, Agent.self]
+        subcommands: [DB.self, QueryCmd.self, Get.self, Create.self, Update.self, Delete.self, Batch.self, Agent.self, Search.self]
     )
 
     struct Options: ParsableArguments {

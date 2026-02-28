@@ -50,6 +50,7 @@ struct BlockCellView: View {
                 ))
                 .allowsHitTesting(false)
         )
+        .trackRenders("BlockCellView")
         .onHover { hovering in
             isHovering = hovering
         }

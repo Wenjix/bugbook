@@ -72,7 +72,7 @@ public class DatabaseStore {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
 
-        let dbId = "db_\(name.lowercased().replacingOccurrences(of: " ", with: "_"))"
+        let dbId = "db_\(name.lowercased().replacingOccurrences(of: " ", with: "_"))_\(UUID().uuidString.prefix(6).lowercased())"
         let schema = DatabaseSchema(
             id: dbId,
             name: name,

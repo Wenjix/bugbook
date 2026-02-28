@@ -80,6 +80,7 @@ struct DatabaseFullPageView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .accessibilityIdentifier("editor")
         .sheet(isPresented: $showPropertyManager) {
             if var s = schema {
                 PropertyManagerSheet(schema: Binding(
@@ -101,7 +102,7 @@ struct DatabaseFullPageView: View {
             }
         }
         .task {
-            await loadData()
+            loadData()
         }
         .onDisappear {
             titleSaveTask?.cancel()
@@ -110,7 +111,7 @@ struct DatabaseFullPageView: View {
         .onReceive(NotificationCenter.default.publisher(for: .databaseDidChange)) { notification in
             guard let changedPath = notification.userInfo?["dbPath"] as? String,
                   changedPath == dbPath else { return }
-            Task { await loadData() }
+            Task { @MainActor in loadData() }
         }
     }
 
@@ -594,9 +595,9 @@ struct DatabaseFullPageView: View {
 
     // MARK: - Data Operations
 
-    private func loadData() async {
+    private func loadData() {
         do {
-            let (loadedSchema, loadedRows) = try await dbService.loadDatabase(at: dbPath)
+            let (loadedSchema, loadedRows) = try dbService.loadDatabase(at: dbPath)
             schema = loadedSchema
             rows = loadedRows
             if activeViewId.isEmpty {

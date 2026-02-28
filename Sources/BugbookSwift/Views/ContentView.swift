@@ -5,13 +5,17 @@ struct ContentView: View {
     @StateObject private var appState = AppState()
     @StateObject private var fileSystem = FileSystemService()
     @StateObject private var aiService = AiService()
+    @StateObject private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
+    @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
+    @State private var canvasSaveTask: Task<Void, Never>?
     @State private var focusModeActive = false
     @State private var focusModeTask: Task<Void, Never>?
     @State private var focusModeSuppress = false
     @State private var themeToast: ThemeMode?
     @State private var themeToastTask: Task<Void, Never>?
+    @State private var formattingPanel: FormattingToolbarPanel?
 
     var body: some View {
         configuredLayout
@@ -45,10 +49,9 @@ struct ContentView: View {
         view
             .ignoresSafeArea()
             .frame(minWidth: 800, minHeight: 500)
-            .onAppear {
+            .task {
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
-                setupAiNotifications()
             }
             .task {
                 await aiService.detectEngines()
@@ -95,8 +98,17 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .toggleTheme)) { _ in
                 toggleTheme()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openDailyNote)) { _ in
+                openDailyNote()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openGraphView)) { _ in
+                appState.openGraphView()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .newCanvas)) { _ in
+                createNewCanvas()
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateBack)) { _ in
                 navigateBackInActiveTab()
@@ -108,6 +120,14 @@ struct ContentView: View {
 
     private func applyDatabaseNotifications<V: View>(to view: V) -> some View {
         view
+            .onReceive(NotificationCenter.default.publisher(for: .openAIPanel)) { _ in
+                appState.toggleAiPanel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .askAI)) { notification in
+                let prompt = notification.userInfo?["prompt"] as? String
+                    ?? notification.userInfo?["query"] as? String
+                appState.openAiPanel(prompt: prompt)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .blockTypeShortcut)) { notification in
                 handleBlockTypeShortcut(notification.object as? String)
             }
@@ -197,6 +217,26 @@ struct ContentView: View {
                         },
                         onCreateFile: { name in
                             createNewFileWithName(name)
+                        },
+                        onSelectContentMatch: { entry, query in
+                            if appState.commandPaletteMode == .newTab {
+                                appState.openFileInNewTab(entry)
+                            } else {
+                                appState.openFile(entry)
+                            }
+                            loadFileContent(for: entry)
+                            // Jump to the block containing the match
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                guard let tab = appState.activeTab,
+                                      let doc = blockDocuments[tab.id] else { return }
+                                let lowerQuery = query.lowercased()
+                                if let block = doc.blocks.first(where: {
+                                    $0.text.lowercased().contains(lowerQuery)
+                                }) {
+                                    doc.focusedBlockId = block.id
+                                    doc.cursorPosition = 0
+                                }
+                            }
                         }
                     )
                     Spacer()
@@ -236,6 +276,17 @@ struct ContentView: View {
                     NotesChatView(appState: appState, aiService: aiService)
                 } else if appState.currentView == .agentHub {
                     AgentHubView(workspacePath: appState.workspacePath)
+                } else if appState.currentView == .graphView {
+                    if let workspace = appState.workspacePath {
+                        GraphView(
+                            backlinkService: backlinkService,
+                            workspacePath: workspace,
+                            currentPagePath: appState.activeTab?.path,
+                            onNavigateToFile: { path in
+                                navigateToFilePath(path)
+                            }
+                        )
+                    }
                 } else {
                     editorModeContent
                 }
@@ -268,10 +319,22 @@ struct ContentView: View {
         }
 
         if let tab = appState.activeTab, !tab.isEmptyTab {
-            BreadcrumbView(
-                items: breadcrumbs(for: tab),
-                onNavigate: { item in navigateToBreadcrumb(item) }
-            )
+            HStack {
+                BreadcrumbView(
+                    items: breadcrumbs(for: tab),
+                    onNavigate: { item in navigateToBreadcrumb(item) }
+                )
+
+                Spacer()
+
+                let backlinks = currentPageBacklinks(for: tab)
+                if !backlinks.isEmpty {
+                    BacklinksMenuButton(backlinks: backlinks) { path in
+                        navigateToFilePath(path)
+                    }
+                    .padding(.trailing, 8)
+                }
+            }
             .opacity(focusModeActive ? 0.0 : 1.0)
         }
 
@@ -286,6 +349,8 @@ struct ContentView: View {
                     onNewNote: { createNewFile() },
                     onOpenFolder: { Task { await openWorkspace() } }
                 )
+            } else if tab.isCanvas {
+                canvasEditor(for: tab)
             } else if tab.isDatabase {
                 DatabaseFullPageView(dbPath: tab.path)
             } else {
@@ -320,6 +385,10 @@ struct ContentView: View {
                         coverUrl: Binding(
                             get: { document.coverUrl },
                             set: { document.coverUrl = $0; scheduleSave() }
+                        ),
+                        coverPosition: Binding(
+                            get: { document.coverPosition },
+                            set: { document.coverPosition = $0; scheduleSave() }
                         ),
                         fullWidth: document.fullWidth
                     )
@@ -359,15 +428,30 @@ struct ContentView: View {
                 }
             }
             .background(Color.fallbackEditorBg)
-        } else {
-            Color.fallbackEditorBg
-                .onAppear {
-                    if blockDocuments[tab.id] == nil {
-                        let doc = BlockDocument(markdown: tab.content)
-                        wireUpDocumentCallbacks(doc)
-                        blockDocuments[tab.id] = doc
+            .accessibilityIdentifier("editor")
+            .trackRenders("EditorView")
+            .overlay {
+                if document.showTemplatePicker {
+                    ZStack {
+                        Color.black.opacity(0.2)
+                            .onTapGesture { document.showTemplatePicker = false }
+                        TemplatePickerView(
+                            templates: fileSystem.listTemplates(in: appState.workspacePath ?? ""),
+                            onSelect: { template in
+                                document.showTemplatePicker = false
+                                createPageFromTemplate(template)
+                            },
+                            onDismiss: { document.showTemplatePicker = false }
+                        )
+                        .onTapGesture { } // prevent tap-through to dismiss scrim
                     }
                 }
+            }
+            .onChange(of: document.selectionRect) { _, rect in
+                updateFormattingPanel(rect: rect)
+            }
+        } else {
+            Color.fallbackEditorBg
         }
     }
 
@@ -408,30 +492,37 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Formatting Toolbar
+
+    private func updateFormattingPanel(rect: CGRect?) {
+        guard let rect = rect else {
+            formattingPanel?.hidePanel()
+            return
+        }
+        let panel: FormattingToolbarPanel
+        if let existing = formattingPanel {
+            panel = existing
+        } else {
+            panel = FormattingToolbarPanel()
+            formattingPanel = panel
+        }
+        // Wire actions to the currently focused BlockNSTextView via first responder
+        panel.updateActions(
+            onBold: { activeBlockTextView()?.formatBoldAction?() },
+            onItalic: { activeBlockTextView()?.formatItalicAction?() },
+            onCode: { activeBlockTextView()?.formatCodeAction?() },
+            onStrikethrough: { activeBlockTextView()?.formatStrikethroughAction?() },
+            onLink: { activeBlockTextView()?.formatLinkAction?() }
+        )
+        panel.show(above: rect)
+    }
+
+    private func activeBlockTextView() -> BlockNSTextView? {
+        NSApp.keyWindow?.firstResponder as? BlockNSTextView
+    }
+
     // MARK: - AI Notifications
 
-    private func setupAiNotifications() {
-        NotificationCenter.default.addObserver(
-            forName: .openAIPanel,
-            object: nil,
-            queue: .main
-        ) { [appState] _ in
-            Task { @MainActor in
-                appState.toggleAiPanel()
-            }
-        }
-        NotificationCenter.default.addObserver(
-            forName: .askAI,
-            object: nil,
-            queue: .main
-        ) { [appState] notification in
-            let prompt = notification.userInfo?["prompt"] as? String
-                ?? notification.userInfo?["query"] as? String
-            Task { @MainActor in
-                appState.openAiPanel(prompt: prompt)
-            }
-        }
-    }
 
     // MARK: - Actions
 
@@ -508,12 +599,14 @@ struct ContentView: View {
         }
 
         let isDatabase = isDatabaseFolderPath(targetPath)
+        let isCanvas = isCanvasFolderPath(targetPath)
         let entry = FileEntry(
             id: targetPath,
             name: item.name,
             path: targetPath,
-            isDirectory: isDatabase,
+            isDirectory: isDatabase || isCanvas,
             isDatabase: isDatabase,
+            isCanvas: isCanvas,
             icon: item.icon
         )
         navigateToEntry(entry, preferExistingTab: false)
@@ -521,6 +614,7 @@ struct ContentView: View {
 
     private func isOpenableBreadcrumbPath(_ path: String) -> Bool {
         if isDatabaseFolderPath(path) { return true }
+        if isCanvasFolderPath(path) { return true }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
         return !isDir.boolValue
@@ -531,6 +625,11 @@ struct ContentView: View {
         return FileManager.default.fileExists(atPath: schemaPath)
     }
 
+    private func isCanvasFolderPath(_ path: String) -> Bool {
+        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
+        return FileManager.default.fileExists(atPath: canvasPath)
+    }
+
     private func initializeWorkspace() {
         let defaultPath = fileSystem.defaultWorkspacePath()
         if !FileManager.default.fileExists(atPath: defaultPath) {
@@ -538,7 +637,24 @@ struct ContentView: View {
         }
         fileSystem.setWorkspace(defaultPath)
         appState.workspacePath = defaultPath
-        refreshFileTree()
+
+        // Create onboarding file for empty workspaces before building the file tree
+        if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: defaultPath) {
+            refreshFileTree()
+            let entry = FileEntry(
+                id: onboardingPath,
+                name: (onboardingPath as NSString).lastPathComponent,
+                path: onboardingPath,
+                isDirectory: false,
+                isDatabase: false
+            )
+            appState.openFile(entry)
+            loadFileContent(for: entry)
+        } else {
+            refreshFileTree()
+        }
+
+        backlinkService.rebuild(workspace: defaultPath)
     }
 
     private func refreshFileTree() {
@@ -547,7 +663,8 @@ struct ContentView: View {
     }
 
     private func loadFileContent(for entry: FileEntry) {
-        guard !entry.isDatabase else { return }
+        guard !entry.isDatabase, !entry.isCanvas else { return }
+        formattingPanel?.hidePanel()
         focusModeSuppress = true
         do {
             let content = try fileSystem.loadFile(at: entry.path)
@@ -698,6 +815,98 @@ struct ContentView: View {
         }
     }
 
+    private func createPageFromTemplate(_ template: FileEntry) {
+        guard let workspace = appState.workspacePath else { return }
+        let templateName = template.name.hasSuffix(".md")
+            ? String(template.name.dropLast(3))
+            : template.name
+        do {
+            let path = try fileSystem.createFromTemplate(
+                templatePath: template.path,
+                in: workspace,
+                name: templateName
+            )
+            let entry = FileEntry(
+                id: path,
+                name: (path as NSString).lastPathComponent,
+                path: path,
+                isDirectory: false,
+                isDatabase: false
+            )
+            navigateToEntry(entry, inNewTab: true)
+            refreshFileTree()
+        } catch {
+            print("Failed to create page from template: \(error)")
+        }
+    }
+
+    private func openDailyNote() {
+        guard let workspace = appState.workspacePath else { return }
+        do {
+            let path = try fileSystem.openOrCreateDailyNote(in: workspace)
+            let name = (path as NSString).lastPathComponent
+            let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, isDatabase: false)
+            appState.currentView = .editor
+            appState.showSettings = false
+            navigateToEntry(entry, preferExistingTab: true)
+            refreshFileTree()
+        } catch {
+            print("Failed to open daily note: \(error)")
+        }
+    }
+
+    // MARK: - Canvas
+
+    @ViewBuilder
+    private func canvasEditor(for tab: OpenFile) -> some View {
+        if let doc = canvasDocuments[tab.id] {
+            CanvasView(
+                document: doc,
+                onNavigateToFile: { path in navigateToFilePath(path) },
+                availablePages: appState.fileTree
+            )
+            .onChange(of: doc.isDirty) { _, dirty in
+                if dirty { scheduleCanvasSave(tabId: tab.id) }
+            }
+        } else {
+            Color.fallbackEditorBg
+                .onAppear { loadCanvasContent(for: tab) }
+        }
+    }
+
+    private func loadCanvasContent(for tab: OpenFile) {
+        guard tab.isCanvas else { return }
+        let doc = CanvasDocument()
+        doc.load(from: tab.path)
+        canvasDocuments[tab.id] = doc
+    }
+
+    private func scheduleCanvasSave(tabId: UUID) {
+        let docs = self.canvasDocuments
+        canvasSaveTask?.cancel()
+        canvasSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            docs[tabId]?.save()
+        }
+    }
+
+    private func createNewCanvas() {
+        guard let workspace = appState.workspacePath else { return }
+        do {
+            let path = try fileSystem.createCanvas(in: workspace, name: "Untitled Canvas")
+            let displayName = (path as NSString).lastPathComponent
+            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, isDatabase: false, isCanvas: true)
+            appState.openFile(entry)
+            if let tab = appState.activeTab {
+                loadCanvasContent(for: tab)
+            }
+            refreshFileTree()
+        } catch {
+            print("Failed to create canvas: \(error)")
+        }
+    }
+
     private func createNewDatabase() {
         guard let workspace = appState.workspacePath else { return }
         do {
@@ -715,6 +924,7 @@ struct ContentView: View {
         if let path = await fileSystem.openFolder() {
             appState.workspacePath = path
             refreshFileTree()
+            backlinkService.rebuild(workspace: path)
         }
     }
 
@@ -724,6 +934,7 @@ struct ContentView: View {
         let appState = self.appState
         let fileSystem = self.fileSystem
         let docs = self.blockDocuments
+        let backlinkService = self.backlinkService
 
         saveTask?.cancel()
         saveTask = Task { @MainActor in
@@ -754,6 +965,11 @@ struct ContentView: View {
                         }
                     }
                 }
+            }
+            // Update backlink index for saved file
+            if let workspace = appState.workspacePath {
+                let savedPath = appState.openTabs[index].path
+                backlinkService.updateFile(at: savedPath, in: workspace)
             }
             appState.openTabs[index].isDirty = false
         }
@@ -922,6 +1138,19 @@ struct ContentView: View {
             }
         }
         update(entries: &appState.fileTree)
+    }
+
+    private func currentPageBacklinks(for tab: OpenFile) -> [Backlink] {
+        let filename = (tab.path as NSString).lastPathComponent
+        guard filename.hasSuffix(".md") else { return [] }
+        let pageName = String(filename.dropLast(3))
+        return backlinkService.backlinksFor(pageName: pageName)
+    }
+
+    private func navigateToFilePath(_ path: String) {
+        let name = (path as NSString).lastPathComponent
+        let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, isDatabase: false)
+        navigateToEntry(entry, preferExistingTab: true)
     }
 
     private func breadcrumbs(for tab: OpenFile) -> [BreadcrumbItem] {

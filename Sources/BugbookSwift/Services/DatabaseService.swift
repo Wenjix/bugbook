@@ -15,10 +15,10 @@ class DatabaseService: ObservableObject {
 
     // MARK: - Load Database
 
-    func loadDatabase(at path: String) async throws -> (DatabaseSchema, [DatabaseRow]) {
+    func loadDatabase(at path: String) throws -> (DatabaseSchema, [DatabaseRow]) {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
-        let schemaData = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
-        let schema = try JSONDecoder().decode(DatabaseSchema.self, from: schemaData)
+        let data = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
+        let schema = try JSONDecoder().decode(DatabaseSchema.self, from: data)
         let rows = try loadRows(in: path, schema: schema)
         return (schema, rows)
     }

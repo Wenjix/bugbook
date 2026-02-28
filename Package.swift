@@ -28,6 +28,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+        .package(url: "https://github.com/getsentry/sentry-cocoa", from: "8.40.0"),
     ],
     targets: [
         // Shared library — models, storage, engines
@@ -47,7 +49,11 @@ let package = Package(
         // SwiftUI app
         .executableTarget(
             name: "BugbookSwift",
-            dependencies: ["BugbookCore"],
+            dependencies: [
+                "BugbookCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "Sentry", package: "sentry-cocoa"),
+            ],
             path: "Sources/BugbookSwift"
         ),
         // iPhone-friendly SwiftUI app

@@ -25,7 +25,7 @@ struct NotesChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.fallbackEditorBg)
-        .onAppear {
+        .task {
             selectedEngine = appState.settings.preferredAIEngine
             inputFocused = true
         }

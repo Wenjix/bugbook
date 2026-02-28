@@ -121,7 +121,7 @@ struct AgentsSettingsView: View {
                 }
             }
         }
-        .onAppear {
+        .task {
             scanAgents()
             agentsMdText = appState.settings.agentsMdContent
             refreshWorkspaceInfo()

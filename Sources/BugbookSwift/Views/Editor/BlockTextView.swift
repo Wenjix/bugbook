@@ -47,7 +47,9 @@ struct BlockTextView: NSViewRepresentable {
                 font: font,
                 textColor: textColor
             )
+            context.coordinator.suppressChanges = true
             textView.textStorage?.setAttributedString(attributed)
+            context.coordinator.suppressChanges = false
         }
 
         textView.placeholderString = placeholder
@@ -73,6 +75,9 @@ struct BlockTextView: NSViewRepresentable {
         }
         textView.formatLinkAction = { [weak coordinator] in
             coordinator?.promptLink()
+        }
+        textView.formatStrikethroughAction = { [weak coordinator] in
+            coordinator?.toggleStrikethrough()
         }
         textView.undoAction = { [weak coordinator] in
             coordinator?.parent.document.undo()
@@ -105,13 +110,15 @@ struct BlockTextView: NSViewRepresentable {
     func updateNSView(_ textView: BlockNSTextView, context: Context) {
         context.coordinator.parent = self
 
-        // Update font and color
-        textView.font = font
-        textView.textColor = textColor
-
-        // Update placeholder
+        // Update placeholder (safe — doesn't modify text storage)
         textView.placeholderString = placeholder
         textView.placeholderFont = font
+
+        // Update typing attributes for new text (doesn't touch existing text storage)
+        textView.typingAttributes = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
 
         // Update text if changed externally (not from user editing)
         if let block = document.block(for: blockId),
@@ -124,17 +131,21 @@ struct BlockTextView: NSViewRepresentable {
                     font: font,
                     textColor: textColor
                 )
-                context.coordinator.suppressChanges = true
-                textView.textStorage?.setAttributedString(attributed)
-                let textLength = (textView.string as NSString).length
+                let textLength = (attributed.string as NSString).length
                 let clampedLocation = min(selected.location, textLength)
                 let clampedLength = min(selected.length, max(0, textLength - clampedLocation))
-                textView.setSelectedRange(NSRange(location: clampedLocation, length: clampedLength))
-                textView.typingAttributes = [
-                    .font: font,
-                    .foregroundColor: textColor
-                ]
-                context.coordinator.suppressChanges = false
+                let newSelection = NSRange(location: clampedLocation, length: clampedLength)
+
+                context.coordinator.withProgrammaticViewUpdate {
+                    textView.textStorage?.setAttributedString(attributed)
+                    if textView.selectedRange() != newSelection {
+                        textView.setSelectedRange(newSelection)
+                    }
+                    textView.typingAttributes = [
+                        .font: font,
+                        .foregroundColor: textColor
+                    ]
+                }
             }
             DispatchQueue.main.async {
                 self.recalculateHeight(textView)
@@ -150,9 +161,14 @@ struct BlockTextView: NSViewRepresentable {
             func attemptFocus(retries: Int = 3) {
                 guard retries > 0 else { return }
                 if textView.window != nil {
-                    textView.window?.makeFirstResponder(textView)
                     let pos = min(cursorPos, textView.string.count)
-                    textView.setSelectedRange(NSRange(location: pos, length: 0))
+                    let targetSelection = NSRange(location: pos, length: 0)
+                    context.coordinator.withProgrammaticViewUpdate {
+                        textView.window?.makeFirstResponder(textView)
+                        if textView.selectedRange() != targetSelection {
+                            textView.setSelectedRange(targetSelection)
+                        }
+                    }
                 } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                         attemptFocus(retries: retries - 1)
@@ -193,12 +209,30 @@ struct BlockTextView: NSViewRepresentable {
         var suppressChanges = false
         var lastFocusedSelf: Bool?
         var lastReplacementString: String?
+        private var programmaticViewUpdateDepth: Int = 0
 
         init(_ parent: BlockTextView) {
             self.parent = parent
         }
 
         private var dragMonitor: Any?
+
+        var isProgrammaticViewUpdateInFlight: Bool {
+            programmaticViewUpdateDepth > 0
+        }
+
+        func withProgrammaticViewUpdate(_ updates: () -> Void) {
+            programmaticViewUpdateDepth += 1
+            suppressChanges = true
+            updates()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.programmaticViewUpdateDepth = max(0, self.programmaticViewUpdateDepth - 1)
+                if self.programmaticViewUpdateDepth == 0 {
+                    self.suppressChanges = false
+                }
+            }
+        }
 
         func handleBecomeFirstResponder() {
             if parent.document.focusedBlockId != parent.blockId {
@@ -300,6 +334,15 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func toggleStrikethrough() {
+            guard let textView = textView else { return }
+            AttributedStringConverter.toggleStrikethrough(in: textView)
+            textView.textStorage?.removeAttribute(
+                AttributedStringConverter.markdownSourceKey,
+                range: NSRange(location: 0, length: textView.string.count)
+            )
+            parent.document.updateBlockText(id: parent.blockId, text: markdownFromTextView(textView))
+            parent.recalculateHeight(textView)
+            parent.onTextChange?()
         }
 
         func promptLink() {
@@ -318,9 +361,14 @@ struct BlockTextView: NSViewRepresentable {
             if alert.runModal() == .alertFirstButtonReturn {
                 let url = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !url.isEmpty {
-                    let range = textView.selectedRange()
-                    let linkText = (textView.string as NSString).substring(with: range)
-                    textView.insertText("[\(linkText)](\(url))", replacementRange: range)
+                    AttributedStringConverter.applyLink(in: textView, url: url)
+                    textView.textStorage?.removeAttribute(
+                        AttributedStringConverter.markdownSourceKey,
+                        range: NSRange(location: 0, length: textView.string.count)
+                    )
+                    parent.document.updateBlockText(id: parent.blockId, text: markdownFromTextView(textView))
+                    parent.recalculateHeight(textView)
+                    parent.onTextChange?()
                 }
             }
         }
@@ -335,7 +383,7 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
-            guard !suppressChanges else { return }
+            guard !suppressChanges, !isProgrammaticViewUpdateInFlight else { return }
             guard let textView = notification.object as? NSTextView else { return }
             isEditing = true
             defer { isEditing = false }
@@ -372,6 +420,36 @@ struct BlockTextView: NSViewRepresentable {
 
             parent.recalculateHeight(textView)
             parent.onTextChange?()
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard !isProgrammaticViewUpdateInFlight else { return }
+            guard let textView = notification.object as? NSTextView else { return }
+            let range = textView.selectedRange()
+            if range.length > 0 {
+                // firstRect returns screen coordinates (bottom-left origin),
+                // which matches NSPanel.setFrame coordinate space.
+                let screenRect = textView.firstRect(forCharacterRange: range, actualRange: nil)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard !self.isProgrammaticViewUpdateInFlight else { return }
+                    if self.parent.document.selectionRect != screenRect ||
+                        self.parent.document.selectionBlockId != self.parent.blockId {
+                        self.parent.document.selectionRect = screenRect
+                        self.parent.document.selectionBlockId = self.parent.blockId
+                    }
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard !self.isProgrammaticViewUpdateInFlight else { return }
+                    if self.parent.document.selectionRect != nil ||
+                        self.parent.document.selectionBlockId != nil {
+                        self.parent.document.selectionRect = nil
+                        self.parent.document.selectionBlockId = nil
+                    }
+                }
+            }
         }
 
         // MARK: - Markdown shortcut auto-detection
@@ -462,20 +540,20 @@ struct BlockTextView: NSViewRepresentable {
                 if type == .taskItem { block.isChecked = checked }
             }
 
-            suppressChanges = true
-            textView.textStorage?.setAttributedString(
-                AttributedStringConverter.attributedString(
-                    from: newText,
-                    font: parent.font,
-                    textColor: parent.textColor
+            withProgrammaticViewUpdate {
+                textView.textStorage?.setAttributedString(
+                    AttributedStringConverter.attributedString(
+                        from: newText,
+                        font: parent.font,
+                        textColor: parent.textColor
+                    )
                 )
-            )
-            textView.setSelectedRange(NSRange(location: (newText as NSString).length, length: 0))
-            textView.typingAttributes = [
-                .font: parent.font,
-                .foregroundColor: parent.textColor
-            ]
-            suppressChanges = false
+                textView.setSelectedRange(NSRange(location: (newText as NSString).length, length: 0))
+                textView.typingAttributes = [
+                    .font: parent.font,
+                    .foregroundColor: parent.textColor
+                ]
+            }
         }
 
         func markdownFromTextView(_ textView: NSTextView) -> String {
@@ -512,21 +590,22 @@ struct BlockTextView: NSViewRepresentable {
             let mappedLocation = min(displayStart, normalizedLength)
             let mappedLength = min(max(0, displayEnd - displayStart), max(0, normalizedLength - mappedLocation))
 
-            suppressChanges = true
-            storage.setAttributedString(normalized)
-            textView.setSelectedRange(NSRange(location: mappedLocation, length: mappedLength))
-            textView.typingAttributes = [
-                .font: parent.font,
-                .foregroundColor: parent.textColor
-            ]
-            suppressChanges = false
+            withProgrammaticViewUpdate {
+                storage.setAttributedString(normalized)
+                textView.setSelectedRange(NSRange(location: mappedLocation, length: mappedLength))
+                textView.typingAttributes = [
+                    .font: parent.font,
+                    .foregroundColor: parent.textColor
+                ]
+            }
         }
 
         private func shouldNormalizeInlineMarkdown() -> Bool {
             let replacement = lastReplacementString ?? ""
             defer { lastReplacementString = nil }
 
-            if replacement.contains("*") || replacement.contains("`") {
+            if replacement.contains("*") || replacement.contains("`")
+                || replacement.contains("~") || replacement.contains("[") {
                 return true
             }
             // Handle paste operations where replacement string may be nil.
@@ -539,6 +618,7 @@ struct BlockTextView: NSViewRepresentable {
                 if scanLength > 0 {
                     let neighborhood = nsString.substring(with: NSRange(location: scanStart, length: scanLength))
                     return neighborhood.contains("*") || neighborhood.contains("`")
+                        || neighborhood.contains("~") || neighborhood.contains("[")
                 }
             }
             return false
@@ -752,6 +832,7 @@ class BlockNSTextView: NSTextView {
     var formatItalicAction: (() -> Void)?
     var formatCodeAction: (() -> Void)?
     var formatLinkAction: (() -> Void)?
+    var formatStrikethroughAction: (() -> Void)?
     var undoAction: (() -> Void)?
     var redoAction: (() -> Void)?
     var selectAllBlocksAction: (() -> Void)?
@@ -870,15 +951,26 @@ class BlockNSTextView: NSTextView {
             case "e":
                 formatCodeAction?()
                 return
+            case "k":
+                if selectedRange().length > 0 {
+                    formatLinkAction?()
+                    return
+                }
             default:
                 break
             }
         }
 
         if flags.contains([.command, .shift]) && !flags.contains(.option) && !flags.contains(.control) {
-            if let chars = event.charactersIgnoringModifiers?.lowercased(), chars == "z" {
-                redoAction?()
-                return
+            if let chars = event.charactersIgnoringModifiers?.lowercased() {
+                if chars == "x" {
+                    formatStrikethroughAction?()
+                    return
+                }
+                if chars == "z" {
+                    redoAction?()
+                    return
+                }
             }
         }
 

@@ -61,6 +61,7 @@ class FileSystemService: ObservableObject {
         for name in contents {
             if name.hasPrefix(".") { continue }
             if name == "_schema.json" || name == "_index.json" { continue }
+            if name == "Daily Notes" || name == "Templates" { continue }
 
             let fullPath = (path as NSString).appendingPathComponent(name)
             var isDir: ObjCBool = false
@@ -83,6 +84,25 @@ class FileSystemService: ObservableObject {
                         path: fullPath,
                         isDirectory: false,
                         isDatabase: true,
+                        icon: nil,
+                        children: nil
+                    ))
+                } else if isCanvasFolder(at: fullPath) {
+                    // Canvas folder - read display name from _canvas.json
+                    var canvasName = name
+                    let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let n = json["name"] as? String {
+                        canvasName = n
+                    }
+                    folders.append(FileEntry(
+                        id: fullPath,
+                        name: canvasName,
+                        path: fullPath,
+                        isDirectory: false,
+                        isDatabase: false,
+                        isCanvas: true,
                         icon: nil,
                         children: nil
                     ))
@@ -165,6 +185,25 @@ class FileSystemService: ObservableObject {
     }
 
     func duplicateFile(at path: String) throws -> String {
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDir) else {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError)
+        }
+
+        if isDir.boolValue {
+            let dir = (path as NSString).deletingLastPathComponent
+            let originalName = (path as NSString).lastPathComponent
+            let newPath = uniqueDirectoryPath(in: dir, base: "\(originalName) copy")
+            try fileManager.copyItem(atPath: path, toPath: newPath)
+            let displayName = (newPath as NSString).lastPathComponent
+            if isDatabaseFolder(at: newPath) {
+                try? updateDatabaseDisplayName(at: newPath, name: displayName)
+            } else if isCanvasFolder(at: newPath) {
+                try? updateCanvasDisplayName(at: newPath, name: displayName)
+            }
+            return newPath
+        }
+
         let content = try String(contentsOfFile: path, encoding: .utf8)
         let dir = (path as NSString).deletingLastPathComponent
         let originalName = (path as NSString).lastPathComponent
@@ -236,6 +275,71 @@ class FileSystemService: ObservableObject {
         return folderPath
     }
 
+    // MARK: - Daily Notes
+
+    func dailyNotePath(in workspace: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let filename = formatter.string(from: Date()) + ".md"
+        let folder = (workspace as NSString).appendingPathComponent("Daily Notes")
+        return (folder as NSString).appendingPathComponent(filename)
+    }
+
+    func openOrCreateDailyNote(in workspace: String) throws -> String {
+        let path = dailyNotePath(in: workspace)
+        let folder = (path as NSString).deletingLastPathComponent
+
+        if !fileManager.fileExists(atPath: folder) {
+            try fileManager.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        }
+
+        if !fileManager.fileExists(atPath: path) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE, MMMM d"
+            let title = formatter.string(from: Date())
+            try "# \(title)\n\n".write(toFile: path, atomically: true, encoding: .utf8)
+        }
+
+        return path
+    }
+
+    // MARK: - Templates
+
+    func listTemplates(in workspace: String) -> [FileEntry] {
+        let folder = (workspace as NSString).appendingPathComponent("Templates")
+        guard fileManager.fileExists(atPath: folder) else { return [] }
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: folder) else { return [] }
+        return contents
+            .filter { $0.hasSuffix(".md") && !$0.hasPrefix(".") }
+            .sorted()
+            .map { name in
+                let path = (folder as NSString).appendingPathComponent(name)
+                return FileEntry(id: path, name: name, path: path, isDirectory: false, isDatabase: false)
+            }
+    }
+
+    func createFromTemplate(templatePath: String, in directory: String, name: String) throws -> String {
+        var content = try String(contentsOfFile: templatePath, encoding: .utf8)
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: Date())
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        let timeStr = timeFormatter.string(from: Date())
+
+        content = content
+            .replacingOccurrences(of: "{{title}}", with: name)
+            .replacingOccurrences(of: "{{date}}", with: dateStr)
+            .replacingOccurrences(of: "{{time}}", with: timeStr)
+
+        let filename = uniqueFilename(in: directory, base: name, ext: "md")
+        let filePath = (directory as NSString).appendingPathComponent(filename)
+        try content.write(toFile: filePath, atomically: true, encoding: .utf8)
+        return filePath
+    }
+
     // MARK: - Breadcrumbs
 
     func getBreadcrumbs(for filePath: String, relativeTo workspace: String) -> [BreadcrumbItem] {
@@ -305,12 +409,9 @@ class FileSystemService: ObservableObject {
         guard let range = content.range(of: "<!-- icon:(.*?) -->", options: .regularExpression) else {
             return nil
         }
-        let match = content[range]
-        // Extract between "<!-- icon:" and " -->"
-        let start = match.index(match.startIndex, offsetBy: 10)
-        let end = match.index(match.endIndex, offsetBy: -4)
-        guard start < end else { return nil }
-        return String(match[start..<end])
+        let match = String(content[range])
+        let inner = match.dropFirst(10).dropLast(4).trimmingCharacters(in: .whitespaces)
+        return inner.isEmpty ? nil : inner
     }
 
     // MARK: - Custom File Order (Drag & Drop)
@@ -390,6 +491,60 @@ class FileSystemService: ObservableObject {
     private func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return fileManager.fileExists(atPath: schemaPath)
+    }
+
+    func isCanvasFolder(at path: String) -> Bool {
+        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
+        return fileManager.fileExists(atPath: canvasPath)
+    }
+
+    func updateDatabaseDisplayName(at path: String, name: String) throws {
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+        let data = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
+        var schema = try JSONDecoder().decode(DatabaseSchema.self, from: data)
+        schema.name = name
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let updated = try encoder.encode(schema)
+        try updated.write(to: URL(fileURLWithPath: schemaPath), options: .atomic)
+    }
+
+    func updateCanvasDisplayName(at path: String, name: String) throws {
+        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
+        let data = try Data(contentsOf: URL(fileURLWithPath: canvasPath))
+        var meta = try JSONDecoder().decode(CanvasFileMeta.self, from: data)
+        meta.name = name
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let updated = try encoder.encode(meta)
+        try updated.write(to: URL(fileURLWithPath: canvasPath), options: .atomic)
+    }
+
+    func createCanvas(in directory: String, name: String) throws -> String {
+        let sanitized = name.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
+        let folderName = sanitized.isEmpty ? "Untitled Canvas" : sanitized
+        let folderPath = uniqueDirectoryPath(in: directory, base: folderName)
+        try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
+
+        let canvasId = "canvas_\(UUID().uuidString.prefix(8).lowercased())"
+        let meta = CanvasFileMeta(
+            id: canvasId,
+            name: folderName,
+            version: 1,
+            viewport: CanvasViewport(x: 0, y: 0, zoom: 1.0),
+            nodes: [],
+            edges: []
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(meta)
+        let metaPath = (folderPath as NSString).appendingPathComponent("_canvas.json")
+        try data.write(to: URL(fileURLWithPath: metaPath), options: .atomic)
+
+        return folderPath
     }
 
     private func parseIconFromFile(at path: String) -> String? {

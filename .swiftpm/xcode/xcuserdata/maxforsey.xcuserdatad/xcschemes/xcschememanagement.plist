@@ -37,6 +37,11 @@
 			<key>primary</key>
 			<true/>
 		</dict>
+		<key>BugbookCore</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
 		<key>BugbookMobile</key>
 		<dict>
 			<key>primary</key>

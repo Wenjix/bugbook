@@ -47,6 +47,7 @@ struct BlockEditorView: View {
         }
         .padding(.horizontal, 48)
         .padding(.vertical, 20)
+        .trackRenders("BlockEditorView")
         .onChange(of: document.blocks) { _, _ in
             onTextChange?()
         }

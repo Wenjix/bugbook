@@ -15,6 +15,7 @@ struct DatabaseInlineEmbedView: View {
     @State private var selectedRowIndex: Int? = nil
     @State private var error: String?
     @State private var showFilterSort: Bool = false
+    @State private var hasStartedLoading = false
 
     private var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
@@ -93,12 +94,14 @@ struct DatabaseInlineEmbedView: View {
                 .stroke(Color.fallbackBorderColor, lineWidth: 1)
         )
         .task {
-            await loadData()
+            guard !hasStartedLoading else { return }
+            hasStartedLoading = true
+            loadData()
         }
         .onReceive(NotificationCenter.default.publisher(for: .databaseDidChange)) { notification in
             guard let changedPath = notification.userInfo?["dbPath"] as? String,
                   changedPath == dbPath else { return }
-            Task { await loadData() }
+            Task { @MainActor in loadData() }
         }
     }
 
@@ -379,9 +382,9 @@ struct DatabaseInlineEmbedView: View {
 
     // MARK: - Data Operations
 
-    private func loadData() async {
+    private func loadData() {
         do {
-            let (loadedSchema, loadedRows) = try await dbService.loadDatabase(at: dbPath)
+            let (loadedSchema, loadedRows) = try dbService.loadDatabase(at: dbPath)
             schema = loadedSchema
             rows = loadedRows
             activeViewId = loadedSchema.defaultView

@@ -1,16 +1,26 @@
 import SwiftUI
+import Sentry
 
 @main
 struct BugbookSwiftApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var updaterService = UpdaterService()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .tint(Color(red: 0.831, green: 0.263, blue: 0.196))
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") {
+                    updaterService.checkForUpdates()
+                }
+                .disabled(!updaterService.canCheckForUpdates)
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Note") {
                     NotificationCenter.default.post(name: .newNote, object: nil)
@@ -74,6 +84,16 @@ struct BugbookSwiftApp: App {
                     NotificationCenter.default.post(name: .openAgentHub, object: nil)
                 }
                 .keyboardShortcut("j", modifiers: [.command, .shift])
+
+                Button("Today's Note") {
+                    NotificationCenter.default.post(name: .openDailyNote, object: nil)
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Button("Graph View") {
+                    NotificationCenter.default.post(name: .openGraphView, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
 
                 Button("Toggle Theme") {
                     NotificationCenter.default.post(name: .toggleTheme, object: nil)
@@ -149,6 +169,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
+
+        SentrySDK.start { options in
+            options.dsn = "https://a534c38e8813ac89c36946aa4b426e3f@o4510963078856704.ingest.us.sentry.io/4510963091177472"
+#if DEBUG
+            options.debug = true
+#else
+            options.debug = false
+#endif
+            // Avoid collecting personal data by default.
+            options.sendDefaultPii = false
+            options.enableMetricKit = true
+        }
 
         // Observe new windows to configure their title bars
         NotificationCenter.default.addObserver(
@@ -243,4 +275,7 @@ extension Notification.Name {
     static let blockTypeShortcut = Notification.Name("blockTypeShortcut")
     static let navigateBack = Notification.Name("navigateBack")
     static let navigateForward = Notification.Name("navigateForward")
+    static let openDailyNote = Notification.Name("openDailyNote")
+    static let openGraphView = Notification.Name("openGraphView")
+    static let newCanvas = Notification.Name("newCanvas")
 }

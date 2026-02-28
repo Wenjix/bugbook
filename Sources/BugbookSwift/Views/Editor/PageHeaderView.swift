@@ -4,19 +4,22 @@ import AppKit
 struct PageHeaderView: View {
     @Binding var icon: String?
     @Binding var coverUrl: String?
+    @Binding var coverPosition: Double
     var fullWidth: Bool
 
     @State private var showIconPicker = false
     @State private var showCoverPicker = false
-    @State private var coverYPosition: Double = 50
     @State private var isDraggingCover = false
-    @State private var dragStartY: CGFloat = 0
+    @State private var dragStartCoverPosition: Double = 50
     @State private var isHovering = false
+    @State private var isRepositioning = false
+    @State private var isCoverHovering = false
 
     private var horizontalPadding: CGFloat { fullWidth ? 40 : 80 }
     private var hasIcon: Bool { !(icon ?? "").isEmpty }
     private var needsIcon: Bool { icon == nil || icon?.isEmpty == true }
     private var needsCover: Bool { coverUrl == nil }
+    private var coverControlsVisible: Bool { isCoverHovering || isRepositioning || showCoverPicker }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -61,6 +64,12 @@ struct PageHeaderView: View {
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
+        }
+        .onChange(of: coverUrl) { _, newValue in
+            if newValue == nil {
+                isRepositioning = false
+                coverPosition = 50
+            }
         }
     }
 
@@ -118,7 +127,7 @@ struct PageHeaderView: View {
     }
 
     private var coverPickerPopover: some View {
-        CoverPickerView(coverUrl: $coverUrl, coverYPosition: $coverYPosition)
+        CoverPickerView(coverUrl: $coverUrl, coverYPosition: $coverPosition)
     }
 
     @ViewBuilder
@@ -149,7 +158,7 @@ struct PageHeaderView: View {
     @ViewBuilder
     private func coverImageView(path: String) -> some View {
         let coverHeight: CGFloat = 200
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .topTrailing) {
             Group {
                 if let nsImage = NSImage(contentsOfFile: path) {
                     Image(nsImage: nsImage)
@@ -173,23 +182,36 @@ struct PageHeaderView: View {
                     }
                 }
             }
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        if !isDraggingCover {
-                            isDraggingCover = true
-                            dragStartY = value.startLocation.y
-                        }
-                        let delta = value.location.y - dragStartY
-                        let sensitivity = 0.5
-                        let newPosition = coverYPosition - delta * sensitivity
-                        coverYPosition = min(100, max(0, newPosition))
-                        dragStartY = value.location.y
+
+            if isRepositioning {
+                Rectangle()
+                    .fill(Color.black.opacity(0.18))
+                    .overlay(alignment: .center) {
+                        Text("Drag to reposition")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.black.opacity(0.55))
+                            .clipShape(Capsule())
                     }
-                    .onEnded { _ in
-                        isDraggingCover = false
-                    }
-            )
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                if !isDraggingCover {
+                                    isDraggingCover = true
+                                    dragStartCoverPosition = coverPosition
+                                }
+                                let sensitivity = 0.85
+                                let newPosition = dragStartCoverPosition + Double(value.translation.height) * sensitivity
+                                coverPosition = min(100, max(0, newPosition))
+                            }
+                            .onEnded { _ in
+                                isDraggingCover = false
+                            }
+                    )
+            }
 
             HStack(spacing: 4) {
                 Button(action: { showCoverPicker = true }) {
@@ -201,13 +223,34 @@ struct PageHeaderView: View {
                     coverPickerPopover
                 }
 
-                Button(action: { coverUrl = nil; coverYPosition = 50 }) {
+                Button(action: {
+                    isDraggingCover = false
+                    isRepositioning.toggle()
+                }) {
+                    Label(isRepositioning ? "Done" : "Reposition", systemImage: isRepositioning ? "checkmark" : "arrow.up.and.down.and.arrow.left.and.right")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(CoverActionButtonStyle())
+
+                Button(action: {
+                    coverUrl = nil
+                    coverPosition = 50
+                    isRepositioning = false
+                }) {
                     Label("Remove", systemImage: "xmark")
                         .font(.system(size: 12))
                 }
                 .buttonStyle(CoverActionButtonStyle())
             }
             .padding(8)
+            .opacity(coverControlsVisible ? 1 : 0)
+            .allowsHitTesting(coverControlsVisible)
+            .animation(.easeInOut(duration: 0.15), value: coverControlsVisible)
+        }
+        .frame(height: coverHeight)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isCoverHovering = hovering
         }
     }
 
@@ -215,7 +258,7 @@ struct PageHeaderView: View {
         guard imageSize.height > 0 else { return 0 }
         let scale = max(1.0, imageSize.height / containerHeight)
         let maxOffset = (imageSize.height - containerHeight) / scale
-        let normalizedPosition = coverYPosition / 100.0
+        let normalizedPosition = coverPosition / 100.0
         return -maxOffset * normalizedPosition
     }
 }

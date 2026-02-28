@@ -65,6 +65,7 @@ struct CommandPaletteView: View {
     var onSelectFile: (FileEntry) -> Void
     var onSelectFileNewTab: ((FileEntry) -> Void)?
     var onCreateFile: ((String) -> Void)?
+    var onSelectContentMatch: ((FileEntry, String) -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -188,9 +189,9 @@ struct CommandPaletteView: View {
         let files = filteredEntries.prefix(maxFiles)
         items.append(contentsOf: files.map { .file($0) })
 
-        // Content results (only in search mode with query >= 2)
-        if appState.commandPaletteMode == .search && query.count >= 2 {
-            items.append(contentsOf: contentResults.prefix(10).map { .contentMatch($0) })
+        // Content results (search and newTab modes with query >= 2)
+        if (appState.commandPaletteMode == .search || appState.commandPaletteMode == .newTab) && query.count >= 2 {
+            items.append(contentsOf: contentResults.prefix(20).map { .contentMatch($0) })
         }
 
         // "Ask AI" option at bottom when query is non-empty and workspace is open
@@ -359,6 +360,9 @@ struct CommandPaletteView: View {
             PaletteCommand(id: "new_database", name: "New Database", icon: "tablecells.badge.ellipsis", shortcut: nil) {
                 NotificationCenter.default.post(name: .newDatabase, object: nil)
             },
+            PaletteCommand(id: "new_canvas", name: "New Canvas", icon: "rectangle.on.rectangle.angled", shortcut: nil) {
+                NotificationCenter.default.post(name: .newCanvas, object: nil)
+            },
             PaletteCommand(id: "open_settings", name: "Open Settings", icon: "gear", shortcut: "Cmd+,") {
                 NotificationCenter.default.post(name: .openSettings, object: nil)
             },
@@ -380,7 +384,7 @@ struct CommandPaletteView: View {
     private func flattenFileTree(_ entries: [FileEntry]) -> [FileEntry] {
         var result: [FileEntry] = []
         for entry in entries {
-            if !entry.isDirectory || entry.isDatabase {
+            if (!entry.isDirectory || entry.isDatabase || entry.isCanvas) {
                 result.append(entry)
             }
             if let children = entry.children {
@@ -411,39 +415,57 @@ struct CommandPaletteView: View {
     }
 
     private func searchFileContents(query: String) async -> [ContentMatch] {
-        guard appState.workspacePath != nil else { return [] }
-        let allFiles = flattenFileTree(appState.fileTree)
-            .filter { !$0.isDatabase && $0.path.hasSuffix(".md") }
-            .prefix(50)
-
-        var matches: [ContentMatch] = []
+        guard let workspace = appState.workspacePath else { return [] }
         let lowerQuery = query.lowercased()
 
-        for file in allFiles {
-            guard !Task.isCancelled else { break }
-            guard let content = try? String(contentsOfFile: file.path, encoding: .utf8) else { continue }
+        return await Task.detached {
+            let fm = FileManager.default
+            guard let enumerator = fm.enumerator(atPath: workspace) else { return [ContentMatch]() }
 
-            let lines = content.components(separatedBy: .newlines)
-            for (lineIndex, line) in lines.enumerated() {
-                if line.lowercased().range(of: lowerQuery) != nil {
+            var matches: [ContentMatch] = []
+            let maxPerFile = 3
+            let maxTotal = 20
+
+            while let relativePath = enumerator.nextObject() as? String {
+                guard !Task.isCancelled else { break }
+                let components = relativePath.components(separatedBy: "/")
+                if components.contains(where: { $0.hasPrefix(".") }) { continue }
+                let filename = (relativePath as NSString).lastPathComponent
+                guard filename.hasSuffix(".md") else { continue }
+                // Skip database row files and canvas node files
+                let parentDir = (relativePath as NSString).deletingLastPathComponent
+                if !parentDir.isEmpty {
+                    let parentFullPath = (workspace as NSString).appendingPathComponent(parentDir)
+                    let schemaPath = (parentFullPath as NSString).appendingPathComponent("_schema.json")
+                    let canvasPath = (parentFullPath as NSString).appendingPathComponent("_canvas.json")
+                    if fm.fileExists(atPath: schemaPath) || fm.fileExists(atPath: canvasPath) { continue }
+                }
+
+                let fullPath = (workspace as NSString).appendingPathComponent(relativePath)
+                guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
+
+                let lines = content.components(separatedBy: .newlines)
+                var fileMatchCount = 0
+                for (lineIndex, line) in lines.enumerated() {
                     let trimmedLine = line.trimmingCharacters(in: .whitespaces)
                     guard trimmedLine.count > 2 else { continue }
                     if trimmedLine.lowercased().range(of: lowerQuery) != nil {
                         matches.append(ContentMatch(
-                            filePath: file.path,
-                            fileName: file.name,
+                            filePath: fullPath,
+                            fileName: filename,
                             lineNumber: lineIndex + 1,
                             lineText: String(trimmedLine.prefix(120))
                         ))
+                        fileMatchCount += 1
+                        if fileMatchCount >= maxPerFile { break }
                     }
-                    break // Only first match per file
                 }
+
+                if matches.count >= maxTotal { break }
             }
 
-            if matches.count >= 10 { break }
-        }
-
-        return matches
+            return matches
+        }.value
     }
 
     // MARK: - Selection
@@ -472,7 +494,10 @@ struct CommandPaletteView: View {
                 isDirectory: false,
                 isDatabase: false
             )
-            if appState.commandPaletteMode == .newTab {
+            let query = effectiveQuery(from: searchText)
+            if let handler = onSelectContentMatch {
+                handler(entry, query)
+            } else if appState.commandPaletteMode == .newTab {
                 onSelectFileNewTab?(entry)
             } else {
                 onSelectFile(entry)
@@ -528,8 +553,14 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private func defaultFileIcon(for entry: FileEntry) -> some View {
-        Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
-            .font(.system(size: 13))
-            .foregroundColor(.secondary)
+        if entry.isCanvas {
+            Image(systemName: "rectangle.on.rectangle.angled")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+        } else {
+            Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+        }
     }
 }

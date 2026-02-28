@@ -7,6 +7,7 @@ struct OpenFile: Identifiable, Equatable {
     var isDirty: Bool
     var isEmptyTab: Bool
     var isDatabase: Bool
+    var isCanvas: Bool = false
     var displayName: String?
     var openerPagePath: String?
     var icon: String?

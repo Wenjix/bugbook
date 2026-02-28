@@ -6,6 +6,7 @@ struct FileEntry: Identifiable, Hashable {
     var path: String
     var isDirectory: Bool
     var isDatabase: Bool
+    var isCanvas: Bool = false
     var icon: String?
     var children: [FileEntry]?
 }

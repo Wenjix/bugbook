@@ -8,9 +8,11 @@ struct WelcomeView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            Image(systemName: "book.closed")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
+            Image("BugbookLogo")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 120, height: 120)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
 
             Text("Bugbook")
                 .font(.system(size: 28, weight: .bold))

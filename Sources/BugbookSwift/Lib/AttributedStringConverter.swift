@@ -96,7 +96,7 @@ enum AttributedStringConverter {
             if let (text, url, end) = parseLink(markdown, from: i) {
                 var attrs = baseAttributes
                 attrs[.link] = url
-                attrs[.foregroundColor] = NSColor.linkColor
+                attrs[.foregroundColor] = NSColor(red: 0.831, green: 0.263, blue: 0.196, alpha: 1.0)
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 attrs[Self.markdownSourceKey] = "[\(text)](\(url))"
                 result.append(NSAttributedString(string: text, attributes: attrs))
@@ -314,7 +314,7 @@ enum AttributedStringConverter {
         guard let textStorage = textView.textStorage else { return }
 
         textStorage.addAttribute(.link, value: url, range: range)
-        textStorage.addAttribute(.foregroundColor, value: NSColor.linkColor, range: range)
+        textStorage.addAttribute(.foregroundColor, value: NSColor(red: 0.831, green: 0.263, blue: 0.196, alpha: 1.0), range: range)
         textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
         textStorage.removeAttribute(Self.markdownSourceKey, range: range)
     }

@@ -51,54 +51,6 @@ struct BlockMenuView: View {
         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 
-    @ViewBuilder
-    private var colorItems: some View {
-        Section("Text color") {
-            ForEach(BlockColor.allCases, id: \.rawValue) { color in
-                Button {
-                    document.setTextColor(id: blockId, color: color)
-                    document.dismissBlockMenu()
-                } label: {
-                    HStack {
-                        Text("A")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(color.textColor)
-                            .frame(width: 20)
-                        Text(color.displayName)
-                        if document.block(for: blockId)?.textColor == color {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        }
-
-        Section("Background") {
-            ForEach(BlockColor.allCases, id: \.rawValue) { color in
-                Button {
-                    document.setBackgroundColor(id: blockId, color: color)
-                    document.dismissBlockMenu()
-                } label: {
-                    HStack {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(color == .default ? .clear : color.backgroundColor)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(Color.fallbackBorderColor, lineWidth: color == .default ? 1 : 0)
-                            )
-                            .frame(width: 20, height: 20)
-                        Text(color.displayName)
-                        if document.block(for: blockId)?.backgroundColor == color {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private func menuRow(icon: String, label: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)

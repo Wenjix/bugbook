@@ -106,7 +106,7 @@ struct RowPageView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .onAppear {
+        .task {
             editingTitle = rowTitle
         }
         .onChange(of: row.id) {

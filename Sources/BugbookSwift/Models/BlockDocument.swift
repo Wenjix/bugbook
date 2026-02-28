@@ -16,7 +16,10 @@ class BlockDocument: ObservableObject {
     @Published var fullWidth: Bool = false
     @Published var showPagePicker: Bool = false
     @Published var pagePickerBlockId: UUID?
+    @Published var showTemplatePicker: Bool = false
     @Published var selectedBlockIds: Set<UUID> = []
+    @Published var selectionRect: CGRect?
+    @Published var selectionBlockId: UUID?
     var blockSelectionAnchor: UUID?
 
     var titleBlock: Block? {
@@ -160,7 +163,7 @@ class BlockDocument: ObservableObject {
               let targetLoc = blockLocation(for: targetId) else { return }
 
         // Don't allow dropping column blocks or nested columns
-        let droppedBlock = block(for: droppedId)!
+        guard let droppedBlock = block(for: droppedId) else { return }
         if droppedBlock.type == .column { return }
 
         // If target is inside a column, add as a new column to that column block
@@ -241,6 +244,7 @@ class BlockDocument: ObservableObject {
 
     private func saveUndo() {
         undoStack.append(blocks)
+        if undoStack.count > 200 { undoStack.removeFirst() }
         redoStack.removeAll()
     }
 
@@ -541,6 +545,7 @@ class BlockDocument: ObservableObject {
         case blockType(BlockType, headingLevel: Int)
         case linkToPage
         case createPage
+        case template
     }
 
     struct SlashCommand {
@@ -564,6 +569,7 @@ class BlockDocument: ObservableObject {
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
+        SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -600,6 +606,11 @@ class BlockDocument: ObservableObject {
         case .linkToPage:
             pagePickerBlockId = blockId
             showPagePicker = true
+            dismissSlashMenu()
+            return
+
+        case .template:
+            showTemplatePicker = true
             dismissSlashMenu()
             return
 

@@ -94,7 +94,7 @@ public struct QueryEngine {
     private static func valuesEqual(_ a: PropertyValue?, _ b: PropertyValue?) -> Bool {
         guard let a = a else { return b == nil || b == .empty }
         guard let b = b else { return a == .empty }
-        return a.stringValue == b.stringValue
+        return a == b
     }
 
     private static func containsValue(_ rowVal: PropertyValue, _ searchVal: PropertyValue) -> Bool {

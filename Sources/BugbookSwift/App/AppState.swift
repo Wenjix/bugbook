@@ -11,6 +11,7 @@ enum ViewMode {
     case editor
     case chat
     case agentHub
+    case graphView
 }
 
 @MainActor
@@ -48,6 +49,7 @@ class AppState: ObservableObject {
             isDirty: false,
             isEmptyTab: entry.path.isEmpty,
             isDatabase: entry.isDatabase,
+            isCanvas: entry.isCanvas,
             displayName: cleanDisplayName(entry.name),
             openerPagePath: nil,
             icon: entry.icon,
@@ -143,6 +145,7 @@ class AppState: ObservableObject {
         tab.isDirty = false
         tab.isEmptyTab = entry.path.isEmpty
         tab.isDatabase = entry.isDatabase
+        tab.isCanvas = entry.isCanvas
         tab.displayName = cleanDisplayName(entry.name)
         tab.icon = entry.icon
         tab.openerPagePath = nil
@@ -212,6 +215,7 @@ class AppState: ObservableObject {
         tab.isDirty = false
         tab.isEmptyTab = false
         tab.isDatabase = entry.isDatabase
+        tab.isCanvas = entry.isCanvas
         tab.displayName = cleanDisplayName(entry.name)
         tab.icon = entry.icon
         openTabs[tabIndex] = tab
@@ -224,12 +228,15 @@ class AppState: ObservableObject {
         }
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
+        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
+        let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
         return FileEntry(
             id: path,
             name: (path as NSString).lastPathComponent,
             path: path,
-            isDirectory: isDatabase,
+            isDirectory: isDatabase || isCanvas,
             isDatabase: isDatabase,
+            isCanvas: isCanvas,
             icon: nil,
             children: nil
         )
@@ -293,6 +300,12 @@ class AppState: ObservableObject {
         showSettings = false
         aiSidePanelOpen = false
         currentView = .agentHub
+    }
+
+    func openGraphView() {
+        showSettings = false
+        aiSidePanelOpen = false
+        currentView = .graphView
     }
 
     func toggleAiPanel(prompt: String? = nil) {

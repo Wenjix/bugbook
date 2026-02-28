@@ -97,7 +97,7 @@ struct AiSidePanelView: View {
         }
         .frame(width: 320)
         .background(Color.fallbackEditorBg)
-        .onAppear {
+        .task {
             inputFocused = true
             if let prompt = appState.aiInitialPrompt, !prompt.isEmpty {
                 inputText = prompt

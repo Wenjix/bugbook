@@ -548,6 +548,27 @@ enum MarkdownBlockParser {
         return (textColor, bgColor)
     }
 
+    // MARK: - Tag Extraction
+
+    /// Extract inline #tags from text. Returns unique tag strings without the # prefix.
+    static func extractTags(from text: String) -> [String] {
+        let pattern = #"(?:^|\s)#([\w/]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .anchorsMatchLines) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, range: range)
+        var tags: [String] = []
+        var seen = Set<String>()
+        for match in matches {
+            if let tagRange = Range(match.range(at: 1), in: text) {
+                let tag = String(text[tagRange])
+                if seen.insert(tag).inserted {
+                    tags.append(tag)
+                }
+            }
+        }
+        return tags
+    }
+
     // MARK: - Helpers
 
     private static func computeNumberedPosition(at index: Int, depth: Int, in blocks: [Block]) -> Int {

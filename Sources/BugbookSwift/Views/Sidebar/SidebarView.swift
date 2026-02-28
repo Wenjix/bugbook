@@ -56,7 +56,7 @@ struct SidebarView: View {
                 chromeButton(icon: "sidebar.left", help: "Toggle Sidebar", action: onToggleSidebar)
                 chromeButton(icon: "chevron.left", help: "Back", isEnabled: canGoBack, action: onBack)
                 chromeButton(icon: "chevron.right", help: "Forward", isEnabled: canGoForward, action: onForward)
-                chromeButton(icon: "square.and.pencil", help: "New Page", action: createFile)
+                newPageMenuButton
                 if isFullScreen {
                     Spacer()
                 }
@@ -108,6 +108,48 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
 
+            // Daily note & Graph
+            VStack(spacing: 2) {
+                Button(action: { NotificationCenter.default.post(name: .openDailyNote, object: nil) }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        Text("Today")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(hoveredButton == "today" ? Color.primary.opacity(0.06) : Color.clear)
+                    .cornerRadius(6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "today" : nil }
+
+                Button(action: { NotificationCenter.default.post(name: .openGraphView, object: nil) }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        Text("Graph")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(hoveredButton == "graph" ? Color.primary.opacity(0.06) : Color.clear)
+                    .cornerRadius(6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "graph" : nil }
+            }
+            .padding(.horizontal, 8)
+
             // Pages header
             HStack {
                 Text("Pages")
@@ -131,6 +173,30 @@ struct SidebarView: View {
                 )
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .accessibilityIdentifier("sidebar-file-tree")
+            .contextMenu {
+                Button { createFile() } label: {
+                    Label("New Page", systemImage: "doc.badge.plus")
+                }
+                Button { createCanvas() } label: {
+                    Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
+                }
+                Button {
+                    guard let workspace = appState.workspacePath else { return }
+                    if let path = try? fileSystem.createDatabase(in: workspace, name: "Untitled Database") {
+                        refreshTree()
+                        let db = FileEntry(
+                            id: path, name: (path as NSString).lastPathComponent,
+                            path: path, isDirectory: false, isDatabase: true,
+                            icon: nil, children: nil
+                        )
+                        onSelectFile(db)
+                    }
+                } label: {
+                    Label("New Database", systemImage: "tablecells")
+                }
             }
 
             // Bottom bar with settings and chat
@@ -257,11 +323,6 @@ struct SidebarView: View {
 
     // MARK: - Helpers
 
-    private var workspaceName: String {
-        guard let path = appState.workspacePath else { return "Workspace" }
-        return (path as NSString).lastPathComponent
-    }
-
     private func refreshTree() {
         guard let workspace = appState.workspacePath else { return }
         appState.fileTree = fileSystem.buildFileTree(at: workspace)
@@ -269,6 +330,36 @@ struct SidebarView: View {
 
     private func createFile() {
         NotificationCenter.default.post(name: .newNote, object: nil)
+    }
+
+    private func createCanvas() {
+        NotificationCenter.default.post(name: .newCanvas, object: nil)
+    }
+
+    private var newPageMenuButton: some View {
+        Menu {
+            Button {
+                createFile()
+            } label: {
+                Label("New Page", systemImage: "doc")
+            }
+            Button {
+                createCanvas()
+            } label: {
+                Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
+            }
+        } label: {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 24, height: 24)
+        } primaryAction: {
+            createFile()
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("New Page")
     }
 
     private func openSettings() {
