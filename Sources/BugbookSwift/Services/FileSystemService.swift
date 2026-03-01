@@ -39,8 +39,7 @@ class FileSystemService: ObservableObject {
     }
 
     func defaultWorkspacePath() -> String {
-        let docs = fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Bugbook")
-        return docs.path
+        Self.appSupportBase.appendingPathComponent("Bugbook", isDirectory: true).path
     }
 
     // MARK: - File Tree Building
@@ -596,10 +595,11 @@ class FileSystemService: ObservableObject {
 
     // MARK: - App Data Directories (Icons & Covers)
 
+    private static let appSupportBase: URL =
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+
     private static var appSupportDirectory: String {
-        let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("BugbookSwift").path
+        appSupportBase.appendingPathComponent("BugbookSwift").path
     }
 
     static var iconsDirectory: String {
