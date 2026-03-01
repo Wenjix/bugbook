@@ -1,14 +1,14 @@
-# Bugbook Swift
+# Bugbook
 
 **Local-first notes for agents and humans.**
 
-Bugbook Swift is a local-first notes + database workspace where humans and coding agents collaborate in the same files.
+Bugbook is a local-first notes + database workspace where humans and coding agents collaborate in the same files.
 
 ## What This Repo Contains
 
 - `BugbookCore`: shared models + storage engine.
 - `BugbookCLI`: automation and agent-friendly CLI.
-- `BugbookSwift`: desktop macOS app for humans.
+- `Bugbook` (app target): desktop macOS app for humans.
 - `BugbookMobile` (SwiftPM executable): shared mobile code and local validation target.
 - `ios/BugbookMobile.xcodeproj`: real iOS app target for Simulator/device.
 
@@ -38,8 +38,8 @@ Shared source of truth (inside your workspace):
 ### 1. Clone
 
 ```bash
-git clone https://github.com/<your-org>/bugbook-swift.git
-cd bugbook-swift
+git clone https://github.com/max4c/bugbook.git
+cd bugbook
 ```
 
 ### 2. Build
@@ -61,29 +61,29 @@ swift run BugbookCLI agent --help
 Initialize workspace files:
 
 ```bash
-swift run BugbookCLI agent init --workspace ~/Documents/Bugbook --write-agents-md
+swift run BugbookCLI agent init --workspace "~/Library/Application Support/Bugbook" --write-agents-md
 ```
 
 Create task and track a run:
 
 ```bash
-swift run BugbookCLI agent task create --workspace ~/Documents/Bugbook --title "Fix editor bug" --status todo
-swift run BugbookCLI agent run start --workspace ~/Documents/Bugbook --task <task_id> --agent codex --branch codex/fix-editor
-swift run BugbookCLI agent event log --workspace ~/Documents/Bugbook --run-id <run_id> --level info --message "Added regression test"
-swift run BugbookCLI agent run finish <run_id> --workspace ~/Documents/Bugbook --status succeeded --summary "Shipped fix"
-swift run BugbookCLI agent task update <task_id> --workspace ~/Documents/Bugbook --status done
+swift run BugbookCLI agent task create --workspace "~/Library/Application Support/Bugbook" --title "Fix editor bug" --status todo
+swift run BugbookCLI agent run start --workspace "~/Library/Application Support/Bugbook" --task <task_id> --agent codex --branch codex/fix-editor
+swift run BugbookCLI agent event log --workspace "~/Library/Application Support/Bugbook" --run-id <run_id> --level info --message "Added regression test"
+swift run BugbookCLI agent run finish <run_id> --workspace "~/Library/Application Support/Bugbook" --status succeeded --summary "Shipped fix"
+swift run BugbookCLI agent task update <task_id> --workspace "~/Library/Application Support/Bugbook" --status done
 ```
 
 Open dashboard JSON:
 
 ```bash
-swift run BugbookCLI agent dashboard --workspace ~/Documents/Bugbook
+swift run BugbookCLI agent dashboard --workspace "~/Library/Application Support/Bugbook"
 ```
 
 ### macOS app
 
 ```bash
-swift run BugbookSwift
+swift run Bugbook
 ```
 
 Then open **Agent Hub** from the sidebar (or `Cmd+Shift+J`).
@@ -109,7 +109,7 @@ Then:
 3. Run.
 
 Important:
-- **Do not** run `BugbookSwift` on iOS. `BugbookSwift` is macOS-only and uses `AppKit`.
+- **Do not** run `Bugbook` on iOS. `Bugbook` is macOS-only and uses `AppKit`.
 - If you see `No such module 'AppKit'`, you launched the wrong scheme.
 - If you see `BUNDLE_IDENTIFIER_FOR_CURRENT_PROCESS_IS_NIL`, you are launching the SwiftPM executable instead of the iOS app bundle.
 
@@ -148,15 +148,15 @@ xcodebuild -project ios/BugbookMobile.xcodeproj -scheme BugbookMobileApp -destin
 Use either:
 
 ```bash
-swift run BugbookCLI agent task list --workspace ~/Documents/Bugbook
-swift run BugbookCLI agent run list --workspace ~/Documents/Bugbook --limit 50
-swift run BugbookCLI agent event list --workspace ~/Documents/Bugbook --limit 100
+swift run BugbookCLI agent task list --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI agent run list --workspace "~/Library/Application Support/Bugbook" --limit 50
+swift run BugbookCLI agent event list --workspace "~/Library/Application Support/Bugbook" --limit 100
 ```
 
 Or inspect raw files directly:
-- `~/Documents/Bugbook/.bugbook/agents/tasks.json`
-- `~/Documents/Bugbook/.bugbook/agents/runs.jsonl`
-- `~/Documents/Bugbook/.bugbook/agents/events.jsonl`
+- `"~/Library/Application Support/Bugbook"/.bugbook/agents/tasks.json`
+- `"~/Library/Application Support/Bugbook"/.bugbook/agents/runs.jsonl`
+- `"~/Library/Application Support/Bugbook"/.bugbook/agents/events.jsonl`
 
 ## MCP Status (Xcode Model Context Protocol)
 

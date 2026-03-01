@@ -37,7 +37,7 @@ targets:
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: ../Sources/BugbookSwift
+      - path: ../Sources/Bugbook
       - path: App/Assets.xcassets
     dependencies:
       - target: BugbookCore

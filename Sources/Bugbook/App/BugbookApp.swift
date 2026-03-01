@@ -2,7 +2,7 @@ import SwiftUI
 import Sentry
 
 @main
-struct BugbookSwiftApp: App {
+struct BugbookApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var updaterService = UpdaterService()
 

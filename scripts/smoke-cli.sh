@@ -21,7 +21,7 @@ echo "$INIT_JSON" | jq -e '.initialized == true' >/dev/null
 
 echo "[smoke] init: ok"
 
-TASK_JSON="$(run_bb agent task create --workspace "$WS" --title 'Smoke Task' --status todo --assignee codex --label smoke --path Sources/BugbookSwift)"
+TASK_JSON="$(run_bb agent task create --workspace "$WS" --title 'Smoke Task' --status todo --assignee codex --label smoke --path Sources/Bugbook)"
 TASK_ID="$(echo "$TASK_JSON" | jq -r '.id')"
 [ -n "$TASK_ID" ] && [ "$TASK_ID" != "null" ]
 echo "[smoke] task create: ok ($TASK_ID)"

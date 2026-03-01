@@ -599,7 +599,7 @@ class FileSystemService: ObservableObject {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
 
     private static var appSupportDirectory: String {
-        appSupportBase.appendingPathComponent("BugbookSwift").path
+        appSupportBase.appendingPathComponent("Bugbook").path
     }
 
     static var iconsDirectory: String {

@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "BugbookSwift",
+    name: "Bugbook",
     platforms: [
         .macOS(.v14),
         .iOS(.v17)
@@ -18,8 +18,8 @@ let package = Package(
             targets: ["BugbookCLI"]
         ),
         .executable(
-            name: "BugbookSwift",
-            targets: ["BugbookSwift"]
+            name: "Bugbook",
+            targets: ["Bugbook"]
         ),
         .executable(
             name: "BugbookMobile",
@@ -48,13 +48,13 @@ let package = Package(
         ),
         // SwiftUI app
         .executableTarget(
-            name: "BugbookSwift",
+            name: "Bugbook",
             dependencies: [
                 "BugbookCore",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
             ],
-            path: "Sources/BugbookSwift"
+            path: "Sources/Bugbook"
         ),
         // iPhone-friendly SwiftUI app
         .executableTarget(

@@ -395,7 +395,7 @@ private func defaultAgentsTemplate(workspace: String) -> String {
 ## CLI
 ```bash
 bugbook agent init
-bugbook agent task create --title "Implement feature X" --status todo --label ios --path Sources/BugbookSwift
+bugbook agent task create --title "Implement feature X" --status todo --label ios --path Sources/Bugbook
 bugbook agent run start --task task_1234abcd --agent codex --cwd /path/to/repo --branch codex/feature-x
 bugbook agent event log --run run_1234abcd --level info --message "Opened architecture docs"
 bugbook agent run finish run_1234abcd --status succeeded --summary "Added feature X" --commit abc1234
