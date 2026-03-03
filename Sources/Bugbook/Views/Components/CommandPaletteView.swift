@@ -71,6 +71,7 @@ struct CommandPaletteView: View {
     @State private var contentIndex: [IndexedContentLine] = []
     @State private var contentIndexWorkspace: String?
     @State private var contentIndexTask: Task<[IndexedContentLine], Never>?
+    @State private var qmdBinaryPath: String?   // nil = pending, "" = not found, else path
     @FocusState private var isSearchFieldFocused: Bool
     @Binding var isPresented: Bool
     var onSelectFile: (FileEntry) -> Void
@@ -152,6 +153,13 @@ struct CommandPaletteView: View {
             }
             Task { @MainActor in
                 await warmContentIndexIfNeeded()
+            }
+            // Detect qmd once; in-memory index remains the fallback
+            Task {
+                let path = await Task.detached(priority: .utility) {
+                    QmdService.findBinaryPath() ?? ""
+                }.value
+                qmdBinaryPath = path
             }
         }
         .onDisappear {
@@ -542,6 +550,15 @@ struct CommandPaletteView: View {
     @MainActor
     private func searchFileContents(query: String) async -> [ContentMatch] {
         guard let workspace = appState.workspacePath else { return [] }
+
+        // Use qmd when available — faster and ranking-aware
+        if let binary = qmdBinaryPath, !binary.isEmpty {
+            if let results = await searchWithQmd(query: query, workspace: workspace, binary: binary) {
+                return results
+            }
+        }
+
+        // Fallback: in-memory substring search
         let indexed = await ensureContentIndex(for: workspace)
         let lowerQuery = query.lowercased()
         guard !indexed.isEmpty else { return [] }
@@ -559,22 +576,65 @@ struct CommandPaletteView: View {
                 let current = matchesPerFile[line.filePath, default: 0]
                 guard current < maxPerFile else { continue }
 
-                matches.append(
-                    ContentMatch(
-                        filePath: line.filePath,
-                        fileName: line.fileName,
-                        lineNumber: line.lineNumber,
-                        lineText: line.lineText
-                    )
-                )
+                matches.append(ContentMatch(
+                    filePath: line.filePath,
+                    fileName: line.fileName,
+                    lineNumber: line.lineNumber,
+                    lineText: line.lineText
+                ))
                 matchesPerFile[line.filePath] = current + 1
-
-                if matches.count >= maxTotal {
-                    break
-                }
+                if matches.count >= maxTotal { break }
             }
 
             return matches
+        }.value
+    }
+
+    private func searchWithQmd(query: String, workspace: String, binary: String) async -> [ContentMatch]? {
+        let collection = URL(fileURLWithPath: workspace).lastPathComponent
+        let mode = appState.settings.qmdSearchMode.rawValue
+
+        return await Task.detached(priority: .userInitiated) {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: binary)
+            task.arguments = [mode == "bm25" ? "search" : mode == "semantic" ? "vsearch" : "query",
+                               query, "--json", "-n", "20", "-c", collection]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = FileHandle.nullDevice
+            guard (try? task.run()) != nil else { return nil }
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else { return nil }
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let raw = json["results"] as? [[String: Any]] else { return nil }
+
+            return raw.compactMap { r -> ContentMatch? in
+                guard let relPath = r["path"] as? String else { return nil }
+                let fullPath = (workspace as NSString).appendingPathComponent(relPath)
+                let fileName = (relPath as NSString).lastPathComponent
+                let lineNumber = r["line"] as? Int ?? 0
+
+                // Extract first meaningful line from snippet, strip "42: " prefix if present
+                var lineText = (r["snippet"] as? String ?? "")
+                    .components(separatedBy: "\n")
+                    .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
+                if let colon = lineText.firstIndex(of: ":") {
+                    let prefix = String(lineText[lineText.startIndex..<colon])
+                    if prefix.trimmingCharacters(in: .whitespaces).allSatisfy(\.isNumber) {
+                        lineText = String(lineText[lineText.index(after: colon)...])
+                            .trimmingCharacters(in: .whitespaces)
+                    }
+                }
+
+                return ContentMatch(
+                    filePath: fullPath,
+                    fileName: fileName,
+                    lineNumber: lineNumber,
+                    lineText: lineText.isEmpty ? relPath : lineText
+                )
+            }
         }.value
     }
 

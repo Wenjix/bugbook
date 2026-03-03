@@ -25,6 +25,7 @@ struct AppSettings: Codable {
     var executionPolicy: ExecutionPolicy
     var bugbookSkillEnabled: Bool
     var agentsMdContent: String
+    var qmdSearchMode: QmdSearchMode
 
     static let `default` = AppSettings(
         theme: .system,
@@ -32,6 +33,7 @@ struct AppSettings: Codable {
         preferredAIEngine: .auto,
         executionPolicy: .ask,
         bugbookSkillEnabled: false,
-        agentsMdContent: ""
+        agentsMdContent: "",
+        qmdSearchMode: .bm25
     )
 }

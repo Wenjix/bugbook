@@ -58,6 +58,9 @@ struct ContentView: View {
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
             }
+            .onChange(of: appState.settings.qmdSearchMode) { _, mode in
+                QmdService.prewarmDaemonIfNeeded(mode: mode)
+            }
             .onChange(of: appState.aiSidePanelOpen) { _, isOpen in
                 if isOpen {
                     ensureAiInitializedIfNeeded()
@@ -651,6 +654,11 @@ struct ContentView: View {
         }
         fileSystem.setWorkspace(defaultPath)
         appState.workspacePath = defaultPath
+
+        // Register workspace as a qmd collection in the background (no-op if qmd not installed)
+        QmdService.registerCollectionInBackground(workspace: defaultPath)
+        // Pre-warm the daemon now if hybrid mode is already selected
+        QmdService.prewarmDaemonIfNeeded(mode: appState.settings.qmdSearchMode)
 
         // Create onboarding file for empty workspaces before building the file tree
         if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: defaultPath) {
