@@ -101,15 +101,20 @@ private struct QmdBackend {
         return nil
     }
 
-    /// Register workspace as a qmd collection. Idempotent — safe to call every run.
+    /// Register workspace as a qmd collection and build the FTS index.
+    /// collection add only registers the path; update actually indexes the files.
     func ensureCollection() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: binary)
-        task.arguments = ["collection", "add", workspace, "--name", collectionName]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        try? task.run()
-        task.waitUntilExit()
+        func run(_ args: [String]) {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: binary)
+            task.arguments = args
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            try? task.run()
+            task.waitUntilExit()
+        }
+        run(["collection", "add", workspace, "--name", collectionName])
+        run(["update"])
     }
 
     func search(query: String, limit: Int, mode: String, filesOnly: Bool, tag: String?) throws -> [[String: Any]] {
@@ -249,8 +254,9 @@ private struct QmdBackend {
         else { return [] }
 
         // Look for structuredContent first, then fall back to parsing the text blob
-        if let structured = result["structuredContent"] as? [String: Any] {
-            return parseQmdResultsDict(structured)
+        if let structured = result["structuredContent"] as? [String: Any],
+           let raw = structured["results"] as? [[String: Any]] {
+            return raw.compactMap { mapResult($0) }
         }
 
         // Find the JSON content block (type == "text" containing a JSON object)
@@ -259,21 +265,24 @@ private struct QmdBackend {
                   let text = block["text"] as? String,
                   let textData = text.data(using: .utf8),
                   let parsed = try? JSONSerialization.jsonObject(with: textData) as? [String: Any],
-                  parsed["results"] != nil
+                  let raw = parsed["results"] as? [[String: Any]]
             else { continue }
-            return parseQmdResultsDict(parsed)
+            return raw.compactMap { mapResult($0) }
         }
         return []
     }
 
+    // qmd CLI outputs a JSON array; MCP response wraps in {"results": [...]}
     private func parseQmdData(_ data: Data) -> [[String: Any]] {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-        return parseQmdResultsDict(json)
-    }
-
-    private func parseQmdResultsDict(_ json: [String: Any]) -> [[String: Any]] {
-        guard let raw = json["results"] as? [[String: Any]] else { return [] }
-        return raw.compactMap { mapResult($0) }
+        let parsed = try? JSONSerialization.jsonObject(with: data)
+        if let arr = parsed as? [[String: Any]] {
+            return arr.compactMap { mapResult($0) }
+        }
+        if let obj = parsed as? [String: Any],
+           let raw = obj["results"] as? [[String: Any]] {
+            return raw.compactMap { mapResult($0) }
+        }
+        return []
     }
 
     /// Map a qmd result object to BugbookCLI's search result format.

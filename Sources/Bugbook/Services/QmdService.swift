@@ -80,6 +80,7 @@ final class QmdService: ObservableObject {
         guard case .installed(_, let path) = status else { return }
         let name = collectionName(for: workspace)
         _ = try? await runBinary(path, args: ["collection", "add", workspace, "--name", name])
+        _ = try? await runBinary(path, args: ["update"])
         collectionReady = true
     }
 
@@ -115,14 +116,17 @@ final class QmdService: ObservableObject {
         Task.detached(priority: .background) {
             guard let path = Self.findBinaryPath() else { return }
             let name = Self.collectionNameFor(workspace)
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: task.executableURL?.path ?? path)
-            task.executableURL = URL(fileURLWithPath: path)
-            task.arguments = ["collection", "add", workspace, "--name", name]
-            task.standardOutput = FileHandle.nullDevice
-            task.standardError = FileHandle.nullDevice
-            try? task.run()
-            task.waitUntilExit()
+            func run(_ args: [String]) {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: path)
+                task.arguments = args
+                task.standardOutput = FileHandle.nullDevice
+                task.standardError = FileHandle.nullDevice
+                try? task.run()
+                task.waitUntilExit()
+            }
+            run(["collection", "add", workspace, "--name", name])
+            run(["update"])
         }
     }
 
