@@ -17,6 +17,7 @@ struct SidebarView: View {
         ("appearance", "Appearance", "paintbrush"),
         ("ai", "AI", "cpu"),
         ("agents", "Agents", "person.2"),
+        ("search", "Search", "magnifyingglass"),
         ("shortcuts", "Shortcuts", "keyboard"),
     ]
 
