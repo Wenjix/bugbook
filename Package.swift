@@ -62,5 +62,20 @@ let package = Package(
             dependencies: ["BugbookCore"],
             path: "Sources/BugbookMobile"
         ),
+        // Unit tests for BugbookCore
+        .testTarget(
+            name: "BugbookCoreTests",
+            dependencies: ["BugbookCore"],
+            path: "Tests/BugbookCoreTests"
+        ),
+        // Integration tests for Bugbook app layer (models, state)
+        .testTarget(
+            name: "BugbookTests",
+            dependencies: [
+                "Bugbook",
+                "BugbookCore",
+            ],
+            path: "Tests/BugbookTests"
+        ),
     ]
 )

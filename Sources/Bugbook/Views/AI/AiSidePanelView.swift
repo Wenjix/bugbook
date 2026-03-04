@@ -10,10 +10,19 @@ struct AiSidePanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
+            HStack(spacing: 8) {
+                Image("BugbookLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+
                 Text("Ask AI")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color.fallbackTextPrimary)
+
                 Spacer()
+
                 Button(action: openFullChat) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 12))
@@ -156,7 +165,8 @@ struct AiSidePanelView: View {
                 let response = try await aiService.chatWithNotes(
                     engine: appState.settings.preferredAIEngine,
                     workspacePath: workspacePath,
-                    question: trimmed
+                    question: trimmed,
+                    apiKey: appState.settings.anthropicApiKey
                 )
                 let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())
                 messages.append(assistantMessage)

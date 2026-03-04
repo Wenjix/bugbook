@@ -11,7 +11,7 @@ struct CanvasCardView: View {
     @State private var dragStart: CGPoint = .zero
     @State private var resizeStart: CGSize = .zero
 
-    private var isSelected: Bool { document.selectedNodeId == node.id }
+    private var isSelected: Bool { document.selectedNodeIds.contains(node.id) }
     private var isEditing: Bool { document.editingNodeId == node.id }
 
     var body: some View {
@@ -26,13 +26,13 @@ struct CanvasCardView: View {
                 )
                 .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
 
-            // Resize handle
-            if isSelected {
+            // Resize handle (single-select only)
+            if isSelected && document.selectedNodeIds.count == 1 {
                 resizeHandle
             }
 
-            // Anchor dots for edge creation
-            if isSelected {
+            // Anchor dots for edge creation (single-select only)
+            if isSelected && document.selectedNodeIds.count == 1 {
                 ForEach(["top", "right", "bottom", "left"], id: \.self) { side in
                     anchorDot(side: side)
                 }
@@ -41,7 +41,11 @@ struct CanvasCardView: View {
         .position(x: node.x + node.width / 2, y: node.y + node.height / 2)
         .onTapGesture {
             document.selectedEdgeId = nil
-            document.selectedNodeId = node.id
+            if NSEvent.modifierFlags.contains(.shift) {
+                document.toggleNodeSelection(node.id)
+            } else {
+                document.selectedNodeId = node.id
+            }
         }
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {

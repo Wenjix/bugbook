@@ -32,7 +32,7 @@ class AiService: ObservableObject {
 
     func detectEngines() async {
         let claudePath = try? await runCommand("which claude")
-        let claudeFound = claudePath != nil && !claudePath!.isEmpty
+        let claudeFound = claudePath?.isEmpty == false
 
         var claudeVer: String?
         if claudeFound {
@@ -40,7 +40,7 @@ class AiService: ObservableObject {
         }
 
         let codexPath = try? await runCommand("which codex")
-        let codexFound = codexPath != nil && !codexPath!.isEmpty
+        let codexFound = codexPath?.isEmpty == false
 
         var codexVer: String?
         if codexFound {
@@ -58,7 +58,20 @@ class AiService: ObservableObject {
 
     // MARK: - Chat
 
-    func chatWithNotes(engine: PreferredAIEngine, workspacePath: String, question: String) async throws -> String {
+    func chatWithNotes(engine: PreferredAIEngine, workspacePath: String, question: String, apiKey: String = "") async throws -> String {
+        if engine == .claudeAPI {
+            guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
+            isRunning = true
+            error = nil
+            defer { isRunning = false }
+            do {
+                return try await chatViaAPI(apiKey: apiKey, question: question)
+            } catch {
+                self.error = error.localizedDescription
+                throw error
+            }
+        }
+
         if !hasDetectedEngines {
             await detectEngines()
         }
@@ -79,8 +92,7 @@ class AiService: ObservableObject {
             command = "claude -p \(shellSingleQuoted("Given the notes in this workspace, answer:\n\(question)"))"
         case .codex:
             command = "codex \(shellSingleQuoted("Given the notes in this workspace, answer:\n\(question)"))"
-        case .auto:
-            // Should not reach here after resolveEngine
+        case .auto, .claudeAPI:
             throw AiError.noEngineAvailable
         }
 
@@ -94,6 +106,36 @@ class AiService: ObservableObject {
             self.error = error.localizedDescription
             throw error
         }
+    }
+
+    private func chatViaAPI(apiKey: String, question: String) async throws -> String {
+        let url = URL(string: "https://api.anthropic.com/v1/messages")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+
+        let body: [String: Any] = [
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 1024,
+            "messages": [["role": "user", "content": question]]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw AiError.commandFailed("No response") }
+        guard http.statusCode == 200 else {
+            let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AiError.commandFailed("API error \(http.statusCode): \(msg)")
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = (json["content"] as? [[String: Any]])?.first,
+              let text = content["text"] as? String else {
+            throw AiError.commandFailed("Unexpected API response format")
+        }
+        return text
     }
 
     // MARK: - Pre-warming
@@ -119,6 +161,8 @@ class AiService: ObservableObject {
             if engineStatus.claudeAvailable { return .claude }
             if engineStatus.codexAvailable { return .codex }
             return nil
+        case .claudeAPI:
+            return nil // handled separately in chatWithNotes
         }
     }
 

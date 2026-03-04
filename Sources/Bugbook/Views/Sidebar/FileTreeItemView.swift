@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 struct FileTreeItemView: View {
     let entry: FileEntry
@@ -244,7 +245,9 @@ struct FileTreeItemView: View {
     }
 
     private func performDelete() {
-        try? fileSystem.deleteFile(at: entry.path)
+        let path = entry.path
+        try? fileSystem.deleteFile(at: path)
+        NotificationCenter.default.post(name: .fileDeleted, object: path)
         onRefreshTree()
     }
 
@@ -276,7 +279,7 @@ struct FileTreeItemView: View {
             )
             onSelectFile(note)
         } catch {
-            print("Failed to create note: \(error)")
+            Log.fileSystem.error("Failed to create note: \(error.localizedDescription)")
         }
     }
 

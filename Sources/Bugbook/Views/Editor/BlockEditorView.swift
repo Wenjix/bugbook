@@ -24,16 +24,20 @@ struct BlockEditorView: View {
                 BlockCellView(document: document, block: block, onTyping: onTyping)
                     .padding(.vertical, 2)
                     .overlay(alignment: .trailing) {
-                        // Right-side drop zone for column creation
-                        ColumnDropZoneView(
-                            isActive: columnDropTargetId == block.id,
-                            onDrop: { droppedId in
-                                handleColumnDrop(droppedId: droppedId, targetId: block.id)
-                            },
-                            onTargetChanged: { targeted in
-                                columnDropTargetId = targeted ? block.id : (columnDropTargetId == block.id ? nil : columnDropTargetId)
-                            }
-                        )
+                        // Right-side drop zone for column creation.
+                        // Skip for database embeds — the 40px hittable overlay intercepts
+                        // clicks on controls (settings, search, etc.) at the right edge.
+                        if block.type != .databaseEmbed {
+                            ColumnDropZoneView(
+                                isActive: columnDropTargetId == block.id,
+                                onDrop: { droppedId in
+                                    handleColumnDrop(droppedId: droppedId, targetId: block.id)
+                                },
+                                onTargetChanged: { targeted in
+                                    columnDropTargetId = targeted ? block.id : (columnDropTargetId == block.id ? nil : columnDropTargetId)
+                                }
+                            )
+                        }
                     }
 
                 // Drop zone after each block

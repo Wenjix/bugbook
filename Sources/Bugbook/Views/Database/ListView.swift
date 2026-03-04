@@ -28,6 +28,13 @@ struct ListView: View {
                 .padding(.top, 8)
             }
 
+            if rows.isEmpty {
+                Text("No rows yet")
+                    .foregroundColor(.secondary)
+                    .font(.callout)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 40)
+            }
             LazyVStack(spacing: 1) {
                 ForEach($rows) { $row in
                     listRow($row)

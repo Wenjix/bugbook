@@ -4,10 +4,20 @@
 <dict>
 	<key>SchemeUserState</key>
 	<dict>
-		<key>BugbookCLI.xcscheme_^#shared#^_</key>
+		<key>Bugbook-Package.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>0</integer>
+		</dict>
+		<key>Bugbook.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>2</integer>
+		</dict>
+		<key>BugbookCLI.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>3</integer>
 		</dict>
 		<key>BugbookCore.xcscheme_^#shared#^_</key>
 		<dict>
@@ -17,7 +27,7 @@
 		<key>BugbookMobile.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>3</integer>
+			<integer>4</integer>
 		</dict>
 		<key>BugbookSwift-Package.xcscheme_^#shared#^_</key>
 		<dict>
@@ -32,6 +42,11 @@
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
+		<key>Bugbook</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
 		<key>BugbookCLI</key>
 		<dict>
 			<key>primary</key>

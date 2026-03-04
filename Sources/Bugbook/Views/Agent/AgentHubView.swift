@@ -34,11 +34,10 @@ struct AgentHubView: View {
                 Text("Agent Hub")
                     .font(.system(size: 28, weight: .bold))
                 if let workspacePath {
-                    Text(workspacePath)
+                    Text((workspacePath as NSString).lastPathComponent)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
                 }
             }
 

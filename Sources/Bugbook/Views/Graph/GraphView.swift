@@ -168,6 +168,16 @@ struct GraphView: View {
             ZStack {
                 Color.fallbackEditorBg
 
+                if simulation.nodes.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 36))
+                            .foregroundColor(.secondary)
+                        Text("No pages to graph yet")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 Canvas { context, size in
                     let center = CGPoint(x: size.width / 2, y: size.height / 2)
                     let totalOffset = CGSize(

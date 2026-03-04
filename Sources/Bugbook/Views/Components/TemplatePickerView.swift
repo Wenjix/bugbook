@@ -4,7 +4,9 @@ struct TemplatePickerView: View {
     let templates: [FileEntry]
     let onSelect: (FileEntry) -> Void
     let onDismiss: () -> Void
+    let onCreateTemplate: (() -> Void)?
     @State private var hoveredIndex: Int?
+    @State private var createHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,7 +28,7 @@ struct TemplatePickerView: View {
             Divider()
 
             if templates.isEmpty {
-                Text("No templates found.\nCreate .md files in the Templates/ folder.")
+                Text("No templates yet.\nCreate your first template from any note.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -64,6 +66,27 @@ struct TemplatePickerView: View {
                     .padding(.vertical, 6)
                 }
                 .frame(maxHeight: 240)
+            }
+
+            if let onCreateTemplate {
+                Divider()
+
+                Button(action: onCreateTemplate) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .medium))
+                        Text("Save current note as template")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(createHovered ? Color.primary.opacity(0.06) : Color.clear)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in createHovered = hovering }
             }
         }
         .frame(width: 260)

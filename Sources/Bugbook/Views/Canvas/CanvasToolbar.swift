@@ -3,6 +3,7 @@ import SwiftUI
 struct CanvasToolbar: View {
     @ObservedObject var document: CanvasDocument
     var onAddFilePicker: () -> Void
+    var onAddImage: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -26,7 +27,17 @@ struct CanvasToolbar: View {
             .background(Color.primary.opacity(0.06))
             .cornerRadius(6)
 
-            if document.selectedNodeId != nil || document.selectedEdgeId != nil {
+            Button(action: onAddImage) {
+                Label("Image", systemImage: "photo")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.06))
+            .cornerRadius(6)
+
+            if !document.selectedNodeIds.isEmpty || document.selectedEdgeId != nil {
                 Divider().frame(height: 20)
                 Button(action: deleteSelected) {
                     Label("Delete", systemImage: "trash")
@@ -80,11 +91,7 @@ struct CanvasToolbar: View {
     }
 
     private func deleteSelected() {
-        if let nodeId = document.selectedNodeId {
-            document.removeNode(id: nodeId)
-        } else if let edgeId = document.selectedEdgeId {
-            document.removeEdge(id: edgeId)
-        }
+        document.deleteSelection()
     }
 
     private func zoomIn() {

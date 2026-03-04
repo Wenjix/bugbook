@@ -1,5 +1,6 @@
 import SwiftUI
 import Sentry
+import os
 
 @main
 struct BugbookApp: App {
@@ -9,7 +10,7 @@ struct BugbookApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .tint(Color(red: 0.831, green: 0.263, blue: 0.196))
+                .tint(Color.fallbackAccent)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
@@ -79,11 +80,6 @@ struct BugbookApp: App {
                     NotificationCenter.default.post(name: .openAIPanel, object: nil)
                 }
                 .keyboardShortcut("i")
-
-                Button("Open Agent Hub") {
-                    NotificationCenter.default.post(name: .openAgentHub, object: nil)
-                }
-                .keyboardShortcut("j", modifiers: [.command, .shift])
 
                 Button("Today's Note") {
                     NotificationCenter.default.post(name: .openDailyNote, object: nil)
@@ -169,6 +165,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
+        Log.app.info("Bugbook launching")
 
         SentrySDK.start { options in
             options.dsn = "https://a534c38e8813ac89c36946aa4b426e3f@o4510963078856704.ingest.us.sentry.io/4510963091177472"
@@ -267,7 +264,6 @@ extension Notification.Name {
     static let quickOpen = Notification.Name("quickOpen")
     static let quickOpenNewTab = Notification.Name("quickOpenNewTab")
     static let openSettings = Notification.Name("openSettings")
-    static let openAgentHub = Notification.Name("openAgentHub")
     static let openAIPanel = Notification.Name("openAIPanel")
     static let askAI = Notification.Name("askAI")
     static let toggleTheme = Notification.Name("toggleTheme")
@@ -278,4 +274,5 @@ extension Notification.Name {
     static let openDailyNote = Notification.Name("openDailyNote")
     static let openGraphView = Notification.Name("openGraphView")
     static let newCanvas = Notification.Name("newCanvas")
+    static let fileDeleted = Notification.Name("fileDeleted")
 }

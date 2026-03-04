@@ -17,10 +17,16 @@ struct TableView: View {
     var onUpdateSelectOption: ((String, String, String?, String?) -> Void)?
     var onDeleteSelectOption: ((String, String) -> Void)?
     var onResizeColumn: ((String, CGFloat) -> Void)?
+    var onNewRow: (() -> Void)?
+    var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
 
     @State private var dragWidths: [String: CGFloat] = [:]
     @State private var hoveredRowId: String?
+    @State private var hoveredResizeKey: String?
+    @State private var draggingResizeKey: String?
+    @State private var selectedRowIds: Set<String> = []
+    @State private var lastSelectedRowId: String? = nil
 
     private let titleColumnKey = "__title__"
 
@@ -52,16 +58,73 @@ struct TableView: View {
             headerRow
             Divider()
 
+            // Selection toolbar
+            if !selectedRowIds.isEmpty {
+                selectionBar
+                Divider()
+            }
+
             // Rows
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach($rows) { $row in
-                        dataRow($row)
-                        Divider().opacity(0.5)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach($rows) { $row in
+                            dataRow($row)
+                                .id($row.wrappedValue.id)
+                            Divider().opacity(0.5)
+                        }
+                        // Phantom rows so the table always looks populated
+                        ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
+                            phantomRow(isFirst: rows.isEmpty && i == 0)
+                            Divider().opacity(0.5)
+                        }
+                    }  // end VStack
+                }
+                .frame(maxHeight: .infinity)
+                .onChange(of: scrollToRowId) { _, id in
+                    guard let id else { return }
+                    DispatchQueue.main.async {
+                        withAnimation { proxy.scrollTo(id, anchor: .bottom) }
                     }
                 }
             }
         }
+    }
+
+    // MARK: - Selection Bar
+
+    private var selectionBar: some View {
+        HStack(spacing: 12) {
+            Text("\(selectedRowIds.count) selected")
+                .font(.callout)
+                .foregroundColor(.secondary)
+            Spacer()
+            Button {
+                selectedRowIds.removeAll()
+            } label: {
+                Text("Deselect")
+                    .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            Button {
+                let toDelete = rows.filter { selectedRowIds.contains($0.id) }
+                selectedRowIds.removeAll()
+                toDelete.forEach { onDelete?($0) }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                    Text("Delete")
+                        .font(.callout)
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.red)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.accentColor.opacity(0.05))
     }
 
     // MARK: - Header
@@ -70,7 +133,7 @@ struct TableView: View {
         HStack(spacing: 0) {
             // Title column header
             Text(schema.titleProperty?.name ?? "Name")
-                .font(.subheadline)
+                .font(.callout)
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,7 +158,7 @@ struct TableView: View {
                 }
             }
 
-            // Add column
+            // Add property
             Menu {
                 ForEach(PropertyType.allCases, id: \.rawValue) { type in
                     if type != .title {
@@ -107,41 +170,50 @@ struct TableView: View {
                     }
                 }
             } label: {
-                Image(systemName: "plus")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11))
+                    Text("Add property")
+                        .font(.callout)
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Add property")
 
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Resize Handle (overlaid on column trailing edge)
 
     private func resizeHandle(key: String, baseWidth: Double) -> some View {
-        Color.clear
+        let isActive = hoveredResizeKey == key || draggingResizeKey == key
+        return Color.clear
             .frame(width: 8)
             .overlay {
                 Rectangle()
-                    .fill(showVerticalLines ? Color.fallbackBadgeBg : Color.clear)
+                    .fill(isActive ? Color.fallbackBadgeBg : Color.clear)
                     .frame(width: 1)
             }
             .contentShape(Rectangle())
             .cursor(.resizeLeftRight)
+            .onHover { hoveredResizeKey = $0 ? key : nil }
             .gesture(
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
+                        draggingResizeKey = key
                         dragWidths[key] = max(80, CGFloat(baseWidth) + value.translation.width)
                     }
                     .onEnded { _ in
                         if let finalWidth = dragWidths[key] {
                             onResizeColumn?(key, finalWidth)
                         }
+                        draggingResizeKey = nil
                     }
             )
     }
@@ -152,20 +224,12 @@ struct TableView: View {
         let isHovered = hoveredRowId == row.wrappedValue.id
 
         return HStack(spacing: 0) {
-            // Title cell
             titleCell(row)
                 .padding(.horizontal, 8)
                 .frame(width: titleColumnWidth, alignment: .leading)
                 .contentShape(Rectangle())
                 .cursor(.pointingHand)
-                .overlay(alignment: .trailing) {
-                    if showVerticalLines {
-                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
-                            .padding(.vertical, -7)
-                    }
-                }
 
-            // Property cells
             ForEach(visibleProperties) { prop in
                 let propValue = Binding<PropertyValue>(
                     get: { row.wrappedValue.properties[prop.id] ?? .empty },
@@ -181,29 +245,74 @@ struct TableView: View {
                     .frame(width: columnWidth(for: prop), alignment: .leading)
                     .contentShape(Rectangle())
                     .cursor(.pointingHand)
-                    .overlay(alignment: .trailing) {
-                        if showVerticalLines {
-                            Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
-                                .padding(.vertical, -7)
-                        }
-                    }
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 14)
         .background(isHovered ? Color.fallbackSurfaceHover : Color.clear)
+        .overlay { columnDividers().allowsHitTesting(false) }
         .onHover { hoveredRowId = $0 ? row.wrappedValue.id : nil }
+    }
+
+    // MARK: - Column Dividers (row-level overlay)
+
+    @ViewBuilder
+    private func columnDividers() -> some View {
+        if showVerticalLines {
+            HStack(spacing: 0) {
+                Color.clear.frame(width: 8 + titleColumnWidth)
+                Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
+                ForEach(visibleProperties) { prop in
+                    Color.clear.frame(width: columnWidth(for: prop))
+                    Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, -15)
+        }
     }
 
     // MARK: - Title Cell
 
-    @ViewBuilder
     private func titleCell(_ row: Binding<DatabaseRow>) -> some View {
         let titlePropId = schema.titleProperty?.id
+        let rowId = row.wrappedValue.id
+        let isSelected = selectedRowIds.contains(rowId)
+        let isHoveredRow = hoveredRowId == rowId
+        // Show checkbox when: hovering, this row is selected, OR any row is already selected
+        // (so the user can see all checkboxes and easily Shift-select a range)
+        let showCheckbox = isHoveredRow || isSelected || !selectedRowIds.isEmpty
 
-        HStack(spacing: 6) {
+        return HStack(spacing: 6) {
+            // Select checkbox
+            if showCheckbox {
+                Button {
+                    if NSEvent.modifierFlags.contains(.shift),
+                       let lastId = lastSelectedRowId,
+                       let lastIdx = rows.firstIndex(where: { $0.id == lastId }),
+                       let currentIdx = rows.firstIndex(where: { $0.id == rowId }) {
+                        // Range-select between last clicked and current
+                        let lo = min(lastIdx, currentIdx)
+                        let hi = max(lastIdx, currentIdx)
+                        for i in lo...hi { selectedRowIds.insert(rows[i].id) }
+                    } else {
+                        if isSelected {
+                            selectedRowIds.remove(rowId)
+                        } else {
+                            selectedRowIds.insert(rowId)
+                            lastSelectedRowId = rowId
+                        }
+                    }
+                } label: {
+                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 13))
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
             // Open page icon (only on hover)
-            if hoveredRowId == row.wrappedValue.id {
+            if isHoveredRow {
                 Button {
                     onOpenRow(row.wrappedValue)
                 } label: {
@@ -231,14 +340,50 @@ struct TableView: View {
                 }
             ))
             .textFieldStyle(.plain)
+            .font(.body)
             .foregroundColor(.primary)
         }
+    }
+
+    // MARK: - Phantom Row
+
+    private func phantomRow(isFirst: Bool) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 6) {
+                if isFirst {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.primary.opacity(0.25))
+                }
+                TextField(isFirst ? "New page" : "", text: .constant(""))
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .foregroundColor(Color.primary.opacity(0.25))
+                    .disabled(true)
+                    .allowsHitTesting(false)
+            }
+            .padding(.horizontal, 8)
+            .frame(width: titleColumnWidth, alignment: .leading)
+            ForEach(visibleProperties) { prop in
+                TextField("", text: .constant(""))
+                    .textFieldStyle(.plain)
+                    .disabled(true)
+                    .allowsHitTesting(false)
+                    .padding(.horizontal, 8)
+                    .frame(width: columnWidth(for: prop), alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
+        .overlay { columnDividers().allowsHitTesting(false) }
+        .onTapGesture { onNewRow?() }
     }
 
     // MARK: - Helpers
 
     private func columnWidth(for prop: PropertyDefinition) -> CGFloat {
-        dragWidths[prop.id] ?? viewConfig.columnWidths?[prop.id] ?? 150
+        dragWidths[prop.id] ?? viewConfig.columnWidths?[prop.id] ?? 180
     }
 
     private func iconForPropertyType(_ type: PropertyType) -> String {
@@ -276,7 +421,7 @@ private struct ColumnHeaderCell: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
             Text(prop.name)
-                .font(.subheadline)
+                .font(.callout)
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)
                 .lineLimit(1)

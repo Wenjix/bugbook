@@ -10,6 +10,7 @@ enum PreferredAIEngine: String, Codable, CaseIterable {
     case auto = "Auto"
     case codex = "Codex"
     case claude = "Claude"
+    case claudeAPI = "API Key"
 }
 
 enum ExecutionPolicy: String, Codable, CaseIterable {
@@ -26,6 +27,7 @@ struct AppSettings: Codable {
     var bugbookSkillEnabled: Bool
     var agentsMdContent: String
     var qmdSearchMode: QmdSearchMode
+    var anthropicApiKey: String
 
     static let `default` = AppSettings(
         theme: .system,
@@ -34,6 +36,7 @@ struct AppSettings: Codable {
         executionPolicy: .ask,
         bugbookSkillEnabled: false,
         agentsMdContent: "",
-        qmdSearchMode: .bm25
+        qmdSearchMode: .bm25,
+        anthropicApiKey: ""
     )
 }

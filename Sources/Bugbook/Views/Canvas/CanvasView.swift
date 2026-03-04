@@ -11,6 +11,7 @@ struct CanvasView: View {
     @State private var isPanning = false
     @State private var showFilePicker = false
     @State private var baseZoom: CGFloat = 1.0
+    @State private var dropTargetActive = false
 
     private var zoom: CGFloat { document.viewport.zoom }
 
@@ -52,13 +53,15 @@ struct CanvasView: View {
                 Spacer()
                 CanvasToolbar(
                     document: document,
-                    onAddFilePicker: { showFilePicker = true }
+                    onAddFilePicker: { showFilePicker = true },
+                    onAddImage: { pickImageFromDisk() }
                 )
                 .padding(.horizontal, 40)
                 .padding(.bottom, 16)
             }
         }
         .clipped()
+        .overlay(CanvasScrollZoomView(document: document, baseZoom: $baseZoom))
         .onKeyPress(.delete) {
             deleteSelected()
             return .handled
@@ -67,6 +70,10 @@ struct CanvasView: View {
             deleteSelected()
             return .handled
         }
+        .focusable()
+        .focusEffectDisabled()
+        .onCommand(#selector(UndoManager.undo)) { document.undo() }
+        .onCommand(#selector(UndoManager.redo)) { document.redo() }
         .onPasteCommand(of: [UTType.png, UTType.tiff, UTType.image]) { providers in
             for provider in providers {
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
@@ -80,6 +87,14 @@ struct CanvasView: View {
             }
         }
         .task { baseZoom = document.viewport.zoom }
+        .task(id: document.isDirty) {
+            guard document.isDirty else { return }
+            try? await Task.sleep(for: .seconds(1))
+            document.save()
+        }
+        .onDisappear {
+            if document.isDirty { document.save() }
+        }
         .sheet(isPresented: $showFilePicker) {
             CanvasFilePickerView(
                 pages: availablePages,
@@ -97,13 +112,87 @@ struct CanvasView: View {
     // MARK: - Background
 
     private var canvasBackground: some View {
-        Color.fallbackEditorBg
-            .contentShape(Rectangle())
-            .onTapGesture {
-                document.clearSelection()
+        ZStack {
+            Color.fallbackEditorBg
+
+            // Dot grid pattern
+            Canvas { context, size in
+                let spacing: CGFloat = 24 * zoom
+                guard spacing > 6 else { return } // hide dots when too zoomed out
+                let offsetX = document.viewport.x.truncatingRemainder(dividingBy: spacing) + panOffset.width.truncatingRemainder(dividingBy: spacing)
+                let offsetY = document.viewport.y.truncatingRemainder(dividingBy: spacing) + panOffset.height.truncatingRemainder(dividingBy: spacing)
+                let dotSize: CGFloat = max(1.0, 1.5 * zoom)
+                let cols = Int(size.width / spacing) + 2
+                let rows = Int(size.height / spacing) + 2
+                for col in 0..<cols {
+                    for row in 0..<rows {
+                        let x = CGFloat(col) * spacing + offsetX
+                        let y = CGFloat(row) * spacing + offsetY
+                        guard x >= -spacing, x <= size.width + spacing,
+                              y >= -spacing, y <= size.height + spacing else { continue }
+                        context.fill(
+                            Path(ellipseIn: CGRect(x: x - dotSize / 2, y: y - dotSize / 2, width: dotSize, height: dotSize)),
+                            with: .color(.secondary.opacity(0.15))
+                        )
+                    }
+                }
             }
-            .gesture(backgroundPanGesture)
-            .gesture(zoomGesture)
+            .allowsHitTesting(false)
+
+            // Empty state hint
+            if document.nodes.isEmpty {
+                VStack(spacing: 8) {
+                    Text("Drag from below or double click")
+                    Text("Space + Drag to pan")
+                    Text("\u{2318} + Scroll to zoom")
+                }
+                .font(.system(size: 15))
+                .foregroundColor(.secondary.opacity(0.5))
+                .allowsHitTesting(false)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            document.clearSelection()
+        }
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                // Double-click creates a text node at the location
+                let x = -document.viewport.x + 400
+                let y = -document.viewport.y + 300
+                document.addTextNode(at: CGPoint(x: x, y: y))
+            }
+        )
+        .gesture(backgroundPanGesture)
+        .gesture(zoomGesture)
+        .onDrop(of: [.fileURL, .image, .png, .tiff, .jpeg], isTargeted: $dropTargetActive) { providers, location in
+            for provider in providers {
+                // Try loading as a file URL first (drag from Finder)
+                if provider.hasItemConformingToTypeIdentifier("public.file-url") {
+                    provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
+                        guard let data = item as? Data,
+                              let url = URL(dataRepresentation: data, relativeTo: nil),
+                              let image = NSImage(contentsOf: url) else { return }
+                        DispatchQueue.main.async {
+                            let x = -document.viewport.x + location.x / document.viewport.zoom
+                            let y = -document.viewport.y + location.y / document.viewport.zoom
+                            document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+                        }
+                    }
+                    return true
+                }
+                // Try loading as image data directly
+                provider.loadDataRepresentation(forTypeIdentifier: "public.image") { data, _ in
+                    guard let data = data, let image = NSImage(data: data) else { return }
+                    DispatchQueue.main.async {
+                        let x = -document.viewport.x + location.x / document.viewport.zoom
+                        let y = -document.viewport.y + location.y / document.viewport.zoom
+                        document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+                    }
+                }
+            }
+            return true
+        }
     }
 
     // MARK: - Canvas Content
@@ -248,6 +337,18 @@ struct CanvasView: View {
         )
     }
 
+    private func pickImageFromDisk() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .tiff, .gif, .bmp, .heic]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url,
+              let image = NSImage(contentsOf: url) else { return }
+        let x = -document.viewport.x + 400
+        let y = -document.viewport.y + 300
+        document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+    }
+
     private func pasteFromClipboard() {
         let pb = NSPasteboard.general
         // Check for image data on the pasteboard
@@ -261,11 +362,7 @@ struct CanvasView: View {
     }
 
     private func deleteSelected() {
-        if let nodeId = document.selectedNodeId {
-            document.removeNode(id: nodeId)
-        } else if let edgeId = document.selectedEdgeId {
-            document.removeEdge(id: edgeId)
-        }
+        document.deleteSelection()
     }
 }
 
@@ -327,5 +424,43 @@ struct CanvasFilePickerView: View {
             }
         }
         return result
+    }
+}
+
+// MARK: - Scroll Wheel Zoom (Cmd+Scroll)
+
+private struct CanvasScrollZoomView: NSViewRepresentable {
+    @ObservedObject var document: CanvasDocument
+    @Binding var baseZoom: CGFloat
+
+    private var zoomHandler: (CGFloat) -> Void {
+        { [document, baseZoom = _baseZoom] deltaY in
+            let sensitivity: CGFloat = 0.01
+            let newZoom = max(0.3, min(3.0, document.viewport.zoom + deltaY * sensitivity))
+            document.viewport.zoom = newZoom
+            baseZoom.wrappedValue = newZoom
+        }
+    }
+
+    func makeNSView(context: Context) -> CanvasScrollCaptureNSView {
+        let view = CanvasScrollCaptureNSView()
+        view.onCmdScroll = zoomHandler
+        return view
+    }
+
+    func updateNSView(_ nsView: CanvasScrollCaptureNSView, context: Context) {
+        nsView.onCmdScroll = zoomHandler
+    }
+}
+
+private class CanvasScrollCaptureNSView: NSView {
+    var onCmdScroll: ((CGFloat) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            onCmdScroll?(event.scrollingDeltaY)
+        } else {
+            super.scrollWheel(with: event)
+        }
     }
 }

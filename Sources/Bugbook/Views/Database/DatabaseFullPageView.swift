@@ -16,7 +16,7 @@ struct DatabaseFullPageView: View {
     @State private var error: String?
     @State private var editingTitle: String = ""
     @State private var showPropertyManager = false
-    @State private var showFilterSort = false
+    @State private var showSettings = false
     @State private var showVerticalLines = true
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
@@ -56,28 +56,39 @@ struct DatabaseFullPageView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error = error {
-                Text(error)
-                    .foregroundColor(.red)
-                    .padding()
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    Text("Failed to load database")
+                        .font(.headline)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") { loadData() }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let schema = schema {
-                if let rowIdx = selectedRowIndex, rowIdx < rows.count {
-                    RowPageView(
-                        schema: schema,
-                        row: $rows[rowIdx],
-                        onSave: { row in saveRow(row) },
-                        onBack: { selectedRowIndex = nil },
-                        onAddOption: { propId, option in addSelectOption(propId, option: option) },
-                        onUpdateOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
-                        onDeleteOption: { propId, optId in deleteSelectOption(propId, optionId: optId) }
-                    )
-                } else {
-                    titleBar
-                    toolbar(schema: schema)
-                    if showFilterSort {
-                        filterSortBar(schema: schema)
-                    }
-                    Divider()
+                dbHeader(schema: schema)
+                viewTabs(schema: schema)
+                Divider()
+                HStack(spacing: 0) {
                     viewContent(schema: schema)
+                    if let rowIdx = selectedRowIndex, rowIdx < rows.count {
+                        Divider()
+                        RowPageView(
+                            schema: schema,
+                            row: $rows[rowIdx],
+                            onSave: { row in saveRow(row) },
+                            onBack: { selectedRowIndex = nil },
+                            onAddOption: { propId, option in addSelectOption(propId, option: option) },
+                            onUpdateOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
+                            onDeleteOption: { propId, optId in deleteSelectOption(propId, optionId: optId) }
+                        )
+                        .frame(width: 480)
+                    }
                 }
             } else {
                 ProgressView("Loading database...")
@@ -134,24 +145,40 @@ struct DatabaseFullPageView: View {
         )
     }
 
-    // MARK: - Title Bar
+    // MARK: - Header
 
-    private var titleBar: some View {
-        HStack {
+    private func dbHeader(schema: DatabaseSchema) -> some View {
+        HStack(spacing: 8) {
             TextField("Database Name", text: $editingTitle)
-            .onSubmit {
-                persistDatabaseName(editingTitle)
-            }
-            .onChange(of: editingTitle) { _, newValue in
-                scheduleDatabaseNameSave(newValue)
-            }
-            .font(.title2)
-            .fontWeight(.bold)
-            .textFieldStyle(.plain)
+                .onSubmit { persistDatabaseName(editingTitle) }
+                .onChange(of: editingTitle) { _, newValue in scheduleDatabaseNameSave(newValue) }
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+                .textFieldStyle(.plain)
+
             Spacer()
+
+            Button {} label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button { showSettings.toggle() } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 13))
+                    .foregroundColor(showSettings ? .primary : .secondary)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+                settingsPopover(schema: schema)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 
     private func scheduleDatabaseNameSave(_ value: String) {
@@ -187,11 +214,10 @@ struct DatabaseFullPageView: View {
         }
     }
 
-    // MARK: - Toolbar
+    // MARK: - View Tabs
 
-    private func toolbar(schema: DatabaseSchema) -> some View {
-        HStack(spacing: 8) {
-            // View tabs
+    private func viewTabs(schema: DatabaseSchema) -> some View {
+        HStack(spacing: 4) {
             ForEach(schema.views) { view in
                 Button {
                     activeViewId = view.id
@@ -204,26 +230,23 @@ struct DatabaseFullPageView: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(view.id == activeViewId ? Color.accentColor.opacity(0.15) : Color.clear)
+                    .background(view.id == activeViewId ? Color.primary.opacity(0.1) : Color.clear)
                     .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
             }
 
-            // Add view
             Menu {
                 ForEach(ViewType.allCases, id: \.rawValue) { type in
-                    Button {
-                        addNewView(type: type)
-                    } label: {
+                    Button { addNewView(type: type) } label: {
                         Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
                     }
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
@@ -231,121 +254,152 @@ struct DatabaseFullPageView: View {
             .fixedSize()
 
             Spacer()
-
-            // Column visibility
-            Menu {
-                ForEach(schema.properties.filter({ $0.type != .title })) { prop in
-                    let isHidden = (activeView?.hiddenColumns ?? []).contains(prop.id)
-                    Button {
-                        toggleColumnVisibility(prop.id)
-                    } label: {
-                        HStack {
-                            Text(prop.name)
-                            if !isHidden { Image(systemName: "checkmark") }
-                        }
-                    }
-                }
-                if activeView?.type == .table {
-                    Divider()
-                    Button {
-                        showVerticalLines.toggle()
-                    } label: {
-                        HStack {
-                            Text("Grid lines")
-                            if showVerticalLines { Image(systemName: "checkmark") }
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "eye")
-                    .font(.caption)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-
-            // Filter/sort toggle
-            Button {
-                showFilterSort.toggle()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                    Text("Filter")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.plain)
-
-            // Properties
-            Button {
-                showPropertyManager = true
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "slider.horizontal.3")
-                    Text("Properties")
-                }
-                .font(.caption)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
     }
 
-    // MARK: - Filter/Sort Bar
+    // MARK: - Settings Popover
 
-    private func filterSortBar(schema: DatabaseSchema) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let view = activeView {
-                // Active filters
-                ForEach(view.filters) { filter in
-                    filterRow(filter, schema: schema)
+    private func settingsPopover(schema: DatabaseSchema) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Layout
+                popoverSectionHeader("Layout")
+                HStack(spacing: 6) {
+                    ForEach(ViewType.allCases, id: \.rawValue) { type in
+                        Button {
+                            if let view = schema.views.first(where: { $0.type == type }) {
+                                activeViewId = view.id
+                                persistActiveView(view.id)
+                            } else {
+                                addNewView(type: type)
+                            }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: iconForViewType(type))
+                                    .font(.system(size: 16))
+                                Text(type.rawValue.capitalized)
+                                    .font(.caption2)
+                            }
+                            .frame(width: 58, height: 48)
+                            .background(activeView?.type == type ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
+                            .cornerRadius(6)
+                            .foregroundColor(activeView?.type == type ? .primary : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
 
-                // Active sorts
-                ForEach(view.sorts) { sort in
-                    sortRow(sort, schema: schema)
+                Divider()
+
+                // Filter
+                popoverSectionHeader("Filter")
+                if let view = activeView, !view.filters.isEmpty {
+                    ForEach(view.filters) { filter in
+                        filterRow(filter, schema: schema)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 4)
+                    }
                 }
-            }
-
-            // Add buttons
-            HStack(spacing: 12) {
                 Menu {
-                    ForEach(schema.properties.filter({ $0.type != .title })) { prop in
+                    ForEach(schema.properties.filter { $0.type != .title }) { prop in
                         Button(prop.name) { addFilter(propertyId: prop.id) }
                     }
                 } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "plus")
-                        Text("Add filter")
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.caption)
+                        Text("Add filter").font(.caption)
                     }
-                    .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
 
+                Divider()
+
+                // Sort
+                popoverSectionHeader("Sort")
+                if let view = activeView, !view.sorts.isEmpty {
+                    ForEach(view.sorts) { sort in
+                        sortRow(sort, schema: schema)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 4)
+                    }
+                }
                 Menu {
-                    ForEach(schema.properties.filter({ $0.type != .title })) { prop in
+                    ForEach(schema.properties.filter { $0.type != .title }) { prop in
                         Button(prop.name) { addSort(propertyId: prop.id, ascending: true) }
                     }
                 } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "plus")
-                        Text("Add sort")
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.caption)
+                        Text("Add sort").font(.caption)
                     }
-                    .font(.caption)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
 
-                Spacer()
+                Divider()
+
+                // Properties visibility
+                popoverSectionHeader("Properties")
+                ForEach(schema.properties.filter { $0.type != .title }) { prop in
+                    let isHidden = (activeView?.hiddenColumns ?? []).contains(prop.id)
+                    Button { toggleColumnVisibility(prop.id) } label: {
+                        HStack {
+                            Text(prop.name).font(.callout)
+                            Spacer()
+                            Image(systemName: isHidden ? "eye.slash" : "eye")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .foregroundColor(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 3)
+                }
+
+                if activeView?.type == .table {
+                    Divider().padding(.top, 4)
+                    Button { showVerticalLines.toggle() } label: {
+                        HStack {
+                            Text("Grid lines").font(.callout)
+                            Spacer()
+                            if showVerticalLines {
+                                Image(systemName: "checkmark").font(.caption).foregroundColor(.secondary)
+                            }
+                        }
+                        .foregroundColor(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 3)
+                }
+
+                Spacer(minLength: 12)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color.fallbackSurfaceSubtle)
+        .frame(width: 280)
+        .frame(maxHeight: 420)
+    }
+
+    private func popoverSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
     }
 
     private func filterRow(_ filter: FilterConfig, schema: DatabaseSchema) -> some View {
@@ -577,6 +631,7 @@ struct DatabaseFullPageView: View {
                 onUpdateSelectOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
                 onDeleteSelectOption: { propId, optId in deleteSelectOption(propId, optionId: optId) },
                 onResizeColumn: { propId, width in resizeColumn(propId, to: width) },
+                onNewRow: { createNewRow() },
                 showVerticalLines: showVerticalLines
             )
         case .kanban:

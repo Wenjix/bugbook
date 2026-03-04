@@ -4,6 +4,7 @@ struct AISettingsView: View {
     @ObservedObject var appState: AppState
     @State private var claudeAvailable = false
     @State private var codexAvailable = false
+    @State private var showApiKey = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -20,6 +21,33 @@ struct AISettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+            }
+
+            if appState.settings.preferredAIEngine == .claudeAPI {
+                SettingsSection("Anthropic API Key") {
+                    HStack(spacing: 8) {
+                        Group {
+                            if showApiKey {
+                                TextField("sk-ant-...", text: $appState.settings.anthropicApiKey)
+                            } else {
+                                SecureField("sk-ant-...", text: $appState.settings.anthropicApiKey)
+                            }
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 13, design: .monospaced))
+
+                        Button {
+                            showApiKey.toggle()
+                        } label: {
+                            Image(systemName: showApiKey ? "eye.slash" : "eye")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    Text("Your key is stored locally and never sent anywhere except the Anthropic API.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             SettingsSection("Execution Policy") {

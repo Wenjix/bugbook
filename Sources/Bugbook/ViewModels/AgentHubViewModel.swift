@@ -1,5 +1,6 @@
 import Foundation
 import BugbookCore
+import Sentry
 
 @MainActor
 final class AgentHubViewModel: ObservableObject {
@@ -14,6 +15,7 @@ final class AgentHubViewModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
 
     func start(workspacePath: String?) {
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "agent.start"))
         stop()
         refresh(workspacePath: workspacePath)
 
@@ -39,7 +41,7 @@ final class AgentHubViewModel: ObservableObject {
             runs = []
             events = []
             counts = [:]
-            error = "Select a workspace to use Agent Hub."
+            error = "Open a workspace to use Agent Hub."
             return
         }
 
@@ -55,6 +57,7 @@ final class AgentHubViewModel: ObservableObject {
             counts = dashboard.taskCounts
             error = nil
         } catch {
+            SentrySDK.addBreadcrumb(Breadcrumb(level: .error, category: "agent.error"))
             self.error = error.localizedDescription
         }
     }
@@ -74,8 +77,10 @@ final class AgentHubViewModel: ObservableObject {
                 labels: [],
                 linkedPaths: []
             )
+            SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "agent.create"))
             refresh(workspacePath: workspacePath)
         } catch {
+            SentrySDK.addBreadcrumb(Breadcrumb(level: .error, category: "agent.error"))
             self.error = error.localizedDescription
         }
     }

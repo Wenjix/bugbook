@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import os
+import Sentry
 
 // MARK: - Canvas JSON Structs
 
@@ -60,9 +62,21 @@ class CanvasDocument: ObservableObject {
     @Published var edges: [CanvasEdgeMeta] = []
     @Published var nodeTexts: [String: String] = [:]  // node_id → markdown content
     @Published var viewport: CanvasViewport = CanvasViewport(x: 0, y: 0, zoom: 1.0)
-    @Published var selectedNodeId: String?
+    @Published var selectedNodeIds: Set<String> = []
     @Published var selectedEdgeId: String?
     @Published var editingNodeId: String?
+
+    /// Convenience: returns the single selected node ID (nil if 0 or 2+ selected)
+    var selectedNodeId: String? {
+        get { selectedNodeIds.count == 1 ? selectedNodeIds.first : nil }
+        set {
+            if let id = newValue {
+                selectedNodeIds = [id]
+            } else {
+                selectedNodeIds.removeAll()
+            }
+        }
+    }
     @Published var isDirty: Bool = false
     @Published var loadResult: CanvasLoadResult = .newCanvas
 
@@ -115,6 +129,7 @@ class CanvasDocument: ObservableObject {
 
             loadResult = .loaded
             isDirty = false
+            SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "canvas.load"))
         } catch {
             canvasName = (folderPath as NSString).lastPathComponent
             canvasId = ""
@@ -149,8 +164,10 @@ class CanvasDocument: ObservableObject {
             }
 
             isDirty = false
+            SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "canvas.save"))
         } catch {
-            print("[CanvasDocument] Save failed: \(error.localizedDescription)")
+            Log.canvas.error("Save failed: \(error.localizedDescription)")
+            SentrySDK.capture(error: error)
         }
     }
 
@@ -249,7 +266,7 @@ class CanvasDocument: ObservableObject {
                 try? FileManager.default.removeItem(atPath: imgPath)
             }
         }
-        if selectedNodeId == id { selectedNodeId = nil }
+        selectedNodeIds.remove(id)
         isDirty = true
     }
 
@@ -302,9 +319,28 @@ class CanvasDocument: ObservableObject {
     // MARK: - Selection
 
     func clearSelection() {
-        selectedNodeId = nil
+        selectedNodeIds.removeAll()
         selectedEdgeId = nil
         editingNodeId = nil
+    }
+
+    func toggleNodeSelection(_ id: String) {
+        if selectedNodeIds.contains(id) {
+            selectedNodeIds.remove(id)
+        } else {
+            selectedNodeIds.insert(id)
+        }
+        selectedEdgeId = nil
+    }
+
+    func deleteSelection() {
+        if !selectedNodeIds.isEmpty {
+            for nodeId in selectedNodeIds {
+                removeNode(id: nodeId)
+            }
+        } else if let edgeId = selectedEdgeId {
+            removeEdge(id: edgeId)
+        }
     }
 
     // MARK: - Undo/Redo

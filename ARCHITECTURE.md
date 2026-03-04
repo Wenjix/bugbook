@@ -5,7 +5,7 @@ Local-first database engine. Agent-editable via CLI + skills. Human-readable fil
 ## Project Structure
 
 ```
-bugbook-swift/
+bugbook/
   Package.swift
 
   Sources/
@@ -42,7 +42,7 @@ bugbook-swift/
         BatchCommand.swift     # batch <db> < operations.json
         AgentCommand.swift     # agent task/run/event/dashboard commands
 
-    BugbookSwift/             # macOS SwiftUI app (desktop)
+    Bugbook/                  # macOS SwiftUI app (desktop)
       App/
       Views/
       ViewModels/

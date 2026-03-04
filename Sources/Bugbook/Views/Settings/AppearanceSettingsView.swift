@@ -79,18 +79,22 @@ private struct ThemeCard: View {
         .buttonStyle(.plain)
     }
 
+    private var resolvedLineColor: Color {
+        lineColor ?? .secondary
+    }
+
     private var normalPreview: some View {
         HStack(spacing: 0) {
             // Sidebar
             VStack(alignment: .leading, spacing: 4) {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(lineColor!)
+                    .fill(resolvedLineColor)
                     .frame(width: 24, height: 3)
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(lineColor!)
+                    .fill(resolvedLineColor)
                     .frame(width: 18, height: 3)
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(lineColor!)
+                    .fill(resolvedLineColor)
                     .frame(width: 22, height: 3)
             }
             .padding(6)
@@ -100,13 +104,13 @@ private struct ThemeCard: View {
             // Editor
             VStack(alignment: .leading, spacing: 4) {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(lineColor!)
+                    .fill(resolvedLineColor)
                     .frame(width: 40, height: 4)
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(lineColor!.opacity(0.5))
+                    .fill(resolvedLineColor.opacity(0.5))
                     .frame(width: 52, height: 3)
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(lineColor!.opacity(0.5))
+                    .fill(resolvedLineColor.opacity(0.5))
                     .frame(width: 36, height: 3)
             }
             .padding(6)

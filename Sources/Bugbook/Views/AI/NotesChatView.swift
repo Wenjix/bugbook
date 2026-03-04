@@ -1,4 +1,5 @@
 import SwiftUI
+import Sentry
 
 struct NotesChatView: View {
     @ObservedObject var appState: AppState
@@ -35,12 +36,19 @@ struct NotesChatView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Chat with Notes")
-                    .font(.system(size: 22, weight: .semibold))
-                Text("Ask questions about your workspace")
-                    .font(.system(size: 13))
+            Image("BugbookLogo")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Bugbook")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
+                Text("Chat with Notes")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(Color.fallbackTextPrimary)
             }
 
             Spacer()
@@ -74,13 +82,21 @@ struct NotesChatView: View {
     private var messageArea: some View {
         if messages.isEmpty && !aiService.isRunning {
             Spacer()
-            VStack(spacing: 14) {
-                Image(systemName: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 38))
-                    .foregroundColor(.secondary.opacity(0.5))
-                Text("Ask a question about your notes")
-                    .font(.system(size: 17))
-                    .foregroundColor(.secondary)
+            VStack(spacing: 16) {
+                Image("BugbookLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .opacity(0.85)
+                VStack(spacing: 6) {
+                    Text("Chat with your notes")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Color.fallbackTextPrimary)
+                    Text("Ask anything about your workspace")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
             }
             Spacer()
         } else {
@@ -130,7 +146,7 @@ struct NotesChatView: View {
                     HStack(spacing: 8) {
                         ForEach(referencedFiles) { file in
                             HStack(spacing: 6) {
-                                Text("@\(file.name)")
+                                Text("@\(displayName(for: file.name))")
                                     .font(.system(size: 12, weight: .medium))
                                     .lineLimit(1)
                                 Button {
@@ -233,7 +249,7 @@ struct NotesChatView: View {
                                 addReferencedFile(entry)
                             } label: {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(entry.name)
+                                    Text(displayName(for: entry.name))
                                         .font(.system(size: 13, weight: .medium))
                                         .foregroundColor(.primary)
                                         .lineLimit(1)
@@ -284,6 +300,8 @@ struct NotesChatView: View {
             return aiService.engineStatus.claudeAvailable
         case .codex:
             return aiService.engineStatus.codexAvailable
+        case .claudeAPI:
+            return !appState.settings.anthropicApiKey.isEmpty
         }
     }
 
@@ -372,6 +390,7 @@ struct NotesChatView: View {
         referencedFiles.removeAll()
         showFileReferencePicker = false
         fileReferenceSearch = ""
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "ai.send"))
 
         Task {
             do {
@@ -384,11 +403,14 @@ struct NotesChatView: View {
                 let response = try await aiService.chatWithNotes(
                     engine: selectedEngine,
                     workspacePath: workspacePath,
-                    question: prompt
+                    question: prompt,
+                    apiKey: appState.settings.anthropicApiKey
                 )
+                SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "ai.receive"))
                 let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())
                 messages.append(assistantMessage)
             } catch {
+                SentrySDK.addBreadcrumb(Breadcrumb(level: .error, category: "ai.error"))
                 let errorMessage = ChatMessage(role: .error, content: error.localizedDescription, timestamp: Date())
                 messages.append(errorMessage)
             }
@@ -450,9 +472,16 @@ struct NotesChatView: View {
         return relative.hasPrefix("/") ? String(relative.dropFirst()) : String(relative)
     }
 
+    private func displayName(for name: String) -> String {
+        if name.hasSuffix(".md") {
+            return String(name.dropLast(3))
+        }
+        return name
+    }
+
     private func displayUserMessage(question: String, references: [ChatReferencedFile]) -> String {
         guard !references.isEmpty else { return question }
-        let refs = references.map { "@\($0.name)" }.joined(separator: " ")
+        let refs = references.map { "@\(displayName(for: $0.name))" }.joined(separator: " ")
         return "\(question)\n\n\(refs)"
     }
 

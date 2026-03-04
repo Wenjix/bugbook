@@ -1,6 +1,8 @@
 import Foundation
 import AppKit
 import BugbookCore
+import os
+import Sentry
 
 @MainActor
 class FileSystemService: ObservableObject {
@@ -45,6 +47,9 @@ class FileSystemService: ObservableObject {
     // MARK: - File Tree Building
 
     func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
+        let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
+        defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
+
         guard depth < 5 else { return [] }
 
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
@@ -162,7 +167,9 @@ class FileSystemService: ObservableObject {
     func createNewFile(in directory: String, name: String = "New Page") throws -> String {
         let filename = uniqueFilename(in: directory, base: name, ext: "md")
         let filePath = (directory as NSString).appendingPathComponent(filename)
-        try "# \n\n".write(toFile: filePath, atomically: true, encoding: .utf8)
+        try "# \n".write(toFile: filePath, atomically: true, encoding: .utf8)
+        Log.fileSystem.info("Created file: \(filename)")
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "file.create"))
         return filePath
     }
 
@@ -172,14 +179,45 @@ class FileSystemService: ObservableObject {
 
     func renameFile(from oldPath: String, to newPath: String) throws {
         try fileManager.moveItem(atPath: oldPath, toPath: newPath)
+        Log.fileSystem.info("Renamed: \((oldPath as NSString).lastPathComponent) → \((newPath as NSString).lastPathComponent)")
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "file.rename"))
     }
 
     func deleteFile(at path: String) throws {
+        let name = (path as NSString).lastPathComponent
         try fileManager.removeItem(atPath: path)
+        Log.fileSystem.info("Deleted file: \(name)")
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "file.delete"))
         // Also remove companion folder if it exists
         let companion = companionFolderPath(for: path)
         if fileManager.fileExists(atPath: companion) {
             try fileManager.removeItem(atPath: companion)
+            Log.fileSystem.debug("Deleted companion folder for: \(name)")
+        }
+        // Remove any database embed blocks referencing this path from on-disk pages (background)
+        if let root = workspacePath {
+            let dbPath = path
+            let fm = fileManager
+            Task.detached(priority: .utility) {
+                let marker = "<!-- database: \(dbPath) -->"
+                var files: [String] = []
+                if let enumerator = fm.enumerator(atPath: root) {
+                    while let item = enumerator.nextObject() as? String {
+                        if item.hasSuffix(".md") {
+                            files.append((root as NSString).appendingPathComponent(item))
+                        }
+                    }
+                }
+                for filePath in files {
+                    guard let text = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
+                    let filtered = text.components(separatedBy: "\n")
+                        .filter { $0.trimmingCharacters(in: .whitespaces) != marker }
+                        .joined(separator: "\n")
+                    if filtered != text {
+                        try? filtered.write(toFile: filePath, atomically: true, encoding: .utf8)
+                    }
+                }
+            }
         }
     }
 
@@ -244,12 +282,6 @@ class FileSystemService: ObservableObject {
             version: 1,
             properties: [
                 PropertyDefinition(id: "prop_title", name: "Name", type: .title),
-                PropertyDefinition(id: "prop_tags", name: "Tags", type: .multiSelect, config: PropertyConfig(options: [])),
-                PropertyDefinition(id: "prop_status", name: "Status", type: .select, config: PropertyConfig(options: [
-                    SelectOption(id: "opt_not_started", name: "Not Started", color: "gray"),
-                    SelectOption(id: "opt_in_progress", name: "In Progress", color: "blue"),
-                    SelectOption(id: "opt_done", name: "Done", color: "green"),
-                ])),
             ],
             views: [
                 ViewConfig(id: defaultViewId, name: "Table", type: .table, sorts: [], filters: [])
@@ -306,7 +338,9 @@ class FileSystemService: ObservableObject {
 
     func listTemplates(in workspace: String) -> [FileEntry] {
         let folder = (workspace as NSString).appendingPathComponent("Templates")
-        guard fileManager.fileExists(atPath: folder) else { return [] }
+        if !fileManager.fileExists(atPath: folder) {
+            try? fileManager.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        }
         guard let contents = try? fileManager.contentsOfDirectory(atPath: folder) else { return [] }
         return contents
             .filter { $0.hasSuffix(".md") && !$0.hasPrefix(".") }
@@ -315,6 +349,16 @@ class FileSystemService: ObservableObject {
                 let path = (folder as NSString).appendingPathComponent(name)
                 return FileEntry(id: path, name: name, path: path, isDirectory: false, isDatabase: false)
             }
+    }
+
+    func saveAsTemplate(content: String, name: String, in workspace: String) throws {
+        let folder = (workspace as NSString).appendingPathComponent("Templates")
+        if !fileManager.fileExists(atPath: folder) {
+            try fileManager.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        }
+        let filename = uniqueFilename(in: folder, base: name, ext: "md")
+        let filePath = (folder as NSString).appendingPathComponent(filename)
+        try content.write(toFile: filePath, atomically: true, encoding: .utf8)
     }
 
     func createFromTemplate(templatePath: String, in directory: String, name: String) throws -> String {

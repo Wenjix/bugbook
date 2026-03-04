@@ -59,7 +59,7 @@ Initialize agent tracking files:
 
 Task lifecycle:
   bugbook agent task list
-  bugbook agent task create --title "Fix editor crash" --status todo --label bug --path Sources/BugbookSwift
+  bugbook agent task create --title "Fix editor crash" --status todo --label bug --path Sources/Bugbook
   bugbook agent task update <task_id> --status in_progress
   bugbook agent task update <task_id> --status done
 

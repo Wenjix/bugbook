@@ -161,21 +161,17 @@ struct SearchSettingsView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Claude Code tip
+    // MARK: - MCP tip
 
     private var mcpSection: some View {
-        SettingsSection("Claude Code") {
+        SettingsSection("MCP Server") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("qmd works as an MCP server for Claude Code, independently of Bugbook. Add it once to get search across all your notes in any Claude session.")
+                Text("qmd also runs as a standalone MCP server. Add it to Claude Code, Cursor, or any MCP-compatible client to get search across your notes outside of Bugbook.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("claude marketplace add tobi/qmd")
-                    .font(.system(size: 12, design: .monospaced))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.primary.opacity(0.06))
-                    .cornerRadius(5)
+                Link("github.com/tobi/qmd", destination: URL(string: "https://github.com/tobi/qmd")!)
+                    .font(.system(size: 13))
             }
         }
     }

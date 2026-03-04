@@ -63,12 +63,12 @@ struct TabBarView: View {
                         draggingTabId: $draggingTabId
                     ))
                 }
-                .padding(.leading, appState.sidebarOpen ? 2 : 88)
+                .padding(.leading, appState.sidebarOpen ? 2 : 182)
             }
             Spacer()
         }
         .frame(height: 36)
-        .background(Color.fallbackSidebarBg)
+        .background(Color.fallbackEditorBg)
     }
 }
 

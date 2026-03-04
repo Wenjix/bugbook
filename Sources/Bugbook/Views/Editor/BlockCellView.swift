@@ -8,39 +8,23 @@ struct BlockCellView: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
-            // Drag handle — click to open block menu
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .frame(width: 20, height: 24)
-                .opacity(isHovering || document.blockMenuBlockId == block.id ? 1 : 0)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    document.blockMenuBlockId = block.id
-                }
-                .draggable(block.id.uuidString)
-
-            // Block content
-            blockContent
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 3)
-        .background(
-            block.backgroundColor != .default
-                ? block.backgroundColor.backgroundColor
-                : Color.clear
-        )
-        .cornerRadius(block.backgroundColor != .default ? 4 : 0)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if NSEvent.modifierFlags.contains(.shift),
-               let anchor = document.focusedBlockId {
-                document.selectBlockRange(from: anchor, to: block.id)
+        // Database embed blocks need their own interactive controls to work, so we
+        // skip the block-level tap gesture entirely for them.
+        Group {
+            if block.type == .databaseEmbed {
+                blockShell
             } else {
-                document.clearBlockSelection()
-                document.focusedBlockId = block.id
+                blockShell
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if NSEvent.modifierFlags.contains(.shift),
+                           let anchor = document.focusedBlockId {
+                            document.selectBlockRange(from: anchor, to: block.id)
+                        } else {
+                            document.clearBlockSelection()
+                            document.focusedBlockId = block.id
+                        }
+                    }
             }
         }
         .overlay(
@@ -51,9 +35,7 @@ struct BlockCellView: View {
                 .allowsHitTesting(false)
         )
         .trackRenders("BlockCellView")
-        .onHover { hovering in
-            isHovering = hovering
-        }
+        .onHover { hovering in isHovering = hovering }
         .popover(
             isPresented: Binding(
                 get: { document.slashMenuBlockId == block.id },
@@ -81,6 +63,35 @@ struct BlockCellView: View {
         ) {
             PagePickerView(document: document)
         }
+    }
+
+    private var blockShell: some View {
+        HStack(alignment: .top, spacing: 4) {
+            // Drag handle — click to open block menu
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .frame(width: 20, height: 24)
+                .opacity(isHovering || document.blockMenuBlockId == block.id ? 1 : 0)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture().onEnded {
+                        document.blockMenuBlockId = block.id
+                    }
+                )
+                .draggable(block.id.uuidString)
+
+            blockContent
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .background(
+            block.backgroundColor != .default
+                ? block.backgroundColor.backgroundColor
+                : Color.clear
+        )
+        .cornerRadius(block.backgroundColor != .default ? 4 : 0)
     }
 
     private func findPageIcon(named name: String) -> String? {

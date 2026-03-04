@@ -462,7 +462,14 @@ class BlockDocument: ObservableObject {
             saveUndo()
             blocks[loc.topLevel].children.remove(at: childIdx)
             dissolveColumnIfNeeded(at: loc.topLevel)
-            let focusIdx = min(loc.topLevel, blocks.count - 1)
+            guard !blocks.isEmpty else {
+                let placeholder = Block(type: .paragraph)
+                blocks.append(placeholder)
+                focusedBlockId = placeholder.id
+                cursorPosition = 0
+                return
+            }
+            let focusIdx = min(max(0, loc.topLevel), blocks.count - 1)
             focusedBlockId = blocks[focusIdx].id
             cursorPosition = 0
             return

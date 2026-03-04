@@ -225,12 +225,9 @@ struct BlockTextView: NSViewRepresentable {
             programmaticViewUpdateDepth += 1
             suppressChanges = true
             updates()
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.programmaticViewUpdateDepth = max(0, self.programmaticViewUpdateDepth - 1)
-                if self.programmaticViewUpdateDepth == 0 {
-                    self.suppressChanges = false
-                }
+            programmaticViewUpdateDepth = max(0, programmaticViewUpdateDepth - 1)
+            if programmaticViewUpdateDepth == 0 {
+                suppressChanges = false
             }
         }
 
@@ -416,7 +413,10 @@ struct BlockTextView: NSViewRepresentable {
             }
 
             // Auto-detect markdown prefixes (e.g. "## ", "- ", "- [ ] ", "> ")
-            autoDetectMarkdownPrefix(textView)
+            // Skip title block to avoid converting heading to other types
+            if !isTitleBlock {
+                autoDetectMarkdownPrefix(textView)
+            }
 
             parent.recalculateHeight(textView)
             parent.onTextChange?()

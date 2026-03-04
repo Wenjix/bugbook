@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import os
+import Sentry
 
 struct ContentView: View {
     @StateObject private var appState = AppState()
@@ -67,6 +69,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: appState.currentView) { _, newView in
+                SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "view.change.\(newView)"))
                 if newView == .chat {
                     ensureAiInitializedIfNeeded()
                 }
@@ -74,6 +77,12 @@ struct ContentView: View {
             .onDisappear {
                 aiInitTask?.cancel()
                 aiInitTask = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
+                if let path = notification.object as? String {
+                    appState.closeTabsForPath(path)
+                    removeDatabaseEmbedsFromOpenDocs(dbPath: path)
+                }
             }
     }
 
@@ -106,9 +115,6 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 openSettingsTab()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .openAgentHub)) { _ in
-                appState.openAgentHub()
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleTheme)) { _ in
                 toggleTheme()
@@ -225,23 +231,20 @@ struct ContentView: View {
                         appState: appState,
                         isPresented: $appState.commandPaletteOpen,
                         onSelectFile: { entry in
-                            appState.openFile(entry)
-                            loadFileContent(for: entry)
+                            navigateToEntry(entry)
                         },
                         onSelectFileNewTab: { entry in
-                            appState.openFileInNewTab(entry)
-                            loadFileContent(for: entry)
+                            navigateToEntry(entry, inNewTab: true)
                         },
                         onCreateFile: { name in
                             createNewFileWithName(name)
                         },
                         onSelectContentMatch: { entry, query in
                             if appState.commandPaletteMode == .newTab {
-                                appState.openFileInNewTab(entry)
+                                navigateToEntry(entry, inNewTab: true)
                             } else {
-                                appState.openFile(entry)
+                                navigateToEntry(entry)
                             }
-                            loadFileContent(for: entry)
                             // Jump to the block containing the match
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 guard let tab = appState.activeTab,
@@ -291,8 +294,6 @@ struct ContentView: View {
                     SettingsView(appState: appState)
                 } else if appState.currentView == .chat {
                     NotesChatView(appState: appState, aiService: aiService)
-                } else if appState.currentView == .agentHub {
-                    AgentHubView(workspacePath: appState.workspacePath)
                 } else if appState.currentView == .graphView {
                     if let workspace = appState.workspacePath {
                         GraphView(
@@ -349,9 +350,35 @@ struct ContentView: View {
                     BacklinksMenuButton(backlinks: backlinks) { path in
                         navigateToFilePath(path)
                     }
-                    .padding(.trailing, 8)
+                    .padding(.trailing, 4)
+                }
+
+                // Page options menu (notes only)
+                if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase,
+                   let doc = blockDocuments[tab.id] {
+                    Menu {
+                        Button {
+                            doc.fullWidth.toggle()
+                            scheduleSave()
+                        } label: {
+                            HStack {
+                                Label("Full width", systemImage: "arrow.left.and.right")
+                                if doc.fullWidth { Spacer(); Image(systemName: "checkmark") }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.primary)
+                            .frame(width: 28, height: 28)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .padding(.trailing, 4)
                 }
             }
+            .padding(.leading, appState.sidebarOpen ? 0 : 78)
             .opacity(focusModeActive ? 0.0 : 1.0)
         }
 
@@ -387,7 +414,9 @@ struct ContentView: View {
     private func editorView(for tab: OpenFile) -> some View {
         if let document = blockDocuments[tab.id] {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 0) {
                     PageHeaderView(
                         icon: Binding(
                             get: { document.icon },
@@ -443,6 +472,9 @@ struct ContentView: View {
                             }
                         }
                 }
+                .frame(maxWidth: document.fullWidth ? .infinity : 860)
+                Spacer(minLength: 0)
+            }
             }
             .background(Color.fallbackEditorBg)
             .accessibilityIdentifier("editor")
@@ -458,7 +490,11 @@ struct ContentView: View {
                                 document.showTemplatePicker = false
                                 createPageFromTemplate(template)
                             },
-                            onDismiss: { document.showTemplatePicker = false }
+                            onDismiss: { document.showTemplatePicker = false },
+                            onCreateTemplate: {
+                                document.showTemplatePicker = false
+                                saveCurrentNoteAsTemplate(document: document)
+                            }
                         )
                         .onTapGesture { } // prevent tap-through to dismiss scrim
                     }
@@ -588,6 +624,7 @@ struct ContentView: View {
     }
 
     private func navigateBackInActiveTab() {
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "navigation.back"))
         if let activeTab = appState.activeTab, activeTab.isDirty {
             performSave(tabId: activeTab.id)
         }
@@ -597,6 +634,7 @@ struct ContentView: View {
     }
 
     private func navigateForwardInActiveTab() {
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "navigation.forward"))
         if let activeTab = appState.activeTab, activeTab.isDirty {
             performSave(tabId: activeTab.id)
         }
@@ -648,20 +686,24 @@ struct ContentView: View {
     }
 
     private func initializeWorkspace() {
-        let defaultPath = fileSystem.defaultWorkspacePath()
-        if !FileManager.default.fileExists(atPath: defaultPath) {
-            try? FileManager.default.createDirectory(atPath: defaultPath, withIntermediateDirectories: true)
+        // Restore the most recently used workspace, falling back to the default
+        let restoredPath = fileSystem.recentWorkspaces.first(where: {
+            FileManager.default.fileExists(atPath: $0)
+        })
+        let workspacePath = restoredPath ?? fileSystem.defaultWorkspacePath()
+        if !FileManager.default.fileExists(atPath: workspacePath) {
+            try? FileManager.default.createDirectory(atPath: workspacePath, withIntermediateDirectories: true)
         }
-        fileSystem.setWorkspace(defaultPath)
-        appState.workspacePath = defaultPath
+        fileSystem.setWorkspace(workspacePath)
+        appState.workspacePath = workspacePath
 
         // Register workspace as a qmd collection in the background (no-op if qmd not installed)
-        QmdService.registerCollectionInBackground(workspace: defaultPath)
+        QmdService.registerCollectionInBackground(workspace: workspacePath)
         // Pre-warm the daemon now if hybrid mode is already selected
         QmdService.prewarmDaemonIfNeeded(mode: appState.settings.qmdSearchMode)
 
         // Create onboarding file for empty workspaces before building the file tree
-        if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: defaultPath) {
+        if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: workspacePath) {
             refreshFileTree()
             let entry = FileEntry(
                 id: onboardingPath,
@@ -684,6 +726,8 @@ struct ContentView: View {
 
     private func loadFileContent(for entry: FileEntry) {
         guard !entry.isDatabase, !entry.isCanvas else { return }
+        let signpostState = Log.signpost.beginInterval("loadFileContent")
+        defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
         focusModeSuppress = true
         do {
@@ -698,7 +742,7 @@ struct ContentView: View {
                 appState.openTabs[index].icon = doc.icon
             }
         } catch {
-            print("Failed to load file: \(error)")
+            Log.editor.error("Failed to load file: \(error.localizedDescription)")
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -721,7 +765,7 @@ struct ContentView: View {
             }
             refreshFileTree()
         } catch {
-            print("Failed to create file: \(error)")
+            Log.fileSystem.error("Failed to create file: \(error.localizedDescription)")
         }
     }
 
@@ -733,7 +777,7 @@ struct ContentView: View {
             navigateToEntry(entry, inNewTab: true)
             refreshFileTree()
         } catch {
-            print("Failed to create file: \(error)")
+            Log.fileSystem.error("Failed to create file: \(error.localizedDescription)")
         }
     }
 
@@ -856,7 +900,38 @@ struct ContentView: View {
             navigateToEntry(entry, inNewTab: true)
             refreshFileTree()
         } catch {
-            print("Failed to create page from template: \(error)")
+            Log.fileSystem.error("Failed to create page from template: \(error.localizedDescription)")
+        }
+    }
+
+    private func saveCurrentNoteAsTemplate(document: BlockDocument) {
+        guard let workspace = appState.workspacePath else { return }
+
+        let defaultName = document.titleBlock?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let suggestedName = defaultName.isEmpty ? "Untitled Template" : defaultName
+
+        let alert = NSAlert()
+        alert.messageText = "Save as Template"
+        alert.informativeText = "Enter a name for this template."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 22))
+        input.stringValue = suggestedName
+        input.placeholderString = "Template name"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        do {
+            try fileSystem.saveAsTemplate(content: document.markdown, name: name, in: workspace)
+        } catch {
+            Log.fileSystem.error("Failed to save template: \(error.localizedDescription)")
         }
     }
 
@@ -871,7 +946,7 @@ struct ContentView: View {
             navigateToEntry(entry, preferExistingTab: true)
             refreshFileTree()
         } catch {
-            print("Failed to open daily note: \(error)")
+            Log.fileSystem.error("Failed to open daily note: \(error.localizedDescription)")
         }
     }
 
@@ -923,7 +998,7 @@ struct ContentView: View {
             }
             refreshFileTree()
         } catch {
-            print("Failed to create canvas: \(error)")
+            Log.canvas.error("Failed to create canvas: \(error.localizedDescription)")
         }
     }
 
@@ -936,7 +1011,7 @@ struct ContentView: View {
             appState.openFile(entry)
             refreshFileTree()
         } catch {
-            print("Failed to create database: \(error)")
+            Log.database.error("Failed to create database: \(error.localizedDescription)")
         }
     }
 
@@ -1033,8 +1108,19 @@ struct ContentView: View {
         appState.openTabs[index].isDirty = false
     }
 
+    /// Removes any databaseEmbed blocks referencing `dbPath` from all currently open BlockDocuments.
+    private func removeDatabaseEmbedsFromOpenDocs(dbPath: String) {
+        for (_, doc) in blockDocuments {
+            let toRemove = doc.blocks.filter { $0.type == .databaseEmbed && $0.databasePath == dbPath }.map(\.id)
+            for id in toRemove {
+                doc.deleteBlock(id: id)
+            }
+        }
+    }
+
     private func forceSave() {
         guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "editor.save"))
         performSave(tabId: tab.id)
     }
 

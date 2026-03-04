@@ -202,25 +202,6 @@ struct SidebarView: View {
 
             // Bottom bar with settings and chat
             VStack(spacing: 2) {
-                Button(action: { appState.openAgentHub() }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "list.bullet.clipboard")
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                        Text("Agent Hub")
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(hoveredButton == "agentHub" ? Color.primary.opacity(0.06) : Color.clear)
-                    .cornerRadius(6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in hoveredButton = hovering ? "agentHub" : nil }
-
                 Button(action: openSettings) {
                     HStack(spacing: 8) {
                         Image(systemName: "gearshape")

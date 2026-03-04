@@ -102,6 +102,14 @@ struct CommandPaletteView: View {
                         let items = allItems
                         let sections = groupedSections(items)
 
+                        if items.isEmpty && !searchText.isEmpty {
+                            Text("No results")
+                                .foregroundColor(.secondary)
+                                .font(.callout)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 20)
+                        }
+
                         ForEach(sections, id: \.title) { section in
                             SectionHeader(title: section.title)
                             ForEach(Array(section.items.enumerated()), id: \.element.id) { _, item in
@@ -191,7 +199,7 @@ struct CommandPaletteView: View {
     private var placeholderText: String {
         if isCommandMode { return "Type a command..." }
         if appState.commandPaletteMode == .newTab { return "Open or create a page..." }
-        return "Search pages..."
+        return "Search pages and content..."
     }
 
     // MARK: - Mode Detection
@@ -352,8 +360,8 @@ struct CommandPaletteView: View {
         .cornerRadius(4)
         .contentShape(Rectangle())
         .onTapGesture {
-            selectedIndex = index
-            selectCurrent()
+            selectedIndex = index  // keep highlight in sync
+            executeItem(item)      // use captured item, not re-looked-up index
         }
     }
 
@@ -607,13 +615,30 @@ struct CommandPaletteView: View {
             guard task.terminationStatus == 0 else { return nil }
 
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let raw = json["results"] as? [[String: Any]] else { return nil }
+            // qmd CLI returns a JSON array; MCP returns {"results":[...]}
+            let parsed = try? JSONSerialization.jsonObject(with: data)
+            let raw: [[String: Any]]
+            if let arr = parsed as? [[String: Any]] {
+                raw = arr
+            } else if let obj = parsed as? [String: Any],
+                      let arr = obj["results"] as? [[String: Any]] {
+                raw = arr
+            } else {
+                return nil
+            }
 
             return raw.compactMap { r -> ContentMatch? in
-                guard let relPath = r["path"] as? String else { return nil }
-                let fullPath = (workspace as NSString).appendingPathComponent(relPath)
-                let fileName = (relPath as NSString).lastPathComponent
+                guard let relPath = (r["file"] as? String) ?? (r["path"] as? String) else { return nil }
+                // Strip qmd://CollectionName/ virtual path prefix
+                var cleanPath = relPath
+                if cleanPath.hasPrefix("qmd://") {
+                    cleanPath = String(cleanPath.dropFirst(6))
+                    if let slash = cleanPath.firstIndex(of: "/") {
+                        cleanPath = String(cleanPath[cleanPath.index(after: slash)...])
+                    }
+                }
+                let fullPath = (workspace as NSString).appendingPathComponent(cleanPath)
+                let fileName = (cleanPath as NSString).lastPathComponent
                 let lineNumber = r["line"] as? Int ?? 0
 
                 // Extract first meaningful line from snippet, strip "42: " prefix if present
@@ -647,8 +672,10 @@ struct CommandPaletteView: View {
     private func selectCurrent() {
         let items = allItems
         guard selectedIndex >= 0, selectedIndex < items.count else { return }
-        let item = items[selectedIndex]
+        executeItem(items[selectedIndex])
+    }
 
+    private func executeItem(_ item: PaletteItem) {
         switch item {
         case .file(let entry):
             if appState.commandPaletteMode == .newTab {

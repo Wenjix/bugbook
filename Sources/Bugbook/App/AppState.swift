@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Sentry
 
 enum CommandPaletteMode {
     case search
@@ -10,7 +11,6 @@ enum CommandPaletteMode {
 enum ViewMode {
     case editor
     case chat
-    case agentHub
     case graphView
 }
 
@@ -66,6 +66,9 @@ class AppState: ObservableObject {
         let tab = makeTab(for: entry)
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1
+        let crumb = Breadcrumb(level: .info, category: "navigation.open")
+        crumb.message = entry.name
+        SentrySDK.addBreadcrumb(crumb)
     }
 
     /// Replace the active tab's content with the given file. If the file is already open, switch to it instead.
@@ -272,6 +275,16 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Close any tabs that point to the given path (used when a file is deleted).
+    func closeTabsForPath(_ path: String) {
+        // Iterate in reverse so removal indices stay valid
+        for i in stride(from: openTabs.count - 1, through: 0, by: -1) {
+            if openTabs[i].path == path {
+                closeTab(at: i)
+            }
+        }
+    }
+
     func closeTab(at index: Int) {
         guard index >= 0, index < openTabs.count else { return }
         let wasActive = index == activeTabIndex
@@ -294,12 +307,6 @@ class AppState: ObservableObject {
 
     func closeNotesChat() {
         currentView = .editor
-    }
-
-    func openAgentHub() {
-        showSettings = false
-        aiSidePanelOpen = false
-        currentView = .agentHub
     }
 
     func openGraphView() {
