@@ -30,6 +30,39 @@ struct GeneralSettingsView: View {
                 Toggle("Focus mode while typing", isOn: $appState.settings.focusModeOnType)
             }
 
+            SettingsSection("New Tab") {
+                HStack {
+                    if appState.settings.defaultNewTabPage.isEmpty {
+                        Text("Bugbook start page")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(displayName(for: appState.settings.defaultNewTabPage))
+                            .font(.system(size: 14))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer()
+                    if !appState.settings.defaultNewTabPage.isEmpty {
+                        Button("Reset") {
+                            appState.settings.defaultNewTabPage = ""
+                        }
+                    }
+                    Menu("Choose Page...") {
+                        ForEach(flatPages(from: appState.fileTree), id: \.path) { entry in
+                            Button(entry.name.hasSuffix(".md") ? String(entry.name.dropLast(3)) : entry.name) {
+                                appState.settings.defaultNewTabPage = entry.path
+                            }
+                        }
+                    }
+                    .fixedSize()
+                }
+                Text("Opens this page instead of the default start page when creating a new tab.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             SettingsSection("App") {
                 infoRow(label: "Bundle ID", value: bundleIdentifier)
                 infoRow(label: "Version", value: appVersion)
@@ -68,6 +101,24 @@ struct GeneralSettingsView: View {
 
     private var executableName: String {
         Bundle.main.executableURL?.lastPathComponent ?? "Unknown"
+    }
+
+    private func displayName(for path: String) -> String {
+        let name = (path as NSString).lastPathComponent
+        return name.hasSuffix(".md") ? String(name.dropLast(3)) : name
+    }
+
+    private func flatPages(from entries: [FileEntry]) -> [FileEntry] {
+        var result: [FileEntry] = []
+        for entry in entries {
+            if !entry.isDirectory || entry.isDatabase || entry.isCanvas {
+                result.append(entry)
+            }
+            if let children = entry.children {
+                result.append(contentsOf: flatPages(from: children))
+            }
+        }
+        return result
     }
 
     private func switchWorkspace() async {

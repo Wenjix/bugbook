@@ -4,10 +4,12 @@ import BugbookCore
 extension Notification.Name {
     static let databaseDidChange = Notification.Name("databaseDidChange")
     static let databaseNameDidChange = Notification.Name("databaseNameDidChange")
+    static let inlineDatabaseRowPeek = Notification.Name("inlineDatabaseRowPeek")
 }
 
 struct DatabaseFullPageView: View {
     let dbPath: String
+    var initialRowId: String? = nil
     @StateObject private var dbService = DatabaseService()
     @State private var schema: DatabaseSchema?
     @State private var rows: [DatabaseRow] = []
@@ -76,6 +78,7 @@ struct DatabaseFullPageView: View {
                 Divider()
                 HStack(spacing: 0) {
                     viewContent(schema: schema)
+                        .frame(maxHeight: .infinity, alignment: .topLeading)
                     if let rowIdx = selectedRowIndex, rowIdx < rows.count {
                         Divider()
                         RowPageView(
@@ -605,6 +608,8 @@ struct DatabaseFullPageView: View {
                     for updated in newVal {
                         if let idx = rows.firstIndex(where: { $0.id == updated.id }) {
                             rows[idx] = updated
+                        } else {
+                            rows.append(updated)
                         }
                     }
                 }
@@ -650,7 +655,8 @@ struct DatabaseFullPageView: View {
                 rows: boundRows,
                 viewConfig: activeView ?? defaultViewConfig(),
                 onOpenRow: { row in openRow(row) },
-                onSave: { row in saveRow(row) }
+                onSave: { row in saveRow(row) },
+                onNewRow: { createNewRow() }
             )
         case .calendar:
             CalendarView(
@@ -689,6 +695,10 @@ struct DatabaseFullPageView: View {
                     activeViewId = loadedSchema.defaultView
                 }
                 editingTitle = loadedSchema.name
+                if let targetId = initialRowId, selectedRowIndex == nil,
+                   let idx = loadedRows.firstIndex(where: { $0.id == targetId }) {
+                    selectedRowIndex = idx
+                }
             case .failure(let error):
                 self.error = error.localizedDescription
             }
@@ -892,6 +902,36 @@ struct DatabaseFullPageView: View {
 
     private func addNewView(type: ViewType) {
         guard var s = schema else { return }
+
+        // Auto-create a Status property for Kanban if no select property exists
+        if type == .kanban && s.properties.first(where: { $0.type == .select }) == nil {
+            let statusProp = PropertyDefinition(
+                id: "prop_status_\(UUID().uuidString.prefix(6).lowercased())",
+                name: "Status",
+                type: .select,
+                config: PropertyConfig(options: [
+                    SelectOption(id: "opt_not_started", name: "Not started", color: "gray"),
+                    SelectOption(id: "opt_in_progress", name: "In progress", color: "blue"),
+                    SelectOption(id: "opt_done", name: "Done", color: "green")
+                ])
+            )
+            Task {
+                try? dbService.addProperty(statusProp, to: &s, at: dbPath)
+                let view = ViewConfig(
+                    id: "view_\(UUID().uuidString)",
+                    name: type.rawValue.capitalized,
+                    type: type,
+                    sorts: [],
+                    filters: [],
+                    groupBy: statusProp.id
+                )
+                try? dbService.addView(view, to: &s, at: dbPath)
+                schema = s
+                activeViewId = view.id
+            }
+            return
+        }
+
         let view = ViewConfig(
             id: "view_\(UUID().uuidString)",
             name: type.rawValue.capitalized,

@@ -9,6 +9,7 @@ struct RowPageView: View {
     var onAddOption: ((String, SelectOption) -> Void)?
     var onUpdateOption: ((String, String, String?, String?) -> Void)?
     var onDeleteOption: ((String, String) -> Void)?
+    var showBreadcrumb: Bool = true
 
     @State private var editingTitle: String = ""
 
@@ -18,34 +19,36 @@ struct RowPageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Breadcrumb / back bar
-            HStack(spacing: 4) {
-                Button {
-                    onBack()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text(schema.name)
+            if showBreadcrumb {
+                // Breadcrumb / back bar
+                HStack(spacing: 4) {
+                    Button {
+                        onBack()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text(schema.name)
+                        }
+                        .font(.body)
+                        .foregroundColor(.accentColor)
                     }
-                    .font(.body)
-                    .foregroundColor(.accentColor)
+                    .buttonStyle(.plain)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text(rowTitle)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+
+                    Spacer()
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
 
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Text(rowTitle)
-                    .font(.body)
-                    .foregroundColor(.secondary)
-
-                Spacer()
+                Divider()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-
-            Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -99,6 +102,7 @@ struct RowPageView: View {
                         }
                     ))
                     .font(.body)
+                    .scrollContentBackground(.hidden)
                     .frame(minHeight: 300)
                 }
                 .frame(maxWidth: 720)

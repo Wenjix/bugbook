@@ -287,11 +287,16 @@ class AppState: ObservableObject {
 
     func closeTab(at index: Int) {
         guard index >= 0, index < openTabs.count else { return }
+
+        // Closing the last tab quits the app
+        if openTabs.count == 1 {
+            NSApplication.shared.terminate(nil)
+            return
+        }
+
         let wasActive = index == activeTabIndex
         openTabs.remove(at: index)
-        if openTabs.isEmpty {
-            activeTabIndex = 0
-        } else if wasActive {
+        if wasActive {
             // Select same index position, or last tab
             activeTabIndex = min(index, openTabs.count - 1)
         } else if activeTabIndex > index {

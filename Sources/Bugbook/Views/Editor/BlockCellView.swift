@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Per-block wrapper with drag handle on hover.
 struct BlockCellView: View {
@@ -68,12 +69,15 @@ struct BlockCellView: View {
     private var blockShell: some View {
         HStack(alignment: .top, spacing: 4) {
             // Drag handle — click to open block menu
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
+            GripDotsView()
                 .frame(width: 20, height: 24)
                 .opacity(isHovering || document.blockMenuBlockId == block.id ? 1 : 0)
                 .contentShape(Rectangle())
+                .onHover { inside in
+                    EditorCursorState.suppressIBeam = inside
+                    if inside { NSCursor.openHand.push() }
+                    else { NSCursor.pop() }
+                }
                 .highPriorityGesture(
                     TapGesture().onEnded {
                         document.blockMenuBlockId = block.id

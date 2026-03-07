@@ -487,6 +487,13 @@ class BlockDocument: ObservableObject {
         cursorPosition = 0
     }
 
+    func appendEmptyBlock() {
+        let newBlock = Block(type: .paragraph)
+        blocks.append(newBlock)
+        focusedBlockId = newBlock.id
+        cursorPosition = 0
+    }
+
     func duplicateBlock(id: UUID) {
         guard let loc = blockLocation(for: id) else { return }
         guard let original = block(for: id) else { return }

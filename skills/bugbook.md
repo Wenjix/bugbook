@@ -3,10 +3,37 @@ All commands return JSON. Use jq to parse output when needed.
 
 ## Discovering what exists
 
+bugbook page list                  # -> [{path, relative_path, name, title, tags}]
+bugbook page get "Bugbook Strategy"
+bugbook page embed-database "Bugbook Strategy" "Bugbook Strategy Board"
+bugbook board create "Bugbook Strategy Board" --group-name "Phase" --column "Now" --column "Next" --column "Later" --view list --view calendar --embed-in "Bugbook Strategy"
+bugbook board add-card "Bugbook Strategy Board" "Search trust" --column "Now"
+bugbook board move-card "Bugbook Strategy Board" row_abc123 "Next"
+bugbook db view list "Bugbook Strategy Board"
+bugbook db view add "Bugbook Strategy Board" --type calendar --name "Calendar" --date-property "Date"
+bugbook db view update "Bugbook Strategy Board" "Calendar" --name "Timeline"
+bugbook db view set-default "Bugbook Strategy Board" "Timeline"
+bugbook db view delete "Bugbook Strategy Board" "Timeline"
+bugbook skill create "research-summarizer" --description "Summarize linked source pages into one note."
+bugbook skill list                 # -> [{path, relative_path, name, title, description}]
+bugbook skill get "research-summarizer"
 bugbook db list                    # -> [{id, name, path, row_count}]
 bugbook db schema <db_name>        # -> full schema with properties and options
 
 Always check the schema before querying to get correct property IDs and option IDs.
+
+## Working with notes
+
+bugbook page create "Notes/Research Summary" --title "Research Summary"
+bugbook page update "Notes/Research Summary" --append-file -    # pipe markdown via stdin
+bugbook page delete "Notes/Research Summary"
+bugbook backlinks "Bugbook Strategy"                            # -> pages that link here
+bugbook page embed-database "Bugbook Strategy" "Bugbook Strategy Board"
+
+Workspace skills live in `Skills/*.skill.md`. Use them as lightweight agent playbooks stored with the notes.
+`bugbook page update` accepts either `--content-file` for a full replacement or `--prepend-file` / `--append-file` for incremental edits.
+Boards live in `databases/` by default. `bugbook board create` returns the property/option IDs needed for custom card creation, supports extra `--view` values like `list` and `calendar`, accepts `--no-table` when you want a kanban-only board, and auto-adds a date property when calendar is enabled.
+Use `bugbook db view ...` to evolve an existing database without rewriting `_schema.json`.
 
 ## Querying
 

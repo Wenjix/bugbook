@@ -9,6 +9,21 @@ final class MobileAgentHubViewModel: ObservableObject {
     @Published var error: String?
 
     private let store = AgentWorkspaceStore()
+    private let iso8601Formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private let iso8601FormatterNoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+    private let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
 
     func refresh(workspacePath: String) {
         do {
@@ -36,7 +51,7 @@ final class MobileAgentHubViewModel: ObservableObject {
         }
     }
 
-    func setStatus(workspacePath: String, taskId: String, status: AgentTaskStatus) {
+    func setTaskStatus(_ taskId: String, status: AgentTaskStatus, workspacePath: String) {
         do {
             _ = try store.updateTask(
                 in: workspacePath,
@@ -47,5 +62,16 @@ final class MobileAgentHubViewModel: ObservableObject {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    // MARK: - Timestamp Formatting
+
+    func parseISO8601(_ string: String) -> Date? {
+        iso8601Formatter.date(from: string) ?? iso8601FormatterNoFrac.date(from: string)
+    }
+
+    func relativeTime(from iso8601String: String) -> String {
+        guard let date = parseISO8601(iso8601String) else { return iso8601String }
+        return relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 }

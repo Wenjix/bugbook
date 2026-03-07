@@ -12,8 +12,6 @@ struct KanbanView: View {
 
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
-    @State private var newCardTitle: String = ""
-    @State private var addingCardInColumn: String? = nil
 
     // Custom drag state
     @State private var draggingRowId: String? = nil
@@ -89,7 +87,7 @@ struct KanbanView: View {
                 .padding(.vertical, 6)
             }
 
-            ScrollView(.horizontal) {
+            ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
                         kanbanColumn(column, index: index)
@@ -103,7 +101,6 @@ struct KanbanView: View {
                 .padding(12)
                 .coordinateSpace(name: "kanban")
                 .overlay {
-                    // Floating drag preview
                     if let dragId = draggingRowId,
                        let row = rows.first(where: { $0.id == dragId }) {
                         let title = row.title(schema: schema)
@@ -113,7 +110,6 @@ struct KanbanView: View {
                     }
                 }
             }
-            .frame(maxHeight: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -195,17 +191,21 @@ struct KanbanView: View {
     private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int) -> some View {
         let isTargeted = dragTargetColumn == column.id
         let columnWidth: CGFloat = 250
-        return VStack(alignment: .leading, spacing: 8) {
+        let columnColor = colorForName(column.color)
+        return VStack(alignment: .leading, spacing: 0) {
+            // Column header with colored label
             HStack {
-                Circle()
-                    .fill(colorForName(column.color))
-                    .frame(width: 8, height: 8)
-
                 Text(column.name)
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(columnColor.opacity(0.2))
+                    .foregroundColor(columnColor)
+                    .cornerRadius(4)
+
                 Spacer()
+
                 Text("\(rowsForColumn(column.id).count)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -215,52 +215,15 @@ struct KanbanView: View {
                     .cornerRadius(4)
             }
             .padding(.horizontal, 8)
+            .padding(.vertical, 8)
 
-            VStack(spacing: 4) {
+            // Cards — no scroll, just expand
+            VStack(spacing: 6) {
                 let columnRows = rowsForColumn(column.id)
-
-                // Inline add card
-                if addingCardInColumn == column.id {
-                    VStack(spacing: 4) {
-                        TextField("Card title", text: $newCardTitle, onCommit: {
-                            addCardInColumn(column.id)
-                        })
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption)
-
-                        HStack(spacing: 6) {
-                            Button("Add") { addCardInColumn(column.id) }
-                                .font(.caption)
-                                .disabled(newCardTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-                            Button("Cancel") {
-                                newCardTitle = ""
-                                addingCardInColumn = nil
-                            }
-                            .font(.caption)
-                        }
-                    }
-                    .padding(.horizontal, 6)
-                } else {
-                    Button {
-                        addingCardInColumn = column.id
-                        newCardTitle = ""
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus")
-                            Text("New")
-                        }
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
-                }
 
                 ForEach(columnRows) { row in
                     let title = row.title(schema: schema)
-                    kanbanCard(row, title: title)
+                    kanbanCard(row, title: title, columnColor: columnColor)
                         .opacity(draggingRowId == row.id ? 0.2 : 1)
                         .gesture(
                             DragGesture(coordinateSpace: .named("kanban"))
@@ -280,16 +243,36 @@ struct KanbanView: View {
                                 }
                         )
                 }
+
+                // + New page button at bottom, colored like Notion
+                Button {
+                    addCardInColumn(column.id)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("New page")
+                    }
+                    .font(.caption)
+                    .foregroundColor(columnColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(columnColor.opacity(0.08))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 6)
             }
-            .frame(minHeight: 60, maxHeight: .infinity, alignment: .top)
+            .padding(.bottom, 8)
         }
         .frame(width: columnWidth)
-        .padding(.vertical, 8)
-        .background(isTargeted ? colorForName(column.color).opacity(0.12) : Color.fallbackSurfaceSubtle)
-        .cornerRadius(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isTargeted ? columnColor.opacity(0.12) : columnColor.opacity(0.04))
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isTargeted ? colorForName(column.color).opacity(0.4) : Color.clear, lineWidth: 2)
+                .stroke(isTargeted ? columnColor.opacity(0.4) : columnColor.opacity(0.1), lineWidth: 1)
         )
     }
 
@@ -307,13 +290,10 @@ struct KanbanView: View {
     }
 
     private func addCardInColumn(_ columnId: String) {
-        let title = newCardTitle.trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty else { return }
         let now = Date()
         var properties: [String: PropertyValue] = [:]
-        // Set the title property
         if let titleProp = schema.titleProperty {
-            properties[titleProp.id] = .text(title)
+            properties[titleProp.id] = .text("")
         }
         if let prop = groupProperty, columnId != "__none__" {
             properties[prop.id] = .select(columnId)
@@ -328,126 +308,33 @@ struct KanbanView: View {
         )
         rows.append(newRow)
         onSave(newRow)
-        newCardTitle = ""
-        addingCardInColumn = nil
     }
 
     // MARK: - Kanban Card
 
-    private func kanbanCard(_ row: DatabaseRow, title: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.body)
-                .fontWeight(.medium)
-                .lineLimit(2)
-                .foregroundColor(.primary)
-
-            // Show properties (excluding the group property and title)
-            let displayProps = schema.properties.filter {
-                $0.type != .title && $0.id != groupProperty?.id
-            }.prefix(4)
-            if !displayProps.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(displayProps)) { prop in
-                        if let val = row.properties[prop.id], val != .empty {
-                            cardPropertyRow(prop: prop, value: val)
-                        }
-                    }
+    private func kanbanCard(_ row: DatabaseRow, title: String, columnColor: Color) -> some View {
+        Text(title.isEmpty ? "Untitled" : title)
+            .font(.body)
+            .fontWeight(.medium)
+            .lineLimit(2)
+            .foregroundColor(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(columnColor.opacity(0.06))
+            .cornerRadius(6)
+            .contentShape(Rectangle())
+            .onTapGesture { onOpenRow(row) }
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.openHand.push()
+                } else {
+                    NSCursor.pop()
                 }
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Color.fallbackCardBg)
-        .cornerRadius(6)
-        .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
-        .contentShape(Rectangle())
-        .onTapGesture { onOpenRow(row) }
-        .padding(.horizontal, 6)
-    }
-
-    @ViewBuilder
-    private func cardPropertyRow(prop: PropertyDefinition, value: PropertyValue) -> some View {
-        switch value {
-        case .select(let optionId):
-            if let option = prop.options?.first(where: { $0.id == optionId }) {
-                HStack(spacing: 4) {
-                    Text(prop.name)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(option.name)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(colorForName(option.color).opacity(0.12))
-                        .foregroundColor(colorForName(option.color))
-                        .cornerRadius(3)
-                }
-            }
-        case .multiSelect(let ids):
-            let options = ids.compactMap { id in prop.options?.first(where: { $0.id == id }) }
-            if !options.isEmpty {
-                HStack(spacing: 4) {
-                    Text(prop.name)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    ForEach(options.prefix(3)) { option in
-                        Text(option.name)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(colorForName(option.color).opacity(0.12))
-                            .foregroundColor(colorForName(option.color))
-                            .cornerRadius(3)
-                    }
-                    if options.count > 3 {
-                        Text("+\(options.count - 3)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        case .checkbox(let b):
-            HStack(spacing: 4) {
-                Text(prop.name)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Image(systemName: b ? "checkmark.square.fill" : "square")
-                    .font(.caption2)
-                    .foregroundColor(b ? .accentColor : .secondary)
-            }
-        default:
-            HStack(spacing: 4) {
-                Text(prop.name)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Text(displayValue(value, prop: prop))
-                    .font(.caption2)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-            }
-        }
+            .padding(.horizontal, 6)
     }
 
     // MARK: - Helpers
-
-    private func displayValue(_ value: PropertyValue, prop: PropertyDefinition) -> String {
-        switch value {
-        case .text(let s): return s
-        case .number(let n): return n == n.rounded() ? String(Int(n)) : String(n)
-        case .select(let s):
-            return prop.options?.first(where: { $0.id == s })?.name ?? s
-        case .multiSelect(let arr):
-            return arr.compactMap { id in prop.options?.first(where: { $0.id == id })?.name }.joined(separator: ", ")
-        case .date(let s): return s
-        case .checkbox(let b): return b ? "Yes" : "No"
-        case .url(let s): return s
-        case .email(let s): return s
-        case .relation(let s): return s
-        case .relationMany(let arr): return arr.joined(separator: ", ")
-        case .empty: return ""
-        }
-    }
 
     private func colorForName(_ name: String) -> Color {
         switch name {

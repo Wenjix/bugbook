@@ -22,6 +22,14 @@ Human interface (desktop/mobile):
 - Update task statuses visually.
 
 Agent interface (CLI):
+- List/read/create/update/delete markdown pages.
+- Embed databases into notes.
+- Discover workspace skills.
+- Create kanban boards without hand-writing schema JSON.
+- Add and move cards by column name from the CLI.
+- Add, update, delete, and set default database views from the CLI.
+- Query databases and rows.
+- Traverse backlinks.
 - Create/update tasks.
 - Start/finish runs.
 - Log structured events.
@@ -57,6 +65,27 @@ swift run BugbookCLI agent --help
 ## Usage
 
 ### CLI (agent workflow)
+
+Read and update notes:
+
+```bash
+swift run BugbookCLI page list --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
+cat updated-note.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --content-file -
+cat snippet.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --append-file -
+swift run BugbookCLI backlinks "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI page embed-database "Bugbook Strategy" "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI board create "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook" --group-name "Phase" --column "Now" --column "Next" --column "Later" --view list --view calendar --embed-in "Bugbook Strategy"
+swift run BugbookCLI board create "Sprint Board" --workspace "~/Library/Application Support/Bugbook" --column "Todo" --column "Doing" --column "Done" --no-table
+swift run BugbookCLI board add-card "Bugbook Strategy Board" "Search trust" --workspace "~/Library/Application Support/Bugbook" --column "Now" --date 2026-03-07
+swift run BugbookCLI board move-card "Bugbook Strategy Board" row_abc123 "Next" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI db view list "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI db view add "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook" --type calendar --name "Calendar" --date-property "Date"
+swift run BugbookCLI db view set-default "Bugbook Strategy Board" "Calendar" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI skill create "research-summarizer" --workspace "~/Library/Application Support/Bugbook" --description "Summarize linked source pages into one note."
+swift run BugbookCLI skill list --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI skill get "research-summarizer" --workspace "~/Library/Application Support/Bugbook"
+```
 
 Initialize workspace files:
 

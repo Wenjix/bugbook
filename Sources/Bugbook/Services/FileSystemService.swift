@@ -41,7 +41,8 @@ class FileSystemService: ObservableObject {
     }
 
     func defaultWorkspacePath() -> String {
-        Self.appSupportBase.appendingPathComponent("Bugbook", isDirectory: true).path
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return documents.appendingPathComponent("Bugbook", isDirectory: true).path
     }
 
     // MARK: - File Tree Building
@@ -68,6 +69,7 @@ class FileSystemService: ObservableObject {
             if name == "Daily Notes" || name == "Templates" { continue }
 
             let fullPath = (path as NSString).appendingPathComponent(name)
+            if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }
             var isDir: ObjCBool = false
             guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 

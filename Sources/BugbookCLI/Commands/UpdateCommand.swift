@@ -25,25 +25,7 @@ struct Update: ParsableCommand {
     func run() throws {
         let (dbPath, schema) = try resolveDatabase(db, workspace: options.resolvedWorkspace)
         let rowStore = RowStore()
-
-        // Find existing row
-        let suffix = RowStore.extractIdSuffix(from: rowId)
-        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: dbPath) else {
-            throw CLIError.databaseNotFound(db)
-        }
-
-        var existingRow: DatabaseRow?
-        for name in contents {
-            if name.hasSuffix(".md") && !name.hasPrefix("_") && name.contains("(\(suffix))") {
-                let filePath = (dbPath as NSString).appendingPathComponent(name)
-                if let row = rowStore.loadRow(at: filePath, schema: schema), row.id == rowId {
-                    existingRow = row
-                    break
-                }
-            }
-        }
-
-        guard var row = existingRow else {
+        guard var row = try loadRow(rowId: rowId, dbPath: dbPath, schema: schema) else {
             throw CLIError.invalidInput("Row not found: \(rowId)")
         }
 
@@ -62,16 +44,7 @@ struct Update: ParsableCommand {
 
         // Read body
         if let bodyFile = bodyFile {
-            if bodyFile == "-" {
-                var lines: [String] = []
-                while let line = readLine(strippingNewline: false) {
-                    lines.append(line)
-                }
-                row.body = lines.joined()
-            } else {
-                let path = (bodyFile as NSString).expandingTildeInPath
-                row.body = try String(contentsOfFile: path, encoding: .utf8)
-            }
+            row.body = try readTextInput(from: bodyFile)
         }
 
         row.updatedAt = Date()

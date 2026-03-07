@@ -6,7 +6,7 @@ struct DB: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "db",
         abstract: "Database management commands",
-        subcommands: [List.self, Schema.self, CreateDB.self]
+        subcommands: [List.self, Schema.self, CreateDB.self, DBView.self]
     )
 
     struct List: ParsableCommand {

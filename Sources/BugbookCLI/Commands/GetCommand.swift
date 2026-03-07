@@ -21,26 +21,7 @@ struct Get: ParsableCommand {
 
     func run() throws {
         let (dbPath, schema) = try resolveDatabase(db, workspace: options.resolvedWorkspace)
-        let rowStore = RowStore()
-
-        // Find the row file by its ID suffix
-        let suffix = RowStore.extractIdSuffix(from: rowId)
-        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: dbPath) else {
-            throw CLIError.databaseNotFound(db)
-        }
-
-        var foundRow: DatabaseRow?
-        for name in contents {
-            if name.hasSuffix(".md") && !name.hasPrefix("_") && name.contains("(\(suffix))") {
-                let filePath = (dbPath as NSString).appendingPathComponent(name)
-                if let row = rowStore.loadRow(at: filePath, schema: schema), row.id == rowId {
-                    foundRow = row
-                    break
-                }
-            }
-        }
-
-        guard let row = foundRow else {
+        guard let row = try loadRow(rowId: rowId, dbPath: dbPath, schema: schema) else {
             throw CLIError.invalidInput("Row not found: \(rowId)")
         }
 

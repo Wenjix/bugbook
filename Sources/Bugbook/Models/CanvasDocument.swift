@@ -223,12 +223,22 @@ class CanvasDocument: ObservableObject {
         let imagePath = (canvasPath as NSString).appendingPathComponent(filename)
 
         // Save image as PNG to canvas folder
-        guard let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else { return }
+        // Use CGImage path for broader format support (HEIC, etc.)
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            Log.canvas.error("Failed to get CGImage from NSImage")
+            return
+        }
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            Log.canvas.error("Failed to convert image to PNG")
+            return
+        }
         do {
             try pngData.write(to: URL(fileURLWithPath: imagePath), options: .atomic)
-        } catch { return }
+        } catch {
+            Log.canvas.error("Failed to write image: \(error.localizedDescription)")
+            return
+        }
 
         // Size the node proportionally, capping width at 400
         let maxWidth: CGFloat = 400

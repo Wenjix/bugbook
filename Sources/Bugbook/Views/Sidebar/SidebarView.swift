@@ -3,10 +3,6 @@ import SwiftUI
 struct SidebarView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var fileSystem: FileSystemService
-    var canGoBack: Bool
-    var canGoForward: Bool
-    var onBack: () -> Void
-    var onForward: () -> Void
     var onSelectFile: (FileEntry) -> Void
     var onToggleSidebar: () -> Void
     @State private var hoveredButton: String?
@@ -55,8 +51,6 @@ struct SidebarView: View {
                     Spacer()
                 }
                 chromeButton(icon: "sidebar.left", help: "Toggle Sidebar", action: onToggleSidebar)
-                chromeButton(icon: "chevron.left", help: "Back", isEnabled: canGoBack, action: onBack)
-                chromeButton(icon: "chevron.right", help: "Forward", isEnabled: canGoForward, action: onForward)
                 newPageMenuButton
                 if isFullScreen {
                     Spacer()

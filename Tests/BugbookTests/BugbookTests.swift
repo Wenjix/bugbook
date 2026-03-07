@@ -644,9 +644,12 @@ final class AppStateTests: XCTestCase {
     func testViewModeTransitions() {
         let state = AppState()
         XCTAssertEqual(state.currentView, .editor)
-        state.openAgentHub()
-        XCTAssertEqual(state.currentView, .agentHub)
+        XCTAssertFalse(state.aiSidePanelOpen)
+        state.openAiPanel()
+        XCTAssertTrue(state.aiSidePanelOpen)
+        XCTAssertEqual(state.currentView, .editor)
         state.openGraphView()
+        XCTAssertFalse(state.aiSidePanelOpen)
         XCTAssertEqual(state.currentView, .graphView)
     }
 }

@@ -85,6 +85,19 @@ public class DatabaseStore {
         )
 
         try saveSchema(schema, at: folderPath)
+        try saveEmptyIndex(at: folderPath, updatedAt: formatter.string(from: Date()))
         return folderPath
+    }
+
+    private func saveEmptyIndex(at dbPath: String, updatedAt: String) throws {
+        let indexPath = (dbPath as NSString).appendingPathComponent("_index.json")
+        let json: [String: Any] = [
+            "version": 1,
+            "updated_at": updatedAt,
+            "rows": [:] as [String: Any],
+            "indexes": [:] as [String: Any],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: URL(fileURLWithPath: indexPath), options: .atomic)
     }
 }

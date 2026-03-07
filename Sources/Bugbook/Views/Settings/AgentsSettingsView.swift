@@ -231,34 +231,6 @@ struct AgentsSettingsView: View {
     }
 
     private func defaultAgentsTemplate(workspace: String) -> String {
-        """
-# AGENTS.md
-
-## Workspace
-- Root: \(workspace)
-- Agent data: `.bugbook/agents/tasks.json`, `.bugbook/agents/runs.jsonl`, `.bugbook/agents/events.jsonl`
-
-## Workflow
-1. Create or pick a task.
-2. Start a run for that task.
-3. Log major events.
-4. Finish the run with summary + commit.
-5. Update task status.
-
-## CLI Examples
-```bash
-bugbook agent init --write-agents-md
-bugbook agent task create --title "Fix editor regression" --status todo --label bug
-bugbook agent run start --task task_xxx --agent codex --branch codex/fix-editor
-bugbook agent event log --run run_xxx --level info --message "Added regression test"
-bugbook agent run finish run_xxx --status succeeded --summary "Fixed selection bug" --commit abc1234
-bugbook agent task update task_xxx --status done
-```
-
-## Statuses
-- Task: `backlog`, `todo`, `in_progress`, `blocked`, `done`, `cancelled`
-- Run: `running`, `succeeded`, `failed`, `cancelled`
-- Event: `info`, `warning`, `error`
-"""
+        AgentWorkspaceTemplate.agentsMarkdown(workspace: workspace)
     }
 }

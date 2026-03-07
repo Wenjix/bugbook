@@ -1,4 +1,5 @@
 import SwiftUI
+import BugbookCore
 
 // MARK: - Data Model
 
@@ -350,6 +351,7 @@ struct GraphView: View {
 
             var paths: [String] = []
             while let relativePath = enumerator.nextObject() as? String {
+                if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) { continue }
                 let components = relativePath.components(separatedBy: "/")
                 if components.contains(where: { $0.hasPrefix(".") }) { continue }
                 if components.contains(where: { $0.hasPrefix("_") }) { continue }
@@ -444,6 +446,7 @@ struct GraphView: View {
         guard let enumerator = fm.enumerator(atPath: workspacePath) else { return 0 }
         var count = 0
         while let rel = enumerator.nextObject() as? String {
+            if WorkspacePathRules.shouldIgnoreRelativePath(rel) { continue }
             let components = rel.components(separatedBy: "/")
             if components.contains(where: { $0.hasPrefix(".") }) { continue }
             if components.contains(where: { $0.hasPrefix("_") }) { continue }

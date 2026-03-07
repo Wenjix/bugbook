@@ -34,7 +34,7 @@ extension Color {
     // Canvas — the main page background
     static let fallbackBgPrimary   = Color(light: .white,               dark: Color(hex: "191919"))
     // Chrome — sidebar, tab bar, breadcrumbs
-    static let fallbackBgSecondary = Color(light: Color(hex: "f7f7f5"), dark: Color(hex: "202020"))
+    static let fallbackBgSecondary = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))
     // Elevated — cards, code blocks, hover states
     static let fallbackBgTertiary  = Color(light: Color(hex: "eeeeec"), dark: Color(hex: "2f2f2f"))
 
@@ -51,9 +51,10 @@ extension Color {
     static let fallbackBorderColor  = Color(light: Color(hex: "e8e8e5"), dark: Color(hex: "2e2e2e"))
     static let fallbackDividerColor = Color(light: Color(hex: "eeeeec"), dark: Color(hex: "2e2e2e"))
 
-    // Sidebar = chrome
-    static let fallbackSidebarBg = Color(light: Color(hex: "f7f7f5"), dark: Color(hex: "202020"))
-    // Editor = canvas
+    // Chrome — sidebar, tab bar, breadcrumbs
+    static let fallbackSidebarBg = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))
+    static let fallbackTabBarBg  = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))
+    // Canvas — editor, active tab
     static let fallbackEditorBg  = Color(light: .white, dark: Color(hex: "191919"))
 
     // Semantic surfaces

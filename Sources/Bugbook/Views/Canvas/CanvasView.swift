@@ -342,8 +342,10 @@ struct CanvasView: View {
         panel.allowedContentTypes = [.png, .jpeg, .tiff, .gif, .bmp, .heic]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        guard panel.runModal() == .OK, let url = panel.url,
-              let image = NSImage(contentsOf: url) else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        guard let image = NSImage(contentsOf: url) else { return }
         let x = -document.viewport.x + 400
         let y = -document.viewport.y + 300
         document.addImageNode(at: CGPoint(x: x, y: y), image: image)

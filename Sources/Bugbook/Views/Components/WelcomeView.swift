@@ -11,30 +11,30 @@ struct WelcomeView: View {
             Image("BugbookLogo")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 120, height: 120)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .frame(width: 100, height: 100)
 
-            Text("Bugbook")
-                .font(.system(size: 28, weight: .bold))
-
-            Text("Local-first notes for agents and humans")
-                .font(.system(size: 15))
-                .foregroundColor(.secondary)
+            VStack(spacing: 6) {
+                Text("Bugbook")
+                    .font(.system(size: 24, weight: .bold))
+                Text("Local-first notes for agents and humans")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
 
             VStack(spacing: 10) {
                 Button(action: onNewNote) {
                     Label("New Note", systemImage: "doc.badge.plus")
-                        .frame(width: 160)
+                        .frame(width: 140)
                 }
                 .buttonStyle(.borderedProminent)
 
                 Button(action: onOpenFolder) {
                     Label("Open Folder", systemImage: "folder")
-                        .frame(width: 160)
+                        .frame(width: 140)
                 }
                 .buttonStyle(.bordered)
             }
-            .padding(.top, 8)
+            .padding(.top, 4)
 
             Spacer()
         }

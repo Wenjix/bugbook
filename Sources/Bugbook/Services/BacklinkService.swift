@@ -1,4 +1,5 @@
 import Foundation
+import BugbookCore
 
 private let backlinkLinkPattern = #"\[\[([^\]]+)\]\]"#
 
@@ -56,6 +57,7 @@ class BacklinkService: ObservableObject {
     /// Incrementally update: remove old entries for a file, re-scan it, add new entries.
     func updateFile(at path: String, in workspace: String) {
         guard indexedWorkspace == workspace, rebuildTask == nil else { return }
+        guard !WorkspacePathRules.shouldIgnoreAbsolutePath(path) else { return }
 
         let filename = (path as NSString).lastPathComponent
         guard filename.hasSuffix(".md") else { return }
@@ -99,6 +101,7 @@ class BacklinkService: ObservableObject {
         guard let enumerator = fm.enumerator(atPath: workspace) else { return [:] }
 
         while let relativePath = enumerator.nextObject() as? String {
+            if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) { continue }
             let components = relativePath.components(separatedBy: "/")
             if components.contains(where: { $0.hasPrefix(".") }) { continue }
             let filename = (relativePath as NSString).lastPathComponent

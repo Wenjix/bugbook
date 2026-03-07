@@ -22,6 +22,7 @@ targets:
         product: BugbookCore
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: App/BugbookMobile.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.BugbookMobile
         PRODUCT_NAME: Bugbook
         GENERATE_INFOPLIST_FILE: YES

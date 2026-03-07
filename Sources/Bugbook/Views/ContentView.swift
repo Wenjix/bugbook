@@ -20,6 +20,15 @@ struct ContentView: View {
     @State private var formattingPanel: FormattingToolbarPanel?
     @State private var aiInitTask: Task<Void, Never>?
     @State private var aiInitCompleted = false
+    @State private var workspaceWatcher: WorkspaceWatcher?
+
+    // Inline database row peek
+    @State private var peekDbPath: String?
+    @State private var peekRowId: String?
+    @State private var dbInitialRowId: String?
+    @State private var peekWidth: CGFloat = 640
+    @State private var peekDragStartWidth: CGFloat?
+    @State private var sidebarHiddenByPeek: Bool = false
 
     var body: some View {
         configuredLayout
@@ -77,6 +86,7 @@ struct ContentView: View {
             .onDisappear {
                 aiInitTask?.cancel()
                 aiInitTask = nil
+                workspaceWatcher?.stop()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 if let path = notification.object as? String {
@@ -172,10 +182,6 @@ struct ContentView: View {
             SidebarView(
                 appState: appState,
                 fileSystem: fileSystem,
-                canGoBack: appState.canGoBackInActiveTab,
-                canGoForward: appState.canGoForwardInActiveTab,
-                onBack: { navigateBackInActiveTab() },
-                onForward: { navigateForwardInActiveTab() },
                 onSelectFile: { entry in
                     handleSidebarFileSelect(entry)
                 },
@@ -192,20 +198,6 @@ struct ContentView: View {
                 HStack {
                     sidebarChromeButton(icon: "sidebar.left", help: "Open Sidebar") {
                         appState.sidebarOpen = true
-                    }
-                    sidebarChromeButton(
-                        icon: "chevron.left",
-                        help: "Back",
-                        isEnabled: appState.canGoBackInActiveTab
-                    ) {
-                        navigateBackInActiveTab()
-                    }
-                    sidebarChromeButton(
-                        icon: "chevron.right",
-                        help: "Forward",
-                        isEnabled: appState.canGoForwardInActiveTab
-                    ) {
-                        navigateForwardInActiveTab()
                     }
                     Spacer()
                 }
@@ -327,62 +319,126 @@ struct ContentView: View {
                 topTrailingRadius: 0
             )
         )
+        .overlay(alignment: .leading) {
+            if appState.sidebarOpen {
+                Rectangle()
+                    .fill(Color(light: Color(hex: "e0e0e0"), dark: Color(hex: "2e2e2e")))
+                    .frame(width: 1)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     @ViewBuilder
     private var editorModeContent: some View {
-        if !appState.openTabs.isEmpty {
-            TabBarView(appState: appState)
-                .opacity(focusModeActive ? 0.0 : 1.0)
-        }
-
-        if let tab = appState.activeTab, !tab.isEmptyTab {
-            HStack {
-                BreadcrumbView(
-                    items: breadcrumbs(for: tab),
-                    onNavigate: { item in navigateToBreadcrumb(item) }
-                )
-
-                Spacer()
-
-                let backlinks = currentPageBacklinks(for: tab)
-                if !backlinks.isEmpty {
-                    BacklinksMenuButton(backlinks: backlinks) { path in
-                        navigateToFilePath(path)
-                    }
-                    .padding(.trailing, 4)
-                }
-
-                // Page options menu (notes only)
-                if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase,
-                   let doc = blockDocuments[tab.id] {
-                    Menu {
-                        Button {
-                            doc.fullWidth.toggle()
-                            scheduleSave()
-                        } label: {
-                            HStack {
-                                Label("Full width", systemImage: "arrow.left.and.right")
-                                if doc.fullWidth { Spacer(); Image(systemName: "checkmark") }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.primary)
-                            .frame(width: 28, height: 28)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .padding(.trailing, 4)
-                }
-            }
-            .padding(.leading, appState.sidebarOpen ? 0 : 78)
+        TabBarView(
+            appState: appState,
+            canGoBack: appState.canGoBackInActiveTab,
+            canGoForward: appState.canGoForwardInActiveTab,
+            onBack: { navigateBackInActiveTab() },
+            onForward: { navigateForwardInActiveTab() }
+        )
             .opacity(focusModeActive ? 0.0 : 1.0)
-        }
 
-        activeTabContent
+        VStack(spacing: 0) {
+            if let tab = appState.activeTab, !tab.isEmptyTab {
+                HStack {
+                    BreadcrumbView(
+                        items: breadcrumbs(for: tab),
+                        onNavigate: { item in navigateToBreadcrumb(item) }
+                    )
+
+                    Spacer()
+
+                    let backlinks = currentPageBacklinks(for: tab)
+                    if !backlinks.isEmpty {
+                        BacklinksMenuButton(backlinks: backlinks) { path in
+                            navigateToFilePath(path)
+                        }
+                        .padding(.trailing, 4)
+                    }
+
+                    // Page options menu (notes only)
+                    if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase,
+                       let doc = blockDocuments[tab.id] {
+                        Menu {
+                            Button {
+                                doc.fullWidth.toggle()
+                                if appState.activeTabIndex < appState.openTabs.count {
+                                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                                }
+                                scheduleSave()
+                            } label: {
+                                HStack {
+                                    Label("Full width", systemImage: "arrow.left.and.right")
+                                    if doc.fullWidth { Spacer(); Image(systemName: "checkmark") }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.primary)
+                                .frame(width: 28, height: 28)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .padding(.trailing, 4)
+                    }
+                }
+                .padding(.leading, appState.sidebarOpen ? 0 : 78)
+                .opacity(focusModeActive ? 0.0 : 1.0)
+            }
+
+            activeTabContent
+        }
+        .overlay(alignment: .trailing) {
+            if let dbPath = peekDbPath, let rowId = peekRowId {
+                HStack(spacing: 0) {
+                    // Resize drag edge
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(width: 8)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            EditorCursorState.suppressIBeam = hovering
+                            if hovering { NSCursor.resizeLeftRight.push() }
+                            else { NSCursor.pop() }
+                        }
+                        .gesture(
+                            DragGesture(coordinateSpace: .global)
+                                .onChanged { value in
+                                    peekDragOnChanged(translationWidth: value.translation.width)
+                                }
+                                .onEnded { _ in
+                                    peekDragStartWidth = nil
+                                }
+                        )
+
+                    InlineRowPeekPanel(
+                        dbPath: dbPath,
+                        rowId: rowId,
+                        onClose: { closePeekPanel() },
+                        onOpenFullPage: {
+                            let savedRowId = rowId
+                            closePeekPanel()
+                            dbInitialRowId = savedRowId
+                            let name = (dbPath as NSString).lastPathComponent
+                            let entry = FileEntry(id: dbPath, name: name, path: dbPath, isDirectory: true, isDatabase: true)
+                            navigateToEntry(entry, preferExistingTab: false)
+                        }
+                    )
+                }
+                .frame(width: peekWidth)
+                .background(Color.fallbackEditorBg)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .inlineDatabaseRowPeek)) { notification in
+            guard let dbPath = notification.userInfo?["dbPath"] as? String,
+                  let rowId = notification.userInfo?["rowId"] as? String else { return }
+            peekDbPath = dbPath
+            peekRowId = rowId
+        }
     }
 
     @ViewBuilder
@@ -393,18 +449,15 @@ struct ContentView: View {
                     onNewNote: { createNewFile() },
                     onOpenFolder: { Task { await openWorkspace() } }
                 )
+                .onAppear { openDefaultPageIfConfigured() }
             } else if tab.isCanvas {
                 canvasEditor(for: tab)
             } else if tab.isDatabase {
-                DatabaseFullPageView(dbPath: tab.path)
+                DatabaseFullPageView(dbPath: tab.path, initialRowId: dbInitialRowId)
+                    .onAppear { dbInitialRowId = nil }
             } else {
                 editorView(for: tab)
             }
-        } else {
-            WelcomeView(
-                onNewNote: { createNewFile() },
-                onOpenFolder: { Task { await openWorkspace() } }
-            )
         }
     }
 
@@ -413,95 +466,86 @@ struct ContentView: View {
     @ViewBuilder
     private func editorView(for tab: OpenFile) -> some View {
         if let document = blockDocuments[tab.id] {
-            ScrollView {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    VStack(alignment: .leading, spacing: 0) {
-                    PageHeaderView(
-                        icon: Binding(
-                            get: { document.icon },
-                            set: {
-                                document.icon = $0
-                                if appState.activeTabIndex < appState.openTabs.count {
-                                    appState.openTabs[appState.activeTabIndex].icon = $0
+            HStack(spacing: 0) {
+                ScrollView {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        VStack(alignment: .leading, spacing: 0) {
+                        PageHeaderView(
+                            icon: Binding(
+                                get: { document.icon },
+                                set: {
+                                    document.icon = $0
+                                    if appState.activeTabIndex < appState.openTabs.count {
+                                        appState.openTabs[appState.activeTabIndex].icon = $0
+                                    }
+                                    scheduleSave()
                                 }
-                                scheduleSave()
-                            }
-                        ),
-                        coverUrl: Binding(
-                            get: { document.coverUrl },
-                            set: { document.coverUrl = $0; scheduleSave() }
-                        ),
-                        coverPosition: Binding(
-                            get: { document.coverPosition },
-                            set: { document.coverPosition = $0; scheduleSave() }
-                        ),
-                        fullWidth: document.fullWidth
-                    )
-
-                    if let titleBlock = document.titleBlock {
-                        TextBlockView(document: document, block: titleBlock, onTyping: { triggerFocusMode() })
-                            .padding(.leading, 76)
-                            .padding(.trailing, 52)
-                            .padding(.top, 8)
-                    }
-
-                    BlockEditorView(
-                        document: document,
-                        onTextChange: {
-                            guard appState.activeTabIndex < appState.openTabs.count else { return }
-                            if !appState.openTabs[appState.activeTabIndex].isDirty {
-                                appState.openTabs[appState.activeTabIndex].isDirty = true
-                            }
-                            // Sync title to tab, sidebar, and breadcrumbs in real time
-                            syncTitle(from: document)
-                            scheduleSave()
-                        },
-                        onTyping: { triggerFocusMode() }
-                    )
-
-                    // Click target below blocks — focuses last block
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 200)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if let lastBlock = document.blocks.last {
-                                document.focusedBlockId = lastBlock.id
-                                document.cursorPosition = lastBlock.text.count
-                            }
-                        }
-                }
-                .frame(maxWidth: document.fullWidth ? .infinity : 860)
-                Spacer(minLength: 0)
-            }
-            }
-            .background(Color.fallbackEditorBg)
-            .accessibilityIdentifier("editor")
-            .trackRenders("EditorView")
-            .overlay {
-                if document.showTemplatePicker {
-                    ZStack {
-                        Color.black.opacity(0.2)
-                            .onTapGesture { document.showTemplatePicker = false }
-                        TemplatePickerView(
-                            templates: fileSystem.listTemplates(in: appState.workspacePath ?? ""),
-                            onSelect: { template in
-                                document.showTemplatePicker = false
-                                createPageFromTemplate(template)
-                            },
-                            onDismiss: { document.showTemplatePicker = false },
-                            onCreateTemplate: {
-                                document.showTemplatePicker = false
-                                saveCurrentNoteAsTemplate(document: document)
-                            }
+                            ),
+                            coverUrl: Binding(
+                                get: { document.coverUrl },
+                                set: { document.coverUrl = $0; scheduleSave() }
+                            ),
+                            coverPosition: Binding(
+                                get: { document.coverPosition },
+                                set: { document.coverPosition = $0; scheduleSave() }
+                            ),
+                            fullWidth: document.fullWidth
                         )
-                        .onTapGesture { } // prevent tap-through to dismiss scrim
+
+                        if let titleBlock = document.titleBlock {
+                            TextBlockView(document: document, block: titleBlock, onTyping: { triggerFocusMode() })
+                                .padding(.leading, 76)
+                                .padding(.trailing, 52)
+                                .padding(.top, 8)
+                        }
+
+                        BlockEditorView(
+                            document: document,
+                            onTextChange: {
+                                guard appState.activeTabIndex < appState.openTabs.count else { return }
+                                if !appState.openTabs[appState.activeTabIndex].isDirty {
+                                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                                }
+                                syncTitle(from: document)
+                                scheduleSave()
+                            },
+                            onTyping: { triggerFocusMode() }
+                        )
+
+                    }
+                    .frame(maxWidth: document.fullWidth ? .infinity : 860)
+                    Spacer(minLength: 0)
+                }
+                }
+                .background(Color.fallbackEditorBg)
+                .editorIBeamCursor()
+                .accessibilityIdentifier("editor")
+                .trackRenders("EditorView")
+                .overlay {
+                    if document.showTemplatePicker {
+                        ZStack {
+                            Color.black.opacity(0.2)
+                                .onTapGesture { document.showTemplatePicker = false }
+                            TemplatePickerView(
+                                templates: fileSystem.listTemplates(in: appState.workspacePath ?? ""),
+                                onSelect: { template in
+                                    document.showTemplatePicker = false
+                                    createPageFromTemplate(template)
+                                },
+                                onDismiss: { document.showTemplatePicker = false },
+                                onCreateTemplate: {
+                                    document.showTemplatePicker = false
+                                    saveCurrentNoteAsTemplate(document: document)
+                                }
+                            )
+                            .onTapGesture { }
+                        }
                     }
                 }
-            }
-            .onChange(of: document.selectionRect) { _, rect in
-                updateFormattingPanel(rect: rect)
+                .onChange(of: document.selectionRect) { _, rect in
+                    updateFormattingPanel(rect: rect)
+                }
             }
         } else {
             Color.fallbackEditorBg
@@ -623,6 +667,28 @@ struct ContentView: View {
         }
     }
 
+    private func openDefaultPageIfConfigured() {
+        let defaultPage = appState.settings.defaultNewTabPage
+        guard !defaultPage.isEmpty else { return }
+        guard FileManager.default.fileExists(atPath: defaultPage) else { return }
+        let name = (defaultPage as NSString).lastPathComponent
+        let schemaPath = (defaultPage as NSString).appendingPathComponent("_schema.json")
+        let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
+        let canvasPath = (defaultPage as NSString).appendingPathComponent("_canvas.json")
+        let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
+        let entry = FileEntry(
+            id: defaultPage,
+            name: name,
+            path: defaultPage,
+            isDirectory: isDatabase || isCanvas,
+            isDatabase: isDatabase,
+            isCanvas: isCanvas,
+            icon: nil,
+            children: nil
+        )
+        navigateToEntry(entry, preferExistingTab: false)
+    }
+
     private func navigateBackInActiveTab() {
         SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "navigation.back"))
         if let activeTab = appState.activeTab, activeTab.isDirty {
@@ -717,6 +783,25 @@ struct ContentView: View {
         } else {
             refreshFileTree()
         }
+
+        // Always ensure at least one tab is open
+        if appState.openTabs.isEmpty {
+            appState.newEmptyTab()
+        }
+
+        startWorkspaceWatcher(path: workspacePath)
+    }
+
+    private func startWorkspaceWatcher(path: String) {
+        workspaceWatcher?.stop()
+        let fileSystem = self.fileSystem
+        let watcher = WorkspaceWatcher { [weak appState] in
+            guard let appState = appState,
+                  let workspace = appState.workspacePath else { return }
+            appState.fileTree = fileSystem.buildFileTree(at: workspace)
+        }
+        watcher.watch(path: path)
+        workspaceWatcher = watcher
     }
 
     private func refreshFileTree() {
@@ -907,7 +992,8 @@ struct ContentView: View {
     private func saveCurrentNoteAsTemplate(document: BlockDocument) {
         guard let workspace = appState.workspacePath else { return }
 
-        let defaultName = document.titleBlock?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawName = document.titleBlock?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let defaultName = AttributedStringConverter.plainText(from: rawName)
         let suggestedName = defaultName.isEmpty ? "Untitled Template" : defaultName
 
         let alert = NSAlert()
@@ -1019,6 +1105,7 @@ struct ContentView: View {
         if let path = await fileSystem.openFolder() {
             appState.workspacePath = path
             refreshFileTree()
+            startWorkspaceWatcher(path: path)
         }
     }
 
@@ -1043,7 +1130,8 @@ struct ContentView: View {
                 try? fileSystem.saveFile(at: oldPath, content: content)
 
                 // Rename file on disk if title changed
-                if let title = document.titleBlock?.text, !title.isEmpty {
+                if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
+                    let title = AttributedStringConverter.plainText(from: rawTitle)
                     let currentName = (oldPath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
                     if title != currentName {
                         let dir = (oldPath as NSString).deletingLastPathComponent
@@ -1232,9 +1320,37 @@ struct ContentView: View {
         return target
     }
 
+    private func peekDragOnChanged(translationWidth: CGFloat) {
+        if peekDragStartWidth == nil {
+            peekDragStartWidth = peekWidth
+        }
+        let startWidth = peekDragStartWidth ?? peekWidth
+        let proposed = startWidth - translationWidth
+        let clamped = max(360, min(1200, proposed))
+        peekWidth = clamped
+        // Auto-hide sidebar when peek is wide
+        if clamped > 600 && !sidebarHiddenByPeek {
+            sidebarHiddenByPeek = true
+            appState.sidebarOpen = false
+        } else if clamped <= 600 && sidebarHiddenByPeek {
+            sidebarHiddenByPeek = false
+            appState.sidebarOpen = true
+        }
+    }
+
+    private func closePeekPanel() {
+        peekDbPath = nil
+        peekRowId = nil
+        if sidebarHiddenByPeek {
+            sidebarHiddenByPeek = false
+            appState.sidebarOpen = true
+        }
+    }
+
     private func syncTitle(from document: BlockDocument) {
         guard appState.activeTabIndex < appState.openTabs.count else { return }
-        if let title = document.titleBlock?.text, !title.isEmpty {
+        if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
+            let title = AttributedStringConverter.plainText(from: rawTitle)
             // Update tab display name
             appState.openTabs[appState.activeTabIndex].displayName = title
             // Update sidebar file tree entry name

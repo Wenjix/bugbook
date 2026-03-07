@@ -12,7 +12,7 @@ struct BlockEditorView: View {
         // Skip the title block (first heading-1) — it's rendered separately above
         let startIndex = document.titleBlock != nil ? 1 : 0
 
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             // Drop zone before first visible block
             DropZoneView(isActive: activeDropIndex == startIndex) { droppedId in
                 handleDrop(droppedId: droppedId, targetIndex: startIndex)
@@ -40,14 +40,43 @@ struct BlockEditorView: View {
                         }
                     }
 
-                // Drop zone after each block
-                DropZoneView(isActive: activeDropIndex == index + 1) { droppedId in
+                // Drop zone after each block (also clickable to focus nearby block)
+                // Use a taller drop zone after database embeds so users can easily click below them.
+                DropZoneView(isActive: activeDropIndex == index + 1, height: block.type == .databaseEmbed ? 24 : 8) { droppedId in
                     handleDrop(droppedId: droppedId, targetIndex: index + 1)
                 } onTargetChanged: { targeted in
                     let idx = index + 1
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 }
+                .onTapGesture {
+                    // Click between blocks: focus the block below if it exists, otherwise the one above
+                    if index + 1 < document.blocks.count {
+                        let next = document.blocks[index + 1]
+                        document.focusedBlockId = next.id
+                        document.cursorPosition = 0
+                    } else {
+                        document.focusedBlockId = block.id
+                        document.cursorPosition = block.text.count
+                    }
+                }
             }
+
+            // Click target after last block — always visible, creates new block
+            Rectangle()
+                .fill(Color.white.opacity(0.001))
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 300)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if let lastBlock = document.blocks.last,
+                       lastBlock.text.isEmpty,
+                       lastBlock.type != .databaseEmbed {
+                        document.focusedBlockId = lastBlock.id
+                        document.cursorPosition = 0
+                    } else {
+                        document.appendEmptyBlock()
+                    }
+                }
         }
         .padding(.horizontal, 48)
         .padding(.vertical, 20)
@@ -72,13 +101,14 @@ struct BlockEditorView: View {
 /// Height is constant to prevent layout shifts that cause flickering.
 struct DropZoneView: View {
     let isActive: Bool
+    var height: CGFloat = 8
     let onDrop: (UUID) -> Void
     let onTargetChanged: (Bool) -> Void
 
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(height: 8)
+            .frame(height: height)
             .frame(maxWidth: .infinity)
             .overlay {
                 Rectangle()

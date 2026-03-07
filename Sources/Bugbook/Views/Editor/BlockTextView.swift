@@ -679,8 +679,9 @@ struct BlockTextView: NSViewRepresentable {
             // Enter — split block
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 if parent.isMultiline { return false }
-                let pos = textView.selectedRange().location
-                parent.document.splitBlock(id: parent.blockId, atOffset: pos)
+                let displayPos = textView.selectedRange().location
+                let mdPos = markdownOffset(forDisplayOffset: displayPos, in: textView.attributedString())
+                parent.document.splitBlock(id: parent.blockId, atOffset: mdPos)
                 return true
             }
 

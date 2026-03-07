@@ -6,15 +6,15 @@ import BugbookCore
 struct Bugbook: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "bugbook",
-        abstract: "Local-first database CLI",
-        subcommands: [DB.self, QueryCmd.self, Get.self, Create.self, Update.self, Delete.self, Batch.self, Agent.self, Search.self]
+        abstract: "Local-first notes, databases, and agent workspace CLI",
+        subcommands: [Page.self, Backlinks.self, Skill.self, Board.self, DB.self, QueryCmd.self, Get.self, Create.self, Update.self, Delete.self, Batch.self, Agent.self, Search.self]
     )
 
     struct Options: ParsableArguments {
         @Option(help: "Workspace root path")
         var workspace: String = {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            return base.appendingPathComponent("Bugbook", isDirectory: true).path
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            return documents.appendingPathComponent("Bugbook", isDirectory: true).path
         }()
 
         @Option(help: "Output format")

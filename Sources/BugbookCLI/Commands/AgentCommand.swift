@@ -378,35 +378,7 @@ private func outputEncodable<T: Encodable>(_ value: T) throws {
 }
 
 private func defaultAgentsTemplate(workspace: String) -> String {
-    """
-# AGENTS.md
-
-## Workspace
-- Root: \(workspace)
-- Agent data: `.bugbook/agents/tasks.json`, `.bugbook/agents/runs.jsonl`, `.bugbook/agents/events.jsonl`
-
-## Task Workflow
-1. Create a task before starting significant work.
-2. Start a run when coding begins.
-3. Log meaningful events during execution.
-4. Finish the run with a summary and commit SHA.
-5. Move the task to `done` or `blocked`.
-
-## CLI
-```bash
-bugbook agent init
-bugbook agent task create --title "Implement feature X" --status todo --label ios --path Sources/Bugbook
-bugbook agent run start --task task_1234abcd --agent codex --cwd /path/to/repo --branch codex/feature-x
-bugbook agent event log --run run_1234abcd --level info --message "Opened architecture docs"
-bugbook agent run finish run_1234abcd --status succeeded --summary "Added feature X" --commit abc1234
-bugbook agent task update task_1234abcd --status done
-```
-
-## Status Values
-- Task: `backlog`, `todo`, `in_progress`, `blocked`, `done`, `cancelled`
-- Run: `running`, `succeeded`, `failed`, `cancelled`
-- Event: `info`, `warning`, `error`
-"""
+    AgentWorkspaceTemplate.agentsMarkdown(workspace: workspace)
 }
 
 extension AgentTaskStatus: ExpressibleByArgument {}

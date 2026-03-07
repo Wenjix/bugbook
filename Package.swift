@@ -30,6 +30,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "8.40.0"),
+        .package(url: "https://github.com/jpsim/Yams", from: "6.0.1"),
     ],
     targets: [
         // Shared library — models, storage, engines
@@ -43,6 +44,7 @@ let package = Package(
             dependencies: [
                 "BugbookCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Yams", package: "Yams"),
             ],
             path: "Sources/BugbookCLI"
         ),
@@ -76,6 +78,14 @@ let package = Package(
                 "BugbookCore",
             ],
             path: "Tests/BugbookTests"
+        ),
+        .testTarget(
+            name: "BugbookCLITests",
+            dependencies: [
+                "BugbookCLI",
+                "BugbookCore",
+            ],
+            path: "Tests/BugbookCLITests"
         ),
     ]
 )

@@ -28,6 +28,8 @@ struct AppSettings: Codable {
     var agentsMdContent: String
     var qmdSearchMode: QmdSearchMode
     var anthropicApiKey: String
+    /// Path to the page opened for new/empty tabs. Empty string = default Bugbook landing page.
+    var defaultNewTabPage: String
 
     static let `default` = AppSettings(
         theme: .system,
@@ -37,6 +39,7 @@ struct AppSettings: Codable {
         bugbookSkillEnabled: false,
         agentsMdContent: "",
         qmdSearchMode: .bm25,
-        anthropicApiKey: ""
+        anthropicApiKey: "",
+        defaultNewTabPage: ""
     )
 }

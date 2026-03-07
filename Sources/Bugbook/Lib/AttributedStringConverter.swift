@@ -112,6 +112,14 @@ enum AttributedStringConverter {
         return result
     }
 
+    // MARK: - Plain Text (strip markdown markers)
+
+    /// Returns the visible text with all inline markdown formatting removed.
+    static func plainText(from markdown: String) -> String {
+        guard !markdown.isEmpty else { return "" }
+        return attributedString(from: markdown).string
+    }
+
     // MARK: - NSAttributedString -> Markdown
 
     /// Converts an attributed string back to markdown with inline formatting.

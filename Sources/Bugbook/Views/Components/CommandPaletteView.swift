@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import BugbookCore
 
 // MARK: - Result Types
 
@@ -521,6 +522,7 @@ struct CommandPaletteView: View {
 
             while let relativePath = enumerator.nextObject() as? String {
                 guard !Task.isCancelled else { break }
+                if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) { continue }
                 let components = relativePath.components(separatedBy: "/")
                 if components.contains(where: { $0.hasPrefix(".") }) { continue }
 

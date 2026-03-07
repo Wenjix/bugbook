@@ -12,7 +12,6 @@ struct DatabaseInlineEmbedView: View {
     @State private var schema: DatabaseSchema?
     @State private var rows: [DatabaseRow] = []
     @State private var activeViewId: String = ""
-    @State private var selectedRowIndex: Int? = nil
     @State private var error: String?
     @State private var showSearch: Bool = false
     @State private var searchText: String = ""
@@ -83,30 +82,12 @@ struct DatabaseInlineEmbedView: View {
                     .foregroundColor(.red)
                     .padding(8)
             } else if let schema = schema {
-                HStack(alignment: .top, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        headerBar(schema: schema)
-                        if schema.views.count > 1 {
-                            viewTabsStrip(schema: schema)
-                        }
-                        viewContent(schema: schema)
-                            .frame(maxHeight: 480)
-                        newRowButton(schema: schema)
+                VStack(alignment: .leading, spacing: 0) {
+                    headerBar(schema: schema)
+                    if schema.views.count > 1 {
+                        viewTabsStrip(schema: schema)
                     }
-
-                    if let rowIdx = selectedRowIndex, rowIdx < rows.count {
-                        Divider()
-                        RowPageView(
-                            schema: schema,
-                            row: $rows[rowIdx],
-                            onSave: { row in saveRow(row) },
-                            onBack: { selectedRowIndex = nil },
-                            onAddOption: { propId, option in addSelectOption(propId, option: option) },
-                            onUpdateOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
-                            onDeleteOption: { propId, optId in deleteSelectOption(propId, optionId: optId) }
-                        )
-                        .frame(width: 480)
-                    }
+                    viewContent(schema: schema)
                 }
             } else {
                 HStack(spacing: 6) {
@@ -396,6 +377,8 @@ struct DatabaseInlineEmbedView: View {
                     for updated in newVal {
                         if let idx = rows.firstIndex(where: { $0.id == updated.id }) {
                             rows[idx] = updated
+                        } else {
+                            rows.append(updated)
                         }
                     }
                 }
@@ -439,7 +422,8 @@ struct DatabaseInlineEmbedView: View {
                 rows: boundRows,
                 viewConfig: activeView ?? defaultViewConfig(),
                 onOpenRow: { row in openRow(row) },
-                onSave: { row in saveRow(row) }
+                onSave: { row in saveRow(row) },
+                onNewRow: { addNewRow() }
             )
         case .calendar:
             CalendarView(
@@ -450,25 +434,6 @@ struct DatabaseInlineEmbedView: View {
                 onCreateRow: { dateStr in createRowWithDate(dateStr, schema: schema) }
             )
         }
-    }
-
-    // MARK: - New Row Button
-
-    private func newRowButton(schema: DatabaseSchema) -> some View {
-        Button {
-            addNewRow()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "plus")
-                    .font(.caption)
-                Text("New")
-                    .font(.callout)
-            }
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Data Operations
@@ -591,9 +556,14 @@ struct DatabaseInlineEmbedView: View {
     }
 
     private func openRow(_ row: DatabaseRow) {
-        if let idx = rows.firstIndex(where: { $0.id == row.id }) {
-            selectedRowIndex = idx
-        }
+        NotificationCenter.default.post(
+            name: .inlineDatabaseRowPeek,
+            object: nil,
+            userInfo: [
+                "dbPath": dbPath,
+                "rowId": row.id
+            ]
+        )
     }
 
     private func addSelectOption(_ propertyId: String, option: SelectOption) {
@@ -687,12 +657,43 @@ struct DatabaseInlineEmbedView: View {
 
     private func addView(type: ViewType) {
         guard var s = schema else { return }
+
+        // Auto-create a Status property for Kanban if no select property exists
+        if type == .kanban && s.properties.first(where: { $0.type == .select }) == nil {
+            let statusProp = PropertyDefinition(
+                id: "prop_status_\(UUID().uuidString.prefix(6).lowercased())",
+                name: "Status",
+                type: .select,
+                config: PropertyConfig(options: [
+                    SelectOption(id: "opt_not_started", name: "Not started", color: "gray"),
+                    SelectOption(id: "opt_in_progress", name: "In progress", color: "blue"),
+                    SelectOption(id: "opt_done", name: "Done", color: "green")
+                ])
+            )
+            Task {
+                try? dbService.addProperty(statusProp, to: &s, at: dbPath)
+                let view = ViewConfig(
+                    id: "view_\(UUID().uuidString)",
+                    name: type.rawValue.capitalized,
+                    type: type,
+                    sorts: [],
+                    filters: [],
+                    groupBy: statusProp.id
+                )
+                try? dbService.addView(view, to: &s, at: dbPath)
+                self.schema = s
+                activeViewId = view.id
+            }
+            return
+        }
+
         let view = ViewConfig(
             id: "view_\(UUID().uuidString)",
             name: type.rawValue.capitalized,
             type: type,
             sorts: [],
-            filters: []
+            filters: [],
+            groupBy: type == .kanban ? s.properties.first(where: { $0.type == .select })?.id : nil
         )
         Task {
             try? dbService.addView(view, to: &s, at: dbPath)

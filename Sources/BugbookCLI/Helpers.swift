@@ -21,6 +21,30 @@ enum CLIError: Error, CustomStringConvertible {
 
 /// Resolve a database name or ID to its path and schema.
 func resolveDatabase(_ name: String, workspace: String) throws -> (path: String, schema: DatabaseSchema) {
+    let fm = FileManager.default
+    let expanded = (name as NSString).expandingTildeInPath
+    let normalizedWorkspace = normalizePath(workspace)
+
+    let pathCandidates: [String] = expanded.hasPrefix("/")
+        ? [normalizePath(expanded)]
+        : [
+            normalizePath((normalizedWorkspace as NSString).appendingPathComponent(name)),
+            normalizePath((normalizedWorkspace as NSString).appendingPathComponent("databases/\(name)")),
+        ]
+
+    for candidate in pathCandidates {
+        let dbPath = candidate.hasSuffix("/_schema.json")
+            ? (candidate as NSString).deletingLastPathComponent
+            : candidate
+        let schemaPath = (dbPath as NSString).appendingPathComponent("_schema.json")
+        if isPathInsideWorkspace(dbPath, workspace: normalizedWorkspace),
+           fm.fileExists(atPath: schemaPath) {
+            let store = DatabaseStore()
+            let schema = try store.loadSchema(at: dbPath)
+            return (path: dbPath, schema: schema)
+        }
+    }
+
     let store = DatabaseStore()
     let databases = store.listDatabases(in: workspace)
 
@@ -179,10 +203,33 @@ func propertyValueToJSON(_ value: PropertyValue) -> Any {
     }
 }
 
+private let _iso8601Formatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
 func iso8601String(from date: Date) -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime]
-    return formatter.string(from: date)
+    _iso8601Formatter.string(from: date)
+}
+
+func loadRow(rowId: String, dbPath: String, schema: DatabaseSchema) throws -> DatabaseRow? {
+    let rowStore = RowStore()
+    let suffix = RowStore.extractIdSuffix(from: rowId)
+    guard let contents = try? FileManager.default.contentsOfDirectory(atPath: dbPath) else {
+        return nil
+    }
+
+    for name in contents {
+        if name.hasSuffix(".md") && !name.hasPrefix("_") && name.contains("(\(suffix))") {
+            let filePath = (dbPath as NSString).appendingPathComponent(name)
+            if let row = rowStore.loadRow(at: filePath, schema: schema), row.id == rowId {
+                return row
+            }
+        }
+    }
+
+    return nil
 }
 
 /// Print an error to stderr and exit.

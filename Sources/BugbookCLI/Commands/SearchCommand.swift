@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import BugbookCore
 
 struct Search: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -41,13 +42,16 @@ struct Search: ParsableCommand {
                     query: query, limit: limit, mode: mode,
                     filesOnly: filesOnly, tag: tag
                 )
-                try outputJSON([
-                    "results": results,
-                    "total_count": results.count,
-                    "engine": "qmd",
-                    "mode": mode,
-                ])
-                return
+                if !results.isEmpty {
+                    try outputJSON([
+                        "results": results,
+                        "total_count": results.count,
+                        "engine": "qmd",
+                        "mode": mode,
+                    ])
+                    return
+                }
+                fputs("Warning: qmd search returned no results, falling back to local\n", stderr)
             } catch {
                 fputs("Warning: qmd search failed (\(error)), falling back to local\n", stderr)
             }
@@ -130,6 +134,11 @@ private struct QmdBackend {
 
         if let tag = tag {
             results = applyTagFilter(results, tag: tag)
+        }
+
+        results = results.filter { result in
+            guard let file = result["file"] as? String else { return false }
+            return !WorkspacePathRules.shouldIgnoreRelativePath(file)
         }
 
         if filesOnly {
@@ -295,7 +304,7 @@ private struct QmdBackend {
         if let title = r["title"] as? String, !title.isEmpty {
             name = title
         } else {
-            name = pageNameFromPath(relativePath)
+            name = pageDisplayName(fromPath: relativePath)
         }
 
         var result: [String: Any] = ["file": relativePath, "name": name]
@@ -407,7 +416,7 @@ private func localSearch(
     var seenFiles: Set<String> = []
     let queryLower = query.lowercased()
 
-    walkMarkdownFiles(in: workspace, fileManager: fm) { filePath, relativePath in
+    walkWorkspaceMarkdownFiles(in: workspace, includeStructuredContent: true, fileManager: fm) { filePath, relativePath in
         guard results.count < limit else { return }
         guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { return }
 
@@ -421,7 +430,7 @@ private func localSearch(
         }
 
         let lines = content.components(separatedBy: "\n")
-        let pageName = pageNameFromPath(filePath)
+        let pageName = pageDisplayName(fromPath: filePath)
 
         if filesOnly {
             if lines.contains(where: { $0.lowercased().contains(queryLower) }),
@@ -446,30 +455,4 @@ private func localSearch(
         }
     }
     return results
-}
-
-// MARK: - Helpers
-
-private func walkMarkdownFiles(
-    in directory: String,
-    fileManager: FileManager,
-    handler: (String, String) -> Void
-) {
-    guard let enumerator = fileManager.enumerator(atPath: directory) else { return }
-    while let relativePath = enumerator.nextObject() as? String {
-        let components = relativePath.components(separatedBy: "/")
-        if components.contains(where: { $0.hasPrefix(".") }) { continue }
-        let filename = (relativePath as NSString).lastPathComponent
-        if filename == "_schema.json" || filename == "_index.json" { continue }
-        guard filename.hasSuffix(".md") else { continue }
-        let fullPath = (directory as NSString).appendingPathComponent(relativePath)
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else { continue }
-        handler(fullPath, relativePath)
-    }
-}
-
-private func pageNameFromPath(_ path: String) -> String {
-    let filename = (path as NSString).lastPathComponent
-    return filename.hasSuffix(".md") ? String(filename.dropLast(3)) : filename
 }

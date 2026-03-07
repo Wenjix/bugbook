@@ -22,7 +22,6 @@ struct TableView: View {
     var showVerticalLines: Bool = true
 
     @State private var dragWidths: [String: CGFloat] = [:]
-    @State private var hoveredRowId: String?
     @State private var hoveredResizeKey: String?
     @State private var draggingResizeKey: String?
     @State private var selectedRowIds: Set<String> = []
@@ -65,26 +64,17 @@ struct TableView: View {
             }
 
             // Rows
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach($rows) { $row in
-                            dataRow($row)
-                                .id($row.wrappedValue.id)
-                            Divider().opacity(0.5)
-                        }
-                        // Phantom rows so the table always looks populated
-                        ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
-                            phantomRow(isFirst: rows.isEmpty && i == 0)
-                            Divider().opacity(0.5)
-                        }
-                    }  // end VStack
-                }
-                .frame(maxHeight: .infinity)
-                .onChange(of: scrollToRowId) { _, id in
-                    guard let id else { return }
-                    DispatchQueue.main.async {
-                        withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach($rows) { $row in
+                        dataRow($row)
+                            .id($row.wrappedValue.id)
+                        Divider().opacity(0.5)
+                    }
+                    // Phantom rows so the table always looks populated
+                    ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
+                        phantomRow(isFirst: rows.isEmpty && i == 0)
+                        Divider().opacity(0.5)
                     }
                 }
             }
@@ -221,37 +211,35 @@ struct TableView: View {
     // MARK: - Data Row
 
     private func dataRow(_ row: Binding<DatabaseRow>) -> some View {
-        let isHovered = hoveredRowId == row.wrappedValue.id
-
-        return HStack(spacing: 0) {
-            titleCell(row)
-                .padding(.horizontal, 8)
-                .frame(width: titleColumnWidth, alignment: .leading)
-                .contentShape(Rectangle())
-                .cursor(.pointingHand)
-
-            ForEach(visibleProperties) { prop in
-                let propValue = Binding<PropertyValue>(
-                    get: { row.wrappedValue.properties[prop.id] ?? .empty },
-                    set: { newVal in
-                        var updatedRow = row.wrappedValue
-                        updatedRow.properties[prop.id] = newVal
-                        row.wrappedValue = updatedRow
-                        onSave(updatedRow)
-                    }
-                )
-                PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddSelectOption, onUpdateOption: onUpdateSelectOption, onDeleteOption: onDeleteSelectOption)
+        HoverRow { isHovered in
+            HStack(spacing: 0) {
+                titleCell(row, isHovered: isHovered)
                     .padding(.horizontal, 8)
-                    .frame(width: columnWidth(for: prop), alignment: .leading)
+                    .frame(width: titleColumnWidth, alignment: .leading)
                     .contentShape(Rectangle())
                     .cursor(.pointingHand)
+
+                ForEach(visibleProperties) { prop in
+                    let propValue = Binding<PropertyValue>(
+                        get: { row.wrappedValue.properties[prop.id] ?? .empty },
+                        set: { newVal in
+                            var updatedRow = row.wrappedValue
+                            updatedRow.properties[prop.id] = newVal
+                            row.wrappedValue = updatedRow
+                            onSave(updatedRow)
+                        }
+                    )
+                    PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddSelectOption, onUpdateOption: onUpdateSelectOption, onDeleteOption: onDeleteSelectOption)
+                        .padding(.horizontal, 8)
+                        .frame(width: columnWidth(for: prop), alignment: .leading)
+                        .contentShape(Rectangle())
+                        .cursor(.pointingHand)
+                }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 14)
+            .overlay { columnDividers().allowsHitTesting(false) }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 14)
-        .background(isHovered ? Color.fallbackSurfaceHover : Color.clear)
-        .overlay { columnDividers().allowsHitTesting(false) }
-        .onHover { hoveredRowId = $0 ? row.wrappedValue.id : nil }
     }
 
     // MARK: - Column Dividers (row-level overlay)
@@ -259,29 +247,28 @@ struct TableView: View {
     @ViewBuilder
     private func columnDividers() -> some View {
         if showVerticalLines {
-            HStack(spacing: 0) {
-                Color.clear.frame(width: 8 + titleColumnWidth)
-                Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
-                ForEach(visibleProperties) { prop in
-                    Color.clear.frame(width: columnWidth(for: prop))
-                    Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1)
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: 8 + titleColumnWidth)
+                    Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
+                    ForEach(visibleProperties) { prop in
+                        Color.clear.frame(width: columnWidth(for: prop))
+                        Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .frame(height: geo.size.height)
             }
-            .padding(.vertical, -15)
         }
     }
 
     // MARK: - Title Cell
 
-    private func titleCell(_ row: Binding<DatabaseRow>) -> some View {
+    private func titleCell(_ row: Binding<DatabaseRow>, isHovered: Bool) -> some View {
         let titlePropId = schema.titleProperty?.id
         let rowId = row.wrappedValue.id
         let isSelected = selectedRowIds.contains(rowId)
-        let isHoveredRow = hoveredRowId == rowId
-        // Show checkbox when: hovering, this row is selected, OR any row is already selected
-        // (so the user can see all checkboxes and easily Shift-select a range)
-        let showCheckbox = isHoveredRow || isSelected || !selectedRowIds.isEmpty
+        let showCheckbox = isHovered || isSelected || !selectedRowIds.isEmpty
 
         return HStack(spacing: 6) {
             // Select checkbox
@@ -312,7 +299,7 @@ struct TableView: View {
             }
 
             // Open page icon (only on hover)
-            if isHoveredRow {
+            if isHovered {
                 Button {
                     onOpenRow(row.wrappedValue)
                 } label: {
@@ -399,6 +386,24 @@ struct TableView: View {
         case .email: return "envelope"
         case .relation: return "arrow.triangle.branch"
         }
+    }
+}
+
+// MARK: - HoverRow (per-row hover state to avoid full-tree re-renders)
+
+private struct HoverRow<Content: View>: View {
+    @State private var isHovered = false
+    let content: (Bool) -> Content
+
+    init(@ViewBuilder content: @escaping (Bool) -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        content(isHovered)
+            .background(isHovered ? Color.primary.opacity(0.04) : Color.clear)
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
     }
 }
 
