@@ -28,8 +28,11 @@ struct QueryCmd: ParsableCommand {
     @Flag(help: "Include row body content")
     var body: Bool = false
 
-    @Option(help: "Comma-separated list of property IDs to include")
+    @Option(help: "Comma-separated list of property IDs or names to include")
     var fields: String?
+
+    @Flag(name: .long, help: "Include raw schema property IDs and stored values alongside friendly properties")
+    var rawProperties: Bool = false
 
     func run() throws {
         let (dbPath, schema) = try resolveDatabase(db, workspace: options.resolvedWorkspace)
@@ -43,10 +46,13 @@ struct QueryCmd: ParsableCommand {
         // Parse sorts
         var sorts: [Sort] = []
         for expr in sort {
-            sorts.append(try parseSort(expr))
+            sorts.append(try parseSort(expr, schema: schema))
         }
 
-        let fieldList = fields?.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        let fieldList = try fields?
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { try resolveSchemaPropertyID($0, schema: schema) }
 
         // Load index for querying
         let indexManager = IndexManager()
@@ -116,12 +122,15 @@ struct QueryCmd: ParsableCommand {
                 "updated_at": rowData["updated_at"] ?? "",
             ]
 
-            var filteredProps: [String: Any] = [:]
-            for (key, val) in props {
-                if let fieldList = fieldList, !fieldList.contains(key) { continue }
-                filteredProps[key] = val
+            let propertyOutput = presentedQueryProperties(
+                props,
+                schema: schema,
+                fields: fieldList,
+                includeRawProperties: rawProperties
+            )
+            for (key, value) in propertyOutput {
+                row[key] = value
             }
-            row["properties"] = filteredProps
 
             if body {
                 // Load the actual row file to get the body

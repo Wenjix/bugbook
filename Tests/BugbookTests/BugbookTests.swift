@@ -515,6 +515,58 @@ final class BlockDocumentTests: XCTestCase {
         doc.setBackgroundColor(id: blockId, color: .blue)
         XCTAssertEqual(doc.blocks[1].backgroundColor, .blue)
     }
+
+    func testMarkdownSerializeDoesNotEmitBlockIDCommentsByDefault() {
+        let doc = BlockDocument(markdown: "# Title\nBody\n")
+        let output = doc.markdown
+
+        let blockIDLines = output
+            .components(separatedBy: .newlines)
+            .filter { $0.contains("<!-- block-id:") }
+
+        XCTAssertTrue(blockIDLines.isEmpty)
+        XCTAssertTrue(output.contains("# Title"))
+        XCTAssertTrue(output.contains("Body"))
+    }
+
+    func testMarkdownRoundTripsPersistedBlockIDs() {
+        let titleID = UUID().uuidString.lowercased()
+        let bodyID = UUID().uuidString.lowercased()
+        let markdown = """
+        <!-- block-id: \(titleID) -->
+        # Title
+        <!-- block-id: \(bodyID) -->
+        Body
+        """
+
+        let doc = BlockDocument(markdown: markdown)
+        XCTAssertEqual(doc.blocks[0].id.uuidString.lowercased(), titleID)
+        XCTAssertEqual(doc.blocks[1].id.uuidString.lowercased(), bodyID)
+
+        let output = doc.markdown
+        XCTAssertTrue(output.contains("<!-- block-id: \(titleID) -->"))
+        XCTAssertTrue(output.contains("<!-- block-id: \(bodyID) -->"))
+    }
+
+    func testMarkdownIgnoresSingleTrailingNewlineAsExtraBlock() {
+        let doc = BlockDocument(markdown: "# Title\nBody\n")
+        XCTAssertEqual(doc.blocks.count, 2)
+        XCTAssertEqual(doc.blocks[0].text, "Title")
+        XCTAssertEqual(doc.blocks[1].text, "Body")
+    }
+
+    func testMarkdownEscapesParagraphSyntaxToPreserveParagraphBlocks() {
+        let doc = BlockDocument(markdown: "Paragraph\n")
+        doc.blocks[0].text = "- not a list"
+
+        let output = doc.markdown
+        XCTAssertEqual(output, "\\- not a list")
+
+        let reparsed = BlockDocument(markdown: output)
+        XCTAssertEqual(reparsed.blocks.count, 1)
+        XCTAssertEqual(reparsed.blocks[0].type, .paragraph)
+        XCTAssertEqual(reparsed.blocks[0].text, "- not a list")
+    }
 }
 
 // MARK: - AppState Tests

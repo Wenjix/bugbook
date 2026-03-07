@@ -14,7 +14,6 @@ struct DatabaseFullPageView: View {
     @State private var schema: DatabaseSchema?
     @State private var rows: [DatabaseRow] = []
     @State private var activeViewId: String = ""
-    @State private var selectedRowIndex: Int? = nil
     @State private var error: String?
     @State private var editingTitle: String = ""
     @State private var showPropertyManager = false
@@ -27,6 +26,7 @@ struct DatabaseFullPageView: View {
     @State private var pendingRowSaves: [String: DatabaseRow] = [:]
     @State private var loadTask: Task<Void, Never>? = nil
     @State private var notificationOrigin = UUID().uuidString
+    @State private var initialPeekHandled = false
 
     private var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
@@ -76,23 +76,8 @@ struct DatabaseFullPageView: View {
                 dbHeader(schema: schema)
                 viewTabs(schema: schema)
                 Divider()
-                HStack(spacing: 0) {
-                    viewContent(schema: schema)
-                        .frame(maxHeight: .infinity, alignment: .topLeading)
-                    if let rowIdx = selectedRowIndex, rowIdx < rows.count {
-                        Divider()
-                        RowPageView(
-                            schema: schema,
-                            row: $rows[rowIdx],
-                            onSave: { row in saveRow(row) },
-                            onBack: { selectedRowIndex = nil },
-                            onAddOption: { propId, option in addSelectOption(propId, option: option) },
-                            onUpdateOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
-                            onDeleteOption: { propId, optId in deleteSelectOption(propId, optionId: optId) }
-                        )
-                        .frame(width: 480)
-                    }
-                }
+                viewContent(schema: schema)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 ProgressView("Loading database...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -695,9 +680,11 @@ struct DatabaseFullPageView: View {
                     activeViewId = loadedSchema.defaultView
                 }
                 editingTitle = loadedSchema.name
-                if let targetId = initialRowId, selectedRowIndex == nil,
-                   let idx = loadedRows.firstIndex(where: { $0.id == targetId }) {
-                    selectedRowIndex = idx
+                if let targetId = initialRowId,
+                   !initialPeekHandled,
+                   loadedRows.contains(where: { $0.id == targetId }) {
+                    initialPeekHandled = true
+                    postInlineRowPeek(rowId: targetId)
                 }
             case .failure(let error):
                 self.error = error.localizedDescription
@@ -796,9 +783,18 @@ struct DatabaseFullPageView: View {
     }
 
     private func openRow(_ row: DatabaseRow) {
-        if let idx = rows.firstIndex(where: { $0.id == row.id }) {
-            selectedRowIndex = idx
-        }
+        postInlineRowPeek(rowId: row.id)
+    }
+
+    private func postInlineRowPeek(rowId: String) {
+        NotificationCenter.default.post(
+            name: .inlineDatabaseRowPeek,
+            object: nil,
+            userInfo: [
+                "dbPath": dbPath,
+                "rowId": rowId
+            ]
+        )
     }
 
     // MARK: - Property Operations

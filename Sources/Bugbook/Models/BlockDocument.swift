@@ -36,6 +36,7 @@ class BlockDocument: ObservableObject {
 
     private var undoStack: [[Block]] = []
     private var redoStack: [[Block]] = []
+    private var persistsBlockIDs: Bool = false
 
     var markdown: String {
         let metadata = MarkdownBlockParser.Metadata(
@@ -45,7 +46,7 @@ class BlockDocument: ObservableObject {
             fullWidth: fullWidth
         )
         let metaStr = MarkdownBlockParser.serializeMetadata(metadata)
-        let blockStr = MarkdownBlockParser.serialize(blocks)
+        let blockStr = MarkdownBlockParser.serialize(blocks, includeBlockIDComments: persistsBlockIDs)
         if metaStr.isEmpty {
             return blockStr
         }
@@ -54,6 +55,7 @@ class BlockDocument: ObservableObject {
 
     init(markdown: String) {
         let (metadata, content) = MarkdownBlockParser.parseMetadata(markdown)
+        self.persistsBlockIDs = content.contains("<!-- block-id:")
         self.icon = metadata.icon
         self.coverUrl = metadata.coverUrl
         self.coverPosition = metadata.coverPosition

@@ -85,12 +85,71 @@ enum MarkdownBlockParser {
             return [Block(type: .paragraph)]
         }
 
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        if lines.count > 1, lines.last == "" {
+            lines.removeLast()
+        }
         var blocks: [Block] = []
         var i = 0
+        var pendingBlockID: UUID?
+        var pendingColors: (BlockColor, BlockColor)?
+
+        func makeBlock(
+            type: BlockType = .paragraph,
+            text: String = "",
+            headingLevel: Int = 1,
+            listDepth: Int = 0,
+            isChecked: Bool = false,
+            language: String = "",
+            imageSource: String = "",
+            imageAlt: String = "",
+            imageWidth: Int? = nil,
+            databasePath: String = "",
+            pageLinkName: String = "",
+            children: [Block] = [],
+            columnIndex: Int = 0,
+            isExpanded: Bool = true
+        ) -> Block {
+            let colors = pendingColors ?? (.default, .default)
+            let block = Block(
+                id: pendingBlockID ?? UUID(),
+                type: type,
+                text: text,
+                headingLevel: headingLevel,
+                listDepth: listDepth,
+                isChecked: isChecked,
+                language: language,
+                imageSource: imageSource,
+                imageAlt: imageAlt,
+                imageWidth: imageWidth,
+                databasePath: databasePath,
+                pageLinkName: pageLinkName,
+                textColor: colors.0,
+                backgroundColor: colors.1,
+                children: children,
+                columnIndex: columnIndex,
+                isExpanded: isExpanded
+            )
+            pendingBlockID = nil
+            pendingColors = nil
+            return block
+        }
 
         while i < lines.count {
             let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if let blockID = parseBlockIDComment(line) {
+                pendingBlockID = blockID
+                i += 1
+                continue
+            }
+
+            if let colors = parseColorComment(line) {
+                pendingColors = colors
+                i += 1
+                continue
+            }
 
             // Code fence
             if line.hasPrefix("```") {
@@ -105,41 +164,41 @@ enum MarkdownBlockParser {
                     codeLines.append(lines[i])
                     i += 1
                 }
-                blocks.append(Block(type: .codeBlock, text: codeLines.joined(separator: "\n"), language: language))
+                blocks.append(makeBlock(type: .codeBlock, text: codeLines.joined(separator: "\n"), language: language))
                 continue
             }
 
             // Horizontal rule
             if isHorizontalRule(line) {
-                blocks.append(Block(type: .horizontalRule, text: line))
+                blocks.append(makeBlock(type: .horizontalRule, text: line))
                 i += 1
                 continue
             }
 
             // Heading
             if let (level, text) = parseHeading(line) {
-                blocks.append(Block(type: .heading, text: text, headingLevel: level))
+                blocks.append(makeBlock(type: .heading, text: text, headingLevel: level))
                 i += 1
                 continue
             }
 
             // Task item (must come before bullet)
             if let (depth, checked, text) = parseTaskItem(line) {
-                blocks.append(Block(type: .taskItem, text: text, listDepth: depth, isChecked: checked))
+                blocks.append(makeBlock(type: .taskItem, text: text, listDepth: depth, isChecked: checked))
                 i += 1
                 continue
             }
 
             // Bullet list item
             if let (depth, text) = parseBulletItem(line) {
-                blocks.append(Block(type: .bulletListItem, text: text, listDepth: depth))
+                blocks.append(makeBlock(type: .bulletListItem, text: text, listDepth: depth))
                 i += 1
                 continue
             }
 
             // Numbered list item
             if let (depth, text) = parseNumberedItem(line) {
-                blocks.append(Block(type: .numberedListItem, text: text, listDepth: depth))
+                blocks.append(makeBlock(type: .numberedListItem, text: text, listDepth: depth))
                 i += 1
                 continue
             }
@@ -152,21 +211,21 @@ enum MarkdownBlockParser {
                 } else {
                     text = String(line.dropFirst(1))
                 }
-                blocks.append(Block(type: .blockquote, text: text))
+                blocks.append(makeBlock(type: .blockquote, text: text))
                 i += 1
                 continue
             }
 
             // Image
             if let (alt, src, width) = parseImage(line) {
-                blocks.append(Block(type: .image, imageSource: src, imageAlt: alt, imageWidth: width))
+                blocks.append(makeBlock(type: .image, imageSource: src, imageAlt: alt, imageWidth: width))
                 i += 1
                 continue
             }
 
             // Database embed
             if let path = parseDatabaseEmbed(line) {
-                blocks.append(Block(type: .databaseEmbed, databasePath: path))
+                blocks.append(makeBlock(type: .databaseEmbed, databasePath: path))
                 i += 1
                 continue
             }
@@ -174,17 +233,17 @@ enum MarkdownBlockParser {
             // Wiki link (page link) — line is exactly [[Page Name]]
             if let name = parseWikiLink(line) {
                 if let dbPath = parseDatabaseSchemePath(name) {
-                    blocks.append(Block(type: .databaseEmbed, databasePath: dbPath))
+                    blocks.append(makeBlock(type: .databaseEmbed, databasePath: dbPath))
                 } else {
-                    blocks.append(Block(type: .pageLink, pageLinkName: name))
+                    blocks.append(makeBlock(type: .pageLink, pageLinkName: name))
                 }
                 i += 1
                 continue
             }
 
             // Toggle block
-            if line.trimmingCharacters(in: .whitespaces) == "<!-- toggle -->" || line.trimmingCharacters(in: .whitespaces) == "<!-- toggle collapsed -->" {
-                let collapsed = line.trimmingCharacters(in: .whitespaces).contains("collapsed")
+            if trimmed == "<!-- toggle -->" || trimmed == "<!-- toggle collapsed -->" {
+                let collapsed = trimmed.contains("collapsed")
                 i += 1
                 // First line is the toggle title
                 let title = i < lines.count ? lines[i] : ""
@@ -200,12 +259,12 @@ enum MarkdownBlockParser {
                     i += 1
                 }
                 let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
-                blocks.append(Block(type: .toggle, text: title, children: children, isExpanded: !collapsed))
+                blocks.append(makeBlock(type: .toggle, text: title, children: children, isExpanded: !collapsed))
                 continue
             }
 
             // Column block
-            if line.trimmingCharacters(in: .whitespaces) == "<!-- columns -->" {
+            if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
                 var currentColumnIndex = 0
                 var currentColumnLines: [String] = []
@@ -243,29 +302,12 @@ enum MarkdownBlockParser {
                     }
                     allChildren.append(contentsOf: columnBlocks)
                 }
-                blocks.append(Block(type: .column, children: allChildren))
-                continue
-            }
-
-            // Color comment (applies to next block)
-            if let (textColor, bgColor) = parseColorComment(line) {
-                i += 1
-                if i < lines.count {
-                    // Parse the next line as a block and apply colors
-                    let nextLine = lines[i]
-                    var nextBlocks = parse(nextLine)
-                    if !nextBlocks.isEmpty {
-                        nextBlocks[0].textColor = textColor
-                        nextBlocks[0].backgroundColor = bgColor
-                        blocks.append(contentsOf: nextBlocks)
-                    }
-                    i += 1
-                }
+                blocks.append(makeBlock(type: .column, children: allChildren))
                 continue
             }
 
             // Paragraph (including empty lines)
-            blocks.append(Block(type: .paragraph, text: line))
+            blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             i += 1
         }
 
@@ -278,10 +320,14 @@ enum MarkdownBlockParser {
 
     // MARK: - Serialize
 
-    static func serialize(_ blocks: [Block]) -> String {
+    static func serialize(_ blocks: [Block], includeBlockIDComments: Bool = false) -> String {
         var lines: [String] = []
 
         for (i, block) in blocks.enumerated() {
+            if includeBlockIDComments {
+                lines.append("<!-- block-id: \(block.id.uuidString.lowercased()) -->")
+            }
+
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
             if hasColor, block.type != .column, block.type != .toggle {
@@ -297,7 +343,7 @@ enum MarkdownBlockParser {
 
             switch block.type {
             case .paragraph:
-                lines.append(block.text)
+                lines.append(escapedParagraphText(block.text))
 
             case .heading:
                 let hashes = String(repeating: "#", count: max(1, min(6, block.headingLevel)))
@@ -345,7 +391,7 @@ enum MarkdownBlockParser {
                 lines.append(block.isExpanded ? "<!-- toggle -->" : "<!-- toggle collapsed -->")
                 lines.append(block.text)
                 if !block.children.isEmpty {
-                    lines.append(serialize(block.children))
+                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
                 }
                 lines.append("<!-- /toggle -->")
 
@@ -358,7 +404,7 @@ enum MarkdownBlockParser {
                     }
                     let colBlocks = block.children.filter { $0.columnIndex == colIdx }
                     if !colBlocks.isEmpty {
-                        lines.append(serialize(colBlocks))
+                        lines.append(serialize(colBlocks, includeBlockIDComments: includeBlockIDComments))
                     }
                 }
                 lines.append("<!-- /columns -->")
@@ -369,6 +415,64 @@ enum MarkdownBlockParser {
     }
 
     // MARK: - Line Parsers
+
+    private static func escapedParagraphText(_ text: String) -> String {
+        let (leadingSpaces, remainder) = splitLeadingSpaces(text)
+        let slashCount = leadingBackslashCount(in: remainder)
+        let tail = String(remainder.dropFirst(slashCount))
+        guard paragraphNeedsProtection(leadingSpaces + tail) else {
+            return text
+        }
+        return leadingSpaces + String(repeating: "\\", count: slashCount + 1) + tail
+    }
+
+    private static func unescapeParagraphText(_ line: String) -> String {
+        let (leadingSpaces, remainder) = splitLeadingSpaces(line)
+        let slashCount = leadingBackslashCount(in: remainder)
+        guard slashCount > 0 else {
+            return line
+        }
+        let tail = String(remainder.dropFirst(slashCount))
+        guard paragraphNeedsProtection(leadingSpaces + tail) else {
+            return line
+        }
+        return leadingSpaces + String(repeating: "\\", count: slashCount - 1) + tail
+    }
+
+    private static func splitLeadingSpaces(_ line: String) -> (String, String) {
+        let prefix = line.prefix(while: { $0 == " " })
+        return (String(prefix), String(line.dropFirst(prefix.count)))
+    }
+
+    private static func leadingBackslashCount(in text: String) -> Int {
+        text.prefix(while: { $0 == "\\" }).count
+    }
+
+    private static func paragraphNeedsProtection(_ line: String) -> Bool {
+        guard !line.isEmpty else {
+            return false
+        }
+
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if parseBlockIDComment(line) != nil || parseColorComment(line) != nil {
+            return true
+        }
+        if line.hasPrefix("```") || isHorizontalRule(line) || parseHeading(line) != nil {
+            return true
+        }
+        if parseTaskItem(line) != nil || parseBulletItem(line) != nil || parseNumberedItem(line) != nil {
+            return true
+        }
+        if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil {
+            return true
+        }
+        return trimmed == "<!-- toggle -->"
+            || trimmed == "<!-- toggle collapsed -->"
+            || trimmed == "<!-- /toggle -->"
+            || trimmed == "<!-- columns -->"
+            || trimmed == "<!-- column-separator -->"
+            || trimmed == "<!-- /columns -->"
+    }
 
     private static func isHorizontalRule(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -521,6 +625,15 @@ enum MarkdownBlockParser {
         guard trimmed.hasPrefix("[["), trimmed.hasSuffix("]]") else { return nil }
         let name = String(trimmed.dropFirst(2).dropLast(2))
         return name.isEmpty ? nil : name
+    }
+
+    private static func parseBlockIDComment(_ line: String) -> UUID? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->") else { return nil }
+        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        guard inner.lowercased().hasPrefix("block-id:") else { return nil }
+        let raw = String(inner.dropFirst("block-id:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return UUID(uuidString: raw)
     }
 
     private static func parseColorComment(_ line: String) -> (BlockColor, BlockColor)? {

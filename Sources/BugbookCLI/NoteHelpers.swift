@@ -32,15 +32,120 @@ struct WorkspacePageRecord {
         return json
     }
 
-    func toDetailJSON(includeContent: Bool = true) -> [String: Any] {
+    func toDetailJSON(includeContent: Bool = true, includeInternalComments: Bool = false) -> [String: Any] {
         var json = toSummaryJSON()
         json["frontmatter"] = jsonCompatibleObject(frontmatter)
         if includeContent {
-            json["content"] = content
-            json["body"] = body
+            json["content"] = presentedMarkdown(content, includeInternalComments: includeInternalComments)
+            json["body"] = presentedMarkdown(body, includeInternalComments: includeInternalComments)
         }
         return json
     }
+}
+
+struct WorkspacePageSectionRecord {
+    let title: String
+    let level: Int
+    let headingLine: Int
+    let bodyLine: Int
+    let endLine: Int
+    let content: String
+    let body: String
+
+    func toJSON(includeContent: Bool = true, includeInternalComments: Bool = false) -> [String: Any] {
+        var json: [String: Any] = [
+            "title": title,
+            "level": level,
+            "heading_line": headingLine,
+            "body_line": bodyLine,
+            "end_line": endLine,
+        ]
+        if includeContent {
+            json["content"] = presentedMarkdown(content, includeInternalComments: includeInternalComments)
+            json["body"] = presentedMarkdown(body, includeInternalComments: includeInternalComments)
+        }
+        return json
+    }
+}
+
+struct WorkspacePageUpdatePreview {
+    let original: WorkspacePageRecord
+    let updated: WorkspacePageRecord
+    let changed: Bool
+    let lineChanges: [[String: Any]]
+    let selectedSectionBefore: WorkspacePageSectionRecord?
+    let selectedSectionAfter: WorkspacePageSectionRecord?
+
+    func toJSON() -> [String: Any] {
+        var json = updated.toDetailJSON()
+        json["dry_run"] = true
+        json["changed"] = changed
+        json["line_changes"] = lineChanges
+        if let selectedSectionAfter {
+            json["selected_section"] = selectedSectionAfter.toJSON()
+        }
+        if let selectedSectionBefore {
+            json["selected_section_before"] = selectedSectionBefore.toJSON()
+        }
+        return json
+    }
+}
+
+func pageWriteSummaryJSON(
+    _ record: WorkspacePageRecord,
+    operation: String,
+    changed: Bool? = nil
+) -> [String: Any] {
+    var json = record.toSummaryJSON()
+    json["operation"] = operation
+    if operation == "create" {
+        json["created"] = true
+    } else {
+        json["updated"] = true
+    }
+    if let changed {
+        json["changed"] = changed
+    }
+    return json
+}
+
+func pageUpdateSummaryJSON(
+    _ preview: WorkspacePageUpdatePreview,
+    dryRun: Bool
+) -> [String: Any] {
+    pageMutationSummaryJSON(preview, operation: "update", dryRun: dryRun)
+}
+
+func pageMutationSummaryJSON(
+    _ record: WorkspacePageRecord,
+    preview: WorkspacePageUpdatePreview,
+    operation: String,
+    dryRun: Bool
+) -> [String: Any] {
+    var json = pageWriteSummaryJSON(
+        record,
+        operation: operation,
+        changed: preview.changed
+    )
+    if let selectedSectionAfter = preview.selectedSectionAfter {
+        json["selected_section"] = selectedSectionAfter.toJSON(includeContent: false)
+    }
+    if let selectedSectionBefore = preview.selectedSectionBefore {
+        json["selected_section_before"] = selectedSectionBefore.toJSON(includeContent: false)
+    }
+    if dryRun {
+        json["dry_run"] = true
+        json["line_changes"] = preview.lineChanges
+    }
+    return json
+}
+
+func pageMutationSummaryJSON(
+    _ preview: WorkspacePageUpdatePreview,
+    operation: String,
+    dryRun: Bool
+) -> [String: Any] {
+    pageMutationSummaryJSON(preview.updated, preview: preview, operation: operation, dryRun: dryRun)
 }
 
 private struct WorkspacePageLookupCandidate {
@@ -152,26 +257,97 @@ func createWorkspacePage(
 func updateWorkspacePage(
     query: String,
     workspace: String,
+    section: String? = nil,
+    sectionLine: Int? = nil,
+    createSectionIfMissing: Bool = false,
+    sectionLevel: Int? = nil,
     replacementContent: String? = nil,
     prependContent: String? = nil,
     appendContent: String? = nil
 ) throws -> WorkspacePageRecord {
+    let preview = try previewWorkspacePageUpdate(
+        query: query,
+        workspace: workspace,
+        section: section,
+        sectionLine: sectionLine,
+        createSectionIfMissing: createSectionIfMissing,
+        sectionLevel: sectionLevel,
+        replacementContent: replacementContent,
+        prependContent: prependContent,
+        appendContent: appendContent
+    )
+
+    try preview.updated.content.write(toFile: preview.original.path, atomically: true, encoding: .utf8)
+    return try loadWorkspacePage(at: preview.original.path, relativeTo: workspace)
+}
+
+func previewWorkspacePageUpdate(
+    query: String,
+    workspace: String,
+    section: String? = nil,
+    sectionLine: Int? = nil,
+    createSectionIfMissing: Bool = false,
+    sectionLevel: Int? = nil,
+    replacementContent: String? = nil,
+    prependContent: String? = nil,
+    appendContent: String? = nil
+) throws -> WorkspacePageUpdatePreview {
     if replacementContent != nil && (prependContent != nil || appendContent != nil) {
         throw CLIError.invalidInput("Use --content-file by itself, or use --prepend-file/--append-file without --content-file")
     }
 
     let existing = try resolveWorkspacePage(query, workspace: workspace)
     var nextContent = replacementContent ?? existing.content
-
-    if let prependContent, !prependContent.isEmpty {
-        nextContent = prependContent + nextContent
+    let trimmedSection = section?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let selectedSectionBefore: WorkspacePageSectionRecord?
+    if createSectionIfMissing && sectionLine == nil {
+        selectedSectionBefore = try? resolveWorkspacePageSection(
+            existing,
+            headingQuery: trimmedSection,
+            sectionLine: nil
+        )
+    } else {
+        selectedSectionBefore = try resolveWorkspacePageSection(
+            existing,
+            headingQuery: trimmedSection,
+            sectionLine: sectionLine
+        )
     }
-    if let appendContent, !appendContent.isEmpty {
-        nextContent += appendContent
+
+    if (trimmedSection?.isEmpty == false) || sectionLine != nil {
+        nextContent = try updateMarkdownSection(
+            in: existing.content,
+            headingQuery: trimmedSection,
+            sectionLine: sectionLine,
+            createSectionIfMissing: createSectionIfMissing,
+            sectionLevel: sectionLevel,
+            replacementContent: replacementContent,
+            prependContent: prependContent,
+            appendContent: appendContent
+        )
+    } else {
+        if let prependContent, !prependContent.isEmpty {
+            nextContent = prependContent + nextContent
+        }
+        if let appendContent, !appendContent.isEmpty {
+            nextContent += appendContent
+        }
     }
 
-    try nextContent.write(toFile: existing.path, atomically: true, encoding: .utf8)
-    return try loadWorkspacePage(at: existing.path, relativeTo: workspace)
+    let updated = workspacePageRecord(from: existing, content: nextContent)
+    let selectedSectionAfter = try resolveWorkspacePageSection(
+        updated,
+        headingQuery: trimmedSection,
+        sectionLine: sectionLine
+    )
+    return WorkspacePageUpdatePreview(
+        original: existing,
+        updated: updated,
+        changed: existing.content != nextContent,
+        lineChanges: structuredLineChanges(from: existing.content, to: nextContent),
+        selectedSectionBefore: selectedSectionBefore,
+        selectedSectionAfter: selectedSectionAfter
+    )
 }
 
 func deleteWorkspacePage(query: String, workspace: String, recursive: Bool) throws -> [String: Any] {
@@ -274,6 +450,69 @@ func backlinksForPage(query: String, workspace: String) throws -> [[String: Any]
         let rhs = ($1["title"] as? String) ?? ""
         return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
     }
+}
+
+func pageHeadingsJSON(for page: WorkspacePageRecord) -> [String: Any] {
+    [
+        "page": page.relativePath,
+        "title": page.title,
+        "headings": markdownHeadingsJSON(in: page.content),
+    ]
+}
+
+func presentedMarkdown(_ markdown: String, includeInternalComments: Bool = false) -> String {
+    if includeInternalComments {
+        return markdown
+    }
+    return stripInternalBlockIDComments(from: markdown)
+}
+
+func stripInternalBlockIDComments(from markdown: String) -> String {
+    guard markdown.contains("<!-- block-id:") else {
+        return markdown
+    }
+
+    let hadTrailingNewline = markdown.hasSuffix("\n")
+    let filteredLines = markdown
+        .components(separatedBy: .newlines)
+        .filter { !isInternalBlockIDCommentLine($0) }
+
+    let output = filteredLines.joined(separator: "\n")
+    if hadTrailingNewline, !output.isEmpty, !output.hasSuffix("\n") {
+        return output + "\n"
+    }
+    return output
+}
+
+func resolveWorkspacePageSection(
+    _ page: WorkspacePageRecord,
+    headingQuery: String? = nil,
+    sectionLine: Int? = nil
+) throws -> WorkspacePageSectionRecord? {
+    let trimmedHeadingQuery = headingQuery?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let headingSpecifier = trimmedHeadingQuery.map(parseHeadingSpecifier)
+    let hasHeadingQuery = headingSpecifier?.title.isEmpty == false
+    guard hasHeadingQuery || sectionLine != nil else {
+        return nil
+    }
+
+    let split = splitRawFrontmatter(from: page.content)
+    let bodyLines = split.body.components(separatedBy: .newlines)
+    let prefixLineCount = lineCount(in: split.prefix)
+    guard let section = try resolveMarkdownSection(
+        in: bodyLines,
+        headingQuery: hasHeadingQuery ? headingSpecifier?.title : nil,
+        headingLevel: headingSpecifier?.explicitLevel,
+        sectionLine: sectionLine,
+        prefixLineCount: prefixLineCount
+    ) else {
+        if let sectionLine {
+            throw CLIError.invalidInput("Heading not found at line: \(sectionLine)")
+        }
+        throw CLIError.invalidInput("Heading not found: \(trimmedHeadingQuery ?? "")")
+    }
+
+    return workspacePageSectionRecord(from: section, bodyLines: bodyLines, prefixLineCount: prefixLineCount)
 }
 
 private func workspacePageMatches(for query: String, workspace: String) throws -> [WorkspacePageLookupCandidate] {
@@ -408,6 +647,351 @@ private func appendedMarkdownBlock(_ block: String, to content: String) -> Strin
     return result
 }
 
+private func prependedMarkdownBlock(_ block: String, to content: String) -> String {
+    let trimmedBlock = block.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedBlock.isEmpty else { return content }
+
+    if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return trimmedBlock + "\n"
+    }
+
+    var result = trimmedBlock
+    if !result.hasSuffix("\n") {
+        result += "\n"
+    }
+    if !result.hasSuffix("\n\n") {
+        result += "\n"
+    }
+
+    let trimmedContent = content.trimmingCharacters(in: .newlines)
+    result += trimmedContent
+    if !result.hasSuffix("\n") {
+        result += "\n"
+    }
+    return result
+}
+
+private struct RawFrontmatterSplit {
+    let prefix: String
+    let body: String
+}
+
+private struct MarkdownHeadingSection {
+    let headingIndex: Int
+    let bodyStartIndex: Int
+    let endIndex: Int
+    let title: String
+    let level: Int
+}
+
+private struct HeadingSpecifier {
+    let title: String
+    let explicitLevel: Int?
+}
+
+private func updateMarkdownSection(
+    in content: String,
+    headingQuery: String?,
+    sectionLine: Int?,
+    createSectionIfMissing: Bool,
+    sectionLevel: Int?,
+    replacementContent: String?,
+    prependContent: String?,
+    appendContent: String?
+) throws -> String {
+    let split = splitRawFrontmatter(from: content)
+    let bodyLines = split.body.components(separatedBy: .newlines)
+    let prefixLineCount = lineCount(in: split.prefix)
+    let headingSpecifier = headingQuery.map(parseHeadingSpecifier)
+
+    let existingSection = try resolveMarkdownSection(
+        in: bodyLines,
+        headingQuery: headingSpecifier?.title,
+        headingLevel: headingSpecifier?.explicitLevel,
+        sectionLine: sectionLine,
+        prefixLineCount: prefixLineCount
+    )
+    let currentBody = existingSection.map { Array(bodyLines[$0.bodyStartIndex..<$0.endIndex]).joined(separator: "\n") } ?? ""
+    var nextSectionBody = replacementContent ?? currentBody
+
+    if let prependContent, !prependContent.isEmpty {
+        nextSectionBody = prependedMarkdownBlock(prependContent, to: nextSectionBody)
+    }
+    if let appendContent, !appendContent.isEmpty {
+        nextSectionBody = appendedMarkdownBlock(appendContent, to: nextSectionBody)
+    }
+
+    guard let section = existingSection else {
+        if let sectionLine {
+            throw CLIError.invalidInput("Heading not found at line: \(sectionLine)")
+        }
+        guard let headingSpecifier, let headingQuery else {
+            throw CLIError.invalidInput("Section selector is required")
+        }
+        if !createSectionIfMissing {
+            throw CLIError.invalidInput("Heading not found: \(headingQuery)")
+        }
+        let level = max(1, min(6, sectionLevel ?? headingSpecifier.explicitLevel ?? 2))
+        let headingLine = "\(String(repeating: "#", count: level)) \(headingSpecifier.title)"
+        let sectionMarkdown = nextSectionBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? headingLine
+            : "\(headingLine)\n\n\(nextSectionBody.trimmingCharacters(in: .whitespacesAndNewlines))"
+        return split.prefix + appendedMarkdownBlock(sectionMarkdown, to: split.body)
+    }
+
+    var updatedLines = Array(bodyLines[..<section.bodyStartIndex])
+    if !nextSectionBody.isEmpty {
+        updatedLines.append(contentsOf: nextSectionBody.components(separatedBy: .newlines))
+    }
+    if section.endIndex < bodyLines.count {
+        updatedLines.append(contentsOf: bodyLines[section.endIndex...])
+    }
+
+    return split.prefix + updatedLines.joined(separator: "\n")
+}
+
+private func splitRawFrontmatter(from content: String) -> RawFrontmatterSplit {
+    guard content.hasPrefix("---") else {
+        return RawFrontmatterSplit(prefix: "", body: content)
+    }
+
+    let lines = content.components(separatedBy: .newlines)
+    guard lines.first == "---" else {
+        return RawFrontmatterSplit(prefix: "", body: content)
+    }
+
+    for index in 1..<lines.count where lines[index] == "---" {
+        let prefix = Array(lines[0...index]).joined(separator: "\n") + "\n"
+        let body = lines.dropFirst(index + 1).joined(separator: "\n")
+        return RawFrontmatterSplit(prefix: prefix, body: body)
+    }
+
+    return RawFrontmatterSplit(prefix: "", body: content)
+}
+
+private func resolveMarkdownSection(
+    in lines: [String],
+    headingQuery: String? = nil,
+    headingLevel: Int? = nil,
+    sectionLine: Int? = nil,
+    prefixLineCount: Int = 0
+) throws -> MarkdownHeadingSection? {
+    let sections = markdownSections(in: lines)
+
+    if let sectionLine {
+        guard sectionLine > 0 else {
+            throw CLIError.invalidInput("Section line must be greater than 0")
+        }
+        return sections.first { prefixLineCount + $0.headingIndex + 1 == sectionLine }
+    }
+
+    guard let headingQuery else {
+        return nil
+    }
+
+    let normalizedQuery = normalizeHeadingQuery(headingQuery)
+    let matches = sections.filter { section in
+        guard normalizeHeadingQuery(section.title) == normalizedQuery else {
+            return false
+        }
+        if let headingLevel {
+            return section.level == headingLevel
+        }
+        return true
+    }
+
+    if matches.isEmpty {
+        return nil
+    }
+    if matches.count > 1 {
+        let labels = matches.map { section in
+            let line = prefixLineCount + section.headingIndex + 1
+            return "\(String(repeating: "#", count: section.level)) \(section.title) @ line \(line)"
+        }.joined(separator: ", ")
+        throw CLIError.invalidInput("Heading reference is ambiguous: \(headingQuery). Matches: \(labels)")
+    }
+
+    return matches[0]
+}
+
+private func markdownSections(in lines: [String]) -> [MarkdownHeadingSection] {
+    var matches: [MarkdownHeadingSection] = []
+    for index in lines.indices {
+        guard let (level, title) = parseMarkdownHeadingLine(lines[index]) else {
+            continue
+        }
+
+        var endIndex = lines.count
+        if index + 1 < lines.count {
+            for candidate in (index + 1)..<lines.count {
+                guard let (candidateLevel, _) = parseMarkdownHeadingLine(lines[candidate]) else { continue }
+                if candidateLevel <= level {
+                    endIndex = candidate
+                    break
+                }
+            }
+        }
+
+        matches.append(
+            MarkdownHeadingSection(
+                headingIndex: index,
+                bodyStartIndex: index + 1,
+                endIndex: endIndex,
+                title: title,
+                level: level
+            )
+        )
+    }
+    return matches
+}
+
+private func parseMarkdownHeadingLine(_ line: String) -> (Int, String)? {
+    guard line.hasPrefix("#") else { return nil }
+    var level = 0
+    for character in line {
+        if character == "#" {
+            level += 1
+        } else {
+            break
+        }
+    }
+    guard level >= 1, level <= 6, line.count > level else { return nil }
+    let index = line.index(line.startIndex, offsetBy: level)
+    guard line[index] == " " else { return nil }
+    return (level, String(line[line.index(after: index)...]).trimmingCharacters(in: .whitespacesAndNewlines))
+}
+
+private func normalizeHeadingQuery(_ value: String) -> String {
+    var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    while trimmed.hasPrefix("#") {
+        trimmed.removeFirst()
+        trimmed = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return trimmed.lowercased()
+}
+
+private func parseHeadingSpecifier(_ value: String) -> HeadingSpecifier {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    var level = 0
+    for character in trimmed {
+        if character == "#" {
+            level += 1
+        } else {
+            break
+        }
+    }
+
+    if level > 0, level <= 6, trimmed.count > level {
+        let index = trimmed.index(trimmed.startIndex, offsetBy: level)
+        if trimmed[index] == " " {
+            let title = String(trimmed[trimmed.index(after: index)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty {
+                return HeadingSpecifier(title: title, explicitLevel: level)
+            }
+        }
+    }
+
+    return HeadingSpecifier(title: trimmed, explicitLevel: nil)
+}
+
+private func markdownHeadingsJSON(in content: String) -> [[String: Any]] {
+    let split = splitRawFrontmatter(from: content)
+    let bodyLines = split.body.components(separatedBy: .newlines)
+    let prefixLineCount = lineCount(in: split.prefix)
+    var headings: [[String: Any]] = []
+
+    for index in bodyLines.indices {
+        guard let (level, title) = parseMarkdownHeadingLine(bodyLines[index]) else { continue }
+        let line = prefixLineCount + index + 1
+        headings.append([
+            "level": level,
+            "title": title,
+            "line": line,
+            "body_line": line + 1,
+        ])
+    }
+
+    return headings
+}
+
+private func lineCount(in content: String) -> Int {
+    guard !content.isEmpty else { return 0 }
+    let components = content.components(separatedBy: .newlines)
+    return content.hasSuffix("\n") ? max(components.count - 1, 0) : components.count
+}
+
+private func isInternalBlockIDCommentLine(_ line: String) -> Bool {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->") else { return false }
+    let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+    guard inner.lowercased().hasPrefix("block-id:") else { return false }
+    let raw = String(inner.dropFirst("block-id:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    return UUID(uuidString: raw) != nil
+}
+
+func structuredLineChanges(from before: String, to after: String) -> [[String: Any]] {
+    let beforeLines = before.components(separatedBy: .newlines)
+    let afterLines = after.components(separatedBy: .newlines)
+    return afterLines.difference(from: beforeLines).map { change in
+        switch change {
+        case .remove(let offset, let element, _):
+            return [
+                "op": "remove",
+                "line": offset + 1,
+                "text": element,
+            ]
+        case .insert(let offset, let element, _):
+            return [
+                "op": "insert",
+                "line": offset + 1,
+                "text": element,
+            ]
+        }
+    }
+}
+
+private func workspacePageSectionRecord(
+    from section: MarkdownHeadingSection,
+    bodyLines: [String],
+    prefixLineCount: Int
+) -> WorkspacePageSectionRecord {
+    let content = Array(bodyLines[section.headingIndex..<section.endIndex]).joined(separator: "\n")
+    let body = Array(bodyLines[section.bodyStartIndex..<section.endIndex]).joined(separator: "\n")
+    let headingLine = prefixLineCount + section.headingIndex + 1
+    let bodyLine = prefixLineCount + section.bodyStartIndex + 1
+    let endLine = prefixLineCount + max(section.endIndex, section.headingIndex + 1)
+
+    return WorkspacePageSectionRecord(
+        title: section.title,
+        level: section.level,
+        headingLine: headingLine,
+        bodyLine: bodyLine,
+        endLine: endLine,
+        content: content,
+        body: body
+    )
+}
+
+func workspacePageRecord(from existing: WorkspacePageRecord, content: String) -> WorkspacePageRecord {
+    let (frontmatter, body) = parsePageFrontmatter(content)
+    let title = pageTitle(body: body, fallback: existing.name, frontmatter: frontmatter)
+    let tags = pageTags(frontmatter: frontmatter, body: body)
+    let wikilinks = extractWikiLinks(from: body)
+
+    return WorkspacePageRecord(
+        path: existing.path,
+        relativePath: existing.relativePath,
+        name: existing.name,
+        title: title,
+        content: content,
+        body: body,
+        frontmatter: frontmatter,
+        tags: tags,
+        wikilinks: wikilinks,
+        modifiedAt: existing.modifiedAt
+    )
+}
+
 private func normalizePageDestination(_ rawPath: String, workspace: String) throws -> String {
     let normalizedWorkspace = normalizePath(workspace)
     let expanded = (rawPath as NSString).expandingTildeInPath
@@ -473,6 +1057,28 @@ func isPathInsideWorkspace(_ path: String, workspace: String) -> Bool {
 
 func normalizePath(_ path: String) -> String {
     (path as NSString).standardizingPath
+}
+
+func relativePath(fromDirectory sourceDirectory: String, to targetPath: String) -> String {
+    let sourceComponents = sourceDirectory
+        .replacingOccurrences(of: "\\", with: "/")
+        .split(separator: "/")
+        .map(String.init)
+    let targetComponents = targetPath
+        .replacingOccurrences(of: "\\", with: "/")
+        .split(separator: "/")
+        .map(String.init)
+
+    var commonLength = 0
+    while commonLength < sourceComponents.count,
+          commonLength < targetComponents.count,
+          sourceComponents[commonLength] == targetComponents[commonLength] {
+        commonLength += 1
+    }
+
+    var parts = Array(repeating: "..", count: sourceComponents.count - commonLength)
+    parts.append(contentsOf: targetComponents[commonLength...])
+    return parts.isEmpty ? "." : parts.joined(separator: "/")
 }
 
 private func sanitizePageFileName(_ value: String) -> String {

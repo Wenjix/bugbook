@@ -62,6 +62,20 @@ swift build
 swift run BugbookCLI agent --help
 ```
 
+### 4. Install `bugbook` For Local Development
+
+```bash
+swift run BugbookCLI install --force
+```
+
+Or use the helper script:
+
+```bash
+./scripts/install-bugbook-cli.sh
+```
+
+By default this installs a symlink at `~/.local/bin/bugbook`. If that directory is not on your `PATH`, the command prints the shell snippet needed to add it.
+
 ## Usage
 
 ### CLI (agent workflow)
@@ -71,8 +85,32 @@ Read and update notes:
 ```bash
 swift run BugbookCLI page list --workspace "~/Library/Application Support/Bugbook"
 swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --raw
+swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --raw --include-internal-comments
+swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --blocks
+swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --raw
+swift run BugbookCLI page headings "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI page format "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --style commonmark --dry-run --output summary
+swift run BugbookCLI page compact "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --output summary
+swift run BugbookCLI page ensure-block-ids "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --blocks
+swift run BugbookCLI page strip-block-ids "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section-line 110
 cat updated-note.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --content-file -
+cat updated-note.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --content-file - --output summary
+cat roadmap.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section "Roadmap" --content-file -
+cat roadmap.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section "Roadmap" --create-section --section-level 2 --content-file -
+cat roadmap.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section "Roadmap" --create-section --section-level 2 --content-file - --dry-run
+cat block.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --content-file -
+cat text.txt | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --text-file -
+cat sibling.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --append-file - --dry-run
 cat snippet.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --append-file -
+swift run BugbookCLI block list "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI block get "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --raw
+cat block.md | swift run BugbookCLI block replace "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --content-file -
+cat text.txt | swift run BugbookCLI block update-text "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --text-file -
+cat sibling.md | swift run BugbookCLI block insert "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --after --content-file - --dry-run
+swift run BugbookCLI block move "Bugbook Strategy" path:3 path:7 --workspace "~/Library/Application Support/Bugbook" --before --dry-run
+swift run BugbookCLI block delete "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --dry-run
 swift run BugbookCLI backlinks "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
 swift run BugbookCLI page embed-database "Bugbook Strategy" "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook"
 swift run BugbookCLI board create "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook" --group-name "Phase" --column "Now" --column "Next" --column "Later" --view list --view calendar --embed-in "Bugbook Strategy"
@@ -86,6 +124,29 @@ swift run BugbookCLI skill create "research-summarizer" --workspace "~/Library/A
 swift run BugbookCLI skill list --workspace "~/Library/Application Support/Bugbook"
 swift run BugbookCLI skill get "research-summarizer" --workspace "~/Library/Application Support/Bugbook"
 ```
+
+Notes:
+- `page get --raw` prints clean markdown by default; add `--include-internal-comments` for the literal stored file.
+- `page get --blocks` returns parsed markdown blocks plus document metadata.
+- `page get --block-id <selector>` narrows reads to one markdown block by stable UUID or `path:0/1`.
+- `page headings` returns heading titles, levels, and line numbers for section targeting.
+- `page format --style bugbook|commonmark` rewrites a page using either Bugbook's dense block format or a CommonMark-style layout with structural blank lines.
+- `page format --style commonmark` now strips persisted block IDs and converts Bugbook-only block syntax into portable approximations: toggles become `<details>`, columns are flattened sequentially with thematic breaks, database embeds become labeled text, and page-link blocks become relative markdown links when they resolve uniquely in the workspace or plain text when they do not.
+- `page compact` rewrites a page through Bugbook's block serializer and removes empty paragraph gaps, which is useful when a note has accumulated extra blank lines.
+- `page compact` is the shortcut for `page format --style bugbook`.
+- `page ensure-block-ids` persists unique stable block IDs and repairs duplicate persisted IDs when needed; add `--blocks` if you want the parsed block list in the response.
+- `page strip-block-ids` removes persisted block ID comments from a page and restores clean markdown storage.
+- `page get --section "<Heading>"` or `--section-line N` narrows reads to one heading section and fails if the selector does not match.
+- `page update --section "<Heading>"` or `--section-line N` scopes replace/prepend/append operations to a heading body.
+- `page update --block-id <selector>` scopes replace/prepend/append operations to one block without polluting a clean note with persisted block IDs.
+- `page update --block-id <selector> --text-file` updates only the selected block's text and preserves its markdown type.
+- `page update --section "<Heading>" --create-section` appends the section if it is missing.
+- `page update --dry-run` previews the post-edit page plus structured line changes without writing anything.
+- `page create` and `page update` accept `--output summary` when you want a compact write result instead of the full page payload.
+- `block list`, `block get`, `block replace`, `block update-text`, `block insert`, `block move`, and `block delete` provide a dedicated block-level command surface on top of the same selectors used by `page get --block-id`.
+- Row `get` now matches `query` by returning friendly property names and display values by default; add `--fields` to narrow the payload and `--raw-properties` to include schema IDs and stored option IDs.
+- `query --fields` returns friendly property names and display values by default; add `--raw-properties` when you also need schema IDs and stored option IDs.
+- Row `create`, `update`, `query --filter`, `query --sort`, and `query --fields` accept friendly property names in addition to schema IDs.
 
 Initialize workspace files:
 

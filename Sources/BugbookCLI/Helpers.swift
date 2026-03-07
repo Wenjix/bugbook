@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import BugbookCore
 
@@ -17,6 +18,16 @@ enum CLIError: Error, CustomStringConvertible {
         case .invalidInput(let msg): return "Invalid input: \(msg)"
         }
     }
+}
+
+enum MutationOutputMode: String, ExpressibleByArgument {
+    case full
+    case summary
+}
+
+enum PageMarkdownFormatStyle: String, ExpressibleByArgument {
+    case bugbook
+    case commonmark
 }
 
 /// Resolve a database name or ID to its path and schema.
@@ -66,17 +77,17 @@ func resolveDatabase(_ name: String, workspace: String) throws -> (path: String,
 func parseFilter(_ expr: String, schema: DatabaseSchema) throws -> Filter {
     // Order matters: check two-char operators before single-char
     let operators: [(op: String, build: (String, String, DatabaseSchema) throws -> Filter)] = [
-        ("!=", { prop, val, schema in .notEquals(property: prop, value: parsePropertyValue(val, property: prop, schema: schema)) }),
-        ("!~", { prop, val, schema in .notContains(property: prop, value: parsePropertyValue(val, property: prop, schema: schema)) }),
+        ("!=", { prop, val, schema in .notEquals(property: prop, value: try parsePropertyValue(val, property: prop, schema: schema)) }),
+        ("!~", { prop, val, schema in .notContains(property: prop, value: try parsePropertyValue(val, property: prop, schema: schema)) }),
         (">=", { prop, val, schema in throw CLIError.invalidFilter(expr) }),
         ("<=", { prop, val, schema in throw CLIError.invalidFilter(expr) }),
-        ("~",  { prop, val, schema in .contains(property: prop, value: parsePropertyValue(val, property: prop, schema: schema)) }),
-        (">",  { prop, val, schema in .greaterThan(property: prop, value: parsePropertyValue(val, property: prop, schema: schema)) }),
-        ("<",  { prop, val, schema in .lessThan(property: prop, value: parsePropertyValue(val, property: prop, schema: schema)) }),
+        ("~",  { prop, val, schema in .contains(property: prop, value: try parsePropertyValue(val, property: prop, schema: schema)) }),
+        (">",  { prop, val, schema in .greaterThan(property: prop, value: try parsePropertyValue(val, property: prop, schema: schema)) }),
+        ("<",  { prop, val, schema in .lessThan(property: prop, value: try parsePropertyValue(val, property: prop, schema: schema)) }),
         ("=",  { prop, val, schema in
             if val == "_empty" { return .isEmpty(property: prop) }
             if val == "_not_empty" { return .isNotEmpty(property: prop) }
-            return .equals(property: prop, value: parsePropertyValue(val, property: prop, schema: schema))
+            return .equals(property: prop, value: try parsePropertyValue(val, property: prop, schema: schema))
         }),
     ]
 
@@ -85,7 +96,7 @@ func parseFilter(_ expr: String, schema: DatabaseSchema) throws -> Filter {
             let prop = String(expr[expr.startIndex..<range.lowerBound])
             let val = String(expr[range.upperBound...])
             guard !prop.isEmpty else { throw CLIError.invalidFilter(expr) }
-            return try build(prop, val, schema)
+            return try build(try resolveSchemaPropertyID(prop, schema: schema), val, schema)
         }
     }
 
@@ -93,9 +104,9 @@ func parseFilter(_ expr: String, schema: DatabaseSchema) throws -> Filter {
 }
 
 /// Parse a sort expression: "property:asc" or "property:desc"
-func parseSort(_ expr: String) throws -> Sort {
+func parseSort(_ expr: String, schema: DatabaseSchema) throws -> Sort {
     let parts = expr.split(separator: ":", maxSplits: 1)
-    let property = String(parts[0])
+    let property = try resolveSchemaPropertyID(String(parts[0]), schema: schema)
     let ascending: Bool
     if parts.count > 1 {
         switch parts[1].lowercased() {
@@ -110,8 +121,8 @@ func parseSort(_ expr: String) throws -> Sort {
 }
 
 /// Determine the PropertyValue type from the schema and raw string value.
-func parsePropertyValue(_ raw: String, property: String, schema: DatabaseSchema) -> PropertyValue {
-    guard let propDef = schema.properties.first(where: { $0.id == property }) else {
+func parsePropertyValue(_ raw: String, property: String, schema: DatabaseSchema) throws -> PropertyValue {
+    guard let propDef = try resolveSchemaPropertyDefinition(property, schema: schema) else {
         // Fall back to text if property not found
         return .text(raw)
     }
@@ -122,14 +133,17 @@ func parsePropertyValue(_ raw: String, property: String, schema: DatabaseSchema)
     case .number:
         return .number(Double(raw) ?? 0)
     case .select:
-        return .select(raw)
+        return .select(try resolveSelectOptionID(raw, definition: propDef))
     case .multiSelect:
-        let items = raw.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        let items = try raw
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { try resolveSelectOptionID($0, definition: propDef) }
         return .multiSelect(items)
     case .date:
         return .date(raw)
     case .checkbox:
-        return .checkbox(raw == "true" || raw == "1")
+        return .checkbox(parseBoolLiteral(raw))
     case .url:
         return .url(raw)
     case .email:
@@ -152,9 +166,85 @@ func parseSetValues(_ pairs: [String], schema: DatabaseSchema) throws -> [String
         }
         let key = String(pair[pair.startIndex..<eqIdx])
         let val = String(pair[pair.index(after: eqIdx)...])
-        properties[key] = parsePropertyValue(val, property: key, schema: schema)
+        let resolvedKey = try resolveSchemaPropertyID(key, schema: schema)
+        properties[resolvedKey] = try parsePropertyValue(val, property: resolvedKey, schema: schema)
     }
     return properties
+}
+
+func resolveSchemaPropertyID(_ property: String, schema: DatabaseSchema) throws -> String {
+    guard let definition = try resolveSchemaPropertyDefinition(property, schema: schema) else {
+        throw CLIError.invalidInput("Property not found: \(property)")
+    }
+    return definition.id
+}
+
+private func resolveSchemaPropertyDefinition(_ property: String, schema: DatabaseSchema) throws -> PropertyDefinition? {
+    if let exactID = schema.properties.first(where: { $0.id == property }) {
+        return exactID
+    }
+
+    let lowered = property.lowercased()
+    if let caseInsensitiveID = schema.properties.first(where: { $0.id.lowercased() == lowered }) {
+        return caseInsensitiveID
+    }
+    if let exactName = schema.properties.first(where: { $0.name.lowercased() == lowered }) {
+        return exactName
+    }
+
+    let normalized = normalizeSchemaLookup(property)
+    let matches = schema.properties.filter {
+        normalizeSchemaLookup($0.id) == normalized || normalizeSchemaLookup($0.name) == normalized
+    }
+    if matches.count > 1 {
+        let names = matches.map(\.name).sorted().joined(separator: ", ")
+        throw CLIError.invalidInput("Property reference is ambiguous: \(property). Matches: \(names)")
+    }
+    return matches.first
+}
+
+private func resolveSelectOptionID(_ raw: String, definition: PropertyDefinition) throws -> String {
+    guard let options = definition.config?.options else {
+        return raw
+    }
+
+    if options.contains(where: { $0.id == raw }) {
+        return raw
+    }
+
+    let lowered = raw.lowercased()
+    if let exactName = options.first(where: { $0.name.lowercased() == lowered }) {
+        return exactName.id
+    }
+
+    let normalized = normalizeSchemaLookup(raw)
+    let matches = options.filter {
+        normalizeSchemaLookup($0.id) == normalized || normalizeSchemaLookup($0.name) == normalized
+    }
+    if matches.count > 1 {
+        let names = matches.map(\.name).sorted().joined(separator: ", ")
+        throw CLIError.invalidInput("Option reference is ambiguous for \(definition.name): \(raw). Matches: \(names)")
+    }
+    guard let match = matches.first else {
+        throw CLIError.invalidInput("Option not found for \(definition.name): \(raw)")
+    }
+    return match.id
+}
+
+private func normalizeSchemaLookup(_ value: String) -> String {
+    value
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "[\\s_-]+", with: "", options: .regularExpression)
+        .lowercased()
+}
+
+private func parseBoolLiteral(_ raw: String) -> Bool {
+    switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "true", "1", "yes", "y":
+        return true
+    default:
+        return false
+    }
 }
 
 /// Output a JSON-serializable value to stdout.
@@ -165,20 +255,90 @@ func outputJSON(_ value: Any) throws {
     }
 }
 
+func presentedQueryProperties(
+    _ rawProperties: [String: Any],
+    schema: DatabaseSchema,
+    fields: [String]? = nil,
+    includeRawProperties: Bool = false
+) -> [String: Any] {
+    let fieldSet = fields.map(Set.init)
+    let outputKeys = schemaPropertyOutputKeys(schema: schema)
+    let definitionsByID = Dictionary(uniqueKeysWithValues: schema.properties.map { ($0.id, $0) })
+
+    var presented: [String: Any] = [:]
+    var rawOutput: [String: Any] = [:]
+
+    for definition in schema.properties {
+        if let fieldSet, !fieldSet.contains(definition.id) {
+            continue
+        }
+        guard let rawValue = rawProperties[definition.id] else {
+            continue
+        }
+
+        let outputKey = outputKeys[definition.id] ?? definition.id
+        presented[outputKey] = displayPropertyValue(rawValue, definition: definition)
+        if includeRawProperties {
+            rawOutput[definition.id] = rawValue
+        }
+    }
+
+    for (key, value) in rawProperties {
+        if definitionsByID[key] != nil {
+            continue
+        }
+        if let fieldSet, !fieldSet.contains(key) {
+            continue
+        }
+        presented[key] = value
+        if includeRawProperties {
+            rawOutput[key] = value
+        }
+    }
+
+    var output: [String: Any] = [
+        "properties": presented,
+    ]
+    if includeRawProperties {
+        output["raw_properties"] = rawOutput
+    }
+    return output
+}
+
 /// Convert a DatabaseRow to a JSON-serializable dictionary.
-func rowToJSON(_ row: DatabaseRow, includeBody: Bool = false, fields: [String]? = nil) -> [String: Any] {
+func rowToJSON(
+    _ row: DatabaseRow,
+    schema: DatabaseSchema? = nil,
+    includeBody: Bool = false,
+    fields: [String]? = nil,
+    includeRawProperties: Bool = false
+) -> [String: Any] {
     var dict: [String: Any] = [
         "id": row.id,
         "created_at": iso8601String(from: row.createdAt),
         "updated_at": iso8601String(from: row.updatedAt),
     ]
 
-    var props: [String: Any] = [:]
-    for (key, value) in row.properties {
-        if let fields = fields, !fields.contains(key) { continue }
-        props[key] = propertyValueToJSON(value)
+    let rawProperties = row.properties.reduce(into: [String: Any]()) { partialResult, item in
+        if let fields, !fields.contains(item.key) {
+            return
+        }
+        partialResult[item.key] = propertyValueToJSON(item.value)
     }
-    dict["properties"] = props
+
+    if let schema {
+        let presented = presentedQueryProperties(
+            rawProperties,
+            schema: schema,
+            fields: fields,
+            includeRawProperties: includeRawProperties
+        )
+        for (key, value) in presented {
+            dict[key] = value
+        }
+    } else {
+        dict["properties"] = rawProperties
+    }
 
     if includeBody {
         dict["body"] = row.body
@@ -236,4 +396,40 @@ func loadRow(rowId: String, dbPath: String, schema: DatabaseSchema) throws -> Da
 func exitWithError(_ message: String) -> Never {
     FileHandle.standardError.write(Data("Error: \(message)\n".utf8))
     _Exit(1)
+}
+
+private func schemaPropertyOutputKeys(schema: DatabaseSchema) -> [String: String] {
+    var normalizedCounts: [String: Int] = [:]
+    for property in schema.properties {
+        let normalized = normalizeSchemaLookup(property.name)
+        normalizedCounts[normalized, default: 0] += 1
+    }
+
+    var keys: [String: String] = [:]
+    for property in schema.properties {
+        let normalized = normalizeSchemaLookup(property.name)
+        if normalizedCounts[normalized, default: 0] > 1 {
+            keys[property.id] = "\(property.name) [\(property.id)]"
+        } else {
+            keys[property.id] = property.name
+        }
+    }
+    return keys
+}
+
+private func displayPropertyValue(_ rawValue: Any, definition: PropertyDefinition) -> Any {
+    switch definition.type {
+    case .select:
+        guard let storedID = rawValue as? String else { return rawValue }
+        return definition.config?.options?.first(where: { $0.id == storedID })?.name ?? storedID
+
+    case .multiSelect:
+        guard let storedIDs = rawValue as? [String] else { return rawValue }
+        return storedIDs.map { storedID in
+            definition.config?.options?.first(where: { $0.id == storedID })?.name ?? storedID
+        }
+
+    default:
+        return rawValue
+    }
 }
