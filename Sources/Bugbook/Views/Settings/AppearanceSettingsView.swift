@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AppearanceSettingsView: View {
-    @ObservedObject var appState: AppState
+    var appState: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -67,7 +67,7 @@ private struct ThemeCard: View {
 
                 Text(label)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             }
             .padding(8)
             .background(

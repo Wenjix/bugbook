@@ -25,7 +25,7 @@ struct ImageBlockView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: block.imageWidth.map { CGFloat($0) } ?? .infinity)
-                        .cornerRadius(4)
+                        .clipShape(.rect(cornerRadius: 4))
                 } else {
                     imagePlaceholder
                 }
@@ -38,7 +38,7 @@ struct ImageBlockView: View {
                 } placeholder: {
                     imagePlaceholder
                 }
-                .cornerRadius(4)
+                .clipShape(.rect(cornerRadius: 4))
             } else {
                 imagePlaceholder
             }
@@ -46,7 +46,7 @@ struct ImageBlockView: View {
             if !block.imageAlt.isEmpty {
                 Text(block.imageAlt)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -58,7 +58,7 @@ struct ImageBlockView: View {
             .overlay(
                 Text("Image: \(block.imageSource)")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             )
     }
 }

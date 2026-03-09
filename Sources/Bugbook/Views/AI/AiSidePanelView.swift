@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct AiSidePanelView: View {
-    @ObservedObject var appState: AppState
-    @ObservedObject var aiService: AiService
+    var appState: AppState
+    var aiService: AiService
     @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @FocusState private var inputFocused: Bool
@@ -19,22 +19,24 @@ struct AiSidePanelView: View {
 
                 Text("Ask AI")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(Color.fallbackTextPrimary)
+                    .foregroundStyle(Color.fallbackTextPrimary)
 
                 Spacer()
 
                 Button(action: openFullChat) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
                 .help("Expand to full chat")
 
                 Button(action: closePanel) {
-                    Image(systemName: "xmark")
+                    Label("Close", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
                 .help("Close")
@@ -59,7 +61,7 @@ struct AiSidePanelView: View {
                                     .controlSize(.small)
                                 Text("Thinking...")
                                     .font(.system(size: 13))
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 14)
                             .id("loading")
@@ -94,9 +96,10 @@ struct AiSidePanelView: View {
                     }
 
                 Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
+                    Label("Send", systemImage: "arrow.up.circle.fill")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 21))
-                        .foregroundColor(inputText.trimmingCharacters(in: .whitespaces).isEmpty ? .secondary : .accentColor)
+                        .foregroundStyle(inputText.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : Color.accentColor)
                 }
                 .buttonStyle(.borderless)
                 .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty || aiService.isRunning)
@@ -125,12 +128,12 @@ struct AiSidePanelView: View {
 
                 Text(message.content)
                     .font(.system(size: 14))
-                    .foregroundColor(message.role == .error ? .red : .primary)
+                    .foregroundStyle(message.role == .error ? .red : .primary)
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(bubbleBackground(for: message.role))
-                    .cornerRadius(10)
+                    .clipShape(.rect(cornerRadius: 10))
 
                 if message.role != .user { Spacer(minLength: 40) }
             }

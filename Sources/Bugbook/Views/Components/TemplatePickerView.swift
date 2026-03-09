@@ -13,14 +13,13 @@ struct TemplatePickerView: View {
             HStack {
                 Text("Choose a template")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
+                Button("Close", systemImage: "xmark", action: onDismiss)
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -30,14 +29,14 @@ struct TemplatePickerView: View {
             if templates.isEmpty {
                 Text("No templates yet.\nCreate your first template from any note.")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(16)
                     .frame(maxWidth: .infinity)
             } else {
                 ScrollView {
                     VStack(spacing: 2) {
-                        ForEach(Array(templates.enumerated()), id: \.element.id) { index, template in
+                        ForEach(templates.enumerated(), id: \.element.id) { index, template in
                             let displayName = template.name.hasSuffix(".md")
                                 ? String(template.name.dropLast(3))
                                 : template.name
@@ -46,16 +45,16 @@ struct TemplatePickerView: View {
                                 HStack(spacing: 8) {
                                     Image(systemName: "doc.text")
                                         .font(.system(size: 13))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                     Text(displayName)
                                         .font(.system(size: 13))
-                                        .foregroundColor(.primary)
+                                        .foregroundStyle(.primary)
                                     Spacer()
                                 }
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .background(hoveredIndex == index ? Color.primary.opacity(0.06) : Color.clear)
-                                .cornerRadius(6)
+                                .clipShape(.rect(cornerRadius: 6))
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -78,7 +77,7 @@ struct TemplatePickerView: View {
                         Text("Save current note as template")
                             .font(.system(size: 12))
                     }
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -91,7 +90,7 @@ struct TemplatePickerView: View {
         }
         .frame(width: 260)
         .background(.ultraThinMaterial)
-        .cornerRadius(10)
+        .clipShape(.rect(cornerRadius: 10))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
     }
 }

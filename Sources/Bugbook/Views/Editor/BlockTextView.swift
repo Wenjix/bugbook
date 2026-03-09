@@ -9,7 +9,7 @@ enum EditorTypography {
 /// Handles keyboard intercepts for block splitting, merging, and navigation.
 /// Supports rich text with WYSIWYG inline formatting (bold, italic, code, strikethrough, links).
 struct BlockTextView: NSViewRepresentable {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let blockId: UUID
     var isMultiline: Bool = false
     var font: NSFont = .systemFont(ofSize: EditorTypography.bodyFontSize)

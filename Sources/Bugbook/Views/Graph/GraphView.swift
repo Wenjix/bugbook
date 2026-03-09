@@ -173,9 +173,9 @@ struct GraphView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
                             .font(.system(size: 36))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("No pages to graph yet")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -243,7 +243,7 @@ struct GraphView: View {
                         let label = String(node.name.prefix(20))
                         let labelText = Text(label)
                             .font(.system(size: max(10, 11 * zoom)))
-                            .foregroundColor(isCurrentPage ? .accentColor : .primary.opacity(0.8))
+                            .foregroundStyle(isCurrentPage ? Color.accentColor : Color.primary.opacity(0.8))
                         let labelPoint = CGPoint(x: screenPos.x, y: screenPos.y + radius + 8 * zoom)
                         context.draw(
                             context.resolve(labelText),

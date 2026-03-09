@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct SidebarView: View {
-    @ObservedObject var appState: AppState
-    @ObservedObject var fileSystem: FileSystemService
+    var appState: AppState
+    var fileSystem: FileSystemService
     var onSelectFile: (FileEntry) -> Void
     var onToggleSidebar: () -> Void
     @State private var hoveredButton: String?
@@ -66,16 +66,16 @@ struct SidebarView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("Search")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(hoveredButton == "search" ? Color.primary.opacity(0.06) : Color.clear)
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -85,16 +85,16 @@ struct SidebarView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "sparkles")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("Ask AI")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(hoveredButton == "ai" ? Color.primary.opacity(0.06) : Color.clear)
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -109,16 +109,16 @@ struct SidebarView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "calendar")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("Today")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(hoveredButton == "today" ? Color.primary.opacity(0.06) : Color.clear)
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -128,16 +128,16 @@ struct SidebarView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("Graph")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(hoveredButton == "graph" ? Color.primary.opacity(0.06) : Color.clear)
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -149,7 +149,7 @@ struct SidebarView: View {
             HStack {
                 Text("Pages")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color(nsColor: .tertiaryLabelColor))
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                 Spacer()
             }
             .padding(.horizontal, 14)
@@ -199,16 +199,16 @@ struct SidebarView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "gearshape")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("Settings")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(hoveredButton == "settings" ? Color.primary.opacity(0.06) : Color.clear)
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -220,16 +220,16 @@ struct SidebarView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "bubble.left.and.text.bubble.right")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("Chat with Notes")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(hoveredButton == "chat" ? Color.primary.opacity(0.06) : Color.clear)
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -256,7 +256,7 @@ struct SidebarView: View {
                         .font(.system(size: 14))
                     Spacer()
                 }
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
@@ -282,11 +282,11 @@ struct SidebarView: View {
                                 ? Color.primary.opacity(0.08)
                                 : Color.clear
                         )
-                        .cornerRadius(6)
+                        .clipShape(.rect(cornerRadius: 6))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 }
             }
             .padding(.horizontal, 8)
@@ -326,7 +326,7 @@ struct SidebarView: View {
         } label: {
             Image(systemName: "square.and.pencil")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 24, height: 24)
         } primaryAction: {
             createFile()
@@ -351,7 +351,7 @@ struct SidebarView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(isEnabled ? .secondary : .secondary.opacity(0.45))
+                .foregroundStyle(isEnabled ? Color.secondary : Color.secondary.opacity(0.45))
                 .frame(width: 24, height: 24)
         }
         .buttonStyle(.borderless)

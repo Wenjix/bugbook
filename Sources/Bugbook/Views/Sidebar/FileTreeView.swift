@@ -19,7 +19,7 @@ struct FileTreeView: View {
 
     var body: some View {
         LazyVStack(spacing: 1) {
-            ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { index, entry in
+            ForEach(sortedEntries.enumerated(), id: \.element.id) { index, entry in
                 FileTreeItemView(
                     entry: entry,
                     activeFilePath: activeFilePath,

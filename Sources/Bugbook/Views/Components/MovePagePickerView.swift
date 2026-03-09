@@ -42,7 +42,7 @@ struct MovePagePickerView: View {
             // Search field
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 TextField("Move page to...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
@@ -61,11 +61,11 @@ struct MovePagePickerView: View {
                         if items.isEmpty {
                             Text("No pages found")
                                 .font(.callout)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 16)
                         } else {
-                            ForEach(Array(items.enumerated()), id: \.element.id) { index, dest in
+                            ForEach(items.enumerated(), id: \.element.id) { index, dest in
                                 destinationRow(dest, index: index)
                                     .id(dest.id)
                             }
@@ -85,7 +85,7 @@ struct MovePagePickerView: View {
         .frame(width: 300)
         .frame(maxHeight: 460)
         .background(Color.fallbackBgPrimary)
-        .cornerRadius(10)
+        .clipShape(.rect(cornerRadius: 10))
         .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
         .onKeyPress(.upArrow) {
             selectedIndex = max(0, selectedIndex - 1)
@@ -121,7 +121,7 @@ struct MovePagePickerView: View {
                 if dest.hasChildren {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 12)
                 } else {
                     Spacer().frame(width: 12)
@@ -131,7 +131,7 @@ struct MovePagePickerView: View {
 
                 Text(dest.name)
                     .font(.system(size: 14))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Spacer()
@@ -153,13 +153,13 @@ struct MovePagePickerView: View {
         if let sfSymbol = dest.sfSymbol {
             Image(systemName: sfSymbol)
                 .font(.system(size: 14))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 20)
         } else if let icon = dest.icon, !icon.isEmpty {
             if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 20)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 15)).frame(width: 20)
@@ -174,7 +174,7 @@ struct MovePagePickerView: View {
     private var defaultPageIcon: some View {
         Image(systemName: "doc.text")
             .font(.system(size: 13))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
     }
 
     private func selectCurrent() {

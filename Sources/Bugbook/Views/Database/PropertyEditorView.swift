@@ -16,10 +16,7 @@ struct PropertyEditorView: View {
             .popover(item: $editingOptionId) { optId in
                 editOptionPopover(optionId: optId)
             }
-            .alert("Delete Option", isPresented: Binding(
-                get: { showDeleteConfirm != nil },
-                set: { if !$0 { showDeleteConfirm = nil } }
-            )) {
+            .alert("Delete Option", isPresented: $showDeleteAlert) {
                 Button("Cancel", role: .cancel) { showDeleteConfirm = nil }
                 Button("Delete", role: .destructive) {
                     if let optId = showDeleteConfirm {
@@ -29,6 +26,12 @@ struct PropertyEditorView: View {
                 }
             } message: {
                 Text("This will remove the option from all rows that use it.")
+            }
+            .onChange(of: showDeleteConfirm) { _, val in
+                showDeleteAlert = (val != nil)
+            }
+            .onChange(of: showDeleteAlert) { _, show in
+                if !show { showDeleteConfirm = nil }
             }
     }
 
@@ -77,7 +80,7 @@ struct PropertyEditorView: View {
                 Spacer()
                 Button("Cancel") { editingOptionId = nil }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Button("Save") {
                     let trimmed = editingOptionName.trimmingCharacters(in: .whitespaces)
                     if !trimmed.isEmpty {
@@ -115,7 +118,7 @@ struct PropertyEditorView: View {
             set: { value = .number(Double($0) ?? 0) }
         ))
         .textFieldStyle(.plain)
-        .foregroundColor(.primary)
+        .foregroundStyle(.primary)
     }
 
     // MARK: - Select
@@ -126,6 +129,7 @@ struct PropertyEditorView: View {
     @State private var editingOptionId: String? = nil
     @State private var editingOptionName: String = ""
     @State private var showDeleteConfirm: String? = nil
+    @State private var showDeleteAlert = false
 
     private var selectEditor: some View {
         let options = definition.options ?? []
@@ -135,27 +139,29 @@ struct PropertyEditorView: View {
         }()
         let currentOption = options.first(where: { $0.id == currentValue })
 
-        return HStack(spacing: 0) {
-            if let opt = currentOption {
-                Text(opt.name)
-                    .font(.callout)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(colorForName(opt.color).opacity(0.12))
-                    .foregroundColor(colorForName(opt.color))
-                    .cornerRadius(4)
-                    .contextMenu { optionContextMenu(for: opt) }
-            } else if !compact {
-                Text("Empty")
-                    .font(.body)
-                    .foregroundColor(.secondary)
+        return Button { showSelectPopover = true } label: {
+            HStack(spacing: 0) {
+                if let opt = currentOption {
+                    Text(opt.name)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(colorForName(opt.color).opacity(0.12))
+                        .foregroundStyle(colorForName(opt.color))
+                        .clipShape(.rect(cornerRadius: 4))
+                        .contextMenu { optionContextMenu(for: opt) }
+                } else if !compact {
+                    Text("Empty")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, minHeight: 22)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, minHeight: 22)
-        .contentShape(Rectangle())
-        .onTapGesture { showSelectPopover = true }
+        .buttonStyle(.plain)
         .popover(isPresented: $showSelectPopover, arrowEdge: .bottom) {
             selectOptionList(options: options, currentValue: currentValue)
         }
@@ -205,37 +211,39 @@ struct PropertyEditorView: View {
             return []
         }()
 
-        return HStack(spacing: 0) {
-            if !selectedIds.isEmpty {
-                HStack(spacing: 3) {
-                    ForEach(selectedIds.prefix(3), id: \.self) { id in
-                        if let option = options.first(where: { $0.id == id }) {
-                            Text(option.name)
+        return Button { showMultiSelectPopover = true } label: {
+            HStack(spacing: 0) {
+                if !selectedIds.isEmpty {
+                    HStack(spacing: 3) {
+                        ForEach(selectedIds.prefix(3), id: \.self) { id in
+                            if let option = options.first(where: { $0.id == id }) {
+                                Text(option.name)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(colorForName(option.color).opacity(0.12))
+                                    .foregroundStyle(colorForName(option.color))
+                                    .clipShape(.rect(cornerRadius: 4))
+                            }
+                        }
+                        if selectedIds.count > 3 {
+                            Text("+\(selectedIds.count - 3)")
                                 .font(.caption)
-                                .lineLimit(1)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(colorForName(option.color).opacity(0.12))
-                                .foregroundColor(colorForName(option.color))
-                                .cornerRadius(4)
+                                .foregroundStyle(.tertiary)
                         }
                     }
-                    if selectedIds.count > 3 {
-                        Text("+\(selectedIds.count - 3)")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
+                } else if !compact {
+                    Text("Empty")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
                 }
-            } else if !compact {
-                Text("Empty")
-                    .font(.body)
-                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, minHeight: 22)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, minHeight: 22)
-        .contentShape(Rectangle())
-        .onTapGesture { showMultiSelectPopover = true }
+        .buttonStyle(.plain)
         .popover(isPresented: $showMultiSelectPopover, arrowEdge: .bottom) {
             multiSelectOptionList(options: options, selectedIds: selectedIds)
         }
@@ -285,12 +293,12 @@ struct PropertyEditorView: View {
                 }
                 Text(label)
                     .font(.callout)
-                    .foregroundColor(isAction ? .accentColor : .primary)
+                    .foregroundStyle(isAction ? Color.accentColor : Color.primary)
                 Spacer()
                 if isActive {
                     Image(systemName: "checkmark")
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(Color.accentColor)
                 }
             }
             .padding(.horizontal, 8)
@@ -356,7 +364,7 @@ struct PropertyEditorView: View {
                     if isSelect { showNewSelectOption = false } else { showNewTag = false }
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
                 Button("Add") {
                     commitNewOption(isSelect: isSelect)
@@ -418,16 +426,16 @@ struct PropertyEditorView: View {
                     if hasDate {
                         Image(systemName: "calendar")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(label)
                             .font(textFont)
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     } else if !compact {
                         Text("Empty")
                             .font(textFont)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     } else {
                         Color.clear
                             .frame(height: 14)
@@ -534,14 +542,14 @@ struct PropertyEditorView: View {
                 .textFieldStyle(.plain)
                 .font(textFont)
                 .lineLimit(1...4)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
         } else {
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
                 .font(textFont)
                 .lineLimit(1)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
         }
     }
 
@@ -628,7 +636,7 @@ private struct DatePropertyPopover: View {
                 value = nil
             }
             .buttonStyle(.plain)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
         }
         .padding(14)
         .frame(width: 336)
@@ -690,7 +698,7 @@ private struct DatePropertyPopover: View {
                     .font(.callout)
                     .lineLimit(1)
             }
-            .foregroundColor(activeEndpoint == endpoint ? .primary : .secondary)
+            .foregroundStyle(activeEndpoint == endpoint ? .primary : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
@@ -723,7 +731,7 @@ private struct DatePropertyPopover: View {
                 )
             }
             .buttonStyle(.plain)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
 
             Button {
                 displayMonth = calendar.date(byAdding: .month, value: -1, to: displayMonth) ?? displayMonth
@@ -748,7 +756,7 @@ private struct DatePropertyPopover: View {
             ForEach(weekdaySymbols, id: \.self) { symbol in
                 Text(symbol)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -764,7 +772,7 @@ private struct DatePropertyPopover: View {
                     Text("\(calendar.component(.day, from: cell.date))")
                         .font(.callout)
                         .fontWeight(cell.isSelected ? .semibold : .regular)
-                        .foregroundColor(cell.isSelected ? .white : (cell.isCurrentMonth ? .primary : .secondary))
+                        .foregroundStyle(cell.isSelected ? Color.white : (cell.isCurrentMonth ? Color.primary : Color.secondary))
                         .frame(maxWidth: .infinity)
                         .frame(height: 38)
                         .background(
@@ -801,7 +809,7 @@ private struct DatePropertyPopover: View {
 
             HStack {
                 Text("Date format")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Menu {
                     ForEach(DatabaseDateFormat.allCases, id: \.rawValue) { format in
@@ -822,7 +830,7 @@ private struct DatePropertyPopover: View {
                         Image(systemName: "chevron.down")
                             .font(.caption2)
                     }
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -841,7 +849,7 @@ private struct DatePropertyPopover: View {
     private func timeRow(title: String, usesEndDate: Bool) -> some View {
         HStack {
             Text(title)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Spacer()
             DatePicker(
                 "",

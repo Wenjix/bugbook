@@ -44,9 +44,10 @@ enum QmdError: Error, LocalizedError {
 }
 
 @MainActor
-final class QmdService: ObservableObject {
-    @Published var status: QmdStatus = .unknown
-    @Published var collectionReady: Bool = false
+@Observable
+final class QmdService {
+    var status: QmdStatus = .unknown
+    var collectionReady: Bool = false
 
     // MARK: - Public
 

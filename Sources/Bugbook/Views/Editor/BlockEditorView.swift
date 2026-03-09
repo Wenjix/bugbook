@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Main block editor — scroll view containing all block cells.
 struct BlockEditorView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     var onTextChange: (() -> Void)?
     var onTyping: (() -> Void)?
     @State private var activeDropIndex: Int?
@@ -48,41 +48,48 @@ struct BlockEditorView: View {
                     let idx = index + 1
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 }
-                .onTapGesture {
-                    if document.consumePendingEditorTapAfterBlockSelection() {
-                        return
+                .overlay {
+                    Button {
+                        if document.consumePendingEditorTapAfterBlockSelection() {
+                            return
+                        }
+                        // Click between blocks: focus the block below if it exists, otherwise the one above
+                        if index + 1 < document.blocks.count {
+                            let next = document.blocks[index + 1]
+                            document.focusedBlockId = next.id
+                            document.cursorPosition = 0
+                        } else {
+                            document.focusedBlockId = block.id
+                            document.cursorPosition = block.text.count
+                        }
+                    } label: {
+                        Color.clear
                     }
-                    // Click between blocks: focus the block below if it exists, otherwise the one above
-                    if index + 1 < document.blocks.count {
-                        let next = document.blocks[index + 1]
-                        document.focusedBlockId = next.id
-                        document.cursorPosition = 0
-                    } else {
-                        document.focusedBlockId = block.id
-                        document.cursorPosition = block.text.count
-                    }
+                    .buttonStyle(.plain)
                 }
             }
 
             // Click target after last block — always visible, creates new block
-            Rectangle()
-                .fill(Color.white.opacity(0.001))
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 300)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if document.consumePendingEditorTapAfterBlockSelection() {
-                        return
-                    }
-                    if let lastBlock = document.blocks.last,
-                       lastBlock.text.isEmpty,
-                       lastBlock.type != .databaseEmbed {
-                        document.focusedBlockId = lastBlock.id
-                        document.cursorPosition = 0
-                    } else {
-                        document.appendEmptyBlock()
-                    }
+            Button {
+                if document.consumePendingEditorTapAfterBlockSelection() {
+                    return
                 }
+                if let lastBlock = document.blocks.last,
+                   lastBlock.text.isEmpty,
+                   lastBlock.type != .databaseEmbed {
+                    document.focusedBlockId = lastBlock.id
+                    document.cursorPosition = 0
+                } else {
+                    document.appendEmptyBlock()
+                }
+            } label: {
+                Rectangle()
+                    .fill(Color.white.opacity(0.001))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 300)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 48)
         .padding(.vertical, 20)

@@ -1,6 +1,7 @@
 import SwiftUI
 import BugbookCore
 
+@MainActor
 @Observable
 class DatabaseViewModel {
     let dbPath: String

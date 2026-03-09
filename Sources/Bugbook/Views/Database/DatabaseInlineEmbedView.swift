@@ -8,7 +8,7 @@ struct DatabaseInlineEmbedView: View {
     var onOpenRow: ((DatabaseRow) -> Void)?
     var onOpenDatabase: (() -> Void)?
 
-    @StateObject private var state: DatabaseViewState
+    @State private var state: DatabaseViewState
 
     @State private var showSearch: Bool = false
     @State private var searchText: String = ""
@@ -24,7 +24,7 @@ struct DatabaseInlineEmbedView: View {
         self.dbPath = dbPath
         self.onOpenRow = onOpenRow
         self.onOpenDatabase = onOpenDatabase
-        _state = StateObject(wrappedValue: DatabaseViewState(dbPath: dbPath))
+        _state = State(initialValue: DatabaseViewState(dbPath: dbPath))
     }
 
     private var filteredAndSortedRows: [DatabaseRow] {
@@ -46,16 +46,16 @@ struct DatabaseInlineEmbedView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "trash")
                         .font(.callout)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("Database deleted")
                         .font(.callout)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(12)
             } else if let error = state.error {
                 Text(error)
                     .font(.callout)
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                     .padding(8)
             } else if let schema = state.schema {
                 VStack(alignment: .leading, spacing: 0) {
@@ -71,7 +71,7 @@ struct DatabaseInlineEmbedView: View {
                         .scaleEffect(0.7)
                     Text("Loading...")
                         .font(.callout)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(8)
             }
@@ -106,7 +106,7 @@ struct DatabaseInlineEmbedView: View {
             if isEditingTitle {
                 TextField("Untitled Database", text: $state.editingTitle)
                     .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .textFieldStyle(.plain)
                     .focused($isTitleFocused)
                     .databasePointerCursor()
@@ -120,10 +120,12 @@ struct DatabaseInlineEmbedView: View {
                         if !focused { isEditingTitle = false }
                     }
             } else {
-                Text(state.editingTitle.isEmpty ? "Untitled Database" : state.editingTitle)
-                    .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .onTapGesture { isEditingTitle = true }
+                Button { isEditingTitle = true } label: {
+                    Text(state.editingTitle.isEmpty ? "Untitled Database" : state.editingTitle)
+                        .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
             }
 
             // Add view — always visible next to title
@@ -136,7 +138,7 @@ struct DatabaseInlineEmbedView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())
             }
@@ -151,7 +153,7 @@ struct DatabaseInlineEmbedView: View {
                 Button { onOpenDatabase?() } label: {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -161,7 +163,7 @@ struct DatabaseInlineEmbedView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     TextField("Type to search...", text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.callout)
@@ -178,7 +180,7 @@ struct DatabaseInlineEmbedView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -186,7 +188,7 @@ struct DatabaseInlineEmbedView: View {
                 Button { showSearch = true } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -222,8 +224,8 @@ struct DatabaseInlineEmbedView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .cornerRadius(4)
-                    .foregroundColor(view.id == state.activeViewId ? .primary : .secondary)
+                    .clipShape(.rect(cornerRadius: 4))
+                    .foregroundStyle(view.id == state.activeViewId ? .primary : .secondary)
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
@@ -314,7 +316,7 @@ struct DatabaseInlineEmbedView: View {
         } label: {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }

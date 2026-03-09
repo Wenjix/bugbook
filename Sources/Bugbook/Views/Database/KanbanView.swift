@@ -56,7 +56,7 @@ struct KanbanView: View {
                 HStack(spacing: 8) {
                     Text("Group by:")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Menu {
                         ForEach(selectProperties) { prop in
                             Button {
@@ -87,7 +87,7 @@ struct KanbanView: View {
                 .padding(.vertical, 6)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
                         kanbanColumn(column, index: index)
@@ -110,6 +110,7 @@ struct KanbanView: View {
                     }
                 }
             }
+            .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -125,7 +126,7 @@ struct KanbanView: View {
             .padding(.vertical, 8)
             .frame(width: 220)
             .background(.ultraThinMaterial)
-            .cornerRadius(6)
+            .clipShape(.rect(cornerRadius: 6))
             .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 
@@ -163,7 +164,7 @@ struct KanbanView: View {
                         Text("Add Status")
                     }
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(8)
                 }
                 .buttonStyle(.plain)
@@ -172,7 +173,7 @@ struct KanbanView: View {
         .frame(width: 200)
         .padding(.vertical, 8)
         .background(Color.fallbackSurfaceSubtle)
-        .cornerRadius(8)
+        .clipShape(.rect(cornerRadius: 8))
     }
 
     private func createNewOption() {
@@ -201,18 +202,18 @@ struct KanbanView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(columnColor.opacity(0.2))
-                    .foregroundColor(columnColor)
-                    .cornerRadius(4)
+                    .foregroundStyle(columnColor)
+                    .clipShape(.rect(cornerRadius: 4))
 
                 Spacer()
 
                 Text("\(rowsForColumn(column.id).count)")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.fallbackBadgeBg)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
@@ -253,12 +254,12 @@ struct KanbanView: View {
                         Text("New page")
                     }
                     .font(.caption)
-                    .foregroundColor(columnColor)
+                    .foregroundStyle(columnColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(columnColor.opacity(0.08))
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 6)
@@ -317,11 +318,11 @@ struct KanbanView: View {
             .font(.system(size: EditorTypography.bodyFontSize))
             .fontWeight(.medium)
             .lineLimit(2)
-            .foregroundColor(.primary)
+            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
             .background(columnColor.opacity(0.06))
-            .cornerRadius(6)
+            .clipShape(.rect(cornerRadius: 6))
             .contentShape(Rectangle())
             .onTapGesture { onOpenRow(row) }
             .onHover { hovering in

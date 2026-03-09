@@ -30,11 +30,11 @@ struct ShortcutsSettingsView: View {
             Spacer()
             Text(shortcut)
                 .font(.system(size: 13, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Color.primary.opacity(0.06))
-                .cornerRadius(5)
+                .clipShape(.rect(cornerRadius: 5))
         }
     }
 }

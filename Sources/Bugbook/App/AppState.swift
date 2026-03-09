@@ -15,21 +15,21 @@ enum ViewMode {
 }
 
 @MainActor
-class AppState: ObservableObject {
-    @Published var openTabs: [OpenFile] = []
-    @Published var activeTabIndex: Int = 0
-    @Published var sidebarOpen: Bool = true
-    @Published var workspacePath: String?
-    @Published var fileTree: [FileEntry] = []
-    @Published var settings: AppSettings = .default
-    @Published var commandPaletteOpen: Bool = false
-    @Published var commandPaletteMode: CommandPaletteMode = .search
-    @Published var showSettings: Bool = false
-    @Published var selectedSettingsTab: String = "general"
-    @Published var aiSidePanelOpen: Bool = false
-    @Published var aiInitialPrompt: String?
-    @Published var currentView: ViewMode = .editor
-    @Published var movePagePath: String?  // non-nil triggers move page picker
+@Observable class AppState {
+    var openTabs: [OpenFile] = []
+    var activeTabIndex: Int = 0
+    var sidebarOpen: Bool = true
+    var workspacePath: String?
+    var fileTree: [FileEntry] = []
+    var settings: AppSettings = .default
+    var commandPaletteOpen: Bool = false
+    var commandPaletteMode: CommandPaletteMode = .search
+    var showSettings: Bool = false
+    var selectedSettingsTab: String = "general"
+    var aiSidePanelOpen: Bool = false
+    var aiInitialPrompt: String?
+    var currentView: ViewMode = .editor
+    var movePagePath: String?  // non-nil triggers move page picker
 
     var activeTab: OpenFile? {
         guard activeTabIndex >= 0, activeTabIndex < openTabs.count else { return nil }

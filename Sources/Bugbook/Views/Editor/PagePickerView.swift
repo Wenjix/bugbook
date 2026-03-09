@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Page picker popup for the "Link to Page" slash command.
 struct PagePickerView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     @State private var searchText = ""
     @State private var selectedIndex = 0
 
@@ -22,7 +22,7 @@ struct PagePickerView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Link to page")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
                 .padding(.bottom, 4)
@@ -43,7 +43,7 @@ struct PagePickerView: View {
             if filtered.isEmpty {
                 Text("No pages found")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             } else {
@@ -59,10 +59,10 @@ struct PagePickerView: View {
                                     } else {
                                         Image(systemName: "doc.text")
                                             .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
                                     Text(entry.name.replacingOccurrences(of: ".md", with: ""))
-                                        .foregroundColor(.primary)
+                                        .foregroundStyle(.primary)
                                         .lineLimit(1)
                                 }
                                 .padding(.horizontal, 12)
@@ -83,7 +83,7 @@ struct PagePickerView: View {
         }
         .frame(width: 240)
         .background(.regularMaterial)
-        .cornerRadius(8)
+        .clipShape(.rect(cornerRadius: 8))
         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 

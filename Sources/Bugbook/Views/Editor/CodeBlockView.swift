@@ -3,7 +3,7 @@ import AppKit
 
 /// Multi-line code block with language label.
 struct CodeBlockView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let block: Block
     var onTyping: (() -> Void)? = nil
     @State private var textHeight: CGFloat = 24
@@ -13,7 +13,7 @@ struct CodeBlockView: View {
             if !block.language.isEmpty {
                 Text(block.language)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
@@ -34,7 +34,7 @@ struct CodeBlockView: View {
             .padding(.bottom, 8)
         }
         .background(Color.fallbackBgSecondary)
-        .cornerRadius(6)
+        .clipShape(.rect(cornerRadius: 6))
         .overlay(
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.fallbackBorderColor, lineWidth: 1)

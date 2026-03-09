@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var appState: AppState
+    var appState: AppState
 
     private var tabTitle: String {
         switch appState.selectedSettingsTab {
@@ -67,7 +67,7 @@ struct SettingsSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.5)
 
@@ -77,7 +77,7 @@ struct SettingsSection<Content: View>: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.04))
-            .cornerRadius(10)
+            .clipShape(.rect(cornerRadius: 10))
         }
     }
 }

@@ -11,6 +11,6 @@ struct GripDotsView: View {
                 }
             }
         }
-        .foregroundColor(.secondary)
+        .foregroundStyle(.secondary)
     }
 }

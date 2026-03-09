@@ -110,7 +110,7 @@ struct CalendarView: View {
                 }
                 .buttonStyle(.plain)
                 .font(.caption)
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
 
                 // Date property selector
                 if dateProperties.count > 1 {
@@ -133,7 +133,7 @@ struct CalendarView: View {
                             Text(dateProperty?.name ?? "Date")
                         }
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
@@ -149,7 +149,7 @@ struct CalendarView: View {
                     Text("Large dataset (\(rows.count) rows) - performance may be affected")
                 }
                 .font(.caption)
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 4)
             }
@@ -160,7 +160,7 @@ struct CalendarView: View {
                     Text(name)
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -190,7 +190,7 @@ struct CalendarView: View {
                         Text("\(cell.day)")
                             .font(.caption)
                             .fontWeight(cell.isToday ? .bold : .medium)
-                            .foregroundColor(cell.isToday ? .white : .primary)
+                            .foregroundStyle(cell.isToday ? Color.white : Color.primary)
                             .frame(width: 22, height: 22)
                             .background(cell.isToday ? Circle().fill(Color.accentColor) : Circle().fill(Color.clear))
                         Spacer()
@@ -199,7 +199,7 @@ struct CalendarView: View {
                         } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .frame(width: 26, height: 22)
                                 .background(
                                     RoundedRectangle(cornerRadius: 7)
@@ -228,7 +228,7 @@ struct CalendarView: View {
                         } label: {
                             Text("+\(extra) more")
                                 .font(.caption2)
-                                .foregroundColor(.accentColor)
+                                .foregroundStyle(Color.accentColor)
                         }
                         .buttonStyle(.plain)
                         .popover(isPresented: Binding(
@@ -239,7 +239,7 @@ struct CalendarView: View {
                                 Text(cell.dateString)
                                     .font(.caption)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                 Divider()
                                 ForEach(dayRows) { row in
                                     eventPill(row)
@@ -284,7 +284,7 @@ struct CalendarView: View {
             .font(.caption)
             .lineLimit(1)
             .truncationMode(.tail)
-            .foregroundColor(.primary)
+            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -300,7 +300,7 @@ struct CalendarView: View {
                 Text(title)
                     .padding(6)
                     .background(.ultraThinMaterial)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
             }
             .simultaneousGesture(TapGesture().onEnded { onOpenRow(row) })
     }

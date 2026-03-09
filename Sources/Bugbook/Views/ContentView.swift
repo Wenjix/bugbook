@@ -4,10 +4,10 @@ import os
 import Sentry
 
 struct ContentView: View {
-    @StateObject private var appState = AppState()
-    @StateObject private var fileSystem = FileSystemService()
-    @StateObject private var aiService = AiService()
-    @StateObject private var backlinkService = BacklinkService()
+    @State private var appState = AppState()
+    @State private var fileSystem = FileSystemService()
+    @State private var aiService = AiService()
+    @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
@@ -299,7 +299,7 @@ struct ContentView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(isEnabled ? .secondary : .secondary.opacity(0.45))
+                .foregroundStyle(isEnabled ? Color.secondary : Color.secondary.opacity(0.45))
                 .frame(width: 24, height: 24)
         }
         .buttonStyle(.borderless)
@@ -1254,7 +1254,7 @@ struct ContentView: View {
                     Text(themeLabel(mode))
                         .font(.system(size: 14, weight: .medium))
                 }
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(.ultraThinMaterial)

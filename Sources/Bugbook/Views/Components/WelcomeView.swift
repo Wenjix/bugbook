@@ -19,7 +19,7 @@ struct WelcomeView: View {
                     .font(.system(size: 24, weight: .bold))
                 Text("Local-first notes for agents and humans")
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             VStack(spacing: 10) {

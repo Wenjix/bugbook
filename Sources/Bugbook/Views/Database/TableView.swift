@@ -64,7 +64,7 @@ struct TableView: View {
                     Spacer()
                 }
                 .font(.caption)
-                .foregroundColor(.orange)
+                .foregroundStyle(.orange)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Color.orange.opacity(0.08))
@@ -102,7 +102,7 @@ struct TableView: View {
                 Text("\(selectedRowIds.count) selected")
                     .font(.callout)
                     .fontWeight(.medium)
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(Color.accentColor)
 
                 Button {
                     let toDelete = rows.filter { selectedRowIds.contains($0.id) }
@@ -115,7 +115,7 @@ struct TableView: View {
                         Text("Delete")
                             .font(.callout)
                     }
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(
@@ -136,7 +136,7 @@ struct TableView: View {
                 } label: {
                     Text("Deselect all")
                         .font(.callout)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -157,7 +157,7 @@ struct TableView: View {
             Text(schema.titleProperty?.name ?? "Name")
                 .font(.callout)
                 .fontWeight(.medium)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 8)
                 .frame(width: titleColumnWidth)
@@ -198,7 +198,7 @@ struct TableView: View {
                     Text("Add property")
                         .font(.callout)
                 }
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
             }
@@ -298,17 +298,14 @@ struct TableView: View {
     @ViewBuilder
     private func columnDividers() -> some View {
         if showVerticalLines {
-            GeometryReader { geo in
-                HStack(spacing: 0) {
-                    Color.clear.frame(width: 8 + titleColumnWidth)
+            HStack(spacing: 0) {
+                Color.clear.frame(width: 8 + titleColumnWidth)
+                Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
+                ForEach(visibleProperties) { prop in
+                    Color.clear.frame(width: columnWidth(for: prop))
                     Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
-                    ForEach(visibleProperties) { prop in
-                        Color.clear.frame(width: columnWidth(for: prop))
-                        Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
-                    }
-                    Spacer(minLength: 0)
                 }
-                .frame(height: geo.size.height)
+                Spacer(minLength: 0)
             }
         }
     }
@@ -349,7 +346,7 @@ struct TableView: View {
                                 .font(.system(size: 10, weight: .semibold))
                                 .tracking(0.3)
                         }
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: openPillSize.width, height: openPillSize.height)
                         .background(
                             RoundedRectangle(cornerRadius: 7)
@@ -371,43 +368,45 @@ struct TableView: View {
     // MARK: - Phantom Row
 
     private func phantomRow(isFirst: Bool) -> some View {
-        HStack(spacing: 0) {
-            Color.clear
-                .frame(width: Self.rowControlsInset)
-                .overlay(alignment: .trailing) {
-                    if isFirst {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11))
-                            .foregroundColor(Color.primary.opacity(0.25))
-                            .padding(.trailing, 8)
-                    }
-                }
-
+        Button { onNewRow?() } label: {
             HStack(spacing: 0) {
-                TextField(isFirst ? "New page" : "", text: .constant(""))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: EditorTypography.bodyFontSize))
-                    .foregroundColor(Color.primary.opacity(0.25))
-                    .disabled(true)
-                    .allowsHitTesting(false)
-                    .padding(.horizontal, 8)
-                    .frame(width: titleColumnWidth, alignment: .leading)
+                Color.clear
+                    .frame(width: Self.rowControlsInset)
+                    .overlay(alignment: .trailing) {
+                        if isFirst {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.primary.opacity(0.25))
+                                .padding(.trailing, 8)
+                        }
+                    }
 
-                ForEach(visibleProperties) { prop in
-                    TextField("", text: .constant(""))
+                HStack(spacing: 0) {
+                    TextField(isFirst ? "New page" : "", text: .constant(""))
                         .textFieldStyle(.plain)
+                        .font(.system(size: EditorTypography.bodyFontSize))
+                        .foregroundStyle(Color.primary.opacity(0.25))
                         .disabled(true)
                         .allowsHitTesting(false)
                         .padding(.horizontal, 8)
-                        .frame(width: columnWidth(for: prop), alignment: .leading)
+                        .frame(width: titleColumnWidth, alignment: .leading)
+
+                    ForEach(visibleProperties) { prop in
+                        TextField("", text: .constant(""))
+                            .textFieldStyle(.plain)
+                            .disabled(true)
+                            .allowsHitTesting(false)
+                            .padding(.horizontal, 8)
+                            .frame(width: columnWidth(for: prop), alignment: .leading)
+                    }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 14)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+            .overlay { columnDividers().allowsHitTesting(false) }
         }
-        .contentShape(Rectangle())
-        .overlay { columnDividers().allowsHitTesting(false) }
-        .onTapGesture { onNewRow?() }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Helpers
@@ -512,9 +511,10 @@ struct TableView: View {
             } label: {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 13))
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(isSelected ? "Deselect row" : "Select row")
         } else {
             Color.clear
         }
@@ -522,7 +522,7 @@ struct TableView: View {
 
     private func dragHandle(for row: DatabaseRow, isHovered: Bool) -> some View {
         RowDragHandleDots()
-            .foregroundColor(.secondary.opacity(isHovered ? 0.8 : 0.35))
+            .foregroundStyle(Color.secondary.opacity(isHovered ? 0.8 : 0.35))
             .help("Drag to reorder row")
             .onHover { hovering in
                 if hovering {
@@ -537,7 +537,7 @@ struct TableView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(.ultraThinMaterial)
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
             }
     }
 
@@ -578,7 +578,7 @@ struct TableView: View {
             TextField("New Page", text: text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: EditorTypography.bodyFontSize))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .lineLimit(1...4)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -588,7 +588,7 @@ struct TableView: View {
             TextField("New Page", text: text)
                 .textFieldStyle(.plain)
                 .font(.system(size: EditorTypography.bodyFontSize))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
@@ -652,28 +652,30 @@ private struct ColumnHeaderCell: View {
     @State private var editingName: String = ""
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: prop.type.systemImageName)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            Text(prop.name)
-                .font(.callout)
-                .fontWeight(.medium)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+        Button {
+            editingName = prop.name
+            showPopover = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: prop.type.systemImageName)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(prop.name)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 8)
-        .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .onHover { inside in
             isHovered = inside
             if inside { NSCursor.pointingHand.push() }
             else { NSCursor.pop() }
-        }
-        .onTapGesture {
-            editingName = prop.name
-            showPopover = true
         }
         .popover(isPresented: $showPopover, arrowEdge: .bottom) {
             popoverContent
@@ -696,7 +698,7 @@ private struct ColumnHeaderCell: View {
             HStack {
                 Text("Type")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Menu {
                     ForEach(PropertyType.allCases, id: \.rawValue) { type in
@@ -734,7 +736,7 @@ private struct ColumnHeaderCell: View {
                         Text("Hide property")
                             .font(.callout)
                     }
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
             }
@@ -749,7 +751,7 @@ private struct ColumnHeaderCell: View {
                     Text("Delete property")
                         .font(.callout)
                 }
-                .foregroundColor(.red)
+                .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
         }

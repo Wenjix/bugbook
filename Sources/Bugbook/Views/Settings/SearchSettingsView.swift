@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct SearchSettingsView: View {
-    @ObservedObject var appState: AppState
-    @StateObject private var qmdService = QmdService()
+    var appState: AppState
+    @State private var qmdService = QmdService()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -29,7 +29,7 @@ struct SearchSettingsView: View {
             case .unknown:
                 statusRow {
                     ProgressView().scaleEffect(0.7)
-                    Text("Detecting…").foregroundColor(.secondary)
+                    Text("Detecting…").foregroundStyle(.secondary)
                 }
 
             case .notInstalled:
@@ -38,7 +38,7 @@ struct SearchSettingsView: View {
             case .installing:
                 statusRow {
                     ProgressView().scaleEffect(0.7)
-                    Text("Installing qmd…").foregroundColor(.secondary)
+                    Text("Installing qmd…").foregroundStyle(.secondary)
                 }
 
             case .installed(let version, _):
@@ -54,7 +54,7 @@ struct SearchSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "xmark.circle")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text("qmd — Not Installed")
                     .font(.system(size: 14))
                 Spacer()
@@ -66,31 +66,31 @@ struct SearchSettingsView: View {
             }
             Text("qmd adds BM25, semantic, and hybrid search to Bugbook. It also works with Claude Code and any other markdown directory — it's yours to keep.")
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Requires bun or npm.")
                 .font(.system(size: 12))
-                .foregroundColor(Color.secondary.opacity(0.7))
+                .foregroundStyle(Color.secondary.opacity(0.7))
         }
     }
 
     private func installedRow(version: String) -> some View {
         HStack {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
+                .foregroundStyle(.green)
             Text("qmd \(version)")
                 .font(.system(size: 14))
             Spacer()
             if qmdService.collectionReady {
                 Text("Workspace indexed")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 4) {
                     ProgressView().scaleEffect(0.55)
                     Text("Indexing…")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -100,7 +100,7 @@ struct SearchSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: "exclamationmark.triangle")
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
                 Text("Install failed")
                     .font(.system(size: 14))
                 Spacer()
@@ -111,7 +111,7 @@ struct SearchSettingsView: View {
             }
             Text(message)
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -142,16 +142,16 @@ struct SearchSettingsView: View {
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                    .foregroundColor(selected ? .accentColor : .secondary)
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                     .font(.system(size: 14))
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(mode.label)
                         .font(.system(size: 14))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     Text(mode.detail)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -168,7 +168,7 @@ struct SearchSettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("qmd also runs as a standalone MCP server. Add it to Claude Code, Cursor, or any MCP-compatible client to get search across your notes outside of Bugbook.")
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Link("github.com/tobi/qmd", destination: URL(string: "https://github.com/tobi/qmd")!)
                     .font(.system(size: 13))

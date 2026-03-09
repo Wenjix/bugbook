@@ -22,7 +22,7 @@ struct FormattingToolbar: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .background(.regularMaterial)
-        .cornerRadius(6)
+        .clipShape(.rect(cornerRadius: 6))
         .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
     }
 
@@ -49,6 +49,6 @@ struct FormattingToolbar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundColor(.primary)
+        .foregroundStyle(.primary)
     }
 }

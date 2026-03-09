@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MobileTodayView: View {
-    @ObservedObject var workspace: MobileWorkspaceService
+    var workspace: MobileWorkspaceService
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var captureText = ""
@@ -74,18 +74,18 @@ struct MobileTodayView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(todayDateString)
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
 
                 if let preview = dailyNotePreview, !preview.isEmpty {
                     Text(preview)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
                 } else {
                     Text("Tap to start today's note")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .italic()
                 }
             }
@@ -96,7 +96,7 @@ struct MobileTodayView: View {
             #else
             .background(Color(.windowBackgroundColor))
             #endif
-            .cornerRadius(12)
+            .clipShape(.rect(cornerRadius: 12))
         }
         .buttonStyle(.plain)
     }
@@ -111,7 +111,7 @@ struct MobileTodayView: View {
             if recentNotes.isEmpty {
                 Text("No recent notes")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             } else {
                 ForEach(recentNotes) { note in
                     NavigationLink {
@@ -119,13 +119,13 @@ struct MobileTodayView: View {
                     } label: {
                         HStack {
                             Text(note.name)
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.primary)
+                                .font(.body).fontWeight(.medium)
+                                .foregroundStyle(.primary)
                             Spacer()
                             if let date = note.modifiedAt {
                                 Text(relativeTime(from: date))
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                         .padding(.vertical, 6)

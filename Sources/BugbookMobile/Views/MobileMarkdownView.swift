@@ -250,7 +250,7 @@ private func renderInlineText(_ text: String) -> Text {
 
         // The wiki-link itself
         let name = nsText.substring(with: nameRange)
-        result = result + Text(name).foregroundColor(.blue)
+        result = result + Text(name).foregroundStyle(.blue)
 
         lastEnd = matchRange.location + matchRange.length
     }
@@ -285,9 +285,9 @@ private struct HeadingBlockView: View {
 
     private var headingFont: Font {
         switch level {
-        case 1: .system(size: 28)
-        case 2: .system(size: 22)
-        default: .system(size: 18)
+        case 1: .largeTitle
+        case 2: .title
+        default: .title3
         }
     }
 }
@@ -328,11 +328,11 @@ private struct TaskBlockView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: checked ? "checkmark.square.fill" : "square")
-                .foregroundColor(checked ? .green : .secondary)
+                .foregroundStyle(checked ? .green : .secondary)
                 .font(.body)
             renderInlineText(content)
                 .strikethrough(checked)
-                .foregroundColor(checked ? .secondary : .primary)
+                .foregroundStyle(checked ? .secondary : .primary)
         }
         .padding(.leading, CGFloat(depth) * 20)
     }
@@ -348,7 +348,7 @@ private struct CodeBlockView: View {
             if !language.isEmpty {
                 Text(language)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             Text(content)
                 .font(.system(.body, design: .monospaced))
@@ -372,7 +372,7 @@ private struct BlockquoteBlockView: View {
                 .frame(width: 3)
             renderInlineText(content)
                 .italic()
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
         }
@@ -397,7 +397,7 @@ private struct ImageBlockView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 case .failure:
                     Label(alt.isEmpty ? "Image failed to load" : alt, systemImage: "photo")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 case .empty:
                     ProgressView()
                 @unknown default:
@@ -406,7 +406,7 @@ private struct ImageBlockView: View {
             }
         } else if !alt.isEmpty {
             Label(alt, systemImage: "photo")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -514,7 +514,7 @@ struct MobileMarkdownView: View {
 
         case .wikiLink(let name):
             Text(name)
-                .foregroundColor(.blue)
+                .foregroundStyle(.blue)
         }
     }
 }

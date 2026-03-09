@@ -21,7 +21,7 @@ struct CoverPickerView: View {
                         .aspectRatio(contentMode: .fill)
                         .frame(height: 120)
                         .clipped()
-                        .cornerRadius(6)
+                        .clipShape(.rect(cornerRadius: 6))
                         .padding(.horizontal, 12)
                 }
 
@@ -29,7 +29,7 @@ struct CoverPickerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Vertical Position")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Slider(value: $coverYPosition, in: 0...100)
                 }
                 .padding(.horizontal, 12)
@@ -44,22 +44,22 @@ struct CoverPickerView: View {
                         coverYPosition = 50
                         dismiss()
                     }
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                 }
                 .font(.system(size: 13))
                 .padding(.horizontal, 12)
             } else {
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 36))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 Text("Add a cover image")
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 Text("PNG, JPG, GIF, or WebP.")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary.opacity(0.7))
+                    .foregroundStyle(.secondary.opacity(0.7))
 
                 Button("Choose Image") {
                     chooseCoverImage()

@@ -4,7 +4,7 @@ import BugbookCore
 struct AgentHubView: View {
     var workspacePath: String?
 
-    @StateObject private var viewModel = AgentHubViewModel()
+    @State private var viewModel = AgentHubViewModel()
     @State private var newTaskTitle: String = ""
     @State private var newTaskAssignee: String = ""
 
@@ -36,7 +36,7 @@ struct AgentHubView: View {
                 if let workspacePath {
                     Text((workspacePath as NSString).lastPathComponent)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -52,7 +52,7 @@ struct AgentHubView: View {
     }
 
     private var metricsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal) {
             HStack(spacing: 10) {
                 statusCard(.backlog, color: .gray)
                 statusCard(.todo, color: .blue)
@@ -62,29 +62,30 @@ struct AgentHubView: View {
                 statusCard(.cancelled, color: .secondary)
             }
         }
+        .scrollIndicators(.hidden)
     }
 
     private func statusCard(_ status: AgentTaskStatus, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(statusLabel(status))
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text("\(viewModel.statusCount(status))")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(color)
+                .foregroundStyle(color)
         }
         .frame(width: 92, alignment: .leading)
         .padding(12)
         .background(Color.primary.opacity(0.04))
-        .cornerRadius(10)
+        .clipShape(.rect(cornerRadius: 10))
     }
 
     private var createTaskSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Quick Add Task")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
                 TextField("Task title", text: $newTaskTitle)
@@ -106,7 +107,7 @@ struct AgentHubView: View {
         }
         .padding(14)
         .background(Color.primary.opacity(0.04))
-        .cornerRadius(10)
+        .clipShape(.rect(cornerRadius: 10))
     }
 
     private var activityList: some View {
@@ -115,7 +116,7 @@ struct AgentHubView: View {
                 Section("Status") {
                     Text(error)
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -123,7 +124,7 @@ struct AgentHubView: View {
                 if viewModel.tasks.isEmpty {
                     Text("No active tasks")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 ForEach(viewModel.tasks) { task in
@@ -135,7 +136,7 @@ struct AgentHubView: View {
                 if viewModel.runs.isEmpty {
                     Text("No runs yet")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 ForEach(viewModel.runs) { run in
@@ -146,12 +147,12 @@ struct AgentHubView: View {
                                 .font(.system(size: 12, design: .monospaced))
                             Text(run.summary ?? "\(run.agent) • \(run.status.rawValue)")
                                 .font(.system(size: 13))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text(shortTime(run.endedAt ?? run.startedAt))
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 2)
                 }
@@ -161,20 +162,20 @@ struct AgentHubView: View {
                 if viewModel.events.isEmpty {
                     Text("No events yet")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 ForEach(viewModel.events) { event in
                     HStack(spacing: 8) {
                         eventIcon(event.level)
-                            .foregroundColor(eventColor(event.level))
+                            .foregroundStyle(eventColor(event.level))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(event.message)
                                 .font(.system(size: 13))
                                 .lineLimit(2)
                             Text("\(event.runId ?? "No run") • \(shortTime(event.timestamp))")
                                 .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 2)
@@ -193,7 +194,7 @@ struct AgentHubView: View {
                 if !metadata.isEmpty {
                     Text(metadata)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -215,8 +216,8 @@ struct AgentHubView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                     .background(statusColor(task.status).opacity(0.18))
-                    .foregroundColor(statusColor(task.status))
-                    .cornerRadius(6)
+                    .foregroundStyle(statusColor(task.status))
+                    .clipShape(.rect(cornerRadius: 6))
             }
             .buttonStyle(.plain)
         }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CanvasToolbar: View {
-    @ObservedObject var document: CanvasDocument
+    var document: CanvasDocument
     var onAddFilePicker: () -> Void
     var onAddImage: () -> Void
 
@@ -15,7 +15,7 @@ struct CanvasToolbar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Color.primary.opacity(0.06))
-            .cornerRadius(6)
+            .clipShape(.rect(cornerRadius: 6))
 
             Button(action: onAddFilePicker) {
                 Label("Page", systemImage: "doc.text")
@@ -25,7 +25,7 @@ struct CanvasToolbar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Color.primary.opacity(0.06))
-            .cornerRadius(6)
+            .clipShape(.rect(cornerRadius: 6))
 
             Button(action: onAddImage) {
                 Label("Image", systemImage: "photo")
@@ -35,20 +35,20 @@ struct CanvasToolbar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Color.primary.opacity(0.06))
-            .cornerRadius(6)
+            .clipShape(.rect(cornerRadius: 6))
 
             if !document.selectedNodeIds.isEmpty || document.selectedEdgeId != nil {
                 Divider().frame(height: 20)
                 Button(action: deleteSelected) {
                     Label("Delete", systemImage: "trash")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(Color.red.opacity(0.06))
-                .cornerRadius(6)
+                .clipShape(.rect(cornerRadius: 6))
             }
 
             Spacer()
@@ -63,7 +63,7 @@ struct CanvasToolbar: View {
 
                 Text("\(Int(document.viewport.zoom * 100))%")
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 40)
 
                 Button(action: zoomIn) {
@@ -75,12 +75,12 @@ struct CanvasToolbar: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.primary.opacity(0.04))
-            .cornerRadius(6)
+            .clipShape(.rect(cornerRadius: 6))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
-        .cornerRadius(10)
+        .clipShape(.rect(cornerRadius: 10))
         .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
     }
 

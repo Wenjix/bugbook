@@ -11,7 +11,7 @@ struct WikiLinkView: View {
                 iconView
                 Text(pageName)
                     .font(.system(size: EditorTypography.bodyFontSize))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .underline()
             }
         }
@@ -34,7 +34,7 @@ struct WikiLinkView: View {
             } else if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 13))
             } else {
@@ -48,6 +48,6 @@ struct WikiLinkView: View {
     private var defaultPageIcon: some View {
         Image(systemName: "doc.text")
             .font(.system(size: 11))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
     }
 }

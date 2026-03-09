@@ -28,7 +28,7 @@ struct DatabaseFullPageView: View {
     let dbPath: String
     var initialRowId: String? = nil
 
-    @StateObject private var state: DatabaseViewState
+    @State private var state: DatabaseViewState
 
     @State private var showPropertyManager = false
     @State private var showSettings = false
@@ -40,7 +40,7 @@ struct DatabaseFullPageView: View {
     init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
         self.initialRowId = initialRowId
-        _state = StateObject(wrappedValue: DatabaseViewState(dbPath: dbPath))
+        _state = State(initialValue: DatabaseViewState(dbPath: dbPath))
     }
 
     private var filteredAndSortedRows: [DatabaseRow] {
@@ -53,12 +53,12 @@ struct DatabaseFullPageView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 32))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("Failed to load database")
                         .font(.headline)
                     Text(error)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Button("Retry") { state.loadData() }
                 }
@@ -134,23 +134,25 @@ struct DatabaseFullPageView: View {
                 .onSubmit { state.persistTitle() }
                 .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
                 .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .textFieldStyle(.plain)
                 .databasePointerCursor()
 
             Spacer()
 
             Button {} label: {
-                Image(systemName: "magnifyingglass")
+                Label("Search", systemImage: "magnifyingglass")
+                    .labelStyle(.iconOnly)
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
 
             Button { showSettings.toggle() } label: {
-                Image(systemName: "slider.horizontal.3")
+                Label("Filter", systemImage: "slider.horizontal.3")
+                    .labelStyle(.iconOnly)
                     .font(.system(size: 13))
-                    .foregroundColor(showSettings ? .primary : .secondary)
+                    .foregroundStyle(showSettings ? .primary : .secondary)
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showSettings, arrowEdge: .bottom) {
@@ -179,7 +181,7 @@ struct DatabaseFullPageView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
                 }
                 .buttonStyle(.plain)
             }
@@ -193,7 +195,7 @@ struct DatabaseFullPageView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
@@ -232,8 +234,8 @@ struct DatabaseFullPageView: View {
                             }
                             .frame(width: 58, height: 48)
                             .background(state.activeView?.type == type ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
-                            .cornerRadius(6)
-                            .foregroundColor(state.activeView?.type == type ? .primary : .secondary)
+                            .clipShape(.rect(cornerRadius: 6))
+                            .foregroundStyle(state.activeView?.type == type ? .primary : .secondary)
                         }
                         .buttonStyle(.plain)
                     }
@@ -261,7 +263,7 @@ struct DatabaseFullPageView: View {
                         Image(systemName: "plus").font(.caption)
                         Text("Add filter").font(.caption)
                     }
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -288,7 +290,7 @@ struct DatabaseFullPageView: View {
                         Image(systemName: "plus").font(.caption)
                         Text("Add sort").font(.caption)
                     }
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -307,9 +309,9 @@ struct DatabaseFullPageView: View {
                             Spacer()
                             Image(systemName: isHidden ? "eye.slash" : "eye")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 12)
@@ -323,10 +325,10 @@ struct DatabaseFullPageView: View {
                             Text("Grid lines").font(.callout)
                             Spacer()
                             if showVerticalLines {
-                                Image(systemName: "checkmark").font(.caption).foregroundColor(.secondary)
+                                Image(systemName: "checkmark").font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 12)
@@ -337,10 +339,10 @@ struct DatabaseFullPageView: View {
                             Text("Wrap cell text").font(.callout)
                             Spacer()
                             if state.activeView?.wrapCellText == true {
-                                Image(systemName: "checkmark").font(.caption).foregroundColor(.secondary)
+                                Image(systemName: "checkmark").font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 12)
@@ -358,7 +360,7 @@ struct DatabaseFullPageView: View {
         Text(title)
             .font(.caption)
             .fontWeight(.semibold)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .padding(.top, 12)
             .padding(.bottom, 6)
@@ -381,7 +383,7 @@ struct DatabaseFullPageView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Color.fallbackSurfaceSubtle)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -397,7 +399,7 @@ struct DatabaseFullPageView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Color.fallbackSurfaceSubtle)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -410,9 +412,10 @@ struct DatabaseFullPageView: View {
             Spacer()
 
             Button { state.removeFilter(filter.id) } label: {
-                Image(systemName: "xmark.circle.fill")
+                Label("Remove Filter", systemImage: "xmark.circle.fill")
+                    .labelStyle(.iconOnly)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
         }
@@ -433,7 +436,7 @@ struct DatabaseFullPageView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Color.fallbackSurfaceSubtle)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -447,7 +450,7 @@ struct DatabaseFullPageView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Color.fallbackSurfaceSubtle)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -469,7 +472,7 @@ struct DatabaseFullPageView: View {
         return HStack(spacing: 6) {
             Image(systemName: "arrow.up.arrow.down")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             // Property picker
             Menu {
@@ -483,7 +486,7 @@ struct DatabaseFullPageView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(Color.fallbackSurfaceSubtle)
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -500,16 +503,17 @@ struct DatabaseFullPageView: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(Color.fallbackSurfaceSubtle)
-                .cornerRadius(4)
+                .clipShape(.rect(cornerRadius: 4))
             }
             .buttonStyle(.plain)
 
             Spacer()
 
             Button { state.removeSort(sort.id) } label: {
-                Image(systemName: "xmark.circle.fill")
+                Label("Remove Sort", systemImage: "xmark.circle.fill")
+                    .labelStyle(.iconOnly)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
         }
@@ -722,7 +726,7 @@ private struct PropertyManagerSheet: View {
                         if isTitle {
                             Text(prop.type.rawValue.capitalized)
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         } else {
                             Menu {
                                 ForEach(PropertyType.allCases.filter({ $0 != .title }), id: \.rawValue) { type in
@@ -733,7 +737,7 @@ private struct PropertyManagerSheet: View {
                             } label: {
                                 Text(prop.type.rawValue.capitalized)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             .menuStyle(.borderlessButton)
                             .fixedSize()
@@ -745,7 +749,7 @@ private struct PropertyManagerSheet: View {
                             } label: {
                                 Image(systemName: "trash")
                                     .font(.caption)
-                                    .foregroundColor(.red)
+                                    .foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
                         }

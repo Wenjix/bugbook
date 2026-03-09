@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct TabBarView: View {
-    @ObservedObject var appState: AppState
+    var appState: AppState
     var canGoBack: Bool = false
     var canGoForward: Bool = false
     var onBack: (() -> Void)?
@@ -20,9 +20,9 @@ struct TabBarView: View {
             .padding(.leading, appState.sidebarOpen ? 8 : 112)
             .padding(.bottom, 3)
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 HStack(alignment: .bottom, spacing: -8) {
-                    ForEach(Array(appState.openTabs.enumerated()), id: \.element.id) { index, tab in
+                    ForEach(appState.openTabs.enumerated(), id: \.element.id) { index, tab in
                         HStack(spacing: 0) {
                             if dragOverIndex == index {
                                 Rectangle()
@@ -59,13 +59,12 @@ struct TabBarView: View {
                             .padding(.vertical, 4)
                     }
 
-                    Button(action: { appState.newEmptyTab() }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
+                    Button("New Tab", systemImage: "plus", action: { appState.newEmptyTab() })
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .buttonStyle(.plain)
                     .padding(.leading, 8)
                     .padding(.bottom, 2)
                     .onDrop(of: [.text], delegate: TabDropDelegate(
@@ -77,6 +76,7 @@ struct TabBarView: View {
                 }
                 .padding(.leading, 2)
             }
+            .scrollIndicators(.hidden)
             Spacer()
         }
         .padding(.top, 6)
@@ -95,7 +95,7 @@ struct TabBarView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(isEnabled ? .secondary : .secondary.opacity(0.35))
+                .foregroundStyle(isEnabled ? Color.secondary : Color.secondary.opacity(0.35))
                 .frame(width: 24, height: 24)
         }
         .buttonStyle(.borderless)
@@ -153,43 +153,44 @@ struct TabItemView: View {
     private let wingRadius: CGFloat = 5
 
     var body: some View {
-        HStack(spacing: 6) {
-            tabIcon
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                tabIcon
 
-            Text(tabName)
-                .font(.system(size: 13))
-                .lineLimit(1)
+                Text(tabName)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
+                Button("Close Tab", systemImage: "xmark", action: onClose)
+                    .labelStyle(.iconOnly)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                .opacity(isActive || isHovered ? 1 : 0)
             }
-            .buttonStyle(.plain)
-            .opacity(isActive || isHovered ? 1 : 0)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 30)
-        .background(
-            Group {
-                if isActive {
-                    ZStack(alignment: .bottom) {
-                        ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
-                            .fill(Color.fallbackEditorBg)
-                        ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
-                            .stroke(Color.fallbackChromeBorder, lineWidth: 1)
+            .padding(.horizontal, 14)
+            .frame(height: 30)
+            .background(
+                Group {
+                    if isActive {
+                        ZStack(alignment: .bottom) {
+                            ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
+                                .fill(Color.fallbackEditorBg)
+                            ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
+                                .stroke(Color.fallbackChromeBorder, lineWidth: 1)
+                        }
+                    } else if isHovered {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.primary.opacity(0.05))
+                    } else {
+                        Color.clear
                     }
-                } else if isHovered {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.05))
-                } else {
-                    Color.clear
                 }
-            }
-        )
-        .padding(.horizontal, 4)
-        .contentShape(Rectangle())
-        .onTapGesture { onSelect() }
+            )
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .onHover { isHovered = $0 }
     }
 
@@ -205,7 +206,7 @@ struct TabItemView: View {
             if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 14))
             } else {

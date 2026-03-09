@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CanvasCardView: View {
-    @ObservedObject var document: CanvasDocument
+    var document: CanvasDocument
     let node: CanvasNodeMeta
     let zoom: CGFloat
     var onNavigateToFile: ((String) -> Void)?
@@ -95,12 +95,12 @@ struct CanvasCardView: View {
                 if text.isEmpty {
                     Text("Double-click to edit")
                         .font(.system(size: 14))
-                        .foregroundColor(.secondary.opacity(0.5))
+                        .foregroundStyle(.secondary.opacity(0.5))
                         .padding(12)
                 } else {
                     Text(text)
                         .font(.system(size: 14))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(nil)
                         .padding(12)
                 }
@@ -115,7 +115,7 @@ struct CanvasCardView: View {
         HStack(spacing: 10) {
             Image(systemName: "doc.text")
                 .font(.system(size: 20))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(document.fileNodeDisplayName(for: node))
                     .font(.system(size: 14, weight: .medium))
@@ -123,14 +123,14 @@ struct CanvasCardView: View {
                 if let file = node.file {
                     Text(file)
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
             Spacer()
             Image(systemName: "arrow.right")
                 .font(.system(size: 12))
-                .foregroundColor(.secondary.opacity(0.5))
+                .foregroundStyle(.secondary.opacity(0.5))
         }
         .padding(12)
     }
@@ -147,10 +147,10 @@ struct CanvasCardView: View {
                 VStack(spacing: 4) {
                     Image(systemName: "photo")
                         .font(.system(size: 24))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("Image not found")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -183,7 +183,7 @@ struct CanvasCardView: View {
         Rectangle()
             .fill(Color.accentColor.opacity(0.3))
             .frame(width: 12, height: 12)
-            .cornerRadius(2)
+            .clipShape(.rect(cornerRadius: 2))
             .padding(4)
             .contentShape(Rectangle().size(width: 20, height: 20))
             .gesture(

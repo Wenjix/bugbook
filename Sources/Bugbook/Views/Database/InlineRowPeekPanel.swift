@@ -9,14 +9,14 @@ struct InlineRowPeekPanel: View {
     var onClose: () -> Void
     var onOpenFullPage: () -> Void
 
-    @StateObject private var vm: DatabaseRowViewModel
+    @State private var vm: DatabaseRowViewModel
 
     init(dbPath: String, rowId: String, onClose: @escaping () -> Void, onOpenFullPage: @escaping () -> Void) {
         self.dbPath = dbPath
         self.rowId = rowId
         self.onClose = onClose
         self.onOpenFullPage = onOpenFullPage
-        _vm = StateObject(wrappedValue: DatabaseRowViewModel(dbPath: dbPath, origin: "peekPanel"))
+        _vm = State(initialValue: DatabaseRowViewModel(dbPath: dbPath, origin: "peekPanel"))
     }
 
     var body: some View {
@@ -24,18 +24,20 @@ struct InlineRowPeekPanel: View {
             // Header with close / expand buttons
             HStack(spacing: 8) {
                 Button { onClose() } label: {
-                    Image(systemName: "chevron.right.2")
+                    Label("Close", systemImage: "chevron.right.2")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
                 Button { onOpenFullPage() } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -55,7 +57,7 @@ struct InlineRowPeekPanel: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }

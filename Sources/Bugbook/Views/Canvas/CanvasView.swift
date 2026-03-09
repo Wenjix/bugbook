@@ -3,7 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct CanvasView: View {
-    @ObservedObject var document: CanvasDocument
+    var document: CanvasDocument
     var onNavigateToFile: ((String) -> Void)?
     var availablePages: [FileEntry] = []
 
@@ -33,16 +33,16 @@ struct CanvasView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 32))
-                        .foregroundColor(.orange)
+                        .foregroundStyle(.orange)
                     Text("Canvas data is corrupted")
                         .font(.system(size: 15, weight: .semibold))
                     Text(message)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(3)
                     Text("The original file has been preserved.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(24)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -147,7 +147,7 @@ struct CanvasView: View {
                     Text("\u{2318} + Scroll to zoom")
                 }
                 .font(.system(size: 15))
-                .foregroundColor(.secondary.opacity(0.5))
+                .foregroundStyle(.secondary.opacity(0.5))
                 .allowsHitTesting(false)
             }
         }
@@ -232,7 +232,7 @@ struct CanvasView: View {
                         )
                         let text = Text(label)
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         context.draw(context.resolve(text), at: midPoint, anchor: .center)
                     }
                 }
@@ -391,7 +391,7 @@ struct CanvasFilePickerView: View {
                 Spacer()
                 Button("Cancel") { onDismiss() }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .padding()
 
@@ -403,7 +403,7 @@ struct CanvasFilePickerView: View {
                 Button(action: { onSelect(entry) }) {
                     HStack(spacing: 8) {
                         Image(systemName: "doc.text")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(entry.name.replacingOccurrences(of: ".md", with: ""))
                     }
                 }
@@ -432,7 +432,7 @@ struct CanvasFilePickerView: View {
 // MARK: - Scroll Wheel Zoom (Cmd+Scroll)
 
 private struct CanvasScrollZoomView: NSViewRepresentable {
-    @ObservedObject var document: CanvasDocument
+    var document: CanvasDocument
     @Binding var baseZoom: CGFloat
 
     private var zoomHandler: (CGFloat) -> Void {

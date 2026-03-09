@@ -1,11 +1,12 @@
 import Foundation
+import Observation
 import BugbookCore
 
 @MainActor
-final class MobileWorkspaceService: ObservableObject {
-    @Published var workspacePath: String = ""
-    @Published var files: [MobileNoteFile] = []
-    @Published var isICloudAvailable: Bool = false
+@Observable final class MobileWorkspaceService {
+    var workspacePath: String = ""
+    var files: [MobileNoteFile] = []
+    var isICloudAvailable: Bool = false
 
     private let fileManager = FileManager.default
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AISettingsView: View {
-    @ObservedObject var appState: AppState
+    @Bindable var appState: AppState
     @State private var claudeAvailable = false
     @State private var codexAvailable = false
     @State private var showApiKey = false
@@ -40,13 +40,13 @@ struct AISettingsView: View {
                             showApiKey.toggle()
                         } label: {
                             Image(systemName: showApiKey ? "eye.slash" : "eye")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.borderless)
                     }
                     Text("Your key is stored locally and never sent anywhere except the Anthropic API.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -66,13 +66,13 @@ struct AISettingsView: View {
     private func engineRow(_ name: String, available: Bool) -> some View {
         HStack {
             Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle")
-                .foregroundColor(available ? .green : .secondary)
+                .foregroundStyle(available ? .green : .secondary)
             Text(name)
                 .font(.system(size: 14))
             Spacer()
             Text(available ? "Installed" : "Not Found")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 

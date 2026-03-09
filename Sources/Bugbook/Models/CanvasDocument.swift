@@ -57,14 +57,15 @@ enum CanvasLoadResult {
 // MARK: - CanvasDocument
 
 @MainActor
-class CanvasDocument: ObservableObject {
-    @Published var nodes: [CanvasNodeMeta] = []
-    @Published var edges: [CanvasEdgeMeta] = []
-    @Published var nodeTexts: [String: String] = [:]  // node_id → markdown content
-    @Published var viewport: CanvasViewport = CanvasViewport(x: 0, y: 0, zoom: 1.0)
-    @Published var selectedNodeIds: Set<String> = []
-    @Published var selectedEdgeId: String?
-    @Published var editingNodeId: String?
+@Observable
+class CanvasDocument {
+    var nodes: [CanvasNodeMeta] = []
+    var edges: [CanvasEdgeMeta] = []
+    var nodeTexts: [String: String] = [:]  // node_id → markdown content
+    var viewport: CanvasViewport = CanvasViewport(x: 0, y: 0, zoom: 1.0)
+    var selectedNodeIds: Set<String> = []
+    var selectedEdgeId: String?
+    var editingNodeId: String?
 
     /// Convenience: returns the single selected node ID (nil if 0 or 2+ selected)
     var selectedNodeId: String? {
@@ -77,15 +78,15 @@ class CanvasDocument: ObservableObject {
             }
         }
     }
-    @Published var isDirty: Bool = false
-    @Published var loadResult: CanvasLoadResult = .newCanvas
+    var isDirty: Bool = false
+    var loadResult: CanvasLoadResult = .newCanvas
 
-    private(set) var canvasPath: String = ""
-    private(set) var canvasName: String = ""
-    private var canvasId: String = ""
+    @ObservationIgnored private(set) var canvasPath: String = ""
+    @ObservationIgnored private(set) var canvasName: String = ""
+    @ObservationIgnored private var canvasId: String = ""
 
-    private var undoStack: [CanvasState] = []
-    private var redoStack: [CanvasState] = []
+    @ObservationIgnored private var undoStack: [CanvasState] = []
+    @ObservationIgnored private var redoStack: [CanvasState] = []
 
     private struct CanvasState {
         let nodes: [CanvasNodeMeta]

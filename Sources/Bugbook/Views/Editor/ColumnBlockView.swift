@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Renders a column block as a side-by-side horizontal layout with multiple blocks per column.
 struct ColumnBlockView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let block: Block
     var onTyping: (() -> Void)? = nil
     @State private var activeDropTarget: ColumnDropTarget?

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct GeneralSettingsView: View {
-    @ObservedObject var appState: AppState
+    @Bindable var appState: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -11,7 +11,7 @@ struct GeneralSettingsView: View {
                     HStack {
                         Text(path)
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer()
@@ -35,11 +35,11 @@ struct GeneralSettingsView: View {
                     if appState.settings.defaultNewTabPage.isEmpty {
                         Text("Bugbook start page")
                             .font(.system(size: 14))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     } else {
                         Text(displayName(for: appState.settings.defaultNewTabPage))
                             .font(.system(size: 14))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -60,7 +60,7 @@ struct GeneralSettingsView: View {
                 }
                 Text("Opens this page instead of the default start page when creating a new tab.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             SettingsSection("App") {
@@ -77,7 +77,7 @@ struct GeneralSettingsView: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .leading)
             Text(value)
                 .font(.system(size: 13))

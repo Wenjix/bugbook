@@ -57,7 +57,7 @@ struct MobileDatabaseView: View {
     private func rowLabel(_ row: DatabaseRow, schema: DatabaseSchema) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(row.title(schema: schema))
-                .font(.system(size: 16, weight: .medium))
+                .font(.body).fontWeight(.medium)
                 .lineLimit(1)
 
             let extras = extraProperties(for: row, schema: schema)

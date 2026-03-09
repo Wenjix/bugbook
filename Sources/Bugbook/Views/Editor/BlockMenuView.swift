@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Popover menu shown when clicking a block's drag handle.
 struct BlockMenuView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let blockId: UUID
 
     @State private var hoveredItem: String?
@@ -59,7 +59,7 @@ struct BlockMenuView: View {
         .frame(width: 252)
         .padding(.vertical, 4)
         .background(.regularMaterial)
-        .cornerRadius(8)
+        .clipShape(.rect(cornerRadius: 8))
         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 
@@ -72,15 +72,15 @@ struct BlockMenuView: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                 Text("Move to")
                     .font(.callout)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color.secondary.opacity(0.6))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
             }
             .padding(.horizontal, 12)
             .frame(height: 32)
@@ -108,10 +108,7 @@ struct BlockMenuView: View {
             onMove: { destDir in
                 document.onMoveBlock?(blockId, destDir)
             },
-            isPresented: Binding(
-                get: { showMovePicker },
-                set: { if !$0 { showMovePicker = false } }
-            )
+            isPresented: $showMovePicker
         )
     }
 
@@ -120,7 +117,7 @@ struct BlockMenuView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
             .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .padding(.top, 6)
             .padding(.bottom, 4)
@@ -145,16 +142,16 @@ struct BlockMenuView: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                 Text(label)
                     .font(.callout)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 Spacer()
                 if let shortcut {
                     Text(shortcut)
                         .font(.caption)
-                        .foregroundColor(Color.secondary.opacity(0.6))
+                        .foregroundStyle(Color.secondary.opacity(0.6))
                 }
             }
             .padding(.horizontal, 12)
@@ -182,15 +179,15 @@ struct BlockMenuView: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.swap")
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                 Text(currentBlockTypeName)
                     .font(.callout)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color.secondary.opacity(0.6))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
                     .rotationEffect(.degrees(turnIntoExpanded ? 90 : 0))
             }
             .padding(.horizontal, 12)
@@ -231,16 +228,16 @@ struct BlockMenuView: View {
             HStack(spacing: 8) {
                 Image(systemName: item.icon)
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                 Text(item.name)
                     .font(.callout)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 Spacer()
                 if isCurrentType {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(Color.accentColor)
                 }
             }
             .padding(.leading, 28)
@@ -269,15 +266,15 @@ struct BlockMenuView: View {
             HStack(spacing: 8) {
                 Image(systemName: "paintpalette")
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                 Text("Color")
                     .font(.callout)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color.secondary.opacity(0.6))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
                     .rotationEffect(.degrees(colorExpanded ? 90 : 0))
             }
             .padding(.horizontal, 12)
@@ -303,7 +300,7 @@ struct BlockMenuView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("TEXT")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.leading, 28)
 
                 LazyVGrid(columns: colorGridColumns, spacing: 6) {
@@ -318,7 +315,7 @@ struct BlockMenuView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("BACKGROUND")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.leading, 28)
 
                 LazyVGrid(columns: colorGridColumns, spacing: 6) {
@@ -357,11 +354,12 @@ struct BlockMenuView: View {
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(color == .default ? Color(nsColor: .windowBackgroundColor) : .white)
+                        .foregroundStyle(color == .default ? Color(nsColor: .windowBackgroundColor) : .white)
                 }
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(color.displayName)
         .help(color.displayName)
     }
 
@@ -390,12 +388,13 @@ struct BlockMenuView: View {
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(color.displayName)
         .help(color.displayName)
     }
 

@@ -8,7 +8,7 @@ private enum HapticStyle {
 struct MobileAgentHubView: View {
     let workspacePath: String
 
-    @StateObject private var viewModel = MobileAgentHubViewModel()
+    @State private var viewModel = MobileAgentHubViewModel()
     @State private var taskTitle: String = ""
 
     var body: some View {
@@ -17,7 +17,7 @@ struct MobileAgentHubView: View {
                 if let error = viewModel.error {
                     Section("Status") {
                         Text(error)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -54,7 +54,7 @@ struct MobileAgentHubView: View {
         Section("Active Tasks") {
             if viewModel.tasks.isEmpty {
                 Text("No active tasks")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             ForEach(viewModel.tasks) { task in
@@ -69,8 +69,8 @@ struct MobileAgentHubView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
                 Text(viewModel.relativeTime(from: task.updatedAt))
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             Menu(statusLabel(task.status)) {
@@ -81,7 +81,7 @@ struct MobileAgentHubView: View {
                     }
                 }
             }
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
         }
         .swipeActions(edge: .trailing) {
             Button {
@@ -107,17 +107,17 @@ struct MobileAgentHubView: View {
         Section("Recent Runs") {
             if viewModel.runs.isEmpty {
                 Text("No runs yet")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             ForEach(viewModel.runs) { run in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(run.summary ?? "\(run.agent)")
-                            .font(.system(size: 14))
+                            .font(.subheadline)
                         Text(viewModel.relativeTime(from: run.startedAt))
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer()
                     runStatusBadge(run.status)
@@ -130,16 +130,16 @@ struct MobileAgentHubView: View {
         Section("Recent Events") {
             if viewModel.events.isEmpty {
                 Text("No events yet")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             ForEach(viewModel.events) { event in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(event.message)
-                        .font(.system(size: 13))
+                        .font(.footnote)
                     Text(viewModel.relativeTime(from: event.timestamp))
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -153,28 +153,28 @@ struct MobileAgentHubView: View {
         switch status {
         case .backlog:
             Image(systemName: "circle")
-                .foregroundColor(.gray)
-                .font(.system(size: 10))
+                .foregroundStyle(.gray)
+                .font(.caption2)
         case .todo:
             Image(systemName: "circle")
-                .foregroundColor(.blue)
-                .font(.system(size: 10))
+                .foregroundStyle(.blue)
+                .font(.caption2)
         case .inProgress:
             Image(systemName: "circle")
-                .foregroundColor(.orange)
-                .font(.system(size: 10))
+                .foregroundStyle(.orange)
+                .font(.caption2)
         case .blocked:
             Image(systemName: "circle")
-                .foregroundColor(.red)
-                .font(.system(size: 10))
+                .foregroundStyle(.red)
+                .font(.caption2)
         case .done:
             Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
-                .font(.system(size: 10))
+                .foregroundStyle(.green)
+                .font(.caption2)
         case .cancelled:
             Image(systemName: "xmark.circle.fill")
-                .foregroundColor(.gray)
-                .font(.system(size: 10))
+                .foregroundStyle(.gray)
+                .font(.caption2)
         }
     }
 
@@ -182,11 +182,11 @@ struct MobileAgentHubView: View {
 
     private func runStatusBadge(_ status: AgentRunStatus) -> some View {
         Text(status.rawValue)
-            .font(.system(size: 11, weight: .medium))
+            .font(.caption2).fontWeight(.medium)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(runStatusColor(status).opacity(0.15))
-            .foregroundColor(runStatusColor(status))
+            .foregroundStyle(runStatusColor(status))
             .clipShape(Capsule())
     }
 

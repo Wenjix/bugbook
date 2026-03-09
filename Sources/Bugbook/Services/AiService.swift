@@ -22,11 +22,12 @@ struct AiEngineStatus {
 }
 
 @MainActor
-class AiService: ObservableObject {
-    @Published var engineStatus = AiEngineStatus()
-    @Published var isRunning = false
-    @Published var error: String?
-    private var hasDetectedEngines = false
+@Observable
+class AiService {
+    var engineStatus = AiEngineStatus()
+    var isRunning = false
+    var error: String?
+    @ObservationIgnored private var hasDetectedEngines = false
 
     // MARK: - Engine Detection
 

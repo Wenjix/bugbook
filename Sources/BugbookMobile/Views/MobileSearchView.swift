@@ -3,7 +3,7 @@ import BugbookCore
 
 struct MobileSearchView: View {
     let workspacePath: String
-    @ObservedObject var workspace: MobileWorkspaceService
+    var workspace: MobileWorkspaceService
 
     @Environment(\.dismiss) private var dismiss
 
@@ -49,6 +49,7 @@ struct MobileSearchView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(12)
@@ -80,13 +81,13 @@ struct MobileSearchView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(result.fileName)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.subheadline).fontWeight(.medium)
                         HStack(spacing: 4) {
                             Text("L\(result.lineNumber)")
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(.caption.monospaced())
                                 .foregroundStyle(.tertiary)
                             Text(result.snippet)
-                                .font(.system(size: 13))
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }

@@ -1,12 +1,13 @@
 import Foundation
+import Observation
 import BugbookCore
 
 @MainActor
-final class MobileAgentHubViewModel: ObservableObject {
-    @Published var tasks: [AgentTask] = []
-    @Published var runs: [AgentRun] = []
-    @Published var events: [AgentEvent] = []
-    @Published var error: String?
+@Observable final class MobileAgentHubViewModel {
+    var tasks: [AgentTask] = []
+    var runs: [AgentRun] = []
+    var events: [AgentEvent] = []
+    var error: String?
 
     private let store = AgentWorkspaceStore()
     private let iso8601Formatter: ISO8601DateFormatter = {

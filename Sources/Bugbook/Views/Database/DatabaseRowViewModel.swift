@@ -2,18 +2,19 @@ import SwiftUI
 import BugbookCore
 
 @MainActor
-final class DatabaseRowViewModel: ObservableObject {
+@Observable
+final class DatabaseRowViewModel {
     let dbPath: String
     let origin: String
 
-    @Published var schema: DatabaseSchema?
-    @Published var row: DatabaseRow?
-    @Published var error: String?
+    var schema: DatabaseSchema?
+    var row: DatabaseRow?
+    var error: String?
 
     private let dbService = DatabaseService()
-    private var saveTask: Task<Void, Never>?
-    private var loadTask: Task<Void, Never>?
-    private(set) var didEdit = false
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var didEdit = false
 
     init(dbPath: String, origin: String) {
         self.dbPath = dbPath

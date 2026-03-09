@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MobileNotesView: View {
-    @ObservedObject var workspace: MobileWorkspaceService
+    var workspace: MobileWorkspaceService
 
     @State private var searchText = ""
     @State private var showSearch = false
@@ -38,7 +38,7 @@ struct MobileNotesView: View {
                     Button {
                         showSearch = true
                     } label: {
-                        Image(systemName: "magnifyingglass")
+                        Label("Search", systemImage: "magnifyingglass")
                     }
                 }
                 ToolbarItem(placement: .automatic) {
@@ -46,7 +46,7 @@ struct MobileNotesView: View {
                         _ = workspace.createNote()
                         reloadTree()
                     } label: {
-                        Image(systemName: "plus")
+                        Label("New Note", systemImage: "plus")
                     }
                 }
             }
@@ -94,7 +94,7 @@ struct MobileNotesView: View {
 
 private struct FileTreeRow: View {
     let node: MobileNoteFile
-    @ObservedObject var workspace: MobileWorkspaceService
+    var workspace: MobileWorkspaceService
     var searchText: String
 
     @State private var isExpanded = false
@@ -123,7 +123,7 @@ private struct FileTreeRow: View {
         } label: {
             if node.isDirectory {
                 Label(node.name, systemImage: iconName)
-                    .font(.system(size: 16))
+                    .font(.body)
             } else {
                 NavigationLink {
                     MobilePageEditorView(note: node, workspace: workspace)
@@ -144,7 +144,7 @@ private struct FileTreeRow: View {
             }
         } else if node.isCanvas {
             Label(node.name, systemImage: iconName)
-                .font(.system(size: 16))
+                .font(.body)
                 .foregroundStyle(.secondary)
         } else {
             NavigationLink {
@@ -158,14 +158,14 @@ private struct FileTreeRow: View {
     private var fileLabel: some View {
         HStack(spacing: 8) {
             if let icon = node.icon, !icon.isEmpty, icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 16))
+                Text(icon).font(.body)
             } else {
                 Image(systemName: iconName)
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 14))
+                    .font(.subheadline)
             }
             Text(displayName)
-                .font(.system(size: 16))
+                .font(.body)
                 .lineLimit(1)
         }
     }

@@ -2,28 +2,29 @@ import Foundation
 import SwiftUI
 
 @MainActor
-class BlockDocument: ObservableObject {
-    @Published var blocks: [Block]
-    @Published var focusedBlockId: UUID?
-    @Published var cursorPosition: Int = 0
-    @Published var slashMenuBlockId: UUID?
-    @Published var slashMenuSelectedIndex: Int = 0
-    @Published var slashMenuFilter: String = ""
-    @Published var blockMenuBlockId: UUID?
-    @Published var icon: String?
-    @Published var coverUrl: String?
-    @Published var coverPosition: Double = 50
-    @Published var fullWidth: Bool = false
-    @Published var showPagePicker: Bool = false
-    @Published var pagePickerBlockId: UUID?
-    @Published var showTemplatePicker: Bool = false
-    @Published var selectedBlockIds: Set<UUID> = []
-    @Published var moveBlockId: UUID?
-    @Published var selectionRect: CGRect?
-    @Published var selectionBlockId: UUID?
-    var blockSelectionAnchor: UUID?
-    private var suppressNextEditorTapAfterBlockSelection = false
-    var registeredBlockFrames: [UUID: CGRect] = [:]
+@Observable
+class BlockDocument {
+    var blocks: [Block]
+    var focusedBlockId: UUID?
+    var cursorPosition: Int = 0
+    var slashMenuBlockId: UUID?
+    var slashMenuSelectedIndex: Int = 0
+    var slashMenuFilter: String = ""
+    var blockMenuBlockId: UUID?
+    var icon: String?
+    var coverUrl: String?
+    var coverPosition: Double = 50
+    var fullWidth: Bool = false
+    var showPagePicker: Bool = false
+    var pagePickerBlockId: UUID?
+    var showTemplatePicker: Bool = false
+    var selectedBlockIds: Set<UUID> = []
+    var moveBlockId: UUID?
+    var selectionRect: CGRect?
+    var selectionBlockId: UUID?
+    @ObservationIgnored var blockSelectionAnchor: UUID?
+    @ObservationIgnored private var suppressNextEditorTapAfterBlockSelection = false
+    @ObservationIgnored var registeredBlockFrames: [UUID: CGRect] = [:]
 
     var titleBlock: Block? {
         guard let first = blocks.first,
@@ -31,18 +32,18 @@ class BlockDocument: ObservableObject {
         return first
     }
 
-    var onCreateDatabase: ((String) -> String?)?
-    var onCreateSubPage: ((String) -> String?)?
-    var onNavigateToPage: ((String) -> Void)?
-    var onOpenDatabaseTab: ((String) -> Void)?
-    var onMoveBlock: ((UUID, String) -> Void)?
-    var availablePages: [FileEntry] = []
-    var filePath: String?
-    var workspacePath: String?
+    @ObservationIgnored var onCreateDatabase: ((String) -> String?)?
+    @ObservationIgnored var onCreateSubPage: ((String) -> String?)?
+    @ObservationIgnored var onNavigateToPage: ((String) -> Void)?
+    @ObservationIgnored var onOpenDatabaseTab: ((String) -> Void)?
+    @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
+    @ObservationIgnored var availablePages: [FileEntry] = []
+    @ObservationIgnored var filePath: String?
+    @ObservationIgnored var workspacePath: String?
 
-    private var undoStack: [[Block]] = []
-    private var redoStack: [[Block]] = []
-    private var persistsBlockIDs: Bool = false
+    @ObservationIgnored private var undoStack: [[Block]] = []
+    @ObservationIgnored private var redoStack: [[Block]] = []
+    @ObservationIgnored private var persistsBlockIDs: Bool = false
 
     var markdown: String {
         let metadata = MarkdownBlockParser.Metadata(

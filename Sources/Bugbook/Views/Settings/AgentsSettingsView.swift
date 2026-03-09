@@ -2,7 +2,7 @@ import SwiftUI
 import BugbookCore
 
 struct AgentsSettingsView: View {
-    @ObservedObject var appState: AppState
+    @Bindable var appState: AppState
     @State private var installedAgents: [(name: String, path: String)] = []
     @State private var agentsMdText: String = ""
     @State private var saveGeneration: Int = 0
@@ -17,18 +17,18 @@ struct AgentsSettingsView: View {
                 if installedAgents.isEmpty {
                     Text("No agents detected")
                         .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 } else {
                     ForEach(installedAgents, id: \.path) { agent in
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundStyle(.green)
                             Text(agent.name)
                                 .font(.system(size: 14))
                             Spacer()
                             Text(agent.path)
                                 .font(.system(size: 12))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -42,7 +42,7 @@ struct AgentsSettingsView: View {
                 if let workspace = appState.workspacePath {
                     Text(workspace)
                         .font(.system(size: 13, design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
 
@@ -64,13 +64,13 @@ struct AgentsSettingsView: View {
                 } else {
                     Text("Select a workspace first in General settings.")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 if let workspaceMessage {
                     Text(workspaceMessage)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -81,7 +81,7 @@ struct AgentsSettingsView: View {
             SettingsSection("AGENTS.md") {
                 Text("Custom agent instructions (auto-saved to app settings)")
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 TextEditor(text: $agentsMdText)
                     .font(.system(size: 14, design: .monospaced))
@@ -89,7 +89,7 @@ struct AgentsSettingsView: View {
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .background(Color.primary.opacity(0.03))
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -136,11 +136,11 @@ struct AgentsSettingsView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(key):")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 48, alignment: .leading)
             Text(value)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }

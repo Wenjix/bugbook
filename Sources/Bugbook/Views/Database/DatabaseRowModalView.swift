@@ -8,7 +8,7 @@ struct DatabaseRowModalView: View {
     var onClose: () -> Void
     var onOpenFullPage: () -> Void
 
-    @StateObject private var vm: DatabaseRowViewModel
+    @State private var vm: DatabaseRowViewModel
 
     init(dbPath: String, rowId: String, autoFocusTitle: Bool = false, onClose: @escaping () -> Void, onOpenFullPage: @escaping () -> Void) {
         self.dbPath = dbPath
@@ -16,16 +16,17 @@ struct DatabaseRowModalView: View {
         self.autoFocusTitle = autoFocusTitle
         self.onClose = onClose
         self.onOpenFullPage = onOpenFullPage
-        _vm = StateObject(wrappedValue: DatabaseRowViewModel(dbPath: dbPath, origin: "rowModal"))
+        _vm = State(initialValue: DatabaseRowViewModel(dbPath: dbPath, origin: "rowModal"))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Button { onOpenFullPage() } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -34,9 +35,10 @@ struct DatabaseRowModalView: View {
                 Spacer()
 
                 Button { onClose() } label: {
-                    Image(systemName: "xmark")
+                    Label("Close", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -49,12 +51,12 @@ struct DatabaseRowModalView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 28))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("Failed to load row")
                         .font(.headline)
                     Text(error)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Button("Close") { onClose() }
                         .buttonStyle(.bordered)

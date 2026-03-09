@@ -54,17 +54,17 @@ struct RowPageView: View {
                             Text(schema.name)
                         }
                         .font(.body)
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(Color.accentColor)
                     }
                     .buttonStyle(.plain)
 
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Text(rowTitle)
                         .font(.body)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Spacer()
                 }
@@ -170,10 +170,10 @@ struct RowPageView: View {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text("Add a property")
                     .font(.body)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
@@ -192,7 +192,7 @@ struct RowPageView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: type.systemImageName)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                     .frame(width: 16)
                                 Text(type.rawValue.capitalized)
                                     .font(.callout)
@@ -234,24 +234,26 @@ private struct PropertyRowView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             // Property label — separate hover, click opens settings
-            Text(prop.name)
-                .font(.body)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            .frame(width: propertyLabelColumnWidth, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(labelHovered || showPropertyMenu ? Color.primary.opacity(0.05) : Color.clear)
-            )
-            .contentShape(Rectangle())
-            .onHover { labelHovered = $0 }
-            .onTapGesture {
+            Button {
                 editingName = prop.name
                 showPropertyMenu = true
+            } label: {
+                Text(prop.name)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: propertyLabelColumnWidth, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(labelHovered || showPropertyMenu ? Color.primary.opacity(0.05) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .onHover { labelHovered = $0 }
             .popover(isPresented: $showPropertyMenu, arrowEdge: .bottom) {
                 propertySettingsPopover
             }
@@ -310,14 +312,14 @@ private struct PropertyRowView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "slider.horizontal.3")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 20)
                     Text("Edit property")
                         .font(.callout)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -336,11 +338,11 @@ private struct PropertyRowView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "trash")
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                         .frame(width: 20)
                     Text("Delete property")
                         .font(.callout)
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)

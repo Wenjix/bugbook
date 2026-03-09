@@ -85,7 +85,7 @@ struct PageHeaderView: View {
                 Image(systemName: "face.smiling").font(.system(size: 13))
                 Text("Add icon").font(.system(size: 13))
             }
-            .foregroundColor(.secondary.opacity(0.6))
+            .foregroundStyle(.secondary.opacity(0.6))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
         }
@@ -101,7 +101,7 @@ struct PageHeaderView: View {
                 Image(systemName: "photo").font(.system(size: 13))
                 Text("Add cover").font(.system(size: 13))
             }
-            .foregroundColor(.secondary.opacity(0.6))
+            .foregroundStyle(.secondary.opacity(0.6))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
         }
@@ -200,7 +200,7 @@ struct PageHeaderView: View {
                         .overlay(alignment: .center) {
                             Text("Drag to reposition")
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(Color.black.opacity(0.55))
@@ -292,10 +292,10 @@ struct PageHeaderView: View {
 private struct CoverActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.black.opacity(configuration.isPressed ? 0.6 : 0.4))
-            .cornerRadius(4)
+            .clipShape(.rect(cornerRadius: 4))
     }
 }

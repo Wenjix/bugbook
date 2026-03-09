@@ -7,13 +7,13 @@ struct BreadcrumbView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 HStack(spacing: 6) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    ForEach(items.enumerated(), id: \.element.id) { index, item in
                         if index > 0 {
                             Text("/")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.secondary.opacity(0.8))
+                                .foregroundStyle(.secondary.opacity(0.8))
                                 .padding(.horizontal, 1)
                         }
                         Button(action: { onNavigate(item) }) {
@@ -21,7 +21,7 @@ struct BreadcrumbView: View {
                                 breadcrumbIcon(item.icon)
                                 Text(item.name)
                                     .font(.system(size: 13, weight: index == items.count - 1 ? .medium : .regular))
-                                    .foregroundColor(index == items.count - 1 ? .primary : .secondary)
+                                    .foregroundStyle(index == items.count - 1 ? .primary : .secondary)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
@@ -35,6 +35,7 @@ struct BreadcrumbView: View {
                 }
                 .padding(.trailing, 8)
             }
+            .scrollIndicators(.hidden)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)

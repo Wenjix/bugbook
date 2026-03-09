@@ -3,7 +3,7 @@ import SwiftUI
 struct MobilePageEditorView: View {
     let note: MobileNoteFile
 
-    @ObservedObject var workspace: MobileWorkspaceService
+    var workspace: MobileWorkspaceService
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var content: String = ""
@@ -27,7 +27,7 @@ struct MobilePageEditorView: View {
             } else if isEditing {
                 TextEditor(text: $content)
                     .padding(12)
-                    .font(.system(size: 16, design: .default))
+                    .font(.body)
                     .onChange(of: content) { _, _ in
                         scheduleSave()
                     }
@@ -46,7 +46,7 @@ struct MobilePageEditorView: View {
                     if isEditing { saveNow() }
                     isEditing.toggle()
                 } label: {
-                    Image(systemName: isEditing ? "pencil.slash" : "pencil")
+                    Label(isEditing ? "Preview" : "Edit", systemImage: isEditing ? "pencil.slash" : "pencil")
                 }
             }
         }

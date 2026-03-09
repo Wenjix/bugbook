@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Slash command popup menu for block type conversion.
 struct SlashCommandMenu: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
 
     var body: some View {
         let commands = document.filteredSlashCommands
@@ -11,7 +11,7 @@ struct SlashCommandMenu: View {
             if commands.isEmpty {
                 Text("No results")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             } else {
@@ -23,9 +23,9 @@ struct SlashCommandMenu: View {
                         HStack(spacing: 8) {
                             Image(systemName: command.icon)
                                 .frame(width: 20)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(command.name)
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -42,7 +42,7 @@ struct SlashCommandMenu: View {
         }
         .frame(width: 200)
         .background(.regularMaterial)
-        .cornerRadius(8)
+        .clipShape(.rect(cornerRadius: 8))
         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 }

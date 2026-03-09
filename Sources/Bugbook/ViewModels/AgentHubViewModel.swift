@@ -3,16 +3,17 @@ import BugbookCore
 import Sentry
 
 @MainActor
-final class AgentHubViewModel: ObservableObject {
-    @Published var tasks: [AgentTask] = []
-    @Published var runs: [AgentRun] = []
-    @Published var events: [AgentEvent] = []
-    @Published var counts: [String: Int] = [:]
-    @Published var isLoading: Bool = false
-    @Published var error: String?
+@Observable
+final class AgentHubViewModel {
+    var tasks: [AgentTask] = []
+    var runs: [AgentRun] = []
+    var events: [AgentEvent] = []
+    var counts: [String: Int] = [:]
+    var isLoading: Bool = false
+    var error: String?
 
     private let store = AgentWorkspaceStore()
-    private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
     func start(workspacePath: String?) {
         SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "agent.start"))

@@ -2,8 +2,8 @@ import SwiftUI
 import Sentry
 
 struct NotesChatView: View {
-    @ObservedObject var appState: AppState
-    @ObservedObject var aiService: AiService
+    var appState: AppState
+    var aiService: AiService
     @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var selectedEngine: PreferredAIEngine = .auto
@@ -45,10 +45,10 @@ struct NotesChatView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Bugbook")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text("Chat with Notes")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color.fallbackTextPrimary)
+                    .foregroundStyle(Color.fallbackTextPrimary)
             }
 
             Spacer()
@@ -56,18 +56,20 @@ struct NotesChatView: View {
             enginePicker
 
             Button(action: clearChat) {
-                Image(systemName: "trash")
+                Label("Clear Chat", systemImage: "trash")
+                    .labelStyle(.iconOnly)
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
             .help("Clear chat")
             .disabled(messages.isEmpty)
 
             Button(action: closeChat) {
-                Image(systemName: "xmark")
+                Label("Close", systemImage: "xmark")
+                    .labelStyle(.iconOnly)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -92,10 +94,10 @@ struct NotesChatView: View {
                 VStack(spacing: 6) {
                     Text("Chat with your notes")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Color.fallbackTextPrimary)
+                        .foregroundStyle(Color.fallbackTextPrimary)
                     Text("Ask anything about your workspace")
                         .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -114,7 +116,7 @@ struct NotesChatView: View {
                                     .controlSize(.small)
                                 Text("Thinking...")
                                     .font(.system(size: 14))
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 24)
                             .id("loading")
@@ -142,7 +144,7 @@ struct NotesChatView: View {
     private var composer: some View {
         VStack(spacing: 8) {
             if !referencedFiles.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
+                ScrollView(.horizontal) {
                     HStack(spacing: 8) {
                         ForEach(referencedFiles) { file in
                             HStack(spacing: 6) {
@@ -154,18 +156,19 @@ struct NotesChatView: View {
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                 }
                                 .buttonStyle(.plain)
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(Color.fallbackBadgeBg)
-                            .cornerRadius(999)
+                            .clipShape(.capsule)
                         }
                     }
                     .padding(.horizontal, 4)
                 }
+                .scrollIndicators(.hidden)
             }
 
             HStack(alignment: .bottom, spacing: 12) {
@@ -174,7 +177,7 @@ struct NotesChatView: View {
                 } label: {
                     Image(systemName: "at")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 30, height: 30)
                         .background(Color.fallbackBadgeBg)
                         .clipShape(Circle())
@@ -200,9 +203,10 @@ struct NotesChatView: View {
                     }
 
                 Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
+                    Label("Send", systemImage: "arrow.up.circle.fill")
+                        .labelStyle(.iconOnly)
                         .font(.system(size: 28))
-                        .foregroundColor(canSend ? .accentColor : .secondary)
+                        .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!canSend)
@@ -234,10 +238,10 @@ struct NotesChatView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No files found")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("Open a workspace first, or change your search.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.top, 8)
@@ -251,11 +255,11 @@ struct NotesChatView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(displayName(for: entry.name))
                                         .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(.primary)
+                                        .foregroundStyle(.primary)
                                         .lineLimit(1)
                                     Text(relativePath(for: entry.path))
                                         .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -316,7 +320,7 @@ struct NotesChatView: View {
                 Text(message.content)
                     .font(.system(size: 16))
                     .lineSpacing(3)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .textSelection(.enabled)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -332,7 +336,7 @@ struct NotesChatView: View {
                 Text(message.content)
                     .font(.system(size: 16))
                     .lineSpacing(4)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -352,7 +356,7 @@ struct NotesChatView: View {
             HStack {
                 Text(message.content)
                     .font(.system(size: 15))
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)

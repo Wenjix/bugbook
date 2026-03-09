@@ -27,7 +27,7 @@ struct ListView: View {
                     Text("New")
                         .font(.callout)
                 }
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 6)
             }
@@ -43,7 +43,7 @@ struct ListView: View {
         } label: {
             Text(title.isEmpty ? "Untitled" : title)
                 .font(.system(size: 16))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 6)

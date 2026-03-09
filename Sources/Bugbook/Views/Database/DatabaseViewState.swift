@@ -2,21 +2,22 @@ import SwiftUI
 import BugbookCore
 
 @MainActor
-final class DatabaseViewState: ObservableObject {
+@Observable
+final class DatabaseViewState {
     let dbPath: String
     let dbService = DatabaseService()
     let notificationOrigin = UUID().uuidString
 
-    @Published var schema: DatabaseSchema?
-    @Published var rows: [DatabaseRow] = []
-    @Published var activeViewId: String = ""
-    @Published var error: String?
-    @Published var editingTitle: String = ""
+    var schema: DatabaseSchema?
+    var rows: [DatabaseRow] = []
+    var activeViewId: String = ""
+    var error: String?
+    var editingTitle: String = ""
 
-    private var titleSaveTask: Task<Void, Never>?
-    private var rowSaveTask: Task<Void, Never>?
-    private var pendingRowSaves: [String: DatabaseRow] = [:]
-    private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var titleSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var rowSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingRowSaves: [String: DatabaseRow] = [:]
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
 
     var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })

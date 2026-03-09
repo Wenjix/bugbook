@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MobileRootView: View {
-    @StateObject private var workspace = MobileWorkspaceService()
+    @State private var workspace = MobileWorkspaceService()
     @State private var showSearch = false
 
     var body: some View {
@@ -31,7 +31,7 @@ struct MobileRootView: View {
                 Button {
                     showSearch = true
                 } label: {
-                    Image(systemName: "magnifyingglass")
+                    Label("Search", systemImage: "magnifyingglass")
                 }
             }
         }

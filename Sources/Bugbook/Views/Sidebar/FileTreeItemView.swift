@@ -20,41 +20,45 @@ struct FileTreeItemView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Row
-            HStack(spacing: 6) {
-                // Icon slot: show chevron on hover (if expandable), otherwise show icon
-                if isExpandable && isHovering {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle())
-                        .onTapGesture { toggleExpanded() }
-                } else {
-                    iconView
-                }
+            Button(action: { handleTap() }) {
+                HStack(spacing: 6) {
+                    // Icon slot: show chevron on hover (if expandable), otherwise show icon
+                    if isExpandable && isHovering {
+                        Button(action: { toggleExpanded() }) {
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16, height: 16)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        iconView
+                    }
 
-                if isRenaming {
-                    TextField("", text: $renameName, onCommit: { commitRename() })
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .onExitCommand { isRenaming = false }
-                } else {
-                    Text(displayName)
-                        .font(.system(size: 14))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                    if isRenaming {
+                        TextField("", text: $renameName, onCommit: { commitRename() })
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .onExitCommand { isRenaming = false }
+                    } else {
+                        Text(displayName)
+                            .font(.system(size: 14))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
 
-                Spacer()
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 12)
+                .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
+                .clipShape(.rect(cornerRadius: 4))
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 12)
-            .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
-            .cornerRadius(4)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
             .accessibilityIdentifier("file-tree-item-\(displayName)")
             .onHover { hovering in isHovering = hovering }
-            .onTapGesture { handleTap() }
             .contextMenu { contextMenuItems }
 
             // Children (if expanded)
@@ -101,7 +105,7 @@ struct FileTreeItemView: View {
                 // SF Symbol (sf:symbolName)
                 Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 15))
@@ -129,22 +133,22 @@ struct FileTreeItemView: View {
         if entry.isCanvas {
             Image(systemName: "rectangle.on.rectangle.angled")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
         } else if entry.isDatabase {
             Image(systemName: "tablecells")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
         } else if entry.isDirectory {
             Image(systemName: "folder")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
         } else {
             Image(systemName: "doc.text")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 16, height: 16)
         }
     }

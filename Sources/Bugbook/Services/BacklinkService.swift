@@ -10,12 +10,13 @@ struct Backlink: Identifiable {
 }
 
 @MainActor
-class BacklinkService: ObservableObject {
+@Observable
+class BacklinkService {
     /// Maps page name (lowercased) → list of backlinks
-    @Published private var index: [String: [Backlink]] = [:]
-    private var indexedWorkspace: String?
-    private var rebuildingWorkspace: String?
-    private var rebuildTask: Task<Void, Never>?
+    private var index: [String: [Backlink]] = [:]
+    @ObservationIgnored private var indexedWorkspace: String?
+    @ObservationIgnored private var rebuildingWorkspace: String?
+    @ObservationIgnored private var rebuildTask: Task<Void, Never>?
 
     func rebuild(workspace: String) {
         ensureIndex(workspace: workspace)

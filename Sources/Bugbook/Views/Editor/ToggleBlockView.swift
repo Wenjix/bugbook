@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Collapsible toggle block with a chevron, editable title, and nested child blocks.
 struct ToggleBlockView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let block: Block
     var onTyping: (() -> Void)? = nil
     @State private var textHeight: CGFloat = 24
@@ -11,20 +11,19 @@ struct ToggleBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header: chevron + title
             HStack(alignment: .top, spacing: 4) {
-                Button {
+                Button("Toggle", systemImage: "chevron.right") {
                     withAnimation(.easeInOut(duration: 0.12)) {
                         if let idx = document.index(for: block.id) {
                             document.blocks[idx].isExpanded.toggle()
                         }
                     }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .rotationEffect(.degrees(block.isExpanded ? 90 : 0))
-                        .frame(width: 20, height: 24)
-                        .contentShape(Rectangle())
                 }
+                .labelStyle(.iconOnly)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(block.isExpanded ? 90 : 0))
+                .frame(width: 20, height: 24)
+                .contentShape(Rectangle())
                 .buttonStyle(.plain)
 
                 BlockTextView(
@@ -47,7 +46,10 @@ struct ToggleBlockView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 24)
                             .contentShape(Rectangle())
-                            .onTapGesture { addChild() }
+                            .overlay {
+                                Button { addChild() } label: { Color.clear }
+                                    .buttonStyle(.plain)
+                            }
                     } else {
                         ForEach(block.children) { child in
                             BlockCellView(document: document, block: child, onTyping: onTyping)

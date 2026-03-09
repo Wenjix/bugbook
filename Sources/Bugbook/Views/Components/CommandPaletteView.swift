@@ -54,7 +54,7 @@ private struct SectionHeader: View {
     var body: some View {
         Text(title)
             .font(.system(size: 12, weight: .semibold))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .padding(.top, 8)
             .padding(.bottom, 2)
@@ -64,7 +64,7 @@ private struct SectionHeader: View {
 // MARK: - CommandPaletteView
 
 struct CommandPaletteView: View {
-    @ObservedObject var appState: AppState
+    var appState: AppState
     @State private var searchText = ""
     @State private var selectedIndex = 0
     @State private var contentResults: [ContentMatch] = []
@@ -85,7 +85,7 @@ struct CommandPaletteView: View {
             // Search field
             HStack {
                 Image(systemName: searchIcon)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 TextField(placeholderText, text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 17))
@@ -105,7 +105,7 @@ struct CommandPaletteView: View {
 
                         if items.isEmpty && !searchText.isEmpty {
                             Text("No results")
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .font(.callout)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 20)
@@ -113,7 +113,7 @@ struct CommandPaletteView: View {
 
                         ForEach(sections, id: \.title) { section in
                             SectionHeader(title: section.title)
-                            ForEach(Array(section.items.enumerated()), id: \.element.id) { _, item in
+                            ForEach(section.items.enumerated(), id: \.element.id) { _, item in
                                 let idx = globalIndex(of: item, in: items)
                                 paletteRow(item: item, index: idx)
                                     .id(item.id)
@@ -133,7 +133,7 @@ struct CommandPaletteView: View {
         }
         .frame(width: 600)
         .background(Color.fallbackBgPrimary)
-        .cornerRadius(12)
+        .clipShape(.rect(cornerRadius: 12))
         .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
         .onKeyPress(.upArrow) {
             selectedIndex = max(0, selectedIndex - 1)
@@ -290,80 +290,82 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private func paletteRow(item: PaletteItem, index: Int) -> some View {
-        HStack(spacing: 8) {
-            switch item {
-            case .file(let entry):
-                fileIcon(for: entry)
-                Text(entry.name.replacingOccurrences(of: ".md", with: ""))
-                    .font(.system(size: 15))
-                Spacer()
-                Text(relativePath(for: entry))
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+        Button {
+            selectedIndex = index
+            executeItem(item)
+        } label: {
+            HStack(spacing: 8) {
+                switch item {
+                case .file(let entry):
+                    fileIcon(for: entry)
+                    Text(entry.name.replacingOccurrences(of: ".md", with: ""))
+                        .font(.system(size: 15))
+                    Spacer()
+                    Text(relativePath(for: entry))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
 
-            case .contentMatch(let match):
-                Image(systemName: "text.magnifyingglass")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(match.fileName.replacingOccurrences(of: ".md", with: ""))
-                        .font(.system(size: 14, weight: .medium))
-                    highlightedLine(match)
+                case .contentMatch(let match):
+                    Image(systemName: "text.magnifyingglass")
                         .font(.system(size: 13))
-                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(match.fileName.replacingOccurrences(of: ".md", with: ""))
+                            .font(.system(size: 14, weight: .medium))
+                        highlightedLine(match)
+                            .font(.system(size: 13))
+                            .lineLimit(1)
+                    }
+                    Spacer()
+
+                case .command(let cmd):
+                    Image(systemName: cmd.icon)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text(cmd.name)
+                        .font(.system(size: 15))
+                    Spacer()
+                    if let shortcut = cmd.shortcut {
+                        Text(shortcut)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.12))
+                            .clipShape(.rect(cornerRadius: 3))
+                    }
+
+                case .createPage(let name):
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.accentColor)
+                    Text("Create new page: ")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                    + Text(name)
+                        .font(.system(size: 15, weight: .medium))
+                    Spacer()
+
+                case .askAI(let query):
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Text("Ask AI: ")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                    + Text(query)
+                        .font(.system(size: 15, weight: .medium))
+                    Spacer()
                 }
-                Spacer()
-
-            case .command(let cmd):
-                Image(systemName: cmd.icon)
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                    .frame(width: 16)
-                Text(cmd.name)
-                    .font(.system(size: 15))
-                Spacer()
-                if let shortcut = cmd.shortcut {
-                    Text(shortcut)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.12))
-                        .cornerRadius(3)
-                }
-
-            case .createPage(let name):
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 13))
-                    .foregroundColor(.accentColor)
-                Text("Create new page: ")
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
-                + Text(name)
-                    .font(.system(size: 15, weight: .medium))
-                Spacer()
-
-            case .askAI(let query):
-                Image(systemName: "sparkles")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                Text("Ask AI: ")
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
-                + Text(query)
-                    .font(.system(size: 15, weight: .medium))
-                Spacer()
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(index == selectedIndex ? Color.accentColor.opacity(0.15) : Color.clear)
+            .clipShape(.rect(cornerRadius: 4))
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(index == selectedIndex ? Color.accentColor.opacity(0.15) : Color.clear)
-        .cornerRadius(4)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectedIndex = index  // keep highlight in sync
-            executeItem(item)      // use captured item, not re-looked-up index
-        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Content Match Highlighting
@@ -373,16 +375,16 @@ struct CommandPaletteView: View {
         let query = effectiveQuery(from: searchText).lowercased()
 
         guard let range = line.lowercased().range(of: query) else {
-            return Text(line).foregroundColor(.secondary)
+            return Text(line).foregroundStyle(.secondary)
         }
 
         let before = String(line[line.startIndex..<range.lowerBound])
         let matched = String(line[range])
         let after = String(line[range.upperBound..<line.endIndex])
 
-        return Text(before).foregroundColor(.secondary)
-            + Text(matched).foregroundColor(.accentColor).bold()
-            + Text(after).foregroundColor(.secondary)
+        return Text(before).foregroundStyle(.secondary)
+            + Text(matched).foregroundStyle(Color.accentColor).bold()
+            + Text(after).foregroundStyle(.secondary)
     }
 
     // MARK: - Commands
@@ -738,7 +740,7 @@ struct CommandPaletteView: View {
             } else if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 14))
             } else {
@@ -754,11 +756,11 @@ struct CommandPaletteView: View {
         if entry.isCanvas {
             Image(systemName: "rectangle.on.rectangle.angled")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         } else {
             Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 }

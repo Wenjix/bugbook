@@ -21,7 +21,7 @@ struct MobileDatabaseListView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(db.name)
-                                        .font(.system(size: 16, weight: .medium))
+                                        .font(.body).fontWeight(.medium)
                                     Text("\(db.rowCount) row\(db.rowCount == 1 ? "" : "s")")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)

@@ -5,9 +5,10 @@ import os
 import Sentry
 
 @MainActor
-class FileSystemService: ObservableObject {
-    @Published var workspacePath: String?
-    @Published var recentWorkspaces: [String] = []
+@Observable
+class FileSystemService {
+    var workspacePath: String?
+    var recentWorkspaces: [String] = []
 
     private let fileManager = FileManager.default
     private let recentWorkspacesKey = "recentWorkspaces"

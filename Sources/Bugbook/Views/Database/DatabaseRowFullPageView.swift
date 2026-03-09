@@ -6,13 +6,13 @@ struct DatabaseRowFullPageView: View {
     let rowId: String
     var onTitleChange: (String) -> Void
 
-    @StateObject private var vm: DatabaseRowViewModel
+    @State private var vm: DatabaseRowViewModel
 
     init(dbPath: String, rowId: String, onTitleChange: @escaping (String) -> Void) {
         self.dbPath = dbPath
         self.rowId = rowId
         self.onTitleChange = onTitleChange
-        _vm = StateObject(wrappedValue: DatabaseRowViewModel(dbPath: dbPath, origin: "rowFullPage"))
+        _vm = State(initialValue: DatabaseRowViewModel(dbPath: dbPath, origin: "rowFullPage"))
     }
 
     var body: some View {
@@ -21,12 +21,12 @@ struct DatabaseRowFullPageView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 32))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("Failed to load row")
                         .font(.headline)
                     Text(error)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Button("Retry") { vm.loadData(rowId: rowId) }
                 }

@@ -3,31 +3,50 @@ import AppKit
 
 /// Per-block wrapper with drag handle on hover.
 struct BlockCellView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let block: Block
     var onTyping: (() -> Void)? = nil
     @State private var isHandleHovering = false
+    @State private var showSlashMenu = false
+    @State private var showBlockMenu = false
+    @State private var showPagePicker = false
 
     var body: some View {
         // Database embed blocks need their own interactive controls to work, so we
         // skip the block-level tap gesture entirely for them.
+        blockBase
+            .modifier(PopoverSyncModifier(
+                document: document,
+                block: block,
+                showSlashMenu: $showSlashMenu,
+                showBlockMenu: $showBlockMenu,
+                showPagePicker: $showPagePicker
+            ))
+    }
+
+    private var blockBase: some View {
         Group {
             if block.type == .databaseEmbed {
                 blockShell
             } else {
                 blockShell
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        if document.consumePendingEditorTapAfterBlockSelection() {
-                            return
+                    .overlay {
+                        Button {
+                            if document.consumePendingEditorTapAfterBlockSelection() {
+                                return
+                            }
+                            if NSEvent.modifierFlags.contains(.shift),
+                               let anchor = document.focusedBlockId {
+                                document.selectBlockRange(from: anchor, to: block.id)
+                            } else {
+                                document.clearBlockSelection()
+                                document.focusedBlockId = block.id
+                            }
+                        } label: {
+                            Color.clear
                         }
-                        if NSEvent.modifierFlags.contains(.shift),
-                           let anchor = document.focusedBlockId {
-                            document.selectBlockRange(from: anchor, to: block.id)
-                        } else {
-                            document.clearBlockSelection()
-                            document.focusedBlockId = block.id
-                        }
+                        .buttonStyle(.plain)
                     }
             }
         }
@@ -38,33 +57,6 @@ struct BlockCellView: View {
                 ))
                 .allowsHitTesting(false)
         )
-        .popover(
-            isPresented: Binding(
-                get: { document.slashMenuBlockId == block.id },
-                set: { if !$0 { document.dismissSlashMenu() } }
-            ),
-            arrowEdge: .bottom
-        ) {
-            SlashCommandMenu(document: document)
-        }
-        .popover(
-            isPresented: Binding(
-                get: { document.blockMenuBlockId == block.id },
-                set: { if !$0 { document.dismissBlockMenu() } }
-            ),
-            arrowEdge: .leading
-        ) {
-            BlockMenuView(document: document, blockId: block.id)
-        }
-        .popover(
-            isPresented: Binding(
-                get: { document.showPagePicker && document.pagePickerBlockId == block.id },
-                set: { if !$0 { document.dismissPagePicker() } }
-            ),
-            arrowEdge: .bottom
-        ) {
-            PagePickerView(document: document)
-        }
     }
 
     private var blockShell: some View {
@@ -96,7 +88,7 @@ struct BlockCellView: View {
                 : Color.clear
         )
         .background(BlockFrameReporter(document: document, blockId: block.id))
-        .cornerRadius(block.backgroundColor != .default ? 4 : 0)
+        .clipShape(.rect(cornerRadius: block.backgroundColor != .default ? 4 : 0))
     }
 
     private var handleIsVisible: Bool {
@@ -156,8 +148,61 @@ struct BlockCellView: View {
     }
 }
 
+private struct PopoverSyncModifier: ViewModifier {
+    var document: BlockDocument
+    let block: Block
+    @Binding var showSlashMenu: Bool
+    @Binding var showBlockMenu: Bool
+    @Binding var showPagePicker: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .popover(isPresented: $showSlashMenu, arrowEdge: .bottom) {
+                SlashCommandMenu(document: document)
+            }
+            .popover(isPresented: $showBlockMenu, arrowEdge: .leading) {
+                BlockMenuView(document: document, blockId: block.id)
+            }
+            .popover(isPresented: $showPagePicker, arrowEdge: .bottom) {
+                PagePickerView(document: document)
+            }
+            .onAppear {
+                showSlashMenu = (document.slashMenuBlockId == block.id)
+                showBlockMenu = (document.blockMenuBlockId == block.id)
+                showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
+            }
+            .onChange(of: document.slashMenuBlockId) { _, newVal in
+                showSlashMenu = (newVal == block.id)
+            }
+            .onChange(of: showSlashMenu) { _, show in
+                if !show && document.slashMenuBlockId == block.id {
+                    document.dismissSlashMenu()
+                }
+            }
+            .onChange(of: document.blockMenuBlockId) { _, newVal in
+                showBlockMenu = (newVal == block.id)
+            }
+            .onChange(of: showBlockMenu) { _, show in
+                if !show && document.blockMenuBlockId == block.id {
+                    document.dismissBlockMenu()
+                }
+            }
+            .onChange(of: document.showPagePicker) { _, _ in
+                showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
+            }
+            .onChange(of: document.pagePickerBlockId) { _, _ in
+                showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
+            }
+            .onChange(of: showPagePicker) { _, show in
+                if !show && document.showPagePicker && document.pagePickerBlockId == block.id {
+                    document.dismissPagePicker()
+                }
+            }
+    }
+}
+
 private struct BlockFrameReporter: NSViewRepresentable {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let blockId: UUID
 
     func makeNSView(context: Context) -> BlockFrameReporterView {

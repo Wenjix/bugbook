@@ -3,7 +3,7 @@ import AppKit
 
 /// Renders paragraph, heading, bullet, numbered, task, and blockquote blocks.
 struct TextBlockView: View {
-    @ObservedObject var document: BlockDocument
+    var document: BlockDocument
     let block: Block
     var onTyping: (() -> Void)? = nil
     @State private var textHeight: CGFloat = 24
@@ -33,7 +33,7 @@ struct TextBlockView: View {
                 if let placeholder = titlePlaceholder, block.text.isEmpty {
                     Text(placeholder)
                         .font(swiftUIFont)
-                        .foregroundColor(Color(nsColor: .placeholderTextColor))
+                        .foregroundStyle(Color(nsColor: .placeholderTextColor))
                         .padding(.top, 2) // match textContainerInset
                         .allowsHitTesting(false)
                 }
@@ -47,14 +47,14 @@ struct TextBlockView: View {
         case .bulletListItem:
             Text("\u{2022}")
                 .font(.system(size: EditorTypography.bodyFontSize))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 20, alignment: .center)
                 .padding(.top, 2)
 
         case .numberedListItem:
             Text("\(computeNumber()).")
                 .font(.system(size: EditorTypography.bodyFontSize))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 24, alignment: .trailing)
                 .padding(.top, 2)
 
@@ -64,7 +64,7 @@ struct TextBlockView: View {
             } label: {
                 Image(systemName: block.isChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: 15))
-                    .foregroundColor(block.isChecked ? .accentColor : .secondary)
+                    .foregroundStyle(block.isChecked ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
             .frame(width: 20)
