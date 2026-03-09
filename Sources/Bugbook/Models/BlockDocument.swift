@@ -18,6 +18,7 @@ class BlockDocument: ObservableObject {
     @Published var pagePickerBlockId: UUID?
     @Published var showTemplatePicker: Bool = false
     @Published var selectedBlockIds: Set<UUID> = []
+    @Published var moveBlockId: UUID?
     @Published var selectionRect: CGRect?
     @Published var selectionBlockId: UUID?
     var blockSelectionAnchor: UUID?
@@ -34,7 +35,10 @@ class BlockDocument: ObservableObject {
     var onCreateSubPage: ((String) -> String?)?
     var onNavigateToPage: ((String) -> Void)?
     var onOpenDatabaseTab: ((String) -> Void)?
+    var onMoveBlock: ((UUID, String) -> Void)?
     var availablePages: [FileEntry] = []
+    var filePath: String?
+    var workspacePath: String?
 
     private var undoStack: [[Block]] = []
     private var redoStack: [[Block]] = []

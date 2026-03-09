@@ -8,12 +8,23 @@ struct BlockMenuView: View {
     @State private var hoveredItem: String?
     @State private var turnIntoExpanded = false
     @State private var colorExpanded = false
+    @State private var showMovePicker = false
 
     private var currentBlock: Block? {
         document.block(for: blockId)
     }
 
     var body: some View {
+        if showMovePicker {
+            movePickerContent
+        } else {
+            menuContent
+        }
+    }
+
+    // MARK: - Main Menu
+
+    private var menuContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Section 1: Actions
             sectionHeader("Actions")
@@ -25,6 +36,7 @@ struct BlockMenuView: View {
                 document.dismissBlockMenu()
                 document.duplicateBlock(id: blockId)
             }
+            moveToButton
 
             sectionDivider
 
@@ -51,16 +63,56 @@ struct BlockMenuView: View {
         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 
-    private func menuRow(icon: String, label: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .frame(width: 20)
-                .foregroundColor(.secondary)
-            Text(label)
-                .foregroundColor(.primary)
+    // MARK: - Move To Button (with arrow)
+
+    private var moveToButton: some View {
+        Button {
+            showMovePicker = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+                    .frame(width: 16, height: 16)
+                Text("Move to")
+                    .font(.callout)
+                    .foregroundColor(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Color.secondary.opacity(0.6))
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(hoveredItem == "moveto" ? Color.primary.opacity(0.06) : Color.clear)
+                    .padding(.horizontal, 4)
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .buttonStyle(.plain)
+        .onHover { isHovering in
+            hoveredItem = isHovering ? "moveto" : nil
+        }
+    }
+
+    // MARK: - Inline Move Picker (reuses MovePagePickerView)
+
+    private var movePickerContent: some View {
+        MovePagePickerView(
+            fileTree: document.availablePages,
+            movingPath: document.filePath ?? "",
+            workspacePath: document.workspacePath ?? "",
+            onMove: { destDir in
+                document.onMoveBlock?(blockId, destDir)
+            },
+            isPresented: Binding(
+                get: { showMovePicker },
+                set: { if !$0 { showMovePicker = false } }
+            )
+        )
     }
 
     // MARK: - Section Header

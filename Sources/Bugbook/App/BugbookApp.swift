@@ -275,4 +275,7 @@ extension Notification.Name {
     static let openGraphView = Notification.Name("openGraphView")
     static let newCanvas = Notification.Name("newCanvas")
     static let fileDeleted = Notification.Name("fileDeleted")
+    static let fileMoved = Notification.Name("fileMoved")
+    static let movePage = Notification.Name("movePage")
+    static let movePageToDir = Notification.Name("movePageToDir")
 }

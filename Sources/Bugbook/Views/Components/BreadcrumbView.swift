@@ -85,8 +85,8 @@ struct BacklinksMenuButton: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
+            Image(systemName: "link")
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)

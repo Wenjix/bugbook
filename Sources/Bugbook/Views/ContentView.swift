@@ -51,6 +51,7 @@ struct ContentView: View {
 
             sidebarToggleOverlay
             commandPaletteOverlay
+            movePageOverlay
             themeToastOverlay
         }
     }
@@ -110,6 +111,18 @@ struct ContentView: View {
                 if let path = notification.object as? String {
                     appState.closeTabsForPath(path)
                     removeDatabaseEmbedsFromOpenDocs(dbPath: path)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .movePage)) { notification in
+                if let path = notification.object as? String {
+                    appState.movePagePath = path
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .movePageToDir)) { notification in
+                if let info = notification.userInfo,
+                   let sourcePath = info["sourcePath"] as? String,
+                   let destDir = info["destDir"] as? String {
+                    performMovePage(from: sourcePath, toDirectory: destDir)
                 }
             }
     }
@@ -294,6 +307,194 @@ struct ContentView: View {
         .disabled(!isEnabled)
     }
 
+    // MARK: - Move Page Overlay
+
+    @ViewBuilder
+    private var movePageOverlay: some View {
+        if appState.movePagePath != nil {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { appState.movePagePath = nil }
+
+            VStack {
+                HStack {
+                    Spacer()
+                    if let workspace = appState.workspacePath,
+                       let pagePath = appState.movePagePath {
+                        MovePagePickerView(
+                            fileTree: appState.fileTree,
+                            movingPath: pagePath,
+                            workspacePath: workspace,
+                            onMove: { destDir in
+                                performMovePage(from: pagePath, toDirectory: destDir)
+                            },
+                            isPresented: Binding(
+                                get: { appState.movePagePath != nil },
+                                set: { if !$0 { appState.movePagePath = nil } }
+                            )
+                        )
+                        .padding(.top, 60)
+                        .padding(.trailing, 20)
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private func performMovePage(from sourcePath: String, toDirectory destDir: String) {
+        do {
+            let newPath = try fileSystem.movePage(at: sourcePath, toDirectory: destDir)
+            let oldPath = sourcePath
+
+            // Update any open tabs pointing to the old path
+            for tab in appState.openTabs {
+                appState.updateNavigationPath(for: tab.id, from: oldPath, to: newPath)
+            }
+
+            let oldCompanion = oldPath.hasSuffix(".md") ? String(oldPath.dropLast(3)) : oldPath
+            let newCompanion = newPath.hasSuffix(".md") ? String(newPath.dropLast(3)) : newPath
+
+            // Rewrite absolute paths inside moved files (database embeds, etc.) in background
+            let capturedOldCompanion = oldCompanion
+            let capturedNewCompanion = newCompanion
+            let capturedNewPath = newPath
+            DispatchQueue.global(qos: .utility).async {
+                Self.rewritePathsInFile(at: capturedNewPath, oldBase: capturedOldCompanion, newBase: capturedNewCompanion)
+                Self.rewritePathsRecursively(in: capturedNewCompanion, oldBase: capturedOldCompanion, newBase: capturedNewCompanion)
+            }
+
+            // Also update paths for children that moved (companion folder contents)
+            for tab in appState.openTabs {
+                if tab.path.hasPrefix(oldCompanion + "/") {
+                    let relative = String(tab.path.dropFirst(oldCompanion.count))
+                    let updatedPath = newCompanion + relative
+                    appState.updateNavigationPath(for: tab.id, from: tab.path, to: updatedPath)
+                }
+            }
+
+            // Update block document file paths
+            for (_, doc) in blockDocuments {
+                if doc.filePath == oldPath {
+                    doc.filePath = newPath
+                } else if let fp = doc.filePath, fp.hasPrefix(oldCompanion + "/") {
+                    let relative = String(fp.dropFirst(oldCompanion.count))
+                    doc.filePath = newCompanion + relative
+                }
+            }
+
+            // Insert a page link in the parent page's content
+            let parentPagePath = destDir + ".md"
+            if FileManager.default.fileExists(atPath: parentPagePath) {
+                let pageName = (newPath as NSString).lastPathComponent
+                    .replacingOccurrences(of: ".md", with: "")
+                let linkLine = "[[\(pageName)]]"
+                if var parentContent = try? fileSystem.loadFile(at: parentPagePath) {
+                    // Only add if not already linked
+                    if !parentContent.contains(linkLine) {
+                        if !parentContent.hasSuffix("\n") { parentContent += "\n" }
+                        parentContent += "\n\(linkLine)\n"
+                        try? fileSystem.saveFile(at: parentPagePath, content: parentContent)
+
+                        // Reload the parent page if it's open
+                        if let parentTab = appState.openTabs.first(where: { $0.path == parentPagePath }),
+                           let parentDoc = blockDocuments[parentTab.id] {
+                            parentDoc.blocks = MarkdownBlockParser.parse(parentContent)
+                        }
+                    }
+                }
+            }
+
+            appState.movePagePath = nil
+            refreshFileTree()
+
+            // Register undo
+            NSApp.keyWindow?.undoManager?.registerUndo(withTarget: fileSystem) { fs in
+                Task { @MainActor in
+                    do {
+                        let oldDir = (oldPath as NSString).deletingLastPathComponent
+                        let restoredPath = try fs.movePage(at: newPath, toDirectory: oldDir)
+
+                        let newCompanion = newPath.hasSuffix(".md") ? String(newPath.dropLast(3)) : newPath
+                        let restoredCompanion = restoredPath.hasSuffix(".md") ? String(restoredPath.dropLast(3)) : restoredPath
+
+                        for tab in self.appState.openTabs {
+                            if tab.path == newPath {
+                                self.appState.updateNavigationPath(for: tab.id, from: newPath, to: restoredPath)
+                            } else if tab.path.hasPrefix(newCompanion + "/") {
+                                let relative = String(tab.path.dropFirst(newCompanion.count))
+                                self.appState.updateNavigationPath(for: tab.id, from: tab.path, to: restoredCompanion + relative)
+                            }
+                        }
+                        for (_, doc) in self.blockDocuments {
+                            if doc.filePath == newPath {
+                                doc.filePath = restoredPath
+                            } else if let fp = doc.filePath, fp.hasPrefix(newCompanion + "/") {
+                                let relative = String(fp.dropFirst(newCompanion.count))
+                                doc.filePath = restoredCompanion + relative
+                            }
+                        }
+
+                        // Remove the page link from the parent page
+                        let parentPagePath = destDir + ".md"
+                        if FileManager.default.fileExists(atPath: parentPagePath) {
+                            let pageName = (newPath as NSString).lastPathComponent
+                                .replacingOccurrences(of: ".md", with: "")
+                            let linkLine = "[[\(pageName)]]"
+                            if var parentContent = try? fs.loadFile(at: parentPagePath) {
+                                parentContent = parentContent.replacingOccurrences(of: "\n\(linkLine)\n", with: "\n")
+                                try? fs.saveFile(at: parentPagePath, content: parentContent)
+                                if let parentTab = self.appState.openTabs.first(where: { $0.path == parentPagePath }),
+                                   let parentDoc = self.blockDocuments[parentTab.id] {
+                                    parentDoc.blocks = MarkdownBlockParser.parse(parentContent)
+                                }
+                            }
+                        }
+
+                        self.refreshFileTree()
+                    } catch {
+                        Log.fileSystem.error("Undo move failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+            NSApp.keyWindow?.undoManager?.setActionName("Move Page")
+
+            NotificationCenter.default.post(name: .fileMoved, object: nil, userInfo: [
+                "oldPath": oldPath,
+                "newPath": newPath
+            ])
+        } catch {
+            Log.fileSystem.error("Move page failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
+    private static func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
+        guard filePath.hasSuffix(".md"),
+              oldBase != newBase,
+              var content = try? String(contentsOfFile: filePath, encoding: .utf8),
+              content.contains(oldBase) else { return }
+        content = content.replacingOccurrences(of: oldBase, with: newBase)
+        try? content.write(toFile: filePath, atomically: true, encoding: .utf8)
+    }
+
+    /// Recursively rewrite paths in all .md files under a directory.
+    private static func rewritePathsRecursively(in directory: String, oldBase: String, newBase: String) {
+        guard oldBase != newBase,
+              FileManager.default.fileExists(atPath: directory) else { return }
+        guard let items = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return }
+        for item in items {
+            let fullPath = (directory as NSString).appendingPathComponent(item)
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir)
+            if isDir.boolValue {
+                rewritePathsRecursively(in: fullPath, oldBase: oldBase, newBase: newBase)
+            } else {
+                rewritePathsInFile(at: fullPath, oldBase: oldBase, newBase: newBase)
+            }
+        }
+    }
+
     // MARK: - Main Content
 
     @ViewBuilder
@@ -368,14 +569,6 @@ struct ContentView: View {
 
                     Spacer()
 
-                    let backlinks = currentPageBacklinks(for: tab)
-                    if !backlinks.isEmpty {
-                        BacklinksMenuButton(backlinks: backlinks) { path in
-                            navigateToFilePath(path)
-                        }
-                        .padding(.trailing, 4)
-                    }
-
                     // Page options menu (notes only)
                     if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase && !tab.isDatabaseRow,
                        let doc = blockDocuments[tab.id] {
@@ -391,6 +584,11 @@ struct ContentView: View {
                                     Label("Full width", systemImage: "arrow.left.and.right")
                                     if doc.fullWidth { Spacer(); Image(systemName: "checkmark") }
                                 }
+                            }
+                            Button {
+                                appState.movePagePath = tab.path
+                            } label: {
+                                Label("Move to", systemImage: "arrow.right")
                             }
                         } label: {
                             Image(systemName: "ellipsis")
@@ -622,8 +820,37 @@ struct ContentView: View {
             return path
         }
         doc.availablePages = appState.fileTree
+        doc.workspacePath = appState.workspacePath
         doc.onNavigateToPage = { pageName in
             navigateToPage(named: pageName)
+        }
+        doc.onMoveBlock = { [weak appState] blockId, destDir in
+            guard let appState else { return }
+            guard let tab = appState.activeTab,
+                  let doc = blockDocuments[tab.id],
+                  let block = doc.block(for: blockId) else { return }
+            let blockMarkdown = MarkdownBlockParser.serialize([block])
+            let targetPagePath: String
+            let possibleMd = destDir + ".md"
+            if FileManager.default.fileExists(atPath: possibleMd) {
+                targetPagePath = possibleMd
+            } else { return }
+            guard targetPagePath != tab.path else { return }
+            do {
+                var content = try fileSystem.loadFile(at: targetPagePath)
+                if !content.hasSuffix("\n") { content += "\n" }
+                content += blockMarkdown
+                try fileSystem.saveFile(at: targetPagePath, content: content)
+                doc.deleteBlock(id: blockId)
+                doc.moveBlockId = nil
+                doc.blockMenuBlockId = nil
+                if let targetTab = appState.openTabs.first(where: { $0.path == targetPagePath }),
+                   let targetDoc = blockDocuments[targetTab.id] {
+                    targetDoc.blocks = MarkdownBlockParser.parse(content)
+                }
+            } catch {
+                Log.fileSystem.error("Move block failed: \(error.localizedDescription)")
+            }
         }
         doc.onOpenDatabaseTab = { dbPath in
             let name = (dbPath as NSString).lastPathComponent
@@ -899,7 +1126,22 @@ struct ContentView: View {
                 appState.openTabs[index].content = content
                 appState.openTabs[index].isDirty = false
                 let doc = BlockDocument(markdown: content)
+                doc.filePath = entry.path
                 wireUpDocumentCallbacks(doc)
+
+                // Inject pageLink blocks for child pages (from file tree, no extra disk I/O)
+                if let children = entry.children, !children.isEmpty {
+                    let existingLinks = Set(doc.blocks
+                        .filter { $0.type == .pageLink }
+                        .map { $0.pageLinkName })
+                    for child in children where child.name.hasSuffix(".md") && !child.isDatabase {
+                        let pageName = String(child.name.dropLast(3))
+                        if !existingLinks.contains(pageName) {
+                            doc.blocks.append(Block(type: .pageLink, pageLinkName: pageName))
+                        }
+                    }
+                }
+
                 blockDocuments[appState.openTabs[index].id] = doc
                 // Sync icon from parsed document
                 appState.openTabs[index].icon = doc.icon

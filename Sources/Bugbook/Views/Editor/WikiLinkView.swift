@@ -31,6 +31,10 @@ struct WikiLinkView: View {
                 } else {
                     defaultPageIcon
                 }
+            } else if icon.hasPrefix("sf:") {
+                Image(systemName: String(icon.dropFirst(3)))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 13))
             } else {

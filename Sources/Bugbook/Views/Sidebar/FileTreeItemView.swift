@@ -10,6 +10,7 @@ struct FileTreeItemView: View {
     var onRefreshTree: () -> Void
 
     @State private var isExpanded: Bool = false
+    @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
     @State private var renameName: String = ""
     @State private var showDeleteConfirmation: Bool = false
@@ -20,15 +21,17 @@ struct FileTreeItemView: View {
         VStack(spacing: 0) {
             // Row
             HStack(spacing: 6) {
-                if entry.isDirectory && !entry.isDatabase {
+                // Icon slot: show chevron on hover (if expandable), otherwise show icon
+                if isExpandable && isHovering {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
-                        .frame(width: 12)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
                         .onTapGesture { toggleExpanded() }
+                } else {
+                    iconView
                 }
-
-                iconView
 
                 if isRenaming {
                     TextField("", text: $renameName, onCommit: { commitRename() })
@@ -50,17 +53,21 @@ struct FileTreeItemView: View {
             .cornerRadius(4)
             .contentShape(Rectangle())
             .accessibilityIdentifier("file-tree-item-\(displayName)")
+            .onHover { hovering in isHovering = hovering }
             .onTapGesture { handleTap() }
             .contextMenu { contextMenuItems }
 
             // Children (if expanded)
             if isExpanded, let children = entry.children {
+                let childParentPath = entry.name.hasSuffix(".md") && !entry.isDirectory
+                    ? String(entry.path.dropLast(3))  // companion folder path
+                    : entry.path
                 FileTreeView(
                     entries: children,
                     activeFilePath: activeFilePath,
                     fileSystem: fileSystem,
                     workspacePath: workspacePath,
-                    parentPath: entry.path,
+                    parentPath: childParentPath,
                     onSelectFile: onSelectFile,
                     onRefreshTree: onRefreshTree
                 )
@@ -95,8 +102,10 @@ struct FileTreeItemView: View {
                 Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
+                    .frame(width: 16, height: 16)
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 15))
+                    .frame(width: 16, height: 16)
             } else if FileManager.default.fileExists(atPath: icon) {
                 // Raw file path (legacy)
                 if let nsImage = NSImage(contentsOfFile: icon) {
@@ -121,18 +130,22 @@ struct FileTreeItemView: View {
             Image(systemName: "rectangle.on.rectangle.angled")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
+                .frame(width: 16, height: 16)
         } else if entry.isDatabase {
             Image(systemName: "tablecells")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
+                .frame(width: 16, height: 16)
         } else if entry.isDirectory {
             Image(systemName: "folder")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
+                .frame(width: 16, height: 16)
         } else {
             Image(systemName: "doc.text")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
+                .frame(width: 16, height: 16)
         }
     }
 
@@ -143,12 +156,19 @@ struct FileTreeItemView: View {
         return entry.name
     }
 
+    /// Whether this entry can be expanded (directories or pages with sub-pages).
+    private var isExpandable: Bool {
+        if entry.isDatabase { return false }
+        return entry.isDirectory || (entry.children != nil && !(entry.children?.isEmpty ?? true))
+    }
+
     private var isActive: Bool {
         activeFilePath == entry.path
     }
 
     private func handleTap() {
-        if entry.isDirectory && !entry.isDatabase {
+        if entry.isDirectory && !entry.isDatabase && entry.kind == .page {
+            // Plain directory (not a .md page with children) — toggle expand
             toggleExpanded()
         } else {
             onSelectFile(entry)
@@ -163,7 +183,7 @@ struct FileTreeItemView: View {
     }
 
     private func loadExpandedState() {
-        guard entry.isDirectory && !entry.isDatabase else { return }
+        guard isExpandable else { return }
         let expanded = expandedFolders()
         isExpanded = expanded.contains(entry.path)
     }
@@ -212,6 +232,9 @@ struct FileTreeItemView: View {
             Button { performCreateSubPage() } label: {
                 Label("New Sub-page", systemImage: "doc.text.below.ecg")
             }
+        }
+        Button { requestMovePage() } label: {
+            Label("Move to", systemImage: "arrow.right")
         }
         Divider()
         Button(role: .destructive) { showDeleteConfirmation = true } label: {
@@ -312,6 +335,10 @@ struct FileTreeItemView: View {
             )
             onSelectFile(db)
         }
+    }
+
+    private func requestMovePage() {
+        NotificationCenter.default.post(name: .movePage, object: entry.path)
     }
 
     private func performCreateCanvas() {

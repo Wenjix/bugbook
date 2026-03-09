@@ -249,6 +249,51 @@ class FileSystemService: ObservableObject {
         return newPath
     }
 
+    /// Move a page (and its companion folder) to a new parent directory.
+    /// Returns the new path of the moved file.
+    func movePage(at sourcePath: String, toDirectory destDir: String) throws -> String {
+        let name = (sourcePath as NSString).lastPathComponent
+        let destPath = (destDir as NSString).appendingPathComponent(name)
+
+        guard sourcePath != destPath else { return sourcePath }
+        guard !fileManager.fileExists(atPath: destPath) else {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteFileExistsError,
+                          userInfo: [NSLocalizedDescriptionKey: "A file named \"\(name)\" already exists in the destination."])
+        }
+
+        // Check companion folder conflict before moving anything
+        let sourceCompanion = companionFolderPath(for: sourcePath)
+        let destCompanion = companionFolderPath(for: destPath)
+        let hasCompanion = fileManager.fileExists(atPath: sourceCompanion)
+        if hasCompanion && fileManager.fileExists(atPath: destCompanion) {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteFileExistsError,
+                          userInfo: [NSLocalizedDescriptionKey: "A folder named \"\((sourceCompanion as NSString).lastPathComponent)\" already exists in the destination."])
+        }
+
+        // Prevent moving a page into its own subtree
+        if hasCompanion && destDir.hasPrefix(sourceCompanion + "/") {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteInvalidFileNameError,
+                          userInfo: [NSLocalizedDescriptionKey: "Cannot move a page into its own sub-pages."])
+        }
+
+        // Create destination directory if needed (e.g. companion folder for a parent page)
+        if !fileManager.fileExists(atPath: destDir) {
+            try fileManager.createDirectory(atPath: destDir, withIntermediateDirectories: true)
+        }
+
+        // Move the file
+        try fileManager.moveItem(atPath: sourcePath, toPath: destPath)
+
+        // Move companion folder if it exists
+        if hasCompanion {
+            try fileManager.moveItem(atPath: sourceCompanion, toPath: destCompanion)
+        }
+
+        Log.fileSystem.info("Moved page: \(name) → \(destDir)")
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "file.move"))
+        return destPath
+    }
+
     func createSubPage(under pagePath: String, name: String) throws -> String {
         let companion = companionFolderPath(for: pagePath)
 

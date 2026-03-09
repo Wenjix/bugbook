@@ -29,6 +29,7 @@ class AppState: ObservableObject {
     @Published var aiSidePanelOpen: Bool = false
     @Published var aiInitialPrompt: String?
     @Published var currentView: ViewMode = .editor
+    @Published var movePagePath: String?  // non-nil triggers move page picker
 
     var activeTab: OpenFile? {
         guard activeTabIndex >= 0, activeTabIndex < openTabs.count else { return nil }
