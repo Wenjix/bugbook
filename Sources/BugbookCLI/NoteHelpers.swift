@@ -75,6 +75,8 @@ struct WorkspacePageUpdatePreview {
     let lineChanges: [[String: Any]]
     let selectedSectionBefore: WorkspacePageSectionRecord?
     let selectedSectionAfter: WorkspacePageSectionRecord?
+    let emptyParagraphsRemoved: Int
+    let formatWarnings: [WorkspacePageFormatWarning]
 
     func toJSON() -> [String: Any] {
         var json = updated.toDetailJSON()
@@ -86,6 +88,29 @@ struct WorkspacePageUpdatePreview {
         }
         if let selectedSectionBefore {
             json["selected_section_before"] = selectedSectionBefore.toJSON()
+        }
+        return json
+    }
+}
+
+struct WorkspacePageFormatWarning {
+    let kind: String
+    let blockID: String
+    let pageName: String
+    let reason: String
+    let matches: [String]
+    let message: String
+
+    func toJSON() -> [String: Any] {
+        var json: [String: Any] = [
+            "kind": kind,
+            "block_id": blockID,
+            "page_name": pageName,
+            "reason": reason,
+            "message": message,
+        ]
+        if !matches.isEmpty {
+            json["matches"] = matches
         }
         return json
     }
@@ -346,7 +371,9 @@ func previewWorkspacePageUpdate(
         changed: existing.content != nextContent,
         lineChanges: structuredLineChanges(from: existing.content, to: nextContent),
         selectedSectionBefore: selectedSectionBefore,
-        selectedSectionAfter: selectedSectionAfter
+        selectedSectionAfter: selectedSectionAfter,
+        emptyParagraphsRemoved: 0,
+        formatWarnings: []
     )
 }
 
@@ -1090,7 +1117,7 @@ private func sanitizePageFileName(_ value: String) -> String {
     return sanitized.isEmpty ? "Untitled" : sanitized
 }
 
-private func companionFolderPath(for pagePath: String) -> String {
+func companionFolderPath(for pagePath: String) -> String {
     (pagePath as NSString).deletingPathExtension
 }
 

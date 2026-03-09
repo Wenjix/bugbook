@@ -50,6 +50,7 @@ extension Color {
     // Borders & dividers
     static let fallbackBorderColor  = Color(light: Color(hex: "e8e8e5"), dark: Color(hex: "2e2e2e"))
     static let fallbackDividerColor = Color(light: Color(hex: "eeeeec"), dark: Color(hex: "2e2e2e"))
+    static let fallbackChromeBorder = Color(light: Color(hex: "e0e0e0"), dark: Color(hex: "2e2e2e"))
 
     // Chrome — sidebar, tab bar, breadcrumbs
     static let fallbackSidebarBg = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))

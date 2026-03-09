@@ -46,14 +46,14 @@ struct TextBlockView: View {
         switch block.type {
         case .bulletListItem:
             Text("\u{2022}")
-                .font(.system(size: 16))
+                .font(.system(size: EditorTypography.bodyFontSize))
                 .foregroundColor(.secondary)
                 .frame(width: 20, alignment: .center)
                 .padding(.top, 2)
 
         case .numberedListItem:
             Text("\(computeNumber()).")
-                .font(.system(size: 16))
+                .font(.system(size: EditorTypography.bodyFontSize))
                 .foregroundColor(.secondary)
                 .frame(width: 24, alignment: .trailing)
                 .padding(.top, 2)
@@ -95,10 +95,10 @@ struct TextBlockView: View {
             case 1: return .system(size: 30, weight: .bold)
             case 2: return .system(size: 24, weight: .semibold)
             case 3: return .system(size: 21, weight: .semibold)
-            default: return .system(size: 16)
+            default: return .system(size: EditorTypography.bodyFontSize)
             }
         default:
-            return .system(size: 16)
+            return .system(size: EditorTypography.bodyFontSize)
         }
     }
 
@@ -110,12 +110,12 @@ struct TextBlockView: View {
             case 2: return .systemFont(ofSize: 24, weight: .semibold)
             case 3: return .systemFont(ofSize: 20, weight: .semibold)
             case 4: return .systemFont(ofSize: 17, weight: .semibold)
-            case 5: return .systemFont(ofSize: 16, weight: .semibold)
+            case 5: return .systemFont(ofSize: EditorTypography.bodyFontSize, weight: .semibold)
             case 6: return .systemFont(ofSize: 13, weight: .semibold)
-            default: return .systemFont(ofSize: 16)
+            default: return .systemFont(ofSize: EditorTypography.bodyFontSize)
             }
         default:
-            return .systemFont(ofSize: 16)
+            return .systemFont(ofSize: EditorTypography.bodyFontSize)
         }
     }
 

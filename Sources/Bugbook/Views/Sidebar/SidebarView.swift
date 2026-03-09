@@ -184,8 +184,7 @@ struct SidebarView: View {
                         refreshTree()
                         let db = FileEntry(
                             id: path, name: (path as NSString).lastPathComponent,
-                            path: path, isDirectory: false, isDatabase: true,
-                            icon: nil, children: nil
+                            path: path, isDirectory: false, kind: .database
                         )
                         onSelectFile(db)
                     }

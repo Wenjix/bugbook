@@ -21,6 +21,8 @@ class BlockDocument: ObservableObject {
     @Published var selectionRect: CGRect?
     @Published var selectionBlockId: UUID?
     var blockSelectionAnchor: UUID?
+    private var suppressNextEditorTapAfterBlockSelection = false
+    var registeredBlockFrames: [UUID: CGRect] = [:]
 
     var titleBlock: Block? {
         guard let first = blocks.first,
@@ -462,6 +464,7 @@ class BlockDocument: ObservableObject {
 
         if let childIdx = loc.child {
             saveUndo()
+            unregisterFramesRecursively(for: blocks[loc.topLevel].children[childIdx])
             blocks[loc.topLevel].children.remove(at: childIdx)
             dissolveColumnIfNeeded(at: loc.topLevel)
             guard !blocks.isEmpty else {
@@ -479,10 +482,12 @@ class BlockDocument: ObservableObject {
 
         let idx = loc.topLevel
         guard blocks.count > 1 else {
+            unregisterFramesRecursively(for: blocks[idx])
             blocks[idx] = Block(type: .paragraph)
             return
         }
         saveUndo()
+        unregisterFramesRecursively(for: blocks[idx])
         blocks.remove(at: idx)
         let focusIdx = min(idx, blocks.count - 1)
         focusedBlockId = blocks[focusIdx].id
@@ -684,11 +689,15 @@ class BlockDocument: ObservableObject {
 
     func selectAllBlocks() {
         selectedBlockIds = Set(selectionOrder())
+        selectionRect = nil
+        selectionBlockId = nil
+        suppressNextEditorTapAfterBlockSelection = false
     }
 
     func clearBlockSelection() {
         selectedBlockIds.removeAll()
         blockSelectionAnchor = nil
+        suppressNextEditorTapAfterBlockSelection = false
     }
 
     func selectBlockRange(from anchorId: UUID, to currentId: UUID) {
@@ -697,6 +706,27 @@ class BlockDocument: ObservableObject {
               let currentIdx = ordered.firstIndex(of: currentId) else { return }
         let range = min(anchorIdx, currentIdx)...max(anchorIdx, currentIdx)
         selectedBlockIds = Set(range.map { ordered[$0] })
+        selectionRect = nil
+        selectionBlockId = nil
+    }
+
+    func beginBlockSelectionDrag(from anchorId: UUID) {
+        blockSelectionAnchor = anchorId
+        selectedBlockIds = [anchorId]
+        selectionRect = nil
+        selectionBlockId = nil
+        suppressNextEditorTapAfterBlockSelection = false
+    }
+
+    func endBlockSelectionDrag() {
+        blockSelectionAnchor = nil
+        suppressNextEditorTapAfterBlockSelection = !selectedBlockIds.isEmpty
+    }
+
+    func consumePendingEditorTapAfterBlockSelection() -> Bool {
+        guard suppressNextEditorTapAfterBlockSelection else { return false }
+        suppressNextEditorTapAfterBlockSelection = false
+        return true
     }
 
     func deleteSelectedBlocks() {
@@ -706,9 +736,11 @@ class BlockDocument: ObservableObject {
         for blockId in ordered.reversed() where selectedBlockIds.contains(blockId) {
             guard let loc = blockLocation(for: blockId) else { continue }
             if let childIdx = loc.child {
+                unregisterFramesRecursively(for: blocks[loc.topLevel].children[childIdx])
                 blocks[loc.topLevel].children.remove(at: childIdx)
                 dissolveColumnIfNeeded(at: loc.topLevel)
             } else {
+                unregisterFramesRecursively(for: blocks[loc.topLevel])
                 blocks.remove(at: loc.topLevel)
             }
         }
@@ -734,5 +766,27 @@ class BlockDocument: ObservableObject {
             }
         }
         return ordered
+    }
+
+    private func unregisterFramesRecursively(for block: Block) {
+        unregisterBlockFrame(for: block.id)
+        for child in block.children {
+            unregisterFramesRecursively(for: child)
+        }
+    }
+
+    func registerBlockFrame(_ frame: CGRect, for blockId: UUID) {
+        registeredBlockFrames[blockId] = frame
+    }
+
+    func unregisterBlockFrame(for blockId: UUID) {
+        registeredBlockFrames.removeValue(forKey: blockId)
+    }
+
+    func blockId(atWindowPoint point: CGPoint) -> UUID? {
+        registeredBlockFrames
+            .filter { $0.value.contains(point) }
+            .min(by: { $0.value.width * $0.value.height < $1.value.width * $1.value.height })?
+            .key
     }
 }

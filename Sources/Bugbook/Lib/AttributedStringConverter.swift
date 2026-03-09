@@ -14,7 +14,7 @@ enum AttributedStringConverter {
     /// Parses inline markdown formatting into an attributed string.
     static func attributedString(
         from markdown: String,
-        font: NSFont = .systemFont(ofSize: 15),
+        font: NSFont = .systemFont(ofSize: EditorTypography.bodyFontSize),
         textColor: NSColor = .labelColor
     ) -> NSAttributedString {
         let baseAttributes: [NSAttributedString.Key: Any] = [

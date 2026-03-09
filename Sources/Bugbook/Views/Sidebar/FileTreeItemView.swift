@@ -258,9 +258,7 @@ struct FileTreeItemView: View {
             let dup = FileEntry(
                 id: newPath, name: name, path: newPath,
                 isDirectory: entry.isDirectory,
-                isDatabase: entry.isDatabase,
-                isCanvas: entry.isCanvas,
-                icon: nil, children: nil
+                kind: entry.kind
             )
             onSelectFile(dup)
         }
@@ -275,7 +273,7 @@ struct FileTreeItemView: View {
             let name = (path as NSString).lastPathComponent
             let note = FileEntry(
                 id: path, name: name, path: path,
-                isDirectory: false, isDatabase: false, icon: nil, children: nil
+                isDirectory: false
             )
             onSelectFile(note)
         } catch {
@@ -297,8 +295,7 @@ struct FileTreeItemView: View {
             if !isExpanded { toggleExpanded() }
             let sub = FileEntry(
                 id: path, name: (path as NSString).lastPathComponent,
-                path: path, isDirectory: false, isDatabase: false,
-                icon: nil, children: nil
+                path: path, isDirectory: false
             )
             onSelectFile(sub)
         }
@@ -311,8 +308,7 @@ struct FileTreeItemView: View {
             let displayName = (path as NSString).lastPathComponent
             let db = FileEntry(
                 id: path, name: displayName,
-                path: path, isDirectory: false, isDatabase: true,
-                icon: nil, children: nil
+                path: path, isDirectory: false, kind: .database
             )
             onSelectFile(db)
         }
@@ -325,8 +321,7 @@ struct FileTreeItemView: View {
             let displayName = "Untitled Canvas"
             let canvas = FileEntry(
                 id: path, name: displayName,
-                path: path, isDirectory: false, isDatabase: false,
-                isCanvas: true, icon: nil, children: nil
+                path: path, isDirectory: false, kind: .canvas
             )
             onSelectFile(canvas)
         }

@@ -147,6 +147,11 @@ private struct ParsedPageBlockMutationResult {
 }
 
 private struct CommonMarkPageLinkResolver {
+    enum Result {
+        case resolved(String)
+        case downgraded(reason: String, matches: [String])
+    }
+
     private let directMatchesByToken: [String: [WorkspacePageRecord]]
     private let titleMatchesByToken: [String: [WorkspacePageRecord]]
     private let sourceDirectory: String
@@ -178,18 +183,27 @@ private struct CommonMarkPageLinkResolver {
         sourceDirectory = (sourcePage.relativePath as NSString).deletingLastPathComponent
     }
 
-    func destination(for pageName: String) -> String? {
+    func resolve(_ pageName: String) -> Result {
         let token = normalizePageLookup(pageName)
         guard !token.isEmpty else {
-            return nil
+            return .downgraded(reason: "page_not_found", matches: [])
         }
         let matches = (directMatchesByToken[token]?.isEmpty == false)
             ? directMatchesByToken[token]
             : titleMatchesByToken[token]
-        guard let matches, matches.count == 1, let target = matches.first?.relativePath else {
-            return nil
+        guard let matches else {
+            return .downgraded(reason: "page_not_found", matches: [])
         }
-        return relativePath(fromDirectory: sourceDirectory, to: target)
+        if matches.count > 1 {
+            return .downgraded(
+                reason: "ambiguous_page_reference",
+                matches: matches.map(\.relativePath).sorted()
+            )
+        }
+        guard let target = matches.first?.relativePath else {
+            return .downgraded(reason: "page_not_found", matches: [])
+        }
+        return .resolved(relativePath(fromDirectory: sourceDirectory, to: target))
     }
 }
 
@@ -1041,10 +1055,13 @@ func previewWorkspacePageFormat(
     let persistBlockIDComments = style == .bugbook && documentHasPersistedBlockIDs(document.blocks)
 
     var formattedBlocks = document.blocks
-    _ = compactEmptyParagraphBlocks(in: &formattedBlocks)
+    var formatWarnings: [WorkspacePageFormatWarning] = []
+    let emptyParagraphsRemoved = compactEmptyParagraphBlocks(in: &formattedBlocks)
     if style == .commonmark, parsedPageBlocksContainPageLinks(formattedBlocks) {
         let resolver = try CommonMarkPageLinkResolver(sourcePage: existing, workspace: workspace)
-        formattedBlocks = resolveCommonMarkPageLinks(in: formattedBlocks, using: resolver)
+        let resolution = resolveCommonMarkPageLinks(in: formattedBlocks, using: resolver)
+        formattedBlocks = resolution.blocks
+        formatWarnings = resolution.warnings
     }
     let formattedDocument = ParsedPageDocument(metadata: document.metadata, blocks: formattedBlocks)
     let nextContent = split.prefix + PageBlockParser.serializeDocument(
@@ -1060,7 +1077,9 @@ func previewWorkspacePageFormat(
         changed: existing.content != nextContent,
         lineChanges: structuredLineChanges(from: existing.content, to: nextContent),
         selectedSectionBefore: nil,
-        selectedSectionAfter: nil
+        selectedSectionAfter: nil,
+        emptyParagraphsRemoved: emptyParagraphsRemoved,
+        formatWarnings: formatWarnings
     )
 }
 
@@ -1421,17 +1440,52 @@ private func collectBlockIDs(in blocks: [ParsedPageBlock]) -> Set<String> {
 
 private func resolveCommonMarkPageLinks(
     in blocks: [ParsedPageBlock],
-    using resolver: CommonMarkPageLinkResolver
-) -> [ParsedPageBlock] {
-    blocks.map { block in
+    using resolver: CommonMarkPageLinkResolver,
+    pathPrefix: [Int] = []
+) -> (blocks: [ParsedPageBlock], warnings: [WorkspacePageFormatWarning]) {
+    var resolvedBlocks: [ParsedPageBlock] = []
+    var warnings: [WorkspacePageFormatWarning] = []
+
+    for (offset, block) in blocks.enumerated() {
+        let path = pathPrefix + [offset]
         var resolved = block
         if block.type == .pageLink {
-            resolved.commonmarkLinkDestination = resolver.destination(for: block.pageLinkName)
+            switch resolver.resolve(block.pageLinkName) {
+            case .resolved(let destination):
+                resolved.commonmarkLinkDestination = destination
+            case .downgraded(let reason, let matches):
+                warnings.append(
+                    WorkspacePageFormatWarning(
+                        kind: "downgraded_page_link",
+                        blockID: blockSelectorID(for: block, path: path),
+                        pageName: block.pageLinkName,
+                        reason: reason,
+                        matches: matches,
+                        message: formatWarningMessage(reason: reason, pageName: block.pageLinkName)
+                    )
+                )
+            }
         }
         if !block.children.isEmpty {
-            resolved.children = resolveCommonMarkPageLinks(in: block.children, using: resolver)
+            let children = resolveCommonMarkPageLinks(
+                in: block.children,
+                using: resolver,
+                pathPrefix: path
+            )
+            resolved.children = children.blocks
+            warnings.append(contentsOf: children.warnings)
         }
-        return resolved
+        resolvedBlocks.append(resolved)
+    }
+    return (resolvedBlocks, warnings)
+}
+
+private func formatWarningMessage(reason: String, pageName: String) -> String {
+    switch reason {
+    case "ambiguous_page_reference":
+        return "Page link `\(pageName)` matched multiple workspace pages and was downgraded to plain text."
+    default:
+        return "Page link `\(pageName)` did not match any workspace page and was downgraded to plain text."
     }
 }
 
@@ -1774,28 +1828,25 @@ private func normalizeStableBlockIDs(in blocks: inout [ParsedPageBlock]) -> Bool
     return changed
 }
 
-private func compactEmptyParagraphBlocks(in blocks: inout [ParsedPageBlock]) -> Bool {
-    var changed = false
+private func compactEmptyParagraphBlocks(in blocks: inout [ParsedPageBlock]) -> Int {
+    var removedCount = 0
     var compacted: [ParsedPageBlock] = []
     compacted.reserveCapacity(blocks.count)
 
     for var block in blocks {
-        if !block.children.isEmpty, compactEmptyParagraphBlocks(in: &block.children) {
-            changed = true
+        if !block.children.isEmpty {
+            removedCount += compactEmptyParagraphBlocks(in: &block.children)
         }
         if block.type == .paragraph,
            block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            changed = true
+            removedCount += 1
             continue
         }
         compacted.append(block)
     }
 
-    if compacted.count != blocks.count {
-        changed = true
-    }
     blocks = compacted
-    return changed
+    return removedCount
 }
 
 private func normalizeStableBlockIDs(

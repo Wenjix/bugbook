@@ -13,6 +13,21 @@ public enum PropertyType: String, Codable, CaseIterable, Sendable {
     case url
     case email
     case relation
+
+    public var systemImageName: String {
+        switch self {
+        case .title: return "textformat"
+        case .text: return "doc.text"
+        case .number: return "number"
+        case .select: return "list.bullet"
+        case .multiSelect: return "tag"
+        case .date: return "calendar"
+        case .checkbox: return "checkmark.square"
+        case .url: return "link"
+        case .email: return "envelope"
+        case .relation: return "arrow.triangle.branch"
+        }
+    }
 }
 
 // MARK: - Select Option

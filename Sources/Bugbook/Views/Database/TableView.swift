@@ -2,6 +2,8 @@ import SwiftUI
 import BugbookCore
 
 struct TableView: View {
+    static let rowControlsInset: CGFloat = 46
+
     let schema: DatabaseSchema
     @Binding var rows: [DatabaseRow]
     let viewConfig: ViewConfig
@@ -17,17 +19,24 @@ struct TableView: View {
     var onUpdateSelectOption: ((String, String, String?, String?) -> Void)?
     var onDeleteSelectOption: ((String, String) -> Void)?
     var onResizeColumn: ((String, CGFloat) -> Void)?
+    var onReorderRows: ((String, String?) -> Void)?
     var onNewRow: (() -> Void)?
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
+    var usesInnerScroll: Bool = true
 
     @State private var dragWidths: [String: CGFloat] = [:]
     @State private var hoveredResizeKey: String?
     @State private var draggingResizeKey: String?
     @State private var selectedRowIds: Set<String> = []
     @State private var lastSelectedRowId: String? = nil
+    @State private var didInitialScroll = false
 
     private let titleColumnKey = "__title__"
+    private let topAnchorKey = "__table_top__"
+    private let rowHandleWidth: CGFloat = 12
+    private let checkboxWidth: CGFloat = 18
+    private let rowControlsSpacing: CGFloat = 6
 
     private var visibleProperties: [PropertyDefinition] {
         let hidden = Set(viewConfig.hiddenColumns ?? [])
@@ -35,7 +44,15 @@ struct TableView: View {
     }
 
     private var titleColumnWidth: CGFloat {
-        dragWidths[titleColumnKey] ?? viewConfig.columnWidths?[titleColumnKey] ?? 240
+        dragWidths[titleColumnKey] ?? viewConfig.columnWidths?[titleColumnKey] ?? 320
+    }
+
+    private var wrapCellText: Bool {
+        viewConfig.wrapCellText ?? false
+    }
+
+    private var canReorderRows: Bool {
+        viewConfig.sorts.isEmpty
     }
 
     var body: some View {
@@ -55,72 +72,87 @@ struct TableView: View {
 
             // Header
             headerRow
-            Divider()
+            tableDivider
 
             // Selection toolbar
             if !selectedRowIds.isEmpty {
                 selectionBar
-                Divider()
+                tableDivider
             }
 
-            // Rows
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach($rows) { $row in
-                        dataRow($row)
-                            .id($row.wrappedValue.id)
-                        Divider().opacity(0.5)
-                    }
-                    // Phantom rows so the table always looks populated
-                    ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
-                        phantomRow(isFirst: rows.isEmpty && i == 0)
-                        Divider().opacity(0.5)
-                    }
-                }
-            }
+            rowsRegion
         }
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: usesInnerScroll ? .infinity : nil,
+            alignment: .topLeading
+        )
+        .fixedSize(horizontal: false, vertical: !usesInnerScroll)
+        .databasePointerCursor()
     }
 
     // MARK: - Selection Bar
 
     private var selectionBar: some View {
-        HStack(spacing: 12) {
-            Text("\(selectedRowIds.count) selected")
-                .font(.callout)
-                .foregroundColor(.secondary)
-            Spacer()
-            Button {
-                selectedRowIds.removeAll()
-            } label: {
-                Text("Deselect")
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: Self.rowControlsInset)
+
+            HStack(spacing: 16) {
+                Text("\(selectedRowIds.count) selected")
                     .font(.callout)
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.secondary)
-            Button {
-                let toDelete = rows.filter { selectedRowIds.contains($0.id) }
-                selectedRowIds.removeAll()
-                toDelete.forEach { onDelete?($0) }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "trash")
-                        .font(.caption)
-                    Text("Delete")
-                        .font(.callout)
+                    .fontWeight(.medium)
+                    .foregroundColor(.accentColor)
+
+                Button {
+                    let toDelete = rows.filter { selectedRowIds.contains($0.id) }
+                    selectedRowIds.removeAll()
+                    toDelete.forEach { onDelete?($0) }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                        Text("Delete")
+                            .font(.callout)
+                    }
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.red.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.red.opacity(0.15), lineWidth: 1)
+                            )
+                    )
                 }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    selectedRowIds.removeAll()
+                } label: {
+                    Text("Deselect all")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .foregroundColor(.red)
+            .padding(.horizontal, 8)
         }
-        .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.accentColor.opacity(0.05))
+        .background(Color.accentColor.opacity(0.03))
     }
 
     // MARK: - Header
 
     private var headerRow: some View {
         HStack(spacing: 0) {
+            Color.clear
+                .frame(width: Self.rowControlsInset)
+
             // Title column header
             Text(schema.titleProperty?.name ?? "Name")
                 .font(.callout)
@@ -130,7 +162,7 @@ struct TableView: View {
                 .padding(.leading, 8)
                 .frame(width: titleColumnWidth)
                 .overlay(alignment: .trailing) {
-                    resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 240)
+                    resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 320)
                 }
 
             // Property column headers
@@ -155,7 +187,7 @@ struct TableView: View {
                         Button {
                             onAddProperty?(type)
                         } label: {
-                            Label(type.rawValue.capitalized, systemImage: iconForPropertyType(type))
+                            Label(type.rawValue.capitalized, systemImage: type.systemImageName)
                         }
                     }
                 }
@@ -173,7 +205,6 @@ struct TableView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
@@ -183,12 +214,14 @@ struct TableView: View {
 
     private func resizeHandle(key: String, baseWidth: Double) -> some View {
         let isActive = hoveredResizeKey == key || draggingResizeKey == key
+        let hitWidth: CGFloat = 16
         return Color.clear
-            .frame(width: 8)
+            .frame(width: hitWidth)
             .overlay {
                 Rectangle()
-                    .fill(isActive ? Color.fallbackBadgeBg : Color.clear)
-                    .frame(width: 1)
+                    .fill(isActive ? Color.accentColor : Color.clear)
+                    .frame(width: isActive ? 2 : 1)
+                    .padding(.vertical, -8)
             }
             .contentShape(Rectangle())
             .cursor(.resizeLeftRight)
@@ -206,39 +239,57 @@ struct TableView: View {
                         draggingResizeKey = nil
                     }
             )
+            .offset(x: hitWidth / 2)
+            .zIndex(10)
     }
 
     // MARK: - Data Row
 
     private func dataRow(_ row: Binding<DatabaseRow>) -> some View {
         HoverRow { isHovered in
-            HStack(spacing: 0) {
-                titleCell(row, isHovered: isHovered)
-                    .padding(.horizontal, 8)
-                    .frame(width: titleColumnWidth, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .cursor(.pointingHand)
+            HStack(alignment: .center, spacing: 0) {
+                rowControls(for: row.wrappedValue, isHovered: isHovered)
+                    .frame(width: Self.rowControlsInset)
 
-                ForEach(visibleProperties) { prop in
-                    let propValue = Binding<PropertyValue>(
-                        get: { row.wrappedValue.properties[prop.id] ?? .empty },
-                        set: { newVal in
-                            var updatedRow = row.wrappedValue
-                            updatedRow.properties[prop.id] = newVal
-                            row.wrappedValue = updatedRow
-                            onSave(updatedRow)
-                        }
-                    )
-                    PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddSelectOption, onUpdateOption: onUpdateSelectOption, onDeleteOption: onDeleteSelectOption)
+                HStack(alignment: .top, spacing: 0) {
+                    titleCell(row, isHovered: isHovered)
                         .padding(.horizontal, 8)
-                        .frame(width: columnWidth(for: prop), alignment: .leading)
+                        .frame(width: titleColumnWidth, alignment: .leading)
                         .contentShape(Rectangle())
-                        .cursor(.pointingHand)
+                        .databasePointerCursor()
+
+                    ForEach(visibleProperties) { prop in
+                        let propValue = Binding<PropertyValue>(
+                            get: { row.wrappedValue.properties[prop.id] ?? .empty },
+                            set: { newVal in
+                                var updatedRow = row.wrappedValue
+                                updatedRow.properties[prop.id] = newVal
+                                row.wrappedValue = updatedRow
+                                onSave(updatedRow)
+                            }
+                        )
+                        PropertyEditorView(definition: prop, value: propValue, wrapText: wrapCellText, compact: true, onAddOption: onAddSelectOption, onUpdateOption: onUpdateSelectOption, onDeleteOption: onDeleteSelectOption)
+                            .padding(.horizontal, 8)
+                            .frame(width: columnWidth(for: prop), alignment: .leading)
+                            .contentShape(Rectangle())
+                            .databasePointerCursor()
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isHovered ? Color.primary.opacity(0.04) : Color.clear)
+                )
+                .overlay { columnDividers().allowsHitTesting(false) }
+                .dropDestination(for: String.self) { droppedIds, _ in
+                    guard canReorderRows,
+                          let draggedId = droppedIds.first,
+                          draggedId != row.wrappedValue.id else { return false }
+                    onReorderRows?(draggedId, row.wrappedValue.id)
+                    return true
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 14)
-            .overlay { columnDividers().allowsHitTesting(false) }
         }
     }
 
@@ -266,102 +317,94 @@ struct TableView: View {
 
     private func titleCell(_ row: Binding<DatabaseRow>, isHovered: Bool) -> some View {
         let titlePropId = schema.titleProperty?.id
-        let rowId = row.wrappedValue.id
-        let isSelected = selectedRowIds.contains(rowId)
-        let showCheckbox = isHovered || isSelected || !selectedRowIds.isEmpty
+        let openPillSize = CGSize(width: 74, height: 24)
+        let titleBinding = Binding(
+            get: {
+                guard let propId = titlePropId,
+                      let val = row.wrappedValue.properties[propId],
+                      case .text(let s) = val else { return "" }
+                return s
+            },
+            set: { newVal in
+                guard let propId = titlePropId else { return }
+                var updatedRow = row.wrappedValue
+                updatedRow.properties[propId] = .text(newVal)
+                row.wrappedValue = updatedRow
+                onSave(updatedRow)
+            }
+        )
 
-        return HStack(spacing: 6) {
-            // Select checkbox
-            if showCheckbox {
-                Button {
-                    if NSEvent.modifierFlags.contains(.shift),
-                       let lastId = lastSelectedRowId,
-                       let lastIdx = rows.firstIndex(where: { $0.id == lastId }),
-                       let currentIdx = rows.firstIndex(where: { $0.id == rowId }) {
-                        // Range-select between last clicked and current
-                        let lo = min(lastIdx, currentIdx)
-                        let hi = max(lastIdx, currentIdx)
-                        for i in lo...hi { selectedRowIds.insert(rows[i].id) }
-                    } else {
-                        if isSelected {
-                            selectedRowIds.remove(rowId)
-                        } else {
-                            selectedRowIds.insert(rowId)
-                            lastSelectedRowId = rowId
+        return titleTextField(titleBinding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .databasePointerCursor()
+            .overlay(alignment: .trailing) {
+                if isHovered {
+                    Button {
+                        onOpenRow(row.wrappedValue)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sidebar.right")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("OPEN")
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.3)
                         }
+                        .foregroundColor(.secondary)
+                        .frame(width: openPillSize.width, height: openPillSize.height)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Color.fallbackBgSecondary)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .stroke(Color.fallbackBorderColor.opacity(0.9), lineWidth: 1)
+                                )
+                        )
                     }
-                } label: {
-                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 13))
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .help("Open in side peek")
+                    .padding(.trailing, 4)
                 }
-                .buttonStyle(.plain)
             }
-
-            // Open page icon (only on hover)
-            if isHovered {
-                Button {
-                    onOpenRow(row.wrappedValue)
-                } label: {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .help("Open page")
-            }
-
-            TextField("New Page", text: Binding(
-                get: {
-                    guard let propId = titlePropId,
-                          let val = row.wrappedValue.properties[propId],
-                          case .text(let s) = val else { return "" }
-                    return s
-                },
-                set: { newVal in
-                    guard let propId = titlePropId else { return }
-                    var updatedRow = row.wrappedValue
-                    updatedRow.properties[propId] = .text(newVal)
-                    row.wrappedValue = updatedRow
-                    onSave(updatedRow)
-                }
-            ))
-            .textFieldStyle(.plain)
-            .font(.body)
-            .foregroundColor(.primary)
-        }
     }
 
     // MARK: - Phantom Row
 
     private func phantomRow(isFirst: Bool) -> some View {
         HStack(spacing: 0) {
-            HStack(spacing: 6) {
-                if isFirst {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11))
-                        .foregroundColor(Color.primary.opacity(0.25))
+            Color.clear
+                .frame(width: Self.rowControlsInset)
+                .overlay(alignment: .trailing) {
+                    if isFirst {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color.primary.opacity(0.25))
+                            .padding(.trailing, 8)
+                    }
                 }
+
+            HStack(spacing: 0) {
                 TextField(isFirst ? "New page" : "", text: .constant(""))
                     .textFieldStyle(.plain)
-                    .font(.body)
+                    .font(.system(size: EditorTypography.bodyFontSize))
                     .foregroundColor(Color.primary.opacity(0.25))
                     .disabled(true)
                     .allowsHitTesting(false)
+                    .padding(.horizontal, 8)
+                    .frame(width: titleColumnWidth, alignment: .leading)
+
+                ForEach(visibleProperties) { prop in
+                    TextField("", text: .constant(""))
+                        .textFieldStyle(.plain)
+                        .disabled(true)
+                        .allowsHitTesting(false)
+                        .padding(.horizontal, 8)
+                        .frame(width: columnWidth(for: prop), alignment: .leading)
+                }
             }
             .padding(.horizontal, 8)
-            .frame(width: titleColumnWidth, alignment: .leading)
-            ForEach(visibleProperties) { prop in
-                TextField("", text: .constant(""))
-                    .textFieldStyle(.plain)
-                    .disabled(true)
-                    .allowsHitTesting(false)
-                    .padding(.horizontal, 8)
-                    .frame(width: columnWidth(for: prop), alignment: .leading)
-            }
+            .padding(.vertical, 14)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 14)
         .contentShape(Rectangle())
         .overlay { columnDividers().allowsHitTesting(false) }
         .onTapGesture { onNewRow?() }
@@ -373,20 +416,186 @@ struct TableView: View {
         dragWidths[prop.id] ?? viewConfig.columnWidths?[prop.id] ?? 180
     }
 
-    private func iconForPropertyType(_ type: PropertyType) -> String {
-        switch type {
-        case .title: return "textformat"
-        case .text: return "doc.text"
-        case .number: return "number"
-        case .select: return "list.bullet"
-        case .multiSelect: return "tag"
-        case .date: return "calendar"
-        case .checkbox: return "checkmark.square"
-        case .url: return "link"
-        case .email: return "envelope"
-        case .relation: return "arrow.triangle.branch"
+    @ViewBuilder
+    private var rowsRegion: some View {
+        if usesInnerScroll {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    rowsStack
+                }
+                .onAppear {
+                    guard !didInitialScroll else { return }
+                    didInitialScroll = true
+                    DispatchQueue.main.async {
+                        scrollToCurrentTarget(using: proxy, animated: false)
+                    }
+                }
+                .onChange(of: scrollToRowId) { _, _ in
+                    DispatchQueue.main.async {
+                        scrollToCurrentTarget(using: proxy, animated: true)
+                    }
+                }
+            }
+        } else {
+            rowsStack
         }
     }
+
+    private var rowsStack: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear
+                .frame(height: 0)
+                .id(topAnchorKey)
+
+            ForEach($rows) { $row in
+                dataRow($row)
+                    .id($row.wrappedValue.id)
+                tableDivider.opacity(0.5)
+            }
+
+            ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
+                phantomRow(isFirst: rows.isEmpty && i == 0)
+                tableDivider.opacity(0.5)
+            }
+
+            if canReorderRows && !rows.isEmpty {
+                tailDropTarget
+            }
+        }
+    }
+
+    private func scrollToCurrentTarget(using proxy: ScrollViewProxy, animated: Bool) {
+        let action = {
+            if let scrollToRowId {
+                proxy.scrollTo(scrollToRowId, anchor: .top)
+            } else {
+                proxy.scrollTo(topAnchorKey, anchor: .top)
+            }
+        }
+
+        if animated {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                action()
+            }
+        } else {
+            action()
+        }
+    }
+
+    private var tableDivider: some View {
+        Divider()
+            .padding(.leading, Self.rowControlsInset + 8)
+    }
+
+    private func rowControls(for row: DatabaseRow, isHovered: Bool) -> some View {
+        HStack(spacing: rowControlsSpacing) {
+            if canReorderRows {
+                dragHandle(for: row, isHovered: isHovered)
+                    .frame(width: rowHandleWidth, height: 18)
+            }
+
+            checkbox(for: row.id, isHovered: isHovered)
+                .frame(width: checkboxWidth, height: 18)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.trailing, 6)
+    }
+
+    @ViewBuilder
+    private func checkbox(for rowId: String, isHovered: Bool) -> some View {
+        let isSelected = selectedRowIds.contains(rowId)
+        let showCheckbox = isHovered || isSelected || !selectedRowIds.isEmpty
+
+        if showCheckbox {
+            Button {
+                toggleSelection(for: rowId)
+            } label: {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 13))
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear
+        }
+    }
+
+    private func dragHandle(for row: DatabaseRow, isHovered: Bool) -> some View {
+        RowDragHandleDots()
+            .foregroundColor(.secondary.opacity(isHovered ? 0.8 : 0.35))
+            .help("Drag to reorder row")
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.openHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .draggable(row.id) {
+                Text(row.title(schema: schema))
+                    .font(.callout)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(6)
+            }
+    }
+
+    private var tailDropTarget: some View {
+        Color.clear
+            .frame(height: 20)
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let draggedId = droppedIds.first else { return false }
+                onReorderRows?(draggedId, nil)
+                return true
+            }
+    }
+
+    private func toggleSelection(for rowId: String) {
+        if NSEvent.modifierFlags.contains(.shift),
+           let lastId = lastSelectedRowId,
+           let lastIdx = rows.firstIndex(where: { $0.id == lastId }),
+           let currentIdx = rows.firstIndex(where: { $0.id == rowId }) {
+            let lo = min(lastIdx, currentIdx)
+            let hi = max(lastIdx, currentIdx)
+            for i in lo...hi {
+                selectedRowIds.insert(rows[i].id)
+            }
+            return
+        }
+
+        if selectedRowIds.contains(rowId) {
+            selectedRowIds.remove(rowId)
+        } else {
+            selectedRowIds.insert(rowId)
+            lastSelectedRowId = rowId
+        }
+    }
+
+    @ViewBuilder
+    private func titleTextField(_ text: Binding<String>) -> some View {
+        if wrapCellText {
+            TextField("New Page", text: text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: EditorTypography.bodyFontSize))
+                .foregroundColor(.primary)
+                .lineLimit(1...4)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+                .cursor(.pointingHand)
+        } else {
+            TextField("New Page", text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: EditorTypography.bodyFontSize))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+                .cursor(.pointingHand)
+        }
+    }
+
 }
 
 // MARK: - HoverRow (per-row hover state to avoid full-tree re-renders)
@@ -401,9 +610,31 @@ private struct HoverRow<Content: View>: View {
 
     var body: some View {
         content(isHovered)
-            .background(isHovered ? Color.primary.opacity(0.04) : Color.clear)
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
+    }
+}
+
+private struct RowDragHandleDots: View {
+    var body: some View {
+        HStack(spacing: 2) {
+            VStack(spacing: 2) {
+                dot
+                dot
+                dot
+            }
+            VStack(spacing: 2) {
+                dot
+                dot
+                dot
+            }
+        }
+        .frame(width: 10, height: 14)
+    }
+
+    private var dot: some View {
+        Circle()
+            .frame(width: 2, height: 2)
     }
 }
 
@@ -422,7 +653,7 @@ private struct ColumnHeaderCell: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: iconForType(prop.type))
+            Image(systemName: prop.type.systemImageName)
                 .font(.caption2)
                 .foregroundColor(.secondary)
             Text(prop.name)
@@ -474,13 +705,13 @@ private struct ColumnHeaderCell: View {
                                 onChangeType?(prop.id, type)
                                 showPopover = false
                             } label: {
-                                Label(type.rawValue.capitalized, systemImage: iconForType(type))
+                                Label(type.rawValue.capitalized, systemImage: type.systemImageName)
                             }
                         }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: iconForType(prop.type))
+                        Image(systemName: prop.type.systemImageName)
                             .font(.caption)
                         Text(prop.type.rawValue.capitalized)
                             .font(.callout)
@@ -526,20 +757,6 @@ private struct ColumnHeaderCell: View {
         .frame(width: 220)
     }
 
-    private func iconForType(_ type: PropertyType) -> String {
-        switch type {
-        case .title: return "textformat"
-        case .text: return "doc.text"
-        case .number: return "number"
-        case .select: return "list.bullet"
-        case .multiSelect: return "tag"
-        case .date: return "calendar"
-        case .checkbox: return "checkmark.square"
-        case .url: return "link"
-        case .email: return "envelope"
-        case .relation: return "arrow.triangle.branch"
-        }
-    }
 }
 
 // Cursor helper for resize handles

@@ -48,8 +48,7 @@ class AppState: ObservableObject {
             content: "",
             isDirty: false,
             isEmptyTab: entry.path.isEmpty,
-            isDatabase: entry.isDatabase,
-            isCanvas: entry.isCanvas,
+            kind: entry.kind,
             displayName: cleanDisplayName(entry.name),
             openerPagePath: nil,
             icon: entry.icon,
@@ -147,8 +146,7 @@ class AppState: ObservableObject {
         tab.content = ""
         tab.isDirty = false
         tab.isEmptyTab = entry.path.isEmpty
-        tab.isDatabase = entry.isDatabase
-        tab.isCanvas = entry.isCanvas
+        tab.kind = entry.kind
         tab.displayName = cleanDisplayName(entry.name)
         tab.icon = entry.icon
         tab.openerPagePath = nil
@@ -217,8 +215,7 @@ class AppState: ObservableObject {
         tab.content = ""
         tab.isDirty = false
         tab.isEmptyTab = false
-        tab.isDatabase = entry.isDatabase
-        tab.isCanvas = entry.isCanvas
+        tab.kind = entry.kind
         tab.displayName = cleanDisplayName(entry.name)
         tab.icon = entry.icon
         openTabs[tabIndex] = tab
@@ -226,6 +223,16 @@ class AppState: ObservableObject {
     }
 
     private func resolveEntry(for path: String) -> FileEntry {
+        if let row = DatabaseRowNavigationPath.parse(path) {
+            return FileEntry(
+                id: path,
+                name: "Row",
+                path: path,
+                isDirectory: false,
+                kind: .databaseRow(dbPath: row.dbPath, rowId: row.rowId)
+            )
+        }
+
         if let known = findEntry(byPath: path, in: fileTree) {
             return known
         }
@@ -233,15 +240,13 @@ class AppState: ObservableObject {
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
         let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
         let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
+        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
         return FileEntry(
             id: path,
             name: (path as NSString).lastPathComponent,
             path: path,
             isDirectory: isDatabase || isCanvas,
-            isDatabase: isDatabase,
-            isCanvas: isCanvas,
-            icon: nil,
-            children: nil
+            kind: kind
         )
     }
 
@@ -343,13 +348,7 @@ class AppState: ObservableObject {
             path: "",
             content: "",
             isDirty: false,
-            isEmptyTab: true,
-            isDatabase: false,
-            displayName: nil,
-            openerPagePath: nil,
-            icon: nil,
-            navigationHistory: [],
-            navigationHistoryIndex: -1
+            isEmptyTab: true
         )
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1

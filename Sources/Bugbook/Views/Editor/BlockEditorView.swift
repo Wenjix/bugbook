@@ -22,7 +22,7 @@ struct BlockEditorView: View {
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
                 BlockCellView(document: document, block: block, onTyping: onTyping)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 1)
                     .overlay(alignment: .trailing) {
                         // Right-side drop zone for column creation.
                         // Skip for database embeds — the 40px hittable overlay intercepts
@@ -42,13 +42,16 @@ struct BlockEditorView: View {
 
                 // Drop zone after each block (also clickable to focus nearby block)
                 // Use a taller drop zone after database embeds so users can easily click below them.
-                DropZoneView(isActive: activeDropIndex == index + 1, height: block.type == .databaseEmbed ? 24 : 8) { droppedId in
+                DropZoneView(isActive: activeDropIndex == index + 1, height: block.type == .databaseEmbed ? 12 : 4) { droppedId in
                     handleDrop(droppedId: droppedId, targetIndex: index + 1)
                 } onTargetChanged: { targeted in
                     let idx = index + 1
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 }
                 .onTapGesture {
+                    if document.consumePendingEditorTapAfterBlockSelection() {
+                        return
+                    }
                     // Click between blocks: focus the block below if it exists, otherwise the one above
                     if index + 1 < document.blocks.count {
                         let next = document.blocks[index + 1]
@@ -68,6 +71,9 @@ struct BlockEditorView: View {
                 .frame(minHeight: 300)
                 .contentShape(Rectangle())
                 .onTapGesture {
+                    if document.consumePendingEditorTapAfterBlockSelection() {
+                        return
+                    }
                     if let lastBlock = document.blocks.last,
                        lastBlock.text.isEmpty,
                        lastBlock.type != .databaseEmbed {
@@ -80,7 +86,6 @@ struct BlockEditorView: View {
         }
         .padding(.horizontal, 48)
         .padding(.vertical, 20)
-        .trackRenders("BlockEditorView")
         .onChange(of: document.blocks) { _, _ in
             onTextChange?()
         }
@@ -101,7 +106,7 @@ struct BlockEditorView: View {
 /// Height is constant to prevent layout shifts that cause flickering.
 struct DropZoneView: View {
     let isActive: Bool
-    var height: CGFloat = 8
+    var height: CGFloat = 4
     let onDrop: (UUID) -> Void
     let onTargetChanged: (Bool) -> Void
 

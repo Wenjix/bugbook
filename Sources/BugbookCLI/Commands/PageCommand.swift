@@ -202,6 +202,12 @@ struct Page: ParsableCommand {
         @Flag(name: .long, help: "Preview the rewrite without writing the page")
         var dryRun: Bool = false
 
+        @Flag(name: .long, help: "Include a structured warning report for portability downgrades")
+        var report: Bool = false
+
+        @Flag(name: .long, help: "Fail with a non-zero exit if formatting would downgrade portable output")
+        var failOnWarnings: Bool = false
+
         @Option(name: .long, help: "Response payload mode: full or summary")
         var output: MutationOutputMode = .full
 
@@ -217,7 +223,9 @@ struct Page: ParsableCommand {
                 operation: "format",
                 output: output,
                 dryRun: dryRun,
-                style: style
+                style: style,
+                report: report,
+                failOnWarnings: failOnWarnings
             )
         }
     }
@@ -501,17 +509,29 @@ private func emitFormatResult(
     operation: String,
     output: MutationOutputMode,
     dryRun: Bool,
-    style: PageMarkdownFormatStyle
+    style: PageMarkdownFormatStyle,
+    report: Bool = false,
+    failOnWarnings: Bool = false
 ) throws {
+    try failIfFormatWarningsRequested(
+        preview: preview,
+        style: style,
+        failOnWarnings: failOnWarnings
+    )
+
     if dryRun {
         switch output {
         case .full:
             var json = preview.toJSON()
             json["format_style"] = style.rawValue
+            json["empty_paragraphs_removed"] = preview.emptyParagraphsRemoved
+            appendFormatWarnings(to: &json, preview: preview, includeReport: report)
             try outputJSON(json)
         case .summary:
             var json = pageMutationSummaryJSON(preview, operation: operation, dryRun: true)
             json["format_style"] = style.rawValue
+            json["empty_paragraphs_removed"] = preview.emptyParagraphsRemoved
+            appendFormatWarnings(to: &json, preview: preview, includeReport: report)
             try outputJSON(json)
         }
         return
@@ -523,11 +543,47 @@ private func emitFormatResult(
         let record = try loadWorkspacePage(at: preview.original.path, relativeTo: workspace)
         var json = record.toDetailJSON()
         json["format_style"] = style.rawValue
+        json["empty_paragraphs_removed"] = preview.emptyParagraphsRemoved
+        appendFormatWarnings(to: &json, preview: preview, includeReport: report)
         try outputJSON(json)
     case .summary:
         let record = try loadWorkspacePage(at: preview.original.path, relativeTo: workspace)
         var json = pageMutationSummaryJSON(record, preview: preview, operation: operation, dryRun: false)
         json["format_style"] = style.rawValue
+        json["empty_paragraphs_removed"] = preview.emptyParagraphsRemoved
+        appendFormatWarnings(to: &json, preview: preview, includeReport: report)
         try outputJSON(json)
     }
+}
+
+private func appendFormatWarnings(
+    to json: inout [String: Any],
+    preview: WorkspacePageUpdatePreview,
+    includeReport: Bool
+) {
+    guard includeReport else {
+        return
+    }
+    json["warning_count"] = preview.formatWarnings.count
+    json["warnings"] = preview.formatWarnings.map { $0.toJSON() }
+}
+
+private func failIfFormatWarningsRequested(
+    preview: WorkspacePageUpdatePreview,
+    style: PageMarkdownFormatStyle,
+    failOnWarnings: Bool
+) throws {
+    guard failOnWarnings, !preview.formatWarnings.isEmpty else {
+        return
+    }
+
+    let previewNames = preview.formatWarnings
+        .map(\.pageName)
+        .prefix(3)
+        .joined(separator: ", ")
+    let remainingCount = preview.formatWarnings.count - min(preview.formatWarnings.count, 3)
+    let suffix = remainingCount > 0 ? ", +\(remainingCount) more" : ""
+    throw CLIError.operationFailed(
+        "Formatting with style `\(style.rawValue)` produced \(preview.formatWarnings.count) warning(s): \(previewNames)\(suffix). Re-run with --report or --dry-run --report to inspect downgraded links."
+    )
 }

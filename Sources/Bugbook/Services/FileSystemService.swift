@@ -89,9 +89,7 @@ class FileSystemService: ObservableObject {
                         name: dbName,
                         path: fullPath,
                         isDirectory: false,
-                        isDatabase: true,
-                        icon: nil,
-                        children: nil
+                        kind: .database
                     ))
                 } else if isCanvasFolder(at: fullPath) {
                     // Canvas folder - read display name from _canvas.json
@@ -107,10 +105,7 @@ class FileSystemService: ObservableObject {
                         name: canvasName,
                         path: fullPath,
                         isDirectory: false,
-                        isDatabase: false,
-                        isCanvas: true,
-                        icon: nil,
-                        children: nil
+                        kind: .canvas
                     ))
                 } else if isCompanionFolder(name, siblings: siblingNames) {
                     // Companion folder - skip, its contents are handled by the parent .md file
@@ -142,7 +137,7 @@ class FileSystemService: ObservableObject {
                     name: name,
                     path: fullPath,
                     isDirectory: false,
-                    isDatabase: isDbFile,
+                    kind: isDbFile ? .database : .page,
                     icon: icon,
                     children: children
                 ))
@@ -349,7 +344,7 @@ class FileSystemService: ObservableObject {
             .sorted()
             .map { name in
                 let path = (folder as NSString).appendingPathComponent(name)
-                return FileEntry(id: path, name: name, path: path, isDirectory: false, isDatabase: false)
+                return FileEntry(id: path, name: name, path: path, isDirectory: false)
             }
     }
 

@@ -11,9 +11,10 @@ struct BreadcrumbView: View {
                 HStack(spacing: 6) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         if index > 0 {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10))
+                            Text("/")
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.secondary.opacity(0.8))
+                                .padding(.horizontal, 1)
                         }
                         Button(action: { onNavigate(item) }) {
                             HStack(spacing: 4) {

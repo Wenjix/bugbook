@@ -172,7 +172,7 @@ public struct RowSerializer {
         case .number(let n): return n
         case .select(let s): return s
         case .multiSelect(let arr): return arr
-        case .date(let s): return s
+        case .date(let s): return DatabaseDateValue.decode(from: s)?.sortKey ?? s
         case .checkbox(let b): return b
         case .url(let s): return s
         case .email(let s): return s

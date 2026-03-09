@@ -1,6 +1,10 @@
 import SwiftUI
 import AppKit
 
+enum EditorTypography {
+    static let bodyFontSize: CGFloat = 16
+}
+
 /// NSViewRepresentable wrapping NSTextView for per-block text editing.
 /// Handles keyboard intercepts for block splitting, merging, and navigation.
 /// Supports rich text with WYSIWYG inline formatting (bold, italic, code, strikethrough, links).
@@ -8,7 +12,7 @@ struct BlockTextView: NSViewRepresentable {
     @ObservedObject var document: BlockDocument
     let blockId: UUID
     var isMultiline: Bool = false
-    var font: NSFont = .systemFont(ofSize: 16)
+    var font: NSFont = .systemFont(ofSize: EditorTypography.bodyFontSize)
     var textColor: NSColor = .labelColor
     var placeholder: String? = nil
     var onTextChange: (() -> Void)? = nil
@@ -63,6 +67,9 @@ struct BlockTextView: NSViewRepresentable {
         let coordinator = context.coordinator
         textView.onBecomeFirstResponder = { [weak coordinator] in
             coordinator?.handleBecomeFirstResponder()
+        }
+        textView.onResignFirstResponder = { [weak coordinator] in
+            coordinator?.handleResignFirstResponder()
         }
         textView.formatBoldAction = { [weak coordinator] in
             coordinator?.toggleBold()
@@ -190,7 +197,7 @@ struct BlockTextView: NSViewRepresentable {
         let rect = layoutManager.usedRect(for: textContainer)
         let insets = textView.textContainerInset.height * 2
         // Use font-based minimum so empty headings aren't squished to 24px
-        let fontSize = textView.font?.pointSize ?? 16
+        let fontSize = textView.font?.pointSize ?? EditorTypography.bodyFontSize
         let fontBasedMin = ceil(fontSize * 1.4) + insets
         let minHeight = max(24, fontBasedMin)
         let newHeight = max(ceil(rect.height) + insets, minHeight)
@@ -242,12 +249,30 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
+        func handleResignFirstResponder() {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard self.parent.document.selectionBlockId == self.parent.blockId else { return }
+                self.parent.document.selectionRect = nil
+                self.parent.document.selectionBlockId = nil
+            }
+        }
+
         // MARK: - Block Drag Selection
 
         func startBlockDragSelection() {
             let anchorId = parent.blockId
-            parent.document.blockSelectionAnchor = anchorId
-            parent.document.selectedBlockIds = [anchorId]
+            parent.document.beginBlockSelectionDrag(from: anchorId)
+            parent.document.selectionRect = nil
+            parent.document.selectionBlockId = nil
+            if let textView {
+                let caret = NSRange(location: textView.selectedRange().location, length: 0)
+                withProgrammaticViewUpdate {
+                    if textView.selectedRange() != caret {
+                        textView.setSelectedRange(caret)
+                    }
+                }
+            }
 
             dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
                 guard let self = self else { return event }
@@ -259,8 +284,7 @@ struct BlockTextView: NSViewRepresentable {
 
                 // Hit test to find which block is under the mouse
                 let point = event.locationInWindow
-                if let window = event.window,
-                   let targetId = BlockNSTextView.blockId(atWindowPoint: point, in: window) {
+                if let targetId = self.parent.document.blockId(atWindowPoint: point) {
                     self.parent.document.selectBlockRange(from: anchorId, to: targetId)
                 } else if let contentView = event.window?.contentView {
                     let converted = contentView.convert(point, from: nil)
@@ -286,9 +310,10 @@ struct BlockTextView: NSViewRepresentable {
                 NSEvent.removeMonitor(monitor)
                 dragMonitor = nil
             }
-            parent.document.blockSelectionAnchor = nil
+            parent.document.endBlockSelectionDrag()
             if let tv = textView as? BlockNSTextView {
                 tv.isInBlockSelection = false
+                tv.window?.makeFirstResponder(tv)
             }
         }
 
@@ -645,7 +670,8 @@ struct BlockTextView: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             // Delete all selected blocks (e.g. Cmd+A then Backspace)
-            if commandSelector == #selector(NSResponder.deleteBackward(_:)),
+            if (commandSelector == #selector(NSResponder.deleteBackward(_:))
+                || commandSelector == #selector(NSResponder.deleteForward(_:))),
                !parent.document.selectedBlockIds.isEmpty {
                 parent.document.deleteSelectedBlocks()
                 return true
@@ -824,6 +850,7 @@ class BlockNSTextView: NSTextView {
     private static let liveTextViews = NSHashTable<BlockNSTextView>.weakObjects()
 
     var onBecomeFirstResponder: (() -> Void)?
+    var onResignFirstResponder: (() -> Void)?
     var placeholderString: String?
     var placeholderFont: NSFont?
 
@@ -863,7 +890,7 @@ class BlockNSTextView: NSTextView {
         super.draw(dirtyRect)
 
         if string.isEmpty, let placeholder = placeholderString {
-            let font = placeholderFont ?? .systemFont(ofSize: 16)
+            let font = placeholderFont ?? .systemFont(ofSize: EditorTypography.bodyFontSize)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: NSColor.placeholderTextColor
@@ -883,13 +910,16 @@ class BlockNSTextView: NSTextView {
         return result
     }
 
-    override func selectAll(_ sender: Any?) {
-        // If all text already selected (or empty), escalate to select all blocks
-        if string.isEmpty || selectedRange().length == string.count {
-            selectAllBlocksAction?()
-            return
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        if result {
+            onResignFirstResponder?()
         }
-        super.selectAll(sender)
+        return result
+    }
+
+    override func selectAll(_ sender: Any?) {
+        selectAllBlocksAction?()
     }
 
     // Reject all external drops to prevent UUID string insertion from drag-and-drop

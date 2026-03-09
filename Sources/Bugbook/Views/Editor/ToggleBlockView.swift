@@ -30,7 +30,7 @@ struct ToggleBlockView: View {
                 BlockTextView(
                     document: document,
                     blockId: block.id,
-                    font: .systemFont(ofSize: 15),
+                    font: .systemFont(ofSize: EditorTypography.bodyFontSize),
                     textColor: .labelColor,
                     placeholder: "Toggle heading",
                     onTextChange: onTyping,

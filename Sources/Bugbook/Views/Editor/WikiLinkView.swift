@@ -10,19 +10,12 @@ struct WikiLinkView: View {
             HStack(spacing: 4) {
                 iconView
                 Text(pageName)
-                    .font(.system(size: 15))
+                    .font(.system(size: EditorTypography.bodyFontSize))
                     .foregroundColor(.primary)
                     .underline()
             }
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            if inside {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
     }
 
     @ViewBuilder

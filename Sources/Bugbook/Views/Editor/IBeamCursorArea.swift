@@ -2,48 +2,63 @@ import SwiftUI
 import AppKit
 
 /// Tracks whether cursor should be overridden to I-beam.
-/// Grip dots, resize handles, and other special areas set `suppressIBeam` to show their own cursor.
+/// Grip dots, resize handles, and other special areas call `setOverride` to show their own cursor.
 enum EditorCursorState {
-    @MainActor static var suppressIBeam = false
+    enum Override: Equatable {
+        case openHand
+        case resizeLeftRight
+
+        var cursor: NSCursor {
+            switch self {
+            case .openHand:
+                return .openHand
+            case .resizeLeftRight:
+                return .resizeLeftRight
+            }
+        }
+    }
+
+    @MainActor private static var isInsideEditor = false
+    @MainActor private static var activeOverride: Override?
+
+    @MainActor static func setEditorHover(_ isHovering: Bool) {
+        isInsideEditor = isHovering
+        applyCursor()
+    }
+
+    @MainActor static func setOverride(_ override: Override?) {
+        activeOverride = override
+        applyCursor()
+    }
+
+    @MainActor private static func applyCursor() {
+        if let activeOverride {
+            activeOverride.cursor.set()
+        } else if isInsideEditor {
+            NSCursor.iBeam.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
 }
 
-/// A ViewModifier that uses a local event monitor to enforce I-beam cursor
-/// within the modified view's bounds. Overrides SwiftUI's default arrow cursor
-/// on buttons, tap gesture areas, etc.
+/// Tracks hover inside the editor and keeps the cursor on I-beam unless a
+/// specific child interaction overrides it.
 struct EditorIBeamCursor: ViewModifier {
-    @State private var isHovering = false
-    @State private var monitor: Any?
-
     func body(content: Content) -> some View {
         content
-            .onHover { hovering in
-                if hovering && !isHovering {
-                    isHovering = true
-                    startMonitor()
-                } else if !hovering && isHovering {
-                    isHovering = false
-                    stopMonitor()
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(_):
+                    EditorCursorState.setEditorHover(true)
+                case .ended:
+                    EditorCursorState.setEditorHover(false)
                 }
             }
-    }
-
-    private func startMonitor() {
-        stopMonitor()
-        NSCursor.iBeam.push()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseEntered, .cursorUpdate]) { event in
-            if !EditorCursorState.suppressIBeam && NSCursor.current != .iBeam {
-                NSCursor.iBeam.set()
+            .onDisappear {
+                EditorCursorState.setEditorHover(false)
+                EditorCursorState.setOverride(nil)
             }
-            return event
-        }
-    }
-
-    private func stopMonitor() {
-        if let monitor = monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
-        NSCursor.pop()
     }
 }
 

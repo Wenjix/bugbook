@@ -9,10 +9,15 @@ struct InlineRowPeekPanel: View {
     var onClose: () -> Void
     var onOpenFullPage: () -> Void
 
-    @StateObject private var dbService = DatabaseService()
-    @State private var schema: DatabaseSchema?
-    @State private var row: DatabaseRow?
-    @State private var saveTask: Task<Void, Never>?
+    @StateObject private var vm: DatabaseRowViewModel
+
+    init(dbPath: String, rowId: String, onClose: @escaping () -> Void, onOpenFullPage: @escaping () -> Void) {
+        self.dbPath = dbPath
+        self.rowId = rowId
+        self.onClose = onClose
+        self.onOpenFullPage = onOpenFullPage
+        _vm = StateObject(wrappedValue: DatabaseRowViewModel(dbPath: dbPath, origin: "peekPanel"))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -62,26 +67,8 @@ struct InlineRowPeekPanel: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
-            if let schema = schema, row != nil {
-                RowPageView(
-                    schema: schema,
-                    row: Binding(
-                        get: { row! },
-                        set: { newRow in
-                            row = newRow
-                            debouncedSave(newRow, schema: schema)
-                        }
-                    ),
-                    onSave: { newRow in
-                        row = newRow
-                        debouncedSave(newRow, schema: schema)
-                    },
-                    onBack: { onClose() },
-                    onAddOption: { propId, option in addOption(propId, option: option) },
-                    onUpdateOption: { propId, optId, name, color in updateOption(propId, optId: optId, name: name, color: color) },
-                    onDeleteOption: { propId, optId in deleteOption(propId, optId: optId) },
-                    showBreadcrumb: false
-                )
+            if vm.schema != nil, vm.row != nil {
+                vm.rowPageView(onBack: { onClose() })
             } else {
                 Spacer()
                 HStack {
@@ -93,76 +80,19 @@ struct InlineRowPeekPanel: View {
             }
         }
         .background(Color.fallbackEditorBg)
-        .task { loadData() }
-        .onChange(of: rowId) { _, _ in loadData() }
-        .onDisappear {
-            saveTask?.cancel()
-            // Flush pending save synchronously
-            if let currentRow = row, let currentSchema = schema {
-                try? dbService.saveRow(currentRow, schema: currentSchema, at: dbPath)
-            }
+        .overlay {
+            Rectangle()
+                .stroke(Color.fallbackChromeBorder, lineWidth: 1)
+                .allowsHitTesting(false)
         }
-    }
-
-    private func loadData() {
-        do {
-            let (loadedSchema, loadedRows) = try dbService.loadDatabase(at: dbPath)
-            schema = loadedSchema
-            row = loadedRows.first(where: { $0.id == rowId })
-        } catch {
-            // Silently fail — panel will show loading state
-        }
-    }
-
-    private func debouncedSave(_ row: DatabaseRow, schema: DatabaseSchema) {
-        saveTask?.cancel()
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
-            try? dbService.saveRow(row, schema: schema, at: dbPath)
-            NotificationCenter.default.post(
-                name: .databaseDidChange,
-                object: nil,
-                userInfo: ["dbPath": dbPath, "origin": "peekPanel"]
-            )
-        }
+        .task { vm.loadData(rowId: rowId) }
+        .onChange(of: rowId) { _, _ in vm.loadData(rowId: rowId) }
+        .onDisappear { vm.flushAndCancel() }
     }
 
     private func deleteCurrentRow() {
-        guard let currentRow = row else { return }
-        try? dbService.deleteRow(currentRow.id, in: dbPath)
+        guard vm.row != nil else { return }
+        vm.deleteRow(vm.row!.id)
         onClose()
-        NotificationCenter.default.post(
-            name: .databaseDidChange,
-            object: nil,
-            userInfo: ["dbPath": dbPath, "origin": "peekPanel"]
-        )
-    }
-
-    private func addOption(_ propertyId: String, option: SelectOption) {
-        guard var s = schema else { return }
-        Task {
-            try? dbService.addSelectOption(option, toProperty: propertyId, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func updateOption(_ propertyId: String, optId: String, name: String?, color: String?) {
-        guard var s = schema else { return }
-        Task {
-            try? dbService.updateSelectOption(optId, name: name, color: color, inProperty: propertyId, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func deleteOption(_ propertyId: String, optId: String) {
-        guard var s = schema else { return }
-        var rows: [DatabaseRow] = []
-        if let r = row { rows = [r] }
-        Task {
-            try? dbService.deleteSelectOption(optId, fromProperty: propertyId, in: &s, rows: &rows, at: dbPath)
-            schema = s
-            if let updatedRow = rows.first { row = updatedRow }
-        }
     }
 }

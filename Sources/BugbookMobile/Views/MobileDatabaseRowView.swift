@@ -189,17 +189,21 @@ struct MobileDatabaseRowView: View {
     private func dateBinding(for propId: String) -> Binding<Date> {
         Binding<Date>(
             get: {
-                if case .date(let s) = properties[propId] {
-                    let formatter = ISO8601DateFormatter()
-                    formatter.formatOptions = [.withFullDate]
-                    return formatter.date(from: s) ?? Date()
+                if case .date(let raw) = properties[propId] {
+                    return DatabaseDateValue.decode(from: raw)?.startDate ?? Date()
                 }
                 return Date()
             },
             set: {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withFullDate]
-                properties[propId] = .date(formatter.string(from: $0))
+                let existing = {
+                    if case .date(let raw) = properties[propId] {
+                        return DatabaseDateValue.decode(from: raw)
+                    }
+                    return nil
+                }()
+                let updated = (existing ?? DatabaseDateValue(start: DatabaseDateValue.canonicalDayString(from: $0)))
+                    .settingStart($0)
+                properties[propId] = .date(updated.rawValue)
             }
         )
     }

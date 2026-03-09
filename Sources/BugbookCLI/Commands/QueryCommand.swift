@@ -207,7 +207,11 @@ private func comparePropertyValue(_ raw: Any?, to value: PropertyValue) -> Int {
     case .select(let s):
         if let rawStr = raw as? String { return rawStr == s ? 0 : (rawStr < s ? -1 : 1) }
     case .date(let s):
-        if let rawStr = raw as? String { return rawStr.compare(s).rawValue }
+        if let rawStr = raw as? String {
+            let rawKey = DatabaseDateValue.decode(from: rawStr)?.sortKey ?? rawStr
+            let compareKey = DatabaseDateValue.decode(from: s)?.sortKey ?? s
+            return rawKey.compare(compareKey).rawValue
+        }
     case .checkbox(let b):
         if let rawBool = raw as? Bool { return rawBool == b ? 0 : -1 }
     case .relation(let s):

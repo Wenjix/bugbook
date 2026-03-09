@@ -522,7 +522,12 @@ class DatabaseService: ObservableObject {
             return !values.isEmpty
         case .relationMany(let values):
             return !values.isEmpty
-        case .select(let value), .date(let value), .url(let value), .email(let value), .relation(let value):
+        case .select(let value), .url(let value), .email(let value), .relation(let value):
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .date(let value):
+            if let parsed = DatabaseDateValue.decode(from: value) {
+                return !parsed.start.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
             return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .number:
             return true
@@ -745,7 +750,7 @@ class DatabaseService: ObservableObject {
         case .number(let n): return n
         case .select(let s): return s
         case .multiSelect(let arr): return arr
-        case .date(let s): return s
+        case .date(let s): return DatabaseDateValue.decode(from: s)?.sortKey ?? s
         case .checkbox(let b): return b
         case .url(let s): return s
         case .email(let s): return s

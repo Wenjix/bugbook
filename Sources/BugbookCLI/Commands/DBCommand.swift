@@ -6,7 +6,7 @@ struct DB: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "db",
         abstract: "Database management commands",
-        subcommands: [List.self, Schema.self, CreateDB.self, DBView.self]
+        subcommands: [List.self, Schema.self, CreateDB.self, Move.self, DBView.self]
     )
 
     struct List: ParsableCommand {
@@ -21,12 +21,17 @@ struct DB: ParsableCommand {
             let store = DatabaseStore()
             let databases = store.listDatabases(in: options.resolvedWorkspace)
             let output: [[String: Any]] = databases.map { db in
-                [
+                var json: [String: Any] = [
                     "id": db.id,
                     "name": db.name,
                     "path": db.path,
+                    "relative_path": relativePath(from: db.path, workspace: options.resolvedWorkspace),
                     "row_count": db.rowCount,
                 ]
+                if let parentPage = databaseParentPageInfo(for: db.path, workspace: options.resolvedWorkspace) {
+                    json["parent_page"] = parentPage
+                }
+                return json
             }
             try outputJSON(output)
         }
@@ -87,6 +92,38 @@ struct DB: ParsableCommand {
             try store.saveSchema(dbSchema, at: path)
 
             try outputJSON(["path": path, "id": dbSchema.id, "name": dbSchema.name])
+        }
+    }
+
+    struct Move: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "move",
+            abstract: "Move a database to a new directory or page companion folder and retarget embeds"
+        )
+
+        @OptionGroup var options: Bugbook.Options
+
+        @Argument(help: "Database name, ID, or path")
+        var db: String
+
+        @Option(help: "Relative or absolute workspace directory to move the database into")
+        var directory: String?
+
+        @Option(name: .long, help: "Move the database under this page's companion folder")
+        var page: String?
+
+        @Flag(name: .long, help: "Preview the move without writing any files")
+        var dryRun = false
+
+        func run() throws {
+            let output = try moveWorkspaceDatabase(
+                query: db,
+                workspace: options.resolvedWorkspace,
+                destinationDirectory: directory,
+                destinationPageQuery: page,
+                dryRun: dryRun
+            )
+            try outputJSON(output)
         }
     }
 }

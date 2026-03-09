@@ -1,0 +1,524 @@
+import SwiftUI
+import BugbookCore
+
+@MainActor
+final class DatabaseViewState: ObservableObject {
+    let dbPath: String
+    let dbService = DatabaseService()
+    let notificationOrigin = UUID().uuidString
+
+    @Published var schema: DatabaseSchema?
+    @Published var rows: [DatabaseRow] = []
+    @Published var activeViewId: String = ""
+    @Published var error: String?
+    @Published var editingTitle: String = ""
+
+    private var titleSaveTask: Task<Void, Never>?
+    private var rowSaveTask: Task<Void, Never>?
+    private var pendingRowSaves: [String: DatabaseRow] = [:]
+    private var loadTask: Task<Void, Never>?
+
+    var activeView: ViewConfig? {
+        schema?.views.first(where: { $0.id == activeViewId })
+    }
+
+    init(dbPath: String) {
+        self.dbPath = dbPath
+    }
+
+    // MARK: - Filtered/Sorted Rows
+
+    func filteredAndSortedRows(extraFilter: ((DatabaseRow) -> Bool)? = nil) -> [DatabaseRow] {
+        guard let view = activeView else { return rows }
+        var result = applyManualRowOrder(view.manualRowOrder, to: rows)
+
+        if let extraFilter = extraFilter {
+            result = result.filter(extraFilter)
+        }
+
+        for filter in view.filters {
+            result = result.filter { row in
+                let val = row.properties[filter.property] ?? .empty
+                return matchesFilter(val, filter: filter)
+            }
+        }
+
+        for sort in view.sorts.reversed() {
+            result.sort { a, b in
+                let va = a.properties[sort.property] ?? .empty
+                let vb = b.properties[sort.property] ?? .empty
+                let cmp = compareValues(va, vb)
+                return sort.ascending ? cmp == .orderedAscending : cmp == .orderedDescending
+            }
+        }
+
+        return result
+    }
+
+    // MARK: - Data Loading
+
+    func loadData(onLoaded: (() -> Void)? = nil) {
+        loadTask?.cancel()
+        error = nil
+
+        let path = dbPath
+        loadTask = Task {
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
+                do {
+                    return .success(try DatabaseService().loadDatabase(at: path))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            guard !Task.isCancelled else { return }
+
+            switch result {
+            case .success(let (loadedSchema, loadedRows)):
+                schema = loadedSchema
+                rows = loadedRows
+                if editingTitle.isEmpty || editingTitle != loadedSchema.name {
+                    editingTitle = loadedSchema.name
+                }
+                if activeViewId.isEmpty || !loadedSchema.views.contains(where: { $0.id == activeViewId }) {
+                    activeViewId = loadedSchema.defaultView
+                }
+                onLoaded?()
+            case .failure(let error):
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Row Operations
+
+    func saveRow(_ row: DatabaseRow) {
+        guard schema != nil else { return }
+        if let idx = rows.firstIndex(where: { $0.id == row.id }) {
+            rows[idx] = row
+        }
+        pendingRowSaves[row.id] = row
+        schedulePendingRowSave()
+    }
+
+    private func schedulePendingRowSave() {
+        rowSaveTask?.cancel()
+        rowSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            flushPendingRowSaves()
+        }
+    }
+
+    func flushPendingRowSaves() {
+        guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
+        let rowsToPersist = Array(pendingRowSaves.values)
+        pendingRowSaves.removeAll()
+
+        Task {
+            for row in rowsToPersist {
+                try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
+            }
+            postChangeNotification()
+        }
+    }
+
+    func flushPendingRowSavesSynchronously() {
+        guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
+        let rowsToPersist = Array(pendingRowSaves.values)
+        pendingRowSaves.removeAll()
+
+        for row in rowsToPersist {
+            try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
+        }
+        postChangeNotification()
+    }
+
+    func deleteRow(_ row: DatabaseRow) {
+        guard let schema = schema else { return }
+        pendingRowSaves.removeValue(forKey: row.id)
+        rows.removeAll { $0.id == row.id }
+        Task {
+            try? dbService.deleteRow(row.id, in: dbPath)
+            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
+    @discardableResult
+    func createRow() throws -> DatabaseRow {
+        guard let s = schema else {
+            throw NSError(domain: "Bugbook.Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "Schema unavailable"])
+        }
+        let newRow = try dbService.createRow(in: dbPath, schema: s)
+        rows.append(newRow)
+        postChangeNotification()
+        return newRow
+    }
+
+    @discardableResult
+    func createRowWithDate(_ dateStr: String, propertyId: String?) throws -> DatabaseRow {
+        let (preparedSchema, datePropertyId) = try ensureCalendarDateProperty(preferredPropertyId: propertyId)
+        var newRow = try dbService.createRow(in: dbPath, schema: preparedSchema)
+        newRow.properties[datePropertyId] = .date(
+            DatabaseDateValue(start: dateStr).rawValue
+        )
+        try dbService.saveRow(newRow, schema: preparedSchema, at: dbPath)
+        self.schema = preparedSchema
+        if let idx = rows.firstIndex(where: { $0.id == newRow.id }) {
+            rows[idx] = newRow
+        } else {
+            rows.append(newRow)
+        }
+        postChangeNotification()
+        return newRow
+    }
+
+    func requestRowModal(rowId: String, autoFocusTitle: Bool = false) {
+        requestDatabaseRowModal(dbPath: dbPath, rowId: rowId, autoFocusTitle: autoFocusTitle)
+    }
+
+    // MARK: - Notifications
+
+    func postChangeNotification() {
+        postDatabaseChangeNotification(dbPath: dbPath, origin: notificationOrigin)
+    }
+
+    // MARK: - Property Operations
+
+    func addSelectOption(_ propertyId: String, option: SelectOption) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.addSelectOption(option, toProperty: propertyId, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func updateSelectOption(_ propertyId: String, optionId: String, name: String?, color: String?) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.updateSelectOption(optionId, name: name, color: color, inProperty: propertyId, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func deleteSelectOption(_ propertyId: String, optionId: String) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.deleteSelectOption(optionId, fromProperty: propertyId, in: &s, rows: &rows, at: dbPath)
+            schema = s
+        }
+    }
+
+    func renameProperty(_ propertyId: String, to newName: String) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.renameProperty(propertyId, to: newName, in: &s, rows: &rows, at: dbPath)
+            schema = s
+            postChangeNotification()
+        }
+    }
+
+    func deleteProperty(_ propertyId: String) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.deleteProperty(propertyId, from: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func changePropertyType(_ propertyId: String, to newType: PropertyType) {
+        guard var s = schema else { return }
+        Task {
+            try? dbService.changePropertyType(propertyId, to: newType, in: &s, rows: &rows, at: dbPath)
+            schema = s
+        }
+    }
+
+    func addPropertyFromTable(type: PropertyType) {
+        guard var s = schema else { return }
+        let config: PropertyConfig? = (type == .select || type == .multiSelect) ? PropertyConfig(options: []) : nil
+        let prop = PropertyDefinition(
+            id: "prop_\(UUID().uuidString)",
+            name: "New \(type.rawValue.capitalized)",
+            type: type,
+            config: config
+        )
+        Task {
+            try? dbService.addProperty(prop, to: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func toggleColumnVisibility(_ propertyId: String) {
+        guard var s = schema, var view = activeView else { return }
+        var hidden = view.hiddenColumns ?? []
+        if hidden.contains(propertyId) {
+            hidden.removeAll { $0 == propertyId }
+        } else {
+            hidden.append(propertyId)
+        }
+        view.hiddenColumns = hidden
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    // MARK: - View Operations
+
+    func resizeColumn(_ propertyId: String, to width: CGFloat) {
+        guard var s = schema, var view = activeView else { return }
+        if view.columnWidths == nil { view.columnWidths = [:] }
+        view.columnWidths?[propertyId] = Double(width)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func reorderRows(draggedId: String, before targetId: String?, visibleRowIds: [String]) {
+        guard var s = schema, var view = activeView else { return }
+        view.manualRowOrder = reorderedManualRowOrder(
+            currentOrder: view.manualRowOrder,
+            allRows: rows,
+            visibleRowIds: visibleRowIds,
+            draggedId: draggedId,
+            targetId: targetId
+        )
+        if let viewIndex = s.views.firstIndex(where: { $0.id == view.id }) {
+            s.views[viewIndex] = view
+        }
+        schema = s
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+        }
+    }
+
+    func toggleWrapCellText() {
+        guard var s = schema, var view = activeView, view.type == .table else { return }
+        view.wrapCellText = !(view.wrapCellText ?? false)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func updateGroupBy(_ propertyId: String) {
+        guard var s = schema, var view = activeView else { return }
+        view.groupBy = propertyId
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func addView(type: ViewType) {
+        guard var s = schema else { return }
+
+        if type == .kanban && s.properties.first(where: { $0.type == .select }) == nil {
+            let statusProp = PropertyDefinition(
+                id: "prop_status_\(UUID().uuidString.prefix(6).lowercased())",
+                name: "Status",
+                type: .select,
+                config: PropertyConfig(options: [
+                    SelectOption(id: "opt_not_started", name: "Not started", color: "gray"),
+                    SelectOption(id: "opt_in_progress", name: "In progress", color: "blue"),
+                    SelectOption(id: "opt_done", name: "Done", color: "green")
+                ])
+            )
+            Task {
+                try? dbService.addProperty(statusProp, to: &s, at: dbPath)
+                let view = ViewConfig(
+                    id: "view_\(UUID().uuidString)",
+                    name: type.rawValue.capitalized,
+                    type: type,
+                    sorts: [],
+                    filters: [],
+                    groupBy: statusProp.id
+                )
+                try? dbService.addView(view, to: &s, at: dbPath)
+                self.schema = s
+                activeViewId = view.id
+            }
+            return
+        }
+
+        let calendarDatePropertyId: String?
+        if type == .calendar {
+            calendarDatePropertyId = try? Bugbook.ensureCalendarDateProperty(
+                schema: &s, activeViewId: "", preferredPropertyId: nil,
+                dbService: dbService, dbPath: dbPath
+            )
+        } else {
+            calendarDatePropertyId = nil
+        }
+
+        let view = ViewConfig(
+            id: "view_\(UUID().uuidString)",
+            name: type.rawValue.capitalized,
+            type: type,
+            sorts: [],
+            filters: [],
+            groupBy: type == .kanban ? s.properties.first(where: { $0.type == .select })?.id : nil,
+            dateProperty: calendarDatePropertyId
+        )
+        Task {
+            try? dbService.addView(view, to: &s, at: dbPath)
+            self.schema = s
+            activeViewId = view.id
+        }
+    }
+
+    func deleteView(_ view: ViewConfig) {
+        guard var s = schema, s.views.count > 1 else { return }
+        s.views.removeAll { $0.id == view.id }
+        if activeViewId == view.id {
+            activeViewId = s.views.first?.id ?? ""
+        }
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            self.schema = s
+            postChangeNotification()
+        }
+    }
+
+    func persistActiveView(_ viewId: String) {
+        guard var s = schema, s.defaultView != viewId else { return }
+        Task {
+            try? dbService.setDefaultView(viewId, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    // MARK: - Filter/Sort
+
+    func addFilter(propertyId: String) {
+        guard var s = schema, var view = activeView else { return }
+        let prop = s.properties.first(where: { $0.id == propertyId })
+        let defaultOp = (prop?.type == .checkbox) ? "equals" : "is_not_empty"
+        let defaultValue = (prop?.type == .checkbox) ? "true" : ""
+        let filter = FilterConfig(property: propertyId, op: defaultOp, value: defaultValue)
+        view.filters.append(filter)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func updateFilter(_ filterId: String, property: String?, op: String?, value: String?) {
+        guard var s = schema, var view = activeView,
+              let idx = view.filters.firstIndex(where: { $0.id == filterId }) else { return }
+        if let property = property { view.filters[idx].property = property }
+        if let op = op { view.filters[idx].op = op }
+        if let value = value { view.filters[idx].value = value }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func removeFilter(_ filterId: String) {
+        guard var s = schema, var view = activeView else { return }
+        view.filters.removeAll { $0.id == filterId }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func addSort(propertyId: String, ascending: Bool) {
+        guard var s = schema, var view = activeView else { return }
+        let sort = SortConfig(property: propertyId, direction: ascending ? "asc" : "desc")
+        view.sorts.append(sort)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func updateSort(_ sortId: String, property: String?, ascending: Bool?) {
+        guard var s = schema, var view = activeView,
+              let idx = view.sorts.firstIndex(where: { $0.id == sortId }) else { return }
+        if let property = property { view.sorts[idx].property = property }
+        if let ascending = ascending { view.sorts[idx].direction = ascending ? "asc" : "desc" }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func removeSort(_ sortId: String) {
+        guard var s = schema, var view = activeView else { return }
+        view.sorts.removeAll { $0.id == sortId }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    // MARK: - Title
+
+    func scheduleTitleSave() {
+        titleSaveTask?.cancel()
+        titleSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            persistTitle()
+        }
+    }
+
+    func persistTitle() {
+        guard var s = schema else { return }
+        let newName = editingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty else {
+            editingTitle = s.name
+            return
+        }
+        guard newName != s.name else { return }
+        s.name = newName
+        schema = s
+        editingTitle = newName
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+            NotificationCenter.default.post(
+                name: .databaseNameDidChange,
+                object: nil,
+                userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.newName: newName]
+            )
+        }
+    }
+
+    // MARK: - Lifecycle
+
+    func cancelAll() {
+        titleSaveTask?.cancel()
+        titleSaveTask = nil
+        rowSaveTask?.cancel()
+        rowSaveTask = nil
+        loadTask?.cancel()
+        loadTask = nil
+        flushPendingRowSavesSynchronously()
+    }
+
+    // MARK: - Helpers
+
+    func defaultViewConfig() -> ViewConfig {
+        defaultDatabaseViewConfig()
+    }
+
+    func ensureCalendarDateProperty(preferredPropertyId: String?) throws -> (DatabaseSchema, String) {
+        guard var currentSchema = schema else {
+            throw NSError(domain: "Bugbook.Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "Schema unavailable"])
+        }
+        let datePropertyId = try Bugbook.ensureCalendarDateProperty(
+            schema: &currentSchema,
+            activeViewId: activeViewId,
+            preferredPropertyId: preferredPropertyId,
+            dbService: dbService,
+            dbPath: dbPath
+        )
+        return (currentSchema, datePropertyId)
+    }
+}

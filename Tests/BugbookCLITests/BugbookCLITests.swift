@@ -571,6 +571,7 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertEqual(preview["dry_run"] as? Bool, true)
         XCTAssertEqual(preview["operation"] as? String, "compact")
         XCTAssertEqual(preview["changed"] as? Bool, true)
+        XCTAssertEqual(preview["empty_paragraphs_removed"] as? Int, 5)
         XCTAssertNil(preview["content"])
         XCTAssertNil(preview["body"])
 
@@ -582,6 +583,7 @@ final class BugbookCLITests: XCTestCase {
         )
 
         let body = try XCTUnwrap(updated["body"] as? String)
+        XCTAssertEqual(updated["empty_paragraphs_removed"] as? Int, 5)
         XCTAssertEqual(body, """
         # Compact Me
         Updated March 7, 2026
@@ -790,6 +792,214 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertTrue(raw.contains("<summary>Toggle Title</summary>"))
         XCTAssertTrue(raw.contains("Left column\n\n---\n\nRight column"))
         XCTAssertTrue(raw.contains("**Bugbook database:** Test Board"))
+    }
+
+    func testPageFormatReportSurfacesDowngradedCommonMarkLinks() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Source Note",
+                "--content-file", try writeTempFile(in: workspace, name: "source-note-report.md", contents: """
+                # Source Note
+                [[Target Note]]
+                [[Missing Note]]
+                [[Shared]]
+                """)
+            ])
+        )
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Target Note",
+                "--content-file", try writeTempFile(in: workspace, name: "target-note-report.md", contents: """
+                # Target Note
+                Linked target.
+                """)
+            ])
+        )
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Area/Shared",
+                "--content-file", try writeTempFile(in: workspace, name: "shared-area-report.md", contents: """
+                # Shared
+                First shared page.
+                """)
+            ])
+        )
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Elsewhere/Shared",
+                "--content-file", try writeTempFile(in: workspace, name: "shared-elsewhere-report.md", contents: """
+                # Shared
+                Second shared page.
+                """)
+            ])
+        )
+
+        let preview = try runJSON(
+            Page.Format.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Source Note",
+                "--style", "commonmark",
+                "--dry-run",
+                "--output", "summary",
+                "--report"
+            ])
+        )
+
+        XCTAssertEqual(preview["warning_count"] as? Int, 2)
+        let warnings = try XCTUnwrap(preview["warnings"] as? [[String: Any]])
+        XCTAssertEqual(warnings.count, 2)
+
+        let missing = try XCTUnwrap(warnings.first { ($0["page_name"] as? String) == "Missing Note" })
+        XCTAssertEqual(missing["kind"] as? String, "downgraded_page_link")
+        XCTAssertEqual(missing["block_id"] as? String, "path:2")
+        XCTAssertEqual(missing["reason"] as? String, "page_not_found")
+        XCTAssertNil(missing["matches"])
+
+        let ambiguous = try XCTUnwrap(warnings.first { ($0["page_name"] as? String) == "Shared" })
+        XCTAssertEqual(ambiguous["block_id"] as? String, "path:3")
+        XCTAssertEqual(ambiguous["reason"] as? String, "ambiguous_page_reference")
+        let matches = try XCTUnwrap(ambiguous["matches"] as? [String])
+        XCTAssertEqual(matches, ["Area/Shared.md", "Elsewhere/Shared.md"])
+    }
+
+    func testPageFormatReportCanConfirmNoWarnings() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Clean Links",
+                "--content-file", try writeTempFile(in: workspace, name: "clean-links.md", contents: """
+                # Clean Links
+                [[Target Note]]
+                """)
+            ])
+        )
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Target Note",
+                "--content-file", try writeTempFile(in: workspace, name: "clean-target.md", contents: """
+                # Target Note
+                Linked target.
+                """)
+            ])
+        )
+
+        let preview = try runJSON(
+            Page.Format.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Clean Links",
+                "--style", "commonmark",
+                "--dry-run",
+                "--output", "summary",
+                "--report"
+            ])
+        )
+
+        XCTAssertEqual(preview["warning_count"] as? Int, 0)
+        let warnings = try XCTUnwrap(preview["warnings"] as? [[String: Any]])
+        XCTAssertTrue(warnings.isEmpty)
+    }
+
+    func testPageFormatFailOnWarningsRejectsDowngradedCommonMarkExport() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Source Note",
+                "--content-file", try writeTempFile(in: workspace, name: "source-note-fail.md", contents: """
+                # Source Note
+                [[Missing Note]]
+                """)
+            ])
+        )
+
+        var format = try Page.Format.parseAsRoot([
+            "--workspace", workspace,
+            "Notes/Source Note",
+            "--style", "commonmark",
+            "--fail-on-warnings"
+        ])
+
+        XCTAssertThrowsError(try format.run()) { error in
+            guard case CLIError.operationFailed(let message) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertTrue(message.contains("produced 1 warning"))
+            XCTAssertTrue(message.contains("Missing Note"))
+            XCTAssertTrue(message.contains("--report"))
+        }
+
+        let raw = try captureStandardOutput {
+            var command = try Page.Get.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Source Note",
+                "--raw"
+            ])
+            try command.run()
+        }
+        XCTAssertTrue(raw.contains("[[Missing Note]]"))
+    }
+
+    func testPageFormatFailOnWarningsAllowsCleanCommonMarkExport() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Clean Source",
+                "--content-file", try writeTempFile(in: workspace, name: "clean-source-fail.md", contents: """
+                # Clean Source
+                [[Target Note]]
+                """)
+            ])
+        )
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Target Note",
+                "--content-file", try writeTempFile(in: workspace, name: "clean-target-fail.md", contents: """
+                # Target Note
+                Linked target.
+                """)
+            ])
+        )
+
+        let result = try runJSON(
+            Page.Format.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Clean Source",
+                "--style", "commonmark",
+                "--fail-on-warnings",
+                "--output", "summary"
+            ])
+        )
+
+        XCTAssertEqual(result["format_style"] as? String, "commonmark")
+        XCTAssertEqual(result["changed"] as? Bool, true)
+
+        let raw = try captureStandardOutput {
+            var command = try Page.Get.parseAsRoot([
+                "--workspace", workspace,
+                "Notes/Clean Source",
+                "--raw"
+            ])
+            try command.run()
+        }
+        XCTAssertTrue(raw.contains("[Target Note](<Target Note.md>)"))
     }
 
     func testPageFormatCommonMarkResolvesPageLinksToPortableMarkdownLinks() throws {
@@ -1683,6 +1893,174 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertEqual(row.properties["prop_status"], .multiSelect(["opt_done"]))
     }
 
+    func testDatabaseMoveDryRunPreviewsPageReparent() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--title", "Agent Tickets",
+            ])
+        )
+
+        _ = try runJSON(
+            Board.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--directory", "Bugbook Team",
+                "--embed-in", "Agent Tickets",
+            ])
+        )
+
+        let preview = try runJSON(
+            DB.Move.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--page", "Agent Tickets",
+                "--dry-run",
+            ])
+        )
+
+        XCTAssertEqual(preview["dry_run"] as? Bool, true)
+        XCTAssertEqual(preview["planned_move"] as? Bool, true)
+        XCTAssertEqual(preview["old_relative_path"] as? String, "Bugbook Team/Agent Tickets")
+        XCTAssertEqual(preview["new_relative_path"] as? String, "Agent Tickets/Agent Tickets")
+        XCTAssertEqual(preview["embed_update_count"] as? Int, 1)
+
+        let pageRaw = try captureStandardOutput {
+            var command = try Page.Get.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--raw",
+            ])
+            try command.run()
+        }
+        XCTAssertTrue(pageRaw.contains("Bugbook Team/Agent Tickets"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: (workspace as NSString).appendingPathComponent("Agent Tickets/Agent Tickets/_schema.json")))
+    }
+
+    func testDatabaseMoveCanReparentUnderPageAndRetargetEmbeds() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--title", "Agent Tickets",
+            ])
+        )
+
+        _ = try runJSON(
+            Board.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--directory", "Bugbook Team",
+                "--embed-in", "Agent Tickets",
+            ])
+        )
+
+        let moved = try runJSON(
+            DB.Move.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--page", "Agent Tickets",
+            ])
+        )
+
+        XCTAssertEqual(moved["moved"] as? Bool, true)
+        XCTAssertEqual(moved["old_relative_path"] as? String, "Bugbook Team/Agent Tickets")
+        XCTAssertEqual(moved["new_relative_path"] as? String, "Agent Tickets/Agent Tickets")
+        XCTAssertEqual(moved["embed_update_count"] as? Int, 1)
+        let destinationPage = try XCTUnwrap(moved["destination_page"] as? [String: Any])
+        XCTAssertEqual(destinationPage["relative_path"] as? String, "Agent Tickets.md")
+
+        let schemaPath = (workspace as NSString).appendingPathComponent("Agent Tickets/Agent Tickets/_schema.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: schemaPath))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: (workspace as NSString).appendingPathComponent("Bugbook Team")))
+
+        let pageRaw = try captureStandardOutput {
+            var command = try Page.Get.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--raw",
+            ])
+            try command.run()
+        }
+        XCTAssertTrue(pageRaw.contains("Agent Tickets/Agent Tickets"))
+        XCTAssertFalse(pageRaw.contains("Bugbook Team/Agent Tickets"))
+
+        let listed = try runJSONArray(
+            DB.List.parseAsRoot([
+                "--workspace", workspace,
+            ])
+        )
+        let database = try XCTUnwrap(
+            listed.first { ($0["name"] as? String) == "Agent Tickets" }
+        )
+        XCTAssertEqual(database["relative_path"] as? String, "Agent Tickets/Agent Tickets")
+        let parentPage = try XCTUnwrap(database["parent_page"] as? [String: Any])
+        XCTAssertEqual(parentPage["relative_path"] as? String, "Agent Tickets.md")
+    }
+
+    func testDatabaseMoveRetargetsEmbedsInsideMovedRowFiles() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--title", "Agent Tickets",
+            ])
+        )
+
+        _ = try runJSON(
+            Board.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--directory", "Bugbook Team",
+                "--embed-in", "Agent Tickets",
+            ])
+        )
+
+        let (oldDatabasePath, _) = try resolveDatabase("Agent Tickets", workspace: workspace)
+        let rowBodyPath = try writeTempFile(
+            in: workspace,
+            name: "row-body.md",
+            contents: "<!-- database: \(oldDatabasePath) -->"
+        )
+        let created = try runJSON(
+            Create.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--set", "Title=Nested Embed",
+                "--body-file", rowBodyPath,
+            ])
+        )
+        let rowId = try XCTUnwrap(created["id"] as? String)
+
+        _ = try runJSON(
+            DB.Move.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                "--page", "Agent Tickets",
+            ])
+        )
+
+        let fetched = try runJSON(
+            Get.parseAsRoot([
+                "--workspace", workspace,
+                "Agent Tickets",
+                rowId,
+                "--body",
+            ])
+        )
+
+        let body = try XCTUnwrap(fetched["body"] as? String)
+        XCTAssertTrue(body.contains("Agent Tickets/Agent Tickets"))
+        XCTAssertFalse(body.contains("Bugbook Team/Agent Tickets"))
+    }
+
     func testCreateUpdateAndQueryAcceptFriendlySchemaNames() throws {
         let workspace = try makeWorkspace()
         let schema = DatabaseSchema(
@@ -1833,6 +2211,61 @@ final class BugbookCLITests: XCTestCase {
                 return XCTFail("Unexpected error: \(error)")
             }
             XCTAssertTrue(message.contains("ambiguous"))
+        }
+    }
+
+    func testDatabaseResolutionRejectsAmbiguousIDs() throws {
+        let workspace = try makeWorkspace()
+        let firstSchema = DatabaseSchema(
+            id: "db_shared_id",
+            name: "First Database",
+            properties: [
+                PropertyDefinition(id: "prop_title", name: "Title", type: .title),
+            ],
+            views: [ViewConfig(id: "view_table", name: "Table", type: .table)],
+            defaultView: "view_table",
+            createdAt: "2026-03-07T00:00:00Z"
+        )
+        let secondSchema = DatabaseSchema(
+            id: "db_shared_id",
+            name: "Second Database",
+            properties: [
+                PropertyDefinition(id: "prop_title", name: "Title", type: .title),
+            ],
+            views: [ViewConfig(id: "view_table", name: "Table", type: .table)],
+            defaultView: "view_table",
+            createdAt: "2026-03-07T00:00:00Z"
+        )
+        let firstSchemaPath = try writeTempJSONFile(in: workspace, name: "first-database.json", value: firstSchema)
+        let secondSchemaPath = try writeTempJSONFile(in: workspace, name: "second-database.json", value: secondSchema)
+
+        _ = try runJSON(
+            DB.CreateDB.parseAsRoot([
+                "--workspace", workspace,
+                "First Database",
+                "--schema", firstSchemaPath,
+            ])
+        )
+        _ = try runJSON(
+            DB.CreateDB.parseAsRoot([
+                "--workspace", workspace,
+                "Second Database",
+                "--schema", secondSchemaPath,
+            ])
+        )
+
+        var command = try DB.Schema.parseAsRoot([
+            "--workspace", workspace,
+            "db_shared_id",
+        ])
+
+        XCTAssertThrowsError(try command.run()) { error in
+            guard case CLIError.invalidInput(let message) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertTrue(message.contains("Database ID is ambiguous"))
+            XCTAssertTrue(message.contains("First Database"))
+            XCTAssertTrue(message.contains("Second Database"))
         }
     }
 

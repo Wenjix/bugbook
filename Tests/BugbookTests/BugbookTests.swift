@@ -443,6 +443,20 @@ final class BlockDocumentTests: XCTestCase {
         XCTAssertTrue(doc.selectedBlockIds.isEmpty)
     }
 
+    func testBlockSelectionDragSetsTapSuppressionUntilConsumed() {
+        let doc = BlockDocument(markdown: "# Title\nA\nB\n")
+        guard doc.blocks.count >= 3 else {
+            XCTFail("Expected at least 3 blocks")
+            return
+        }
+        doc.beginBlockSelectionDrag(from: doc.blocks[1].id)
+        doc.selectBlockRange(from: doc.blocks[1].id, to: doc.blocks[2].id)
+        doc.endBlockSelectionDrag()
+
+        XCTAssertTrue(doc.consumePendingEditorTapAfterBlockSelection())
+        XCTAssertFalse(doc.consumePendingEditorTapAfterBlockSelection())
+    }
+
     func testUndoBlockOperation() {
         let doc = BlockDocument(markdown: "# Title\nOriginal\n")
         let initialCount = doc.blocks.count
@@ -577,18 +591,14 @@ final class AppStateTests: XCTestCase {
     private func makeEntry(
         name: String = "Test.md",
         path: String = "/test/Test.md",
-        isDatabase: Bool = false,
-        isCanvas: Bool = false
+        kind: TabKind = .page
     ) -> FileEntry {
         FileEntry(
             id: path,
             name: name,
             path: path,
             isDirectory: false,
-            isDatabase: isDatabase,
-            isCanvas: isCanvas,
-            icon: nil,
-            children: nil
+            kind: kind
         )
     }
 
@@ -675,22 +685,55 @@ final class AppStateTests: XCTestCase {
 
     func testDisplayNamePreservesNonMarkdown() {
         let state = AppState()
-        state.openFile(makeEntry(name: "Database", path: "/test/Database", isDatabase: true))
+        state.openFile(makeEntry(name: "Database", path: "/test/Database", kind: .database))
         XCTAssertEqual(state.openTabs[0].displayName, "Database")
     }
 
     func testOpenDatabaseTab() {
         let state = AppState()
-        let entry = makeEntry(name: "Tasks", path: "/test/Tasks", isDatabase: true)
+        let entry = makeEntry(name: "Tasks", path: "/test/Tasks", kind: .database)
         state.openFile(entry)
         XCTAssertTrue(state.openTabs[0].isDatabase)
     }
 
     func testOpenCanvasTab() {
         let state = AppState()
-        let entry = makeEntry(name: "Canvas", path: "/test/Canvas", isCanvas: true)
+        let entry = makeEntry(name: "Canvas", path: "/test/Canvas", kind: .canvas)
         state.openFile(entry)
         XCTAssertTrue(state.openTabs[0].isCanvas)
+    }
+
+    func testDatabaseRowNavigationPathRoundTrips() {
+        let path = DatabaseRowNavigationPath.make(dbPath: "/test/Tasks", rowId: "row_123")
+        let parsed = DatabaseRowNavigationPath.parse(path)
+        XCTAssertEqual(parsed?.dbPath, "/test/Tasks")
+        XCTAssertEqual(parsed?.rowId, "row_123")
+    }
+
+    func testHistoryRestoresDatabaseRowContext() {
+        let state = AppState()
+        state.openFile(makeEntry(name: "Home.md", path: "/test/Home.md"))
+
+        let rowPath = DatabaseRowNavigationPath.make(dbPath: "/test/Tasks", rowId: "row_123")
+        let rowEntry = FileEntry(
+            id: rowPath,
+            name: "Row Title",
+            path: rowPath,
+            isDirectory: false,
+            kind: .databaseRow(dbPath: "/test/Tasks", rowId: "row_123")
+        )
+
+        _ = state.openFileReplacingCurrentTab(rowEntry)
+        XCTAssertTrue(state.openTabs[0].isDatabaseRow)
+        XCTAssertEqual(state.openTabs[0].databasePath, "/test/Tasks")
+        XCTAssertEqual(state.openTabs[0].databaseRowId, "row_123")
+
+        _ = state.goBackInActiveTab()
+        let forwardEntry = state.goForwardInActiveTab()
+        XCTAssertEqual(forwardEntry?.path, rowPath)
+        XCTAssertEqual(forwardEntry?.databasePath, "/test/Tasks")
+        XCTAssertEqual(forwardEntry?.databaseRowId, "row_123")
+        XCTAssertTrue(state.openTabs[0].isDatabaseRow)
     }
 
     func testViewModeTransitions() {

@@ -94,6 +94,11 @@ public struct QueryEngine {
     private static func valuesEqual(_ a: PropertyValue?, _ b: PropertyValue?) -> Bool {
         guard let a = a else { return b == nil || b == .empty }
         guard let b = b else { return a == .empty }
+        if case .date(let aRaw) = a, case .date(let bRaw) = b {
+            let aKey = DatabaseDateValue.decode(from: aRaw)?.sortKey ?? aRaw
+            let bKey = DatabaseDateValue.decode(from: bRaw)?.sortKey ?? bRaw
+            return aKey == bKey
+        }
         return a == b
     }
 
@@ -128,6 +133,12 @@ public struct QueryEngine {
             if an < bn { return -1 }
             if an > bn { return 1 }
             return 0
+        }
+
+        if case .date(let aRaw) = a, case .date(let bRaw) = b {
+            let aKey = DatabaseDateValue.decode(from: aRaw)?.sortKey ?? aRaw
+            let bKey = DatabaseDateValue.decode(from: bRaw)?.sortKey ?? bRaw
+            return aKey.compare(bKey).rawValue
         }
 
         // String comparison (works for dates in YYYY-MM-DD format too)

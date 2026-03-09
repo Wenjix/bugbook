@@ -9,12 +9,36 @@ struct RowPageView: View {
     var onAddOption: ((String, SelectOption) -> Void)?
     var onUpdateOption: ((String, String, String?, String?) -> Void)?
     var onDeleteOption: ((String, String) -> Void)?
+    var onAddProperty: ((PropertyType) -> Void)?
+    var onRenameProperty: ((String, String) -> Void)?
+    var onDeleteProperty: ((String) -> Void)?
+    var onChangePropertyType: ((String, PropertyType) -> Void)?
     var showBreadcrumb: Bool = true
+    var autoFocusTitle: Bool = false
 
     @State private var editingTitle: String = ""
+    @FocusState private var isTitleFocused: Bool
 
     private var rowTitle: String {
         row.title(schema: schema)
+    }
+
+    private var storedTitle: String {
+        guard let titleProp = schema.titleProperty,
+              let value = row.properties[titleProp.id],
+              case .text(let text) = value else {
+            return ""
+        }
+        return text
+    }
+
+    private var propertyLabelColumnWidth: CGFloat {
+        let longestName = schema.properties
+            .filter { $0.type != .title }
+            .map(\.name.count)
+            .max() ?? 0
+        let estimatedWidth = CGFloat(longestName) * 8.5 + 16
+        return min(max(100, estimatedWidth), 180)
     }
 
     var body: some View {
@@ -54,39 +78,35 @@ struct RowPageView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // Title
                     TextField("New Page", text: $editingTitle, onCommit: {
-                        if let titleProp = schema.titleProperty {
-                            row.properties[titleProp.id] = .text(editingTitle)
-                            onSave(row)
-                        }
+                        persistTitle()
                     })
                     .font(.title)
                     .fontWeight(.bold)
                     .textFieldStyle(.plain)
+                    .focused($isTitleFocused)
+                    .onChange(of: editingTitle) { _, _ in
+                        persistTitle()
+                    }
 
                     // Properties (skip title property — shown above)
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(schema.properties.filter({ $0.type != .title })) { prop in
-                            HStack(alignment: .top) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: iconForPropertyType(prop.type))
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    Text(prop.name)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                .frame(width: 140, alignment: .leading)
+                            PropertyRowView(
+                                prop: prop,
+                                row: $row,
+                                propertyLabelColumnWidth: propertyLabelColumnWidth,
+                                onSave: onSave,
+                                onAddOption: onAddOption,
+                                onUpdateOption: onUpdateOption,
+                                onDeleteOption: onDeleteOption,
+                                onRenameProperty: onRenameProperty,
+                                onDeleteProperty: onDeleteProperty,
+                                onChangePropertyType: onChangePropertyType
+                            )
+                        }
 
-                                let propValue = Binding<PropertyValue>(
-                                    get: { row.properties[prop.id] ?? .empty },
-                                    set: { newVal in
-                                        row.properties[prop.id] = newVal
-                                        onSave(row)
-                                    }
-                                )
-                                PropertyEditorView(definition: prop, value: propValue, onAddOption: onAddOption, onUpdateOption: onUpdateOption, onDeleteOption: onDeleteOption)
-                            }
-                            .padding(.vertical, 2)
+                        if onAddProperty != nil {
+                            addPropertyRow
                         }
                     }
                     .padding(.vertical, 8)
@@ -111,25 +131,225 @@ struct RowPageView: View {
             }
         }
         .task {
-            editingTitle = rowTitle
+            editingTitle = storedTitle
+            if autoFocusTitle {
+                await MainActor.run {
+                    isTitleFocused = true
+                }
+            }
         }
         .onChange(of: row.id) {
-            editingTitle = rowTitle
+            editingTitle = storedTitle
+            if autoFocusTitle {
+                DispatchQueue.main.async {
+                    isTitleFocused = true
+                }
+            }
         }
     }
 
-    private func iconForPropertyType(_ type: PropertyType) -> String {
-        switch type {
-        case .title: return "textformat.abc"
-        case .text: return "textformat"
-        case .number: return "number"
-        case .select: return "tag"
-        case .multiSelect: return "tag"
-        case .date: return "calendar"
-        case .checkbox: return "checkmark.square"
-        case .url: return "link"
-        case .email: return "envelope"
-        case .relation: return "link"
+    private func persistTitle() {
+        guard let titleProp = schema.titleProperty else { return }
+        let currentStoredTitle: String
+        if let value = row.properties[titleProp.id], case .text(let text) = value {
+            currentStoredTitle = text
+        } else {
+            currentStoredTitle = ""
         }
+        guard currentStoredTitle != editingTitle else { return }
+        row.properties[titleProp.id] = .text(editingTitle)
+        onSave(row)
+    }
+
+    @State private var showAddPropertyMenu = false
+
+    private var addPropertyRow: some View {
+        Button {
+            showAddPropertyMenu = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Text("Add a property")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showAddPropertyMenu, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(PropertyType.allCases, id: \.rawValue) { type in
+                    if type != .title {
+                        Button {
+                            onAddProperty?(type)
+                            showAddPropertyMenu = false
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: type.systemImageName)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 16)
+                                Text(type.rawValue.capitalized)
+                                    .font(.callout)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(6)
+            .frame(width: 200)
+        }
+    }
+}
+
+// MARK: - Property Row with split hover zones
+
+private struct PropertyRowView: View {
+    let prop: PropertyDefinition
+    @Binding var row: DatabaseRow
+    let propertyLabelColumnWidth: CGFloat
+    var onSave: (DatabaseRow) -> Void
+    var onAddOption: ((String, SelectOption) -> Void)?
+    var onUpdateOption: ((String, String, String?, String?) -> Void)?
+    var onDeleteOption: ((String, String) -> Void)?
+    var onRenameProperty: ((String, String) -> Void)?
+    var onDeleteProperty: ((String) -> Void)?
+    var onChangePropertyType: ((String, PropertyType) -> Void)?
+
+    @State private var labelHovered = false
+    @State private var valueHovered = false
+    @State private var showPropertyMenu = false
+    @State private var editingName = ""
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            // Property label — separate hover, click opens settings
+            Text(prop.name)
+                .font(.body)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            .frame(width: propertyLabelColumnWidth, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(labelHovered || showPropertyMenu ? Color.primary.opacity(0.05) : Color.clear)
+            )
+            .contentShape(Rectangle())
+            .onHover { labelHovered = $0 }
+            .onTapGesture {
+                editingName = prop.name
+                showPropertyMenu = true
+            }
+            .popover(isPresented: $showPropertyMenu, arrowEdge: .bottom) {
+                propertySettingsPopover
+            }
+
+            // Value cell — separate hover, click activates editor
+            let propValue = Binding<PropertyValue>(
+                get: { row.properties[prop.id] ?? .empty },
+                set: { newVal in
+                    row.properties[prop.id] = newVal
+                    onSave(row)
+                }
+            )
+            PropertyEditorView(definition: prop, value: propValue, compact: false, onAddOption: onAddOption, onUpdateOption: onUpdateOption, onDeleteOption: onDeleteOption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(valueHovered ? Color.primary.opacity(0.04) : Color.clear)
+                )
+                .onHover { valueHovered = $0 }
+        }
+    }
+
+    private var propertySettingsPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Rename field
+            TextField("Property name", text: $editingName)
+                .textFieldStyle(.roundedBorder)
+                .font(.callout)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .onSubmit {
+                    let trimmed = editingName.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty && trimmed != prop.name {
+                        onRenameProperty?(prop.id, trimmed)
+                    }
+                    showPropertyMenu = false
+                }
+
+            Divider().padding(.vertical, 2)
+
+            // Change type
+            Menu {
+                ForEach(PropertyType.allCases, id: \.rawValue) { type in
+                    if type != prop.type && type != .title {
+                        Button {
+                            onChangePropertyType?(prop.id, type)
+                            showPropertyMenu = false
+                        } label: {
+                            Label(type.rawValue.capitalized, systemImage: type.systemImageName)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 20)
+                    Text("Edit property")
+                        .font(.callout)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+
+            Divider().padding(.vertical, 2)
+
+            // Delete property
+            Button {
+                onDeleteProperty?(prop.id)
+                showPropertyMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .frame(width: 20)
+                    Text("Delete property")
+                        .font(.callout)
+                        .foregroundColor(.red)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(6)
+        .frame(width: 220)
     }
 }

@@ -90,7 +90,8 @@ swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Applicat
 swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --blocks
 swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --raw
 swift run BugbookCLI page headings "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI page format "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --style commonmark --dry-run --output summary
+swift run BugbookCLI page format "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --style commonmark --dry-run --output summary --report
+swift run BugbookCLI page format "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --style commonmark --dry-run --fail-on-warnings
 swift run BugbookCLI page compact "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --output summary
 swift run BugbookCLI page ensure-block-ids "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --blocks
 swift run BugbookCLI page strip-block-ids "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
@@ -117,7 +118,10 @@ swift run BugbookCLI board create "Bugbook Strategy Board" --workspace "~/Librar
 swift run BugbookCLI board create "Sprint Board" --workspace "~/Library/Application Support/Bugbook" --column "Todo" --column "Doing" --column "Done" --no-table
 swift run BugbookCLI board add-card "Bugbook Strategy Board" "Search trust" --workspace "~/Library/Application Support/Bugbook" --column "Now" --date 2026-03-07
 swift run BugbookCLI board move-card "Bugbook Strategy Board" row_abc123 "Next" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI db list --workspace "~/Library/Application Support/Bugbook"
 swift run BugbookCLI db view list "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook"
+swift run BugbookCLI db move "Agent Tickets" --workspace "~/Library/Application Support/Bugbook" --page "Agent Tickets" --dry-run
+swift run BugbookCLI db move "Agent Tickets" --workspace "~/Library/Application Support/Bugbook" --page "Agent Tickets"
 swift run BugbookCLI db view add "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook" --type calendar --name "Calendar" --date-property "Date"
 swift run BugbookCLI db view set-default "Bugbook Strategy Board" "Calendar" --workspace "~/Library/Application Support/Bugbook"
 swift run BugbookCLI skill create "research-summarizer" --workspace "~/Library/Application Support/Bugbook" --description "Summarize linked source pages into one note."
@@ -132,6 +136,9 @@ Notes:
 - `page headings` returns heading titles, levels, and line numbers for section targeting.
 - `page format --style bugbook|commonmark` rewrites a page using either Bugbook's dense block format or a CommonMark-style layout with structural blank lines.
 - `page format --style commonmark` now strips persisted block IDs and converts Bugbook-only block syntax into portable approximations: toggles become `<details>`, columns are flattened sequentially with thematic breaks, database embeds become labeled text, and page-link blocks become relative markdown links when they resolve uniquely in the workspace or plain text when they do not.
+- `page format --report` adds `warning_count` plus structured `warnings` to the response so agents can see which page links were downgraded during commonmark export.
+- `page format --fail-on-warnings` turns those portability warnings into a non-zero exit and skips the write, which is useful for agent and CI gating.
+- `page compact` and `page format` now report `empty_paragraphs_removed` so agents can tell when a rewrite cleaned up blank block gaps.
 - `page compact` rewrites a page through Bugbook's block serializer and removes empty paragraph gaps, which is useful when a note has accumulated extra blank lines.
 - `page compact` is the shortcut for `page format --style bugbook`.
 - `page ensure-block-ids` persists unique stable block IDs and repairs duplicate persisted IDs when needed; add `--blocks` if you want the parsed block list in the response.
@@ -144,6 +151,8 @@ Notes:
 - `page update --dry-run` previews the post-edit page plus structured line changes without writing anything.
 - `page create` and `page update` accept `--output summary` when you want a compact write result instead of the full page payload.
 - `block list`, `block get`, `block replace`, `block update-text`, `block insert`, `block move`, and `block delete` provide a dedicated block-level command surface on top of the same selectors used by `page get --block-id`.
+- `db list` now includes `relative_path` and, when applicable, `parent_page` metadata so agents can see whether a database lives under a page companion folder or a top-level directory.
+- `db move --page <Page>` reparents a database into that page's companion folder, retargets any embed markers that still point at the old path, and supports `--dry-run` for previewing the move first.
 - Row `get` now matches `query` by returning friendly property names and display values by default; add `--fields` to narrow the payload and `--raw-properties` to include schema IDs and stored option IDs.
 - `query --fields` returns friendly property names and display values by default; add `--raw-properties` when you also need schema IDs and stored option IDs.
 - Row `create`, `update`, `query --filter`, `query --sort`, and `query --fields` accept friendly property names in addition to schema IDs.

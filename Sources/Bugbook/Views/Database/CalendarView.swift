@@ -6,7 +6,8 @@ struct CalendarView: View {
     @Binding var rows: [DatabaseRow]
     let viewConfig: ViewConfig
     var onOpenRow: (DatabaseRow) -> Void
-    var onCreateRow: (String) -> Void // date string YYYY-MM-DD
+    var onSave: ((DatabaseRow) -> Void)?
+    var onCreateRow: (String, String?) -> Void // date string YYYY-MM-DD, property id
 
     @State private var displayMonth: Date = Date()
     @State private var selectedDatePropertyId: String?
@@ -72,8 +73,8 @@ struct CalendarView: View {
     private func rowsForDate(_ dateStr: String) -> [DatabaseRow] {
         guard let prop = dateProperty else { return [] }
         return rows.filter { row in
-            if let val = row.properties[prop.id], case .date(let d) = val {
-                return d == dateStr
+            if let val = row.properties[prop.id], case .date(let raw) = val {
+                return DatabaseDateValue.decode(from: raw)?.contains(dayString: dateStr, calendar: calendar) ?? (raw == dateStr)
             }
             return false
         }
@@ -182,100 +183,126 @@ struct CalendarView: View {
     }
 
     private func dayCell(_ cell: DayCell, height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if cell.isCurrentMonth {
-                HStack {
-                    Text("\(cell.day)")
-                        .font(.caption)
-                        .fontWeight(cell.isToday ? .bold : .medium)
-                        .foregroundColor(cell.isToday ? .white : .primary)
-                        .frame(width: 22, height: 22)
-                        .background(cell.isToday ? Circle().fill(Color.accentColor) : Circle().fill(Color.clear))
-                    Spacer()
-                    Button {
-                        onCreateRow(cell.dateString)
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(0.5)
-                }
-
-                let dayRows = rowsForDate(cell.dateString)
-                ForEach(dayRows.prefix(maxVisibleEvents)) { row in
-                    eventPill(row)
-                }
-                if dayRows.count > maxVisibleEvents {
-                    let extra = dayRows.count - maxVisibleEvents
-                    Button {
-                        morePopoverDate = cell.dateString
-                    } label: {
-                        Text("+\(extra) more")
-                            .font(.caption2)
-                            .foregroundColor(.accentColor)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: Binding(
-                        get: { morePopoverDate == cell.dateString },
-                        set: { if !$0 { morePopoverDate = nil } }
-                    )) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(cell.dateString)
-                                .font(.caption)
-                                .fontWeight(.semibold)
+        HoverDayCell { isHovered in
+            VStack(alignment: .leading, spacing: 2) {
+                if cell.isCurrentMonth {
+                    HStack {
+                        Text("\(cell.day)")
+                            .font(.caption)
+                            .fontWeight(cell.isToday ? .bold : .medium)
+                            .foregroundColor(cell.isToday ? .white : .primary)
+                            .frame(width: 22, height: 22)
+                            .background(cell.isToday ? Circle().fill(Color.accentColor) : Circle().fill(Color.clear))
+                        Spacer()
+                        Button {
+                            onCreateRow(cell.dateString, dateProperty?.id)
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(.secondary)
-                            Divider()
-                            ForEach(dayRows) { row in
-                                eventPill(row)
-                            }
+                                .frame(width: 26, height: 22)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .fill(Color.fallbackBgSecondary)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 7)
+                                                .stroke(Color.fallbackBorderColor.opacity(0.9), lineWidth: 1)
+                                        )
+                                )
+                                .contentShape(Rectangle())
                         }
-                        .padding(8)
-                        .frame(minWidth: 180)
+                        .buttonStyle(.plain)
+                        .opacity(isHovered ? 1 : 0)
+                        .allowsHitTesting(isHovered)
+                        .help("Create row")
+                    }
+
+                    let dayRows = rowsForDate(cell.dateString)
+                    ForEach(dayRows.prefix(maxVisibleEvents)) { row in
+                        eventPill(row)
+                    }
+                    if dayRows.count > maxVisibleEvents {
+                        let extra = dayRows.count - maxVisibleEvents
+                        Button {
+                            morePopoverDate = cell.dateString
+                        } label: {
+                            Text("+\(extra) more")
+                                .font(.caption2)
+                                .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: Binding(
+                            get: { morePopoverDate == cell.dateString },
+                            set: { if !$0 { morePopoverDate = nil } }
+                        )) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(cell.dateString)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                                Divider()
+                                ForEach(dayRows) { row in
+                                    eventPill(row)
+                                }
+                            }
+                            .padding(8)
+                            .frame(minWidth: 180)
+                        }
                     }
                 }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: height)
-        .padding(4)
-        .background(cell.isToday ? Color.accentColor.opacity(0.05) : (cell.isCurrentMonth ? Color.fallbackCardBg : Color.clear))
-        .cornerRadius(4)
-        .dropDestination(for: String.self) { droppedIds, _ in
-            guard let prop = dateProperty, cell.isCurrentMonth else { return false }
-            for droppedId in droppedIds {
-                if let idx = rows.firstIndex(where: { $0.id == droppedId }) {
-                    rows[idx].properties[prop.id] = .date(cell.dateString)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: height)
+            .padding(4)
+            .background(cell.isCurrentMonth ? Color.fallbackCardBg : Color.clear)
+            .overlay(
+                Rectangle()
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let prop = dateProperty, cell.isCurrentMonth else { return false }
+                for droppedId in droppedIds {
+                    if let idx = rows.firstIndex(where: { $0.id == droppedId }) {
+                        if case .date(let raw) = rows[idx].properties[prop.id],
+                           let parsed = DatabaseDateValue.decode(from: raw) {
+                            rows[idx].properties[prop.id] = .date(parsed.movingStartDay(to: cell.dateString, calendar: calendar).rawValue)
+                        } else {
+                            rows[idx].properties[prop.id] = .date(cell.dateString)
+                        }
+                        onSave?(rows[idx])
+                    }
                 }
+                return true
             }
-            return true
         }
     }
 
     private func eventPill(_ row: DatabaseRow) -> some View {
         let title = row.title(schema: schema)
-        return Button {
-            onOpenRow(row)
-        } label: {
-            Text(title.isEmpty ? "Untitled" : title)
-                .font(.caption)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundColor(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.accentColor.opacity(0.12))
-                .cornerRadius(4)
-        }
-        .buttonStyle(.plain)
-        .draggable(row.id) {
-            Text(title)
-                .padding(6)
-                .background(.ultraThinMaterial)
-                .cornerRadius(4)
-        }
+        return Text(title.isEmpty ? "Untitled" : title)
+            .font(.caption)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundColor(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.fallbackBgTertiary)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(Color.fallbackBorderColor.opacity(0.9), lineWidth: 1)
+                    )
+            )
+            .draggable(row.id) {
+                Text(title)
+                    .padding(6)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(4)
+            }
+            .simultaneousGesture(TapGesture().onEnded { onOpenRow(row) })
     }
 
 }
@@ -286,4 +313,18 @@ private struct DayCell: Identifiable {
     let dateString: String
     let isCurrentMonth: Bool
     let isToday: Bool
+}
+
+private struct HoverDayCell<Content: View>: View {
+    @State private var isHovered = false
+    let content: (Bool) -> Content
+
+    init(@ViewBuilder content: @escaping (Bool) -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        content(isHovered)
+            .onHover { isHovered = $0 }
+    }
 }

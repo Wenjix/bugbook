@@ -253,7 +253,7 @@ private func boardColumnValue(columnId: String, groupProperty: PropertyDefinitio
     }
 }
 
-private func normalizeWorkspaceDirectory(_ rawDirectory: String, workspace: String) throws -> String {
+func normalizeWorkspaceDirectory(_ rawDirectory: String, workspace: String) throws -> String {
     let expanded = (rawDirectory as NSString).expandingTildeInPath
     let path = expanded.hasPrefix("/")
         ? normalizePath(expanded)
@@ -415,7 +415,7 @@ private func uniquePropertyId(preferredName: String, used: Set<String>) -> Strin
     return candidate
 }
 
-private func sanitizeDatabaseFolderName(_ name: String) -> String {
+func sanitizeDatabaseFolderName(_ name: String) -> String {
     let sanitized = name.replacingOccurrences(
         of: "[/\\\\?%*:|\"<>]",
         with: "-",

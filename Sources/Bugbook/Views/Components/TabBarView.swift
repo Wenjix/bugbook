@@ -85,7 +85,7 @@ struct TabBarView: View {
             ZStack(alignment: .bottom) {
                 Color.fallbackTabBarBg
                 Rectangle()
-                    .fill(Color(light: Color(hex: "e0e0e0"), dark: Color(hex: "2e2e2e")))
+                    .fill(Color.fallbackChromeBorder)
                     .frame(height: 1)
             }
         )
@@ -177,7 +177,7 @@ struct TabItemView: View {
                         ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
                             .fill(Color.fallbackEditorBg)
                         ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
-                            .stroke(Color(light: Color(hex: "e0e0e0"), dark: Color(hex: "2e2e2e")), lineWidth: 1)
+                            .stroke(Color.fallbackChromeBorder, lineWidth: 1)
                     }
                 } else if isHovered {
                     RoundedRectangle(cornerRadius: 6)
@@ -197,6 +197,8 @@ struct TabItemView: View {
     private var tabIcon: some View {
         if tab.path == "__settings__" {
             Image(systemName: "gearshape").font(.system(size: 12))
+        } else if tab.isDatabaseRow {
+            Image(systemName: "doc.text").font(.system(size: 12))
         } else if tab.isDatabase {
             Image(systemName: "tablecells").font(.system(size: 12))
         } else if let icon = tab.icon, !icon.isEmpty {

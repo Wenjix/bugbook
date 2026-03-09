@@ -8,6 +8,7 @@ enum CLIError: Error, CustomStringConvertible {
     case invalidSort(String)
     case fileNotFound(String)
     case invalidInput(String)
+    case operationFailed(String)
 
     var description: String {
         switch self {
@@ -16,6 +17,7 @@ enum CLIError: Error, CustomStringConvertible {
         case .invalidSort(let expr): return "Invalid sort expression: \(expr)"
         case .fileNotFound(let path): return "File not found: \(path)"
         case .invalidInput(let msg): return "Invalid input: \(msg)"
+        case .operationFailed(let msg): return "Operation failed: \(msg)"
         }
     }
 }
@@ -59,11 +61,29 @@ func resolveDatabase(_ name: String, workspace: String) throws -> (path: String,
     let store = DatabaseStore()
     let databases = store.listDatabases(in: workspace)
 
-    // Match by ID first, then by name (case-insensitive)
-    let match = databases.first(where: { $0.id == name })
-        ?? databases.first(where: { $0.name.lowercased() == name.lowercased() })
+    let idMatches = databases.filter { $0.id == name }
+    if idMatches.count > 1 {
+        let matches = idMatches
+            .map { relativePath(from: $0.path, workspace: normalizedWorkspace) }
+            .sorted()
+            .joined(separator: ", ")
+        throw CLIError.invalidInput("Database ID is ambiguous: \(name). Matches: \(matches)")
+    }
+    if let match = idMatches.first {
+        let schema = try store.loadSchema(at: match.path)
+        return (path: match.path, schema: schema)
+    }
 
-    guard let db = match else {
+    let nameMatches = databases.filter { $0.name.lowercased() == name.lowercased() }
+    if nameMatches.count > 1 {
+        let matches = nameMatches
+            .map { relativePath(from: $0.path, workspace: normalizedWorkspace) }
+            .sorted()
+            .joined(separator: ", ")
+        throw CLIError.invalidInput("Database name is ambiguous: \(name). Matches: \(matches)")
+    }
+
+    guard let db = nameMatches.first else {
         throw CLIError.databaseNotFound(name)
     }
 
@@ -428,6 +448,10 @@ private func displayPropertyValue(_ rawValue: Any, definition: PropertyDefinitio
         return storedIDs.map { storedID in
             definition.config?.options?.first(where: { $0.id == storedID })?.name ?? storedID
         }
+
+    case .date:
+        guard let raw = rawValue as? String else { return rawValue }
+        return DatabaseDateValue.decode(from: raw)?.displayText() ?? raw
 
     default:
         return rawValue

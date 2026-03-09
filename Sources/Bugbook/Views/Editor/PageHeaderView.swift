@@ -15,7 +15,8 @@ struct PageHeaderView: View {
     @State private var isRepositioning = false
     @State private var isCoverHovering = false
 
-    private var horizontalPadding: CGFloat { fullWidth ? 40 : 80 }
+    // Keep page-header controls and icon aligned with the title/body text column.
+    private var horizontalPadding: CGFloat { 76 }
     private var hasIcon: Bool { !(icon ?? "").isEmpty }
     private var needsIcon: Bool { icon == nil || icon?.isEmpty == true }
     private var needsCover: Bool { coverUrl == nil }
@@ -56,8 +57,11 @@ struct PageHeaderView: View {
             }
 
             if coverUrl == nil, let iconValue = icon, !iconValue.isEmpty {
-                iconPickerButton(iconValue)
-                    .padding(.horizontal, horizontalPadding)
+                HStack(spacing: 0) {
+                    iconPickerButton(iconValue)
+                    Spacer(minLength: 0)
+                }
+                    .padding(.leading, horizontalPadding)
                     .padding(.top, 8)
             }
         }
@@ -149,7 +153,9 @@ struct PageHeaderView: View {
                 Text(value).font(.system(size: 40))
             }
         } else {
-            Text(value).font(.system(size: 46))
+            Text(value)
+                .font(.system(size: 46))
+                .frame(width: 56, height: 56, alignment: .leading)
         }
     }
 
@@ -158,108 +164,128 @@ struct PageHeaderView: View {
     @ViewBuilder
     private func coverImageView(path: String) -> some View {
         let coverHeight: CGFloat = 200
-        ZStack(alignment: .topTrailing) {
-            Group {
-                if let nsImage = NSImage(contentsOfFile: path) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: coverHeight)
-                        .frame(maxWidth: .infinity)
-                        .offset(y: coverOffset(imageSize: nsImage.size, containerHeight: coverHeight))
-                        .clipped()
-                } else {
-                    // Local paths need fileURLWithPath (handles spaces); remote URLs use URL(string:)
-                    let url: URL? = path.hasPrefix("/") ? URL(fileURLWithPath: path) : URL(string: path)
-                    if let url = url {
-                        AsyncImage(url: url) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Rectangle().fill(Color.fallbackBgSecondary)
+        let loadedImage = NSImage(contentsOfFile: path)
+        let imgSize = loadedImage?.size ?? .zero
+        GeometryReader { geometry in
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let nsImage = loadedImage {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: coverHeight)
+                            .offset(y: coverOffset(imageSize: imgSize, containerSize: CGSize(width: geometry.size.width, height: coverHeight)))
+                            .clipped()
+                    } else {
+                        // Local paths need fileURLWithPath (handles spaces); remote URLs use URL(string:)
+                        let url: URL? = path.hasPrefix("/") ? URL(fileURLWithPath: path) : URL(string: path)
+                        if let url = url {
+                            AsyncImage(url: url) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: geometry.size.width, height: coverHeight)
+                                    .clipped()
+                            } placeholder: {
+                                Rectangle().fill(Color.fallbackBgSecondary)
+                            }
+                            .frame(width: geometry.size.width, height: coverHeight)
                         }
-                        .frame(height: coverHeight)
-                        .clipped()
                     }
                 }
-            }
 
-            if isRepositioning {
-                Rectangle()
-                    .fill(Color.black.opacity(0.18))
-                    .overlay(alignment: .center) {
-                        Text("Drag to reposition")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.black.opacity(0.55))
-                            .clipShape(Capsule())
-                    }
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                if !isDraggingCover {
-                                    isDraggingCover = true
-                                    dragStartCoverPosition = coverPosition
+                if isRepositioning {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.18))
+                        .overlay(alignment: .center) {
+                            Text("Drag to reposition")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Capsule())
+                        }
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    if !isDraggingCover {
+                                        isDraggingCover = true
+                                        dragStartCoverPosition = coverPosition
+                                    }
+                                    let maxOffset = max(1, coverOverflowHeight(containerSize: CGSize(width: geometry.size.width, height: coverHeight), imageSize: imgSize))
+                                    let deltaPercent = Double(value.translation.height / maxOffset) * 100.0
+                                    let newPosition = dragStartCoverPosition + deltaPercent
+                                    coverPosition = min(100, max(0, newPosition))
                                 }
-                                let sensitivity = 0.85
-                                let newPosition = dragStartCoverPosition + Double(value.translation.height) * sensitivity
-                                coverPosition = min(100, max(0, newPosition))
-                            }
-                            .onEnded { _ in
-                                isDraggingCover = false
-                            }
-                    )
+                                .onEnded { _ in
+                                    isDraggingCover = false
+                                }
+                        )
+                }
+
+                HStack(spacing: 4) {
+                    Button(action: { showCoverPicker = true }) {
+                        Label("Change", systemImage: "photo")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(CoverActionButtonStyle())
+                    .popover(isPresented: $showCoverPicker, arrowEdge: .bottom) {
+                        coverPickerPopover
+                    }
+
+                    Button(action: {
+                        isDraggingCover = false
+                        isRepositioning.toggle()
+                    }) {
+                        Label(isRepositioning ? "Done" : "Reposition", systemImage: isRepositioning ? "checkmark" : "arrow.up.and.down.and.arrow.left.and.right")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(CoverActionButtonStyle())
+
+                    Button(action: {
+                        coverUrl = nil
+                        coverPosition = 50
+                        isRepositioning = false
+                    }) {
+                        Label("Remove", systemImage: "xmark")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(CoverActionButtonStyle())
+                }
+                .padding(8)
+                .opacity(coverControlsVisible ? 1 : 0)
+                .allowsHitTesting(coverControlsVisible)
+                .animation(.easeInOut(duration: 0.15), value: coverControlsVisible)
             }
-
-            HStack(spacing: 4) {
-                Button(action: { showCoverPicker = true }) {
-                    Label("Change", systemImage: "photo")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(CoverActionButtonStyle())
-                .popover(isPresented: $showCoverPicker, arrowEdge: .bottom) {
-                    coverPickerPopover
-                }
-
-                Button(action: {
-                    isDraggingCover = false
-                    isRepositioning.toggle()
-                }) {
-                    Label(isRepositioning ? "Done" : "Reposition", systemImage: isRepositioning ? "checkmark" : "arrow.up.and.down.and.arrow.left.and.right")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(CoverActionButtonStyle())
-
-                Button(action: {
-                    coverUrl = nil
-                    coverPosition = 50
-                    isRepositioning = false
-                }) {
-                    Label("Remove", systemImage: "xmark")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(CoverActionButtonStyle())
+            .frame(height: coverHeight)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isCoverHovering = hovering
             }
-            .padding(8)
-            .opacity(coverControlsVisible ? 1 : 0)
-            .allowsHitTesting(coverControlsVisible)
-            .animation(.easeInOut(duration: 0.15), value: coverControlsVisible)
         }
         .frame(height: coverHeight)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            isCoverHovering = hovering
-        }
     }
 
-    private func coverOffset(imageSize: NSSize, containerHeight: CGFloat) -> CGFloat {
-        guard imageSize.height > 0 else { return 0 }
-        let scale = max(1.0, imageSize.height / containerHeight)
-        let maxOffset = (imageSize.height - containerHeight) / scale
+    private func coverOverflowHeight(containerSize: CGSize, imageSize: NSSize) -> CGFloat {
+        guard containerSize.width > 0,
+              containerSize.height > 0,
+              imageSize.width > 0,
+              imageSize.height > 0 else { return 0 }
+        let scale = max(containerSize.width / imageSize.width, containerSize.height / imageSize.height)
+        let renderedHeight = imageSize.height * scale
+        return max(0, renderedHeight - containerSize.height)
+    }
+
+    private func coverOffset(imageSize: NSSize, containerSize: CGSize) -> CGFloat {
+        guard imageSize.width > 0, imageSize.height > 0,
+              containerSize.width > 0, containerSize.height > 0 else { return 0 }
+        let scale = max(containerSize.width / imageSize.width, containerSize.height / imageSize.height)
+        let renderedHeight = imageSize.height * scale
+        let overflow = max(0, renderedHeight - containerSize.height)
         let normalizedPosition = coverPosition / 100.0
-        return -maxOffset * normalizedPosition
+        return (overflow / 2) - (overflow * normalizedPosition)
     }
 }
 

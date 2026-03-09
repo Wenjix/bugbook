@@ -22,13 +22,18 @@ struct ContentView: View {
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
 
-    // Inline database row peek
-    @State private var peekDbPath: String?
-    @State private var peekRowId: String?
+    // Database row peek / modal
+    private struct RowTarget {
+        let dbPath: String
+        let rowId: String
+    }
+    @State private var peekTarget: RowTarget?
     @State private var dbInitialRowId: String?
     @State private var peekWidth: CGFloat = 640
     @State private var peekDragStartWidth: CGFloat?
     @State private var sidebarHiddenByPeek: Bool = false
+    @State private var modalTarget: RowTarget?
+    @State private var modalAutoFocusTitle: Bool = false
 
     var body: some View {
         configuredLayout
@@ -77,13 +82,26 @@ struct ContentView: View {
                     ensureAiInitializedIfNeeded()
                 }
             }
+            .onChange(of: appState.activeTab?.id) { _, _ in
+                hideFormattingPanel()
+                closeDatabaseRowModal()
+            }
             .onChange(of: appState.currentView) { _, newView in
                 SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "view.change.\(newView)"))
+                hideFormattingPanel()
+                closeDatabaseRowModal()
                 if newView == .chat {
                     ensureAiInitializedIfNeeded()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+                flushDirtyTabs()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                flushDirtyTabs()
+            }
             .onDisappear {
+                flushDirtyTabs()
                 aiInitTask?.cancel()
                 aiInitTask = nil
                 workspaceWatcher?.stop()
@@ -165,8 +183,8 @@ struct ContentView: View {
                 handleBlockTypeShortcut(notification.object as? String)
             }
             .onReceive(NotificationCenter.default.publisher(for: .databaseNameDidChange)) { notification in
-                guard let dbPath = notification.userInfo?["dbPath"] as? String,
-                      let newName = notification.userInfo?["newName"] as? String else { return }
+                guard let dbPath = notification.databasePath,
+                      let newName = notification.databaseNewName else { return }
                 for i in appState.openTabs.indices where appState.openTabs[i].path == dbPath {
                     appState.openTabs[i].displayName = newName
                 }
@@ -322,7 +340,7 @@ struct ContentView: View {
         .overlay(alignment: .leading) {
             if appState.sidebarOpen {
                 Rectangle()
-                    .fill(Color(light: Color(hex: "e0e0e0"), dark: Color(hex: "2e2e2e")))
+                    .fill(Color.fallbackChromeBorder)
                     .frame(width: 1)
                     .allowsHitTesting(false)
             }
@@ -359,7 +377,7 @@ struct ContentView: View {
                     }
 
                     // Page options menu (notes only)
-                    if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase,
+                    if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase && !tab.isDatabaseRow,
                        let doc = blockDocuments[tab.id] {
                         Menu {
                             Button {
@@ -393,20 +411,18 @@ struct ContentView: View {
             activeTabContent
         }
         .overlay(alignment: .trailing) {
-            if let dbPath = peekDbPath, let rowId = peekRowId {
+            if let peek = peekTarget {
                 HStack(spacing: 0) {
                     // Resize drag edge
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: 8)
-                        .contentShape(Rectangle())
-                        .onHover { hovering in
-                            EditorCursorState.suppressIBeam = hovering
-                            if hovering { NSCursor.resizeLeftRight.push() }
-                            else { NSCursor.pop() }
-                        }
-                        .gesture(
-                            DragGesture(coordinateSpace: .global)
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(width: 8)
+                            .contentShape(Rectangle())
+                            .onHover { hovering in
+                                EditorCursorState.setOverride(hovering ? .resizeLeftRight : nil)
+                            }
+                            .gesture(
+                                DragGesture(coordinateSpace: .global)
                                 .onChanged { value in
                                     peekDragOnChanged(translationWidth: value.translation.width)
                                 }
@@ -416,16 +432,12 @@ struct ContentView: View {
                         )
 
                     InlineRowPeekPanel(
-                        dbPath: dbPath,
-                        rowId: rowId,
+                        dbPath: peek.dbPath,
+                        rowId: peek.rowId,
                         onClose: { closePeekPanel() },
                         onOpenFullPage: {
-                            let savedRowId = rowId
                             closePeekPanel()
-                            dbInitialRowId = savedRowId
-                            let name = (dbPath as NSString).lastPathComponent
-                            let entry = FileEntry(id: dbPath, name: name, path: dbPath, isDirectory: true, isDatabase: true)
-                            navigateToEntry(entry, preferExistingTab: false)
+                            openDatabaseRowPage(dbPath: peek.dbPath, rowId: peek.rowId, preferExistingTab: true)
                         }
                     )
                 }
@@ -433,11 +445,40 @@ struct ContentView: View {
                 .background(Color.fallbackEditorBg)
             }
         }
+        .overlay {
+            if let modal = modalTarget {
+                ZStack {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.28))
+                        .contentShape(Rectangle())
+                        .onTapGesture { closeDatabaseRowModal() }
+
+                    DatabaseRowModalView(
+                        dbPath: modal.dbPath,
+                        rowId: modal.rowId,
+                        autoFocusTitle: modalAutoFocusTitle,
+                        onClose: { closeDatabaseRowModal() },
+                        onOpenFullPage: {
+                            closeDatabaseRowModal()
+                            openDatabaseRowPage(dbPath: modal.dbPath, rowId: modal.rowId, preferExistingTab: true)
+                        }
+                    )
+                    .padding(32)
+                }
+                .transition(.opacity)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .inlineDatabaseRowPeek)) { notification in
-            guard let dbPath = notification.userInfo?["dbPath"] as? String,
-                  let rowId = notification.userInfo?["rowId"] as? String else { return }
-            peekDbPath = dbPath
-            peekRowId = rowId
+            guard let dbPath = notification.databasePath,
+                  let rowId = notification.databaseRowId else { return }
+            peekTarget = RowTarget(dbPath: dbPath, rowId: rowId)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .databaseRowModalRequested)) { notification in
+            guard let dbPath = notification.databasePath,
+                  let rowId = notification.databaseRowId else { return }
+            closePeekPanel()
+            modalTarget = RowTarget(dbPath: dbPath, rowId: rowId)
+            modalAutoFocusTitle = notification.databaseAutoFocusTitle
         }
     }
 
@@ -452,6 +493,14 @@ struct ContentView: View {
                 .onAppear { openDefaultPageIfConfigured() }
             } else if tab.isCanvas {
                 canvasEditor(for: tab)
+            } else if tab.isDatabaseRow, let dbPath = tab.databasePath, let rowId = tab.databaseRowId {
+                DatabaseRowFullPageView(
+                    dbPath: dbPath,
+                    rowId: rowId,
+                    onTitleChange: { title in
+                        updateDatabaseRowTabTitle(tabId: tab.id, title: title)
+                    }
+                )
             } else if tab.isDatabase {
                 DatabaseFullPageView(dbPath: tab.path, initialRowId: dbInitialRowId)
                     .onAppear { dbInitialRowId = nil }
@@ -476,6 +525,7 @@ struct ContentView: View {
                                 get: { document.icon },
                                 set: {
                                     document.icon = $0
+                                    markActiveEditorTabDirty()
                                     if appState.activeTabIndex < appState.openTabs.count {
                                         appState.openTabs[appState.activeTabIndex].icon = $0
                                     }
@@ -484,11 +534,19 @@ struct ContentView: View {
                             ),
                             coverUrl: Binding(
                                 get: { document.coverUrl },
-                                set: { document.coverUrl = $0; scheduleSave() }
+                                set: {
+                                    document.coverUrl = $0
+                                    markActiveEditorTabDirty()
+                                    scheduleSave()
+                                }
                             ),
                             coverPosition: Binding(
                                 get: { document.coverPosition },
-                                set: { document.coverPosition = $0; scheduleSave() }
+                                set: {
+                                    document.coverPosition = $0
+                                    markActiveEditorTabDirty()
+                                    scheduleSave()
+                                }
                             ),
                             fullWidth: document.fullWidth
                         )
@@ -521,7 +579,6 @@ struct ContentView: View {
                 .background(Color.fallbackEditorBg)
                 .editorIBeamCursor()
                 .accessibilityIdentifier("editor")
-                .trackRenders("EditorView")
                 .overlay {
                     if document.showTemplatePicker {
                         ZStack {
@@ -571,7 +628,7 @@ struct ContentView: View {
         }
         doc.onOpenDatabaseTab = { dbPath in
             let name = (dbPath as NSString).lastPathComponent
-            let entry = FileEntry(id: dbPath, name: name, path: dbPath, isDirectory: true, isDatabase: true)
+            let entry = FileEntry(id: dbPath, name: name, path: dbPath, isDirectory: false, kind: .database)
             navigateToEntry(entry, preferExistingTab: false)
         }
     }
@@ -593,7 +650,11 @@ struct ContentView: View {
 
     private func updateFormattingPanel(rect: CGRect?) {
         guard let rect = rect else {
-            formattingPanel?.hidePanel()
+            hideFormattingPanel()
+            return
+        }
+        guard let textView = activeBlockTextView(), textView.selectedRange().length > 0 else {
+            hideFormattingPanel()
             return
         }
         let panel: FormattingToolbarPanel
@@ -616,6 +677,10 @@ struct ContentView: View {
 
     private func activeBlockTextView() -> BlockNSTextView? {
         NSApp.keyWindow?.firstResponder as? BlockNSTextView
+    }
+
+    private func hideFormattingPanel() {
+        formattingPanel?.hidePanel()
     }
 
     // MARK: - AI Notifications
@@ -667,6 +732,23 @@ struct ContentView: View {
         }
     }
 
+    private func openDatabaseRowPage(
+        dbPath: String,
+        rowId: String,
+        inNewTab: Bool = false,
+        preferExistingTab: Bool = true
+    ) {
+        let rowPath = DatabaseRowNavigationPath.make(dbPath: dbPath, rowId: rowId)
+        let entry = FileEntry(
+            id: rowPath,
+            name: "New Page",
+            path: rowPath,
+            isDirectory: false,
+            kind: .databaseRow(dbPath: dbPath, rowId: rowId)
+        )
+        navigateToEntry(entry, inNewTab: inNewTab, preferExistingTab: preferExistingTab)
+    }
+
     private func openDefaultPageIfConfigured() {
         let defaultPage = appState.settings.defaultNewTabPage
         guard !defaultPage.isEmpty else { return }
@@ -676,15 +758,13 @@ struct ContentView: View {
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
         let canvasPath = (defaultPage as NSString).appendingPathComponent("_canvas.json")
         let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
+        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
         let entry = FileEntry(
             id: defaultPage,
             name: name,
             path: defaultPage,
             isDirectory: isDatabase || isCanvas,
-            isDatabase: isDatabase,
-            isCanvas: isCanvas,
-            icon: nil,
-            children: nil
+            kind: kind
         )
         navigateToEntry(entry, preferExistingTab: false)
     }
@@ -721,13 +801,13 @@ struct ContentView: View {
 
         let isDatabase = isDatabaseFolderPath(targetPath)
         let isCanvas = isCanvasFolderPath(targetPath)
+        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
         let entry = FileEntry(
             id: targetPath,
             name: item.name,
             path: targetPath,
             isDirectory: isDatabase || isCanvas,
-            isDatabase: isDatabase,
-            isCanvas: isCanvas,
+            kind: kind,
             icon: item.icon
         )
         navigateToEntry(entry, preferExistingTab: false)
@@ -775,8 +855,7 @@ struct ContentView: View {
                 id: onboardingPath,
                 name: (onboardingPath as NSString).lastPathComponent,
                 path: onboardingPath,
-                isDirectory: false,
-                isDatabase: false
+                isDirectory: false
             )
             appState.openFile(entry)
             loadFileContent(for: entry)
@@ -810,7 +889,7 @@ struct ContentView: View {
     }
 
     private func loadFileContent(for entry: FileEntry) {
-        guard !entry.isDatabase, !entry.isCanvas else { return }
+        guard !entry.isDatabase, !entry.isCanvas, !entry.isDatabaseRow else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
@@ -839,7 +918,7 @@ struct ContentView: View {
         guard let workspace = appState.workspacePath else { return }
         do {
             let path = try fileSystem.createNewFile(in: workspace)
-            let entry = FileEntry(id: path, name: (path as NSString).lastPathComponent, path: path, isDirectory: false, isDatabase: false)
+            let entry = FileEntry(id: path, name: (path as NSString).lastPathComponent, path: path, isDirectory: false)
             appState.openFile(entry)
             loadFileContent(for: entry)
             if let tab = appState.activeTab,
@@ -858,7 +937,7 @@ struct ContentView: View {
         guard let workspace = appState.workspacePath else { return }
         do {
             let path = try fileSystem.createNewFile(in: workspace, name: name)
-            let entry = FileEntry(id: path, name: (path as NSString).lastPathComponent, path: path, isDirectory: false, isDatabase: false)
+            let entry = FileEntry(id: path, name: (path as NSString).lastPathComponent, path: path, isDirectory: false)
             navigateToEntry(entry, inNewTab: true)
             refreshFileTree()
         } catch {
@@ -979,8 +1058,7 @@ struct ContentView: View {
                 id: path,
                 name: (path as NSString).lastPathComponent,
                 path: path,
-                isDirectory: false,
-                isDatabase: false
+                isDirectory: false
             )
             navigateToEntry(entry, inNewTab: true)
             refreshFileTree()
@@ -1026,7 +1104,7 @@ struct ContentView: View {
         do {
             let path = try fileSystem.openOrCreateDailyNote(in: workspace)
             let name = (path as NSString).lastPathComponent
-            let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, isDatabase: false)
+            let entry = FileEntry(id: path, name: name, path: path, isDirectory: false)
             appState.currentView = .editor
             appState.showSettings = false
             navigateToEntry(entry, preferExistingTab: true)
@@ -1077,7 +1155,7 @@ struct ContentView: View {
         do {
             let path = try fileSystem.createCanvas(in: workspace, name: "Untitled Canvas")
             let displayName = (path as NSString).lastPathComponent
-            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, isDatabase: false, isCanvas: true)
+            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .canvas)
             appState.openFile(entry)
             if let tab = appState.activeTab {
                 loadCanvasContent(for: tab)
@@ -1093,7 +1171,7 @@ struct ContentView: View {
         do {
             let path = try fileSystem.createDatabase(in: workspace, name: "Untitled Database")
             let displayName = (path as NSString).lastPathComponent
-            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: true, isDatabase: true)
+            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .database)
             appState.openFile(entry)
             refreshFileTree()
         } catch {
@@ -1112,48 +1190,12 @@ struct ContentView: View {
     private func scheduleSave() {
         guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
         let tabId = tab.id
-        let appState = self.appState
-        let fileSystem = self.fileSystem
-        let docs = self.blockDocuments
-        let backlinkService = self.backlinkService
 
         saveTask?.cancel()
         saveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
-            guard let index = appState.openTabs.firstIndex(where: { $0.id == tabId }),
-                  appState.openTabs[index].isDirty else { return }
-            if let document = docs[tabId] {
-                let content = document.markdown
-                appState.openTabs[index].content = content
-                let oldPath = appState.openTabs[index].path
-                try? fileSystem.saveFile(at: oldPath, content: content)
-
-                // Rename file on disk if title changed
-                if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
-                    let title = AttributedStringConverter.plainText(from: rawTitle)
-                    let currentName = (oldPath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
-                    if title != currentName {
-                        let dir = (oldPath as NSString).deletingLastPathComponent
-                        let sanitized = title.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-                        let newPath = (dir as NSString).appendingPathComponent("\(sanitized).md")
-                        if !FileManager.default.fileExists(atPath: newPath) {
-                            try? fileSystem.renameFile(from: oldPath, to: newPath)
-                            appState.openTabs[index].path = newPath
-                            appState.updateNavigationPath(for: tabId, from: oldPath, to: newPath)
-                            // Update any pageLink blocks in other open documents that reference old name
-                            updatePageLinks(oldName: currentName, newName: sanitized, docs: docs)
-                            refreshFileTree()
-                        }
-                    }
-                }
-            }
-            // Update backlink index for saved file
-            if let workspace = appState.workspacePath {
-                let savedPath = appState.openTabs[index].path
-                backlinkService.updateFile(at: savedPath, in: workspace)
-            }
-            appState.openTabs[index].isDirty = false
+            saveDocument(tabId: tabId)
         }
     }
 
@@ -1185,13 +1227,67 @@ struct ContentView: View {
         }
     }
 
+    private func markActiveEditorTabDirty() {
+        guard appState.activeTabIndex >= 0, appState.activeTabIndex < appState.openTabs.count else { return }
+        if !appState.openTabs[appState.activeTabIndex].isDirty {
+            appState.openTabs[appState.activeTabIndex].isDirty = true
+        }
+    }
+
     private func performSave(tabId: UUID) {
+        saveTask?.cancel()
+        saveTask = nil
+        saveDocument(tabId: tabId)
+    }
+
+    private func flushDirtyTabs() {
+        saveTask?.cancel()
+        saveTask = nil
+        let dirtyTabIds = appState.openTabs
+            .filter {
+                $0.isDirty
+                    && !$0.path.isEmpty
+                    && !$0.isCanvas
+                    && !$0.isDatabase
+                    && !$0.isDatabaseRow
+            }
+            .map(\.id)
+
+        for tabId in dirtyTabIds {
+            saveDocument(tabId: tabId)
+        }
+    }
+
+    private func saveDocument(tabId: UUID) {
         guard let index = appState.openTabs.firstIndex(where: { $0.id == tabId }),
               appState.openTabs[index].isDirty else { return }
         if let document = blockDocuments[tabId] {
             let content = document.markdown
             appState.openTabs[index].content = content
-            try? fileSystem.saveFile(at: appState.openTabs[index].path, content: content)
+            let oldPath = appState.openTabs[index].path
+            try? fileSystem.saveFile(at: oldPath, content: content)
+
+            if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
+                let title = AttributedStringConverter.plainText(from: rawTitle)
+                let currentName = (oldPath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+                if title != currentName {
+                    let dir = (oldPath as NSString).deletingLastPathComponent
+                    let sanitized = title.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
+                    let newPath = (dir as NSString).appendingPathComponent("\(sanitized).md")
+                    if !FileManager.default.fileExists(atPath: newPath) {
+                        try? fileSystem.renameFile(from: oldPath, to: newPath)
+                        appState.openTabs[index].path = newPath
+                        appState.updateNavigationPath(for: tabId, from: oldPath, to: newPath)
+                        updatePageLinks(oldName: currentName, newName: sanitized, docs: blockDocuments)
+                        refreshFileTree()
+                    }
+                }
+            }
+        }
+
+        if let workspace = appState.workspacePath {
+            let savedPath = appState.openTabs[index].path
+            backlinkService.updateFile(at: savedPath, in: workspace)
         }
         appState.openTabs[index].isDirty = false
     }
@@ -1271,8 +1367,8 @@ struct ContentView: View {
             id: path,
             name: displayName,
             path: path,
-            isDirectory: true,
-            isDatabase: true
+            isDirectory: false,
+            kind: .database
         )
         navigateToEntry(entry, preferExistingTab: false)
     }
@@ -1339,12 +1435,16 @@ struct ContentView: View {
     }
 
     private func closePeekPanel() {
-        peekDbPath = nil
-        peekRowId = nil
+        peekTarget = nil
         if sidebarHiddenByPeek {
             sidebarHiddenByPeek = false
             appState.sidebarOpen = true
         }
+    }
+
+    private func closeDatabaseRowModal() {
+        modalTarget = nil
+        modalAutoFocusTitle = false
     }
 
     private func syncTitle(from document: BlockDocument) {
@@ -1376,6 +1476,7 @@ struct ContentView: View {
     }
 
     private func currentPageBacklinks(for tab: OpenFile) -> [Backlink] {
+        guard !tab.isDatabaseRow else { return [] }
         guard let workspace = appState.workspacePath else { return [] }
         backlinkService.ensureIndex(workspace: workspace)
 
@@ -1386,19 +1487,43 @@ struct ContentView: View {
     }
 
     private func navigateToFilePath(_ path: String) {
+        if let existing = findEntryByPath(path, in: appState.fileTree) {
+            navigateToEntry(existing, preferExistingTab: true)
+            return
+        }
         let name = (path as NSString).lastPathComponent
-        let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, isDatabase: false)
+        let isDatabase = isDatabaseFolderPath(path)
+        let isCanvas = isCanvasFolderPath(path)
+        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
         navigateToEntry(entry, preferExistingTab: true)
     }
 
     private func breadcrumbs(for tab: OpenFile) -> [BreadcrumbItem] {
         guard let workspace = appState.workspacePath else { return [] }
+        if tab.isDatabaseRow, let dbPath = tab.databasePath {
+            var crumbs = fileSystem.getBreadcrumbs(for: dbPath, relativeTo: workspace)
+            crumbs.append(
+                BreadcrumbItem(
+                    id: tab.path,
+                    name: tab.displayName ?? "New Page",
+                    path: "",
+                    icon: nil
+                )
+            )
+            return crumbs
+        }
         var crumbs = fileSystem.getBreadcrumbs(for: tab.path, relativeTo: workspace)
         // Use live title for the last breadcrumb
         if let displayName = tab.displayName, !displayName.isEmpty, !crumbs.isEmpty {
             crumbs[crumbs.count - 1].name = displayName
         }
         return crumbs
+    }
+
+    private func updateDatabaseRowTabTitle(tabId: UUID, title: String) {
+        guard let index = appState.openTabs.firstIndex(where: { $0.id == tabId }) else { return }
+        appState.openTabs[index].displayName = title
     }
 }
 

@@ -5,59 +5,51 @@ extension Notification.Name {
     static let databaseDidChange = Notification.Name("databaseDidChange")
     static let databaseNameDidChange = Notification.Name("databaseNameDidChange")
     static let inlineDatabaseRowPeek = Notification.Name("inlineDatabaseRowPeek")
+    static let databaseRowModalRequested = Notification.Name("databaseRowModalRequested")
+}
+
+enum DatabaseNotificationKey {
+    static let dbPath = "dbPath"
+    static let rowId = "rowId"
+    static let origin = "origin"
+    static let autoFocusTitle = "autoFocusTitle"
+    static let newName = "newName"
+}
+
+extension Notification {
+    var databasePath: String? { userInfo?[DatabaseNotificationKey.dbPath] as? String }
+    var databaseRowId: String? { userInfo?[DatabaseNotificationKey.rowId] as? String }
+    var databaseOrigin: String? { userInfo?[DatabaseNotificationKey.origin] as? String }
+    var databaseAutoFocusTitle: Bool { userInfo?[DatabaseNotificationKey.autoFocusTitle] as? Bool ?? false }
+    var databaseNewName: String? { userInfo?[DatabaseNotificationKey.newName] as? String }
 }
 
 struct DatabaseFullPageView: View {
     let dbPath: String
     var initialRowId: String? = nil
-    @StateObject private var dbService = DatabaseService()
-    @State private var schema: DatabaseSchema?
-    @State private var rows: [DatabaseRow] = []
-    @State private var activeViewId: String = ""
-    @State private var error: String?
-    @State private var editingTitle: String = ""
+
+    @StateObject private var state: DatabaseViewState
+
     @State private var showPropertyManager = false
     @State private var showSettings = false
     @State private var showVerticalLines = true
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
-    @State private var titleSaveTask: Task<Void, Never>? = nil
-    @State private var rowSaveTask: Task<Void, Never>? = nil
-    @State private var pendingRowSaves: [String: DatabaseRow] = [:]
-    @State private var loadTask: Task<Void, Never>? = nil
-    @State private var notificationOrigin = UUID().uuidString
     @State private var initialPeekHandled = false
 
-    private var activeView: ViewConfig? {
-        schema?.views.first(where: { $0.id == activeViewId })
+    init(dbPath: String, initialRowId: String? = nil) {
+        self.dbPath = dbPath
+        self.initialRowId = initialRowId
+        _state = StateObject(wrappedValue: DatabaseViewState(dbPath: dbPath))
     }
 
     private var filteredAndSortedRows: [DatabaseRow] {
-        guard let view = activeView else { return rows }
-        var result = rows
-
-        for filter in view.filters {
-            result = result.filter { row in
-                let val = row.properties[filter.property] ?? .empty
-                return matchesFilter(val, filter: filter)
-            }
-        }
-
-        for sort in view.sorts.reversed() {
-            result.sort { a, b in
-                let va = a.properties[sort.property] ?? .empty
-                let vb = b.properties[sort.property] ?? .empty
-                let cmp = compareValues(va, vb)
-                return sort.ascending ? cmp == .orderedAscending : cmp == .orderedDescending
-            }
-        }
-
-        return result
+        state.filteredAndSortedRows()
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if let error = error {
+            if let error = state.error {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 32))
@@ -68,11 +60,11 @@ struct DatabaseFullPageView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
-                    Button("Retry") { loadData() }
+                    Button("Retry") { state.loadData() }
                 }
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let schema = schema {
+            } else if let schema = state.schema {
                 dbHeader(schema: schema)
                 viewTabs(schema: schema)
                 Divider()
@@ -85,19 +77,28 @@ struct DatabaseFullPageView: View {
         }
         .accessibilityIdentifier("editor")
         .sheet(isPresented: $showPropertyManager) {
-            if var s = schema {
-                PropertyManagerSheet(schema: Binding(
-                    get: { s },
-                    set: { s = $0; self.schema = $0 }
-                ), rows: $rows, dbPath: dbPath, dbService: dbService, notificationOrigin: notificationOrigin)
+            if state.schema != nil {
+                PropertyManagerSheet(
+                    schema: Binding(
+                        get: { state.schema! },
+                        set: { state.schema = $0 }
+                    ),
+                    rows: Binding(
+                        get: { state.rows },
+                        set: { state.rows = $0 }
+                    ),
+                    dbPath: state.dbPath,
+                    dbService: state.dbService,
+                    notificationOrigin: state.notificationOrigin
+                )
             }
         }
         .sheet(item: $renamingPropertyId) { propId in
-            if let s = schema, let prop = s.properties.first(where: { $0.id == propId }) {
+            if let s = state.schema, let prop = s.properties.first(where: { $0.id == propId }) {
                 RenamePropertySheet(
                     propertyName: prop.name,
                     onRename: { newName in
-                        renameProperty(propId, to: newName)
+                        state.renameProperty(propId, to: newName)
                         renamingPropertyId = nil
                     },
                     onCancel: { renamingPropertyId = nil }
@@ -105,45 +106,37 @@ struct DatabaseFullPageView: View {
             }
         }
         .task {
-            loadData()
+            state.loadData {
+                if let targetId = initialRowId,
+                   !initialPeekHandled,
+                   state.rows.contains(where: { $0.id == targetId }) {
+                    initialPeekHandled = true
+                    postInlineRowPeek(rowId: targetId)
+                }
+            }
         }
         .onDisappear {
-            titleSaveTask?.cancel()
-            titleSaveTask = nil
-            rowSaveTask?.cancel()
-            rowSaveTask = nil
-            loadTask?.cancel()
-            loadTask = nil
-            flushPendingRowSavesSynchronously()
+            state.cancelAll()
         }
         .onReceive(NotificationCenter.default.publisher(for: .databaseDidChange)) { notification in
-            guard let changedPath = notification.userInfo?["dbPath"] as? String,
+            guard let changedPath = notification.databasePath,
                   changedPath == dbPath else { return }
-            let origin = notification.userInfo?["origin"] as? String
-            guard origin != notificationOrigin else { return }
-            loadData()
+            guard notification.databaseOrigin != state.notificationOrigin else { return }
+            state.loadData()
         }
-    }
-
-    private func postChangeNotification() {
-        NotificationCenter.default.post(
-            name: .databaseDidChange,
-            object: nil,
-            userInfo: ["dbPath": dbPath, "origin": notificationOrigin]
-        )
     }
 
     // MARK: - Header
 
     private func dbHeader(schema: DatabaseSchema) -> some View {
         HStack(spacing: 8) {
-            TextField("Database Name", text: $editingTitle)
-                .onSubmit { persistDatabaseName(editingTitle) }
-                .onChange(of: editingTitle) { _, newValue in scheduleDatabaseNameSave(newValue) }
-                .font(.title3)
-                .fontWeight(.semibold)
+            TextField("Database Name", text: $state.editingTitle)
+                .onSubmit { state.persistTitle() }
+                .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
+                .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
                 .foregroundColor(.primary)
                 .textFieldStyle(.plain)
+                .databasePointerCursor()
 
             Spacer()
 
@@ -169,47 +162,14 @@ struct DatabaseFullPageView: View {
         .padding(.bottom, 4)
     }
 
-    private func scheduleDatabaseNameSave(_ value: String) {
-        titleSaveTask?.cancel()
-        titleSaveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            guard !Task.isCancelled else { return }
-            persistDatabaseName(value)
-        }
-    }
-
-    private func persistDatabaseName(_ rawValue: String) {
-        guard var currentSchema = schema else { return }
-        let newName = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !newName.isEmpty else {
-            editingTitle = currentSchema.name
-            return
-        }
-        guard newName != currentSchema.name else { return }
-
-        currentSchema.name = newName
-        schema = currentSchema
-        editingTitle = newName
-
-        Task {
-            try? dbService.saveSchema(currentSchema, at: dbPath)
-            postChangeNotification()
-            NotificationCenter.default.post(
-                name: .databaseNameDidChange,
-                object: nil,
-                userInfo: ["dbPath": dbPath, "newName": newName]
-            )
-        }
-    }
-
     // MARK: - View Tabs
 
     private func viewTabs(schema: DatabaseSchema) -> some View {
         HStack(spacing: 4) {
             ForEach(schema.views) { view in
                 Button {
-                    activeViewId = view.id
-                    persistActiveView(view.id)
+                    state.activeViewId = view.id
+                    state.persistActiveView(view.id)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: iconForViewType(view.type))
@@ -218,7 +178,7 @@ struct DatabaseFullPageView: View {
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(view.id == activeViewId ? Color.primary.opacity(0.1) : Color.clear)
+                    .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
                     .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
@@ -226,7 +186,7 @@ struct DatabaseFullPageView: View {
 
             Menu {
                 ForEach(ViewType.allCases, id: \.rawValue) { type in
-                    Button { addNewView(type: type) } label: {
+                    Button { state.addView(type: type) } label: {
                         Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
                     }
                 }
@@ -258,10 +218,10 @@ struct DatabaseFullPageView: View {
                     ForEach(ViewType.allCases, id: \.rawValue) { type in
                         Button {
                             if let view = schema.views.first(where: { $0.type == type }) {
-                                activeViewId = view.id
-                                persistActiveView(view.id)
+                                state.activeViewId = view.id
+                                state.persistActiveView(view.id)
                             } else {
-                                addNewView(type: type)
+                                state.addView(type: type)
                             }
                         } label: {
                             VStack(spacing: 4) {
@@ -271,9 +231,9 @@ struct DatabaseFullPageView: View {
                                     .font(.caption2)
                             }
                             .frame(width: 58, height: 48)
-                            .background(activeView?.type == type ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
+                            .background(state.activeView?.type == type ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
                             .cornerRadius(6)
-                            .foregroundColor(activeView?.type == type ? .primary : .secondary)
+                            .foregroundColor(state.activeView?.type == type ? .primary : .secondary)
                         }
                         .buttonStyle(.plain)
                     }
@@ -285,7 +245,7 @@ struct DatabaseFullPageView: View {
 
                 // Filter
                 popoverSectionHeader("Filter")
-                if let view = activeView, !view.filters.isEmpty {
+                if let view = state.activeView, !view.filters.isEmpty {
                     ForEach(view.filters) { filter in
                         filterRow(filter, schema: schema)
                             .padding(.horizontal, 12)
@@ -294,7 +254,7 @@ struct DatabaseFullPageView: View {
                 }
                 Menu {
                     ForEach(schema.properties.filter { $0.type != .title }) { prop in
-                        Button(prop.name) { addFilter(propertyId: prop.id) }
+                        Button(prop.name) { state.addFilter(propertyId: prop.id) }
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -312,7 +272,7 @@ struct DatabaseFullPageView: View {
 
                 // Sort
                 popoverSectionHeader("Sort")
-                if let view = activeView, !view.sorts.isEmpty {
+                if let view = state.activeView, !view.sorts.isEmpty {
                     ForEach(view.sorts) { sort in
                         sortRow(sort, schema: schema)
                             .padding(.horizontal, 12)
@@ -321,7 +281,7 @@ struct DatabaseFullPageView: View {
                 }
                 Menu {
                     ForEach(schema.properties.filter { $0.type != .title }) { prop in
-                        Button(prop.name) { addSort(propertyId: prop.id, ascending: true) }
+                        Button(prop.name) { state.addSort(propertyId: prop.id, ascending: true) }
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -340,8 +300,8 @@ struct DatabaseFullPageView: View {
                 // Properties visibility
                 popoverSectionHeader("Properties")
                 ForEach(schema.properties.filter { $0.type != .title }) { prop in
-                    let isHidden = (activeView?.hiddenColumns ?? []).contains(prop.id)
-                    Button { toggleColumnVisibility(prop.id) } label: {
+                    let isHidden = (state.activeView?.hiddenColumns ?? []).contains(prop.id)
+                    Button { state.toggleColumnVisibility(prop.id) } label: {
                         HStack {
                             Text(prop.name).font(.callout)
                             Spacer()
@@ -356,13 +316,27 @@ struct DatabaseFullPageView: View {
                     .padding(.vertical, 3)
                 }
 
-                if activeView?.type == .table {
+                if state.activeView?.type == .table {
                     Divider().padding(.top, 4)
                     Button { showVerticalLines.toggle() } label: {
                         HStack {
                             Text("Grid lines").font(.callout)
                             Spacer()
                             if showVerticalLines {
+                                Image(systemName: "checkmark").font(.caption).foregroundColor(.secondary)
+                            }
+                        }
+                        .foregroundColor(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 3)
+
+                    Button { state.toggleWrapCellText() } label: {
+                        HStack {
+                            Text("Wrap cell text").font(.callout)
+                            Spacer()
+                            if state.activeView?.wrapCellText == true {
                                 Image(systemName: "checkmark").font(.caption).foregroundColor(.secondary)
                             }
                         }
@@ -398,7 +372,7 @@ struct DatabaseFullPageView: View {
             // Property picker
             Menu {
                 ForEach(schema.properties.filter({ $0.type != .title })) { p in
-                    Button(p.name) { updateFilter(filter.id, property: p.id, op: nil, value: nil) }
+                    Button(p.name) { state.updateFilter(filter.id, property: p.id, op: nil, value: nil) }
                 }
             } label: {
                 Text(prop?.name ?? "Property")
@@ -415,7 +389,7 @@ struct DatabaseFullPageView: View {
             // Operator picker
             Menu {
                 ForEach(ops, id: \.0) { (opKey, opLabel) in
-                    Button(opLabel) { updateFilter(filter.id, property: nil, op: opKey, value: nil) }
+                    Button(opLabel) { state.updateFilter(filter.id, property: nil, op: opKey, value: nil) }
                 }
             } label: {
                 Text(labelForOp(filter.op))
@@ -435,7 +409,7 @@ struct DatabaseFullPageView: View {
 
             Spacer()
 
-            Button { removeFilter(filter.id) } label: {
+            Button { state.removeFilter(filter.id) } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -450,7 +424,7 @@ struct DatabaseFullPageView: View {
             // Select/multiSelect: show option picker
             Menu {
                 ForEach(options) { option in
-                    Button(option.name) { updateFilter(filter.id, property: nil, op: nil, value: option.id) }
+                    Button(option.name) { state.updateFilter(filter.id, property: nil, op: nil, value: option.id) }
                 }
             } label: {
                 let displayVal = prop.options?.first(where: { $0.id == filter.value })?.name ?? (filter.value.isEmpty ? "Pick value..." : filter.value)
@@ -465,8 +439,8 @@ struct DatabaseFullPageView: View {
             .fixedSize()
         } else if prop?.type == .checkbox {
             Menu {
-                Button("Checked") { updateFilter(filter.id, property: nil, op: nil, value: "true") }
-                Button("Unchecked") { updateFilter(filter.id, property: nil, op: nil, value: "false") }
+                Button("Checked") { state.updateFilter(filter.id, property: nil, op: nil, value: "true") }
+                Button("Unchecked") { state.updateFilter(filter.id, property: nil, op: nil, value: "false") }
             } label: {
                 Text(filter.value == "true" ? "Checked" : filter.value == "false" ? "Unchecked" : "Pick...")
                     .font(.caption)
@@ -481,7 +455,7 @@ struct DatabaseFullPageView: View {
             // Text/number/date/etc: text field
             let binding = Binding<String>(
                 get: { filter.value },
-                set: { newVal in updateFilter(filter.id, property: nil, op: nil, value: newVal) }
+                set: { newVal in state.updateFilter(filter.id, property: nil, op: nil, value: newVal) }
             )
             TextField("Value", text: binding)
                 .textFieldStyle(.roundedBorder)
@@ -500,7 +474,7 @@ struct DatabaseFullPageView: View {
             // Property picker
             Menu {
                 ForEach(schema.properties.filter({ $0.type != .title })) { p in
-                    Button(p.name) { updateSort(sort.id, property: p.id, ascending: nil) }
+                    Button(p.name) { state.updateSort(sort.id, property: p.id, ascending: nil) }
                 }
             } label: {
                 Text(prop?.name ?? "Property")
@@ -516,7 +490,7 @@ struct DatabaseFullPageView: View {
 
             // Direction toggle
             Button {
-                updateSort(sort.id, property: nil, ascending: !sort.ascending)
+                state.updateSort(sort.id, property: nil, ascending: !sort.ascending)
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: sort.ascending ? "arrow.up" : "arrow.down")
@@ -532,7 +506,7 @@ struct DatabaseFullPageView: View {
 
             Spacer()
 
-            Button { removeSort(sort.id) } label: {
+            Button { state.removeSort(sort.id) } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -591,193 +565,96 @@ struct DatabaseFullPageView: View {
                 get: { filtered },
                 set: { newVal in
                     for updated in newVal {
-                        if let idx = rows.firstIndex(where: { $0.id == updated.id }) {
-                            rows[idx] = updated
+                        if let idx = state.rows.firstIndex(where: { $0.id == updated.id }) {
+                            state.rows[idx] = updated
                         } else {
-                            rows.append(updated)
+                            state.rows.append(updated)
                         }
                     }
                 }
             )
         }
 
-        switch activeView?.type ?? .table {
+        switch state.activeView?.type ?? .table {
         case .table:
-            TableView(
-                schema: schema,
-                rows: boundRows,
-                viewConfig: activeView ?? defaultViewConfig(),
-                onOpenRow: { row in openRow(row) },
-                onSave: { row in saveRow(row) },
-                onDelete: { row in deleteRow(row) },
-                onToggleColumn: { propId in toggleColumnVisibility(propId) },
-                onAddProperty: { type in addPropertyFromTable(type: type) },
-                onRenameProperty: { propId, newName in
-                    renameProperty(propId, to: newName)
-                },
-                onDeleteProperty: { propId in deleteProperty(propId) },
-                onChangePropertyType: { propId, newType in changePropertyType(propId, to: newType) },
-                onAddSelectOption: { propId, option in addSelectOption(propId, option: option) },
-                onUpdateSelectOption: { propId, optId, name, color in updateSelectOption(propId, optionId: optId, name: name, color: color) },
-                onDeleteSelectOption: { propId, optId in deleteSelectOption(propId, optionId: optId) },
-                onResizeColumn: { propId, width in resizeColumn(propId, to: width) },
-                onNewRow: { createNewRow() },
-                showVerticalLines: showVerticalLines
-            )
+            ScrollView {
+                TableView(
+                    schema: schema,
+                    rows: boundRows,
+                    viewConfig: state.activeView ?? state.defaultViewConfig(),
+                    onOpenRow: { row in openRow(row) },
+                    onSave: { row in state.saveRow(row) },
+                    onDelete: { row in state.deleteRow(row) },
+                    onToggleColumn: { propId in state.toggleColumnVisibility(propId) },
+                    onAddProperty: { type in state.addPropertyFromTable(type: type) },
+                    onRenameProperty: { propId, newName in
+                        state.renameProperty(propId, to: newName)
+                    },
+                    onDeleteProperty: { propId in state.deleteProperty(propId) },
+                    onChangePropertyType: { propId, newType in state.changePropertyType(propId, to: newType) },
+                    onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
+                    onUpdateSelectOption: { propId, optId, name, color in state.updateSelectOption(propId, optionId: optId, name: name, color: color) },
+                    onDeleteSelectOption: { propId, optId in state.deleteSelectOption(propId, optionId: optId) },
+                    onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
+                    onReorderRows: { draggedId, targetId in
+                        state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredAndSortedRows.map(\.id))
+                    },
+                    onNewRow: { createNewRow() },
+                    showVerticalLines: showVerticalLines,
+                    usesInnerScroll: false
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, -TableView.rowControlsInset)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .kanban:
             KanbanView(
                 schema: schema,
                 rows: boundRows,
-                viewConfig: activeView ?? defaultViewConfig(),
+                viewConfig: state.activeView ?? state.defaultViewConfig(),
                 onOpenRow: { row in openRow(row) },
-                onSave: { row in saveRow(row) },
-                onUpdateGroupBy: { propId in updateGroupBy(propId) },
-                onAddSelectOption: { propId, option in addSelectOption(propId, option: option) }
+                onSave: { row in state.saveRow(row) },
+                onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
+                onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) }
             )
         case .list:
             ListView(
                 schema: schema,
                 rows: boundRows,
-                viewConfig: activeView ?? defaultViewConfig(),
+                viewConfig: state.activeView ?? state.defaultViewConfig(),
                 onOpenRow: { row in openRow(row) },
-                onSave: { row in saveRow(row) },
+                onSave: { row in state.saveRow(row) },
                 onNewRow: { createNewRow() }
             )
         case .calendar:
             CalendarView(
                 schema: schema,
                 rows: boundRows,
-                viewConfig: activeView ?? defaultViewConfig(),
-                onOpenRow: { row in openRow(row) },
-                onCreateRow: { dateStr in createRowWithDate(dateStr) }
+                viewConfig: state.activeView ?? state.defaultViewConfig(),
+                onOpenRow: { row in state.requestRowModal(rowId: row.id) },
+                onSave: { row in state.saveRow(row) },
+                onCreateRow: { dateStr, propertyId in
+                    do {
+                        let newRow = try state.createRowWithDate(dateStr, propertyId: propertyId)
+                        state.requestRowModal(rowId: newRow.id, autoFocusTitle: true)
+                    } catch {
+                        state.error = error.localizedDescription
+                    }
+                }
             )
         }
     }
 
-    // MARK: - Data Operations
-
-    private func loadData() {
-        loadTask?.cancel()
-        error = nil
-
-        let path = dbPath
-        loadTask = Task {
-            let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
-                do {
-                    return .success(try DatabaseService().loadDatabase(at: path))
-                } catch {
-                    return .failure(error)
-                }
-            }.value
-
-            guard !Task.isCancelled else { return }
-
-            switch result {
-            case .success(let (loadedSchema, loadedRows)):
-                schema = loadedSchema
-                rows = loadedRows
-                if activeViewId.isEmpty || !loadedSchema.views.contains(where: { $0.id == activeViewId }) {
-                    activeViewId = loadedSchema.defaultView
-                }
-                editingTitle = loadedSchema.name
-                if let targetId = initialRowId,
-                   !initialPeekHandled,
-                   loadedRows.contains(where: { $0.id == targetId }) {
-                    initialPeekHandled = true
-                    postInlineRowPeek(rowId: targetId)
-                }
-            case .failure(let error):
-                self.error = error.localizedDescription
-            }
-        }
-    }
-
-    private func saveRow(_ row: DatabaseRow) {
-        guard schema != nil else { return }
-        if let idx = rows.firstIndex(where: { $0.id == row.id }) {
-            rows[idx] = row
-        }
-        pendingRowSaves[row.id] = row
-        schedulePendingRowSave()
-    }
-
-    private func schedulePendingRowSave() {
-        rowSaveTask?.cancel()
-        rowSaveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
-            flushPendingRowSaves()
-        }
-    }
-
-    private func flushPendingRowSaves() {
-        guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
-        let rowsToPersist = Array(pendingRowSaves.values)
-        pendingRowSaves.removeAll()
-
-        Task {
-            for row in rowsToPersist {
-                try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
-            }
-            postChangeNotification()
-        }
-    }
-
-    private func flushPendingRowSavesSynchronously() {
-        guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
-        let rowsToPersist = Array(pendingRowSaves.values)
-        pendingRowSaves.removeAll()
-
-        for row in rowsToPersist {
-            try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
-        }
-        postChangeNotification()
-    }
-
-    private func deleteRow(_ row: DatabaseRow) {
-        guard let schema = schema else { return }
-        pendingRowSaves.removeValue(forKey: row.id)
-        rows.removeAll { $0.id == row.id }
-        Task {
-            try? dbService.deleteRow(row.id, in: dbPath)
-            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
-            postChangeNotification()
-        }
-    }
+    // MARK: - View-Specific Operations
 
     private func createNewRow() {
-        guard let schema = schema else { return }
         Task {
             do {
-                let newRow = try dbService.createRow(in: dbPath, schema: schema)
-                rows.append(newRow)
+                let newRow = try state.createRow()
                 openRow(newRow)
-                postChangeNotification()
             } catch {
-                self.error = error.localizedDescription
-            }
-        }
-    }
-
-    private func createRowWithDate(_ dateStr: String) {
-        guard let schema = schema, let dateProp = schema.properties.first(where: { $0.type == .date }) else {
-            createNewRow()
-            return
-        }
-        Task {
-            do {
-                var newRow = try dbService.createRow(in: dbPath, schema: schema)
-                newRow.properties[dateProp.id] = .date(dateStr)
-                try dbService.saveRow(newRow, schema: schema, at: dbPath)
-                if let idx = rows.firstIndex(where: { $0.id == newRow.id }) {
-                    rows[idx] = newRow
-                } else {
-                    rows.append(newRow)
-                }
-                openRow(newRow)
-                postChangeNotification()
-            } catch {
-                self.error = error.localizedDescription
+                state.error = error.localizedDescription
             }
         }
     }
@@ -791,288 +668,16 @@ struct DatabaseFullPageView: View {
             name: .inlineDatabaseRowPeek,
             object: nil,
             userInfo: [
-                "dbPath": dbPath,
-                "rowId": rowId
+                DatabaseNotificationKey.dbPath: dbPath,
+                DatabaseNotificationKey.rowId: rowId
             ]
         )
-    }
-
-    // MARK: - Property Operations
-
-    private func addPropertyFromTable(type: PropertyType) {
-        guard var s = schema else { return }
-        let config: PropertyConfig? = (type == .select || type == .multiSelect) ? PropertyConfig(options: []) : nil
-        let prop = PropertyDefinition(
-            id: "prop_\(UUID().uuidString)",
-            name: "New \(type.rawValue.capitalized)",
-            type: type,
-            config: config
-        )
-        Task {
-            try? dbService.addProperty(prop, to: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func resizeColumn(_ propertyId: String, to width: CGFloat) {
-        guard var s = schema, var view = activeView else { return }
-        if view.columnWidths == nil { view.columnWidths = [:] }
-        view.columnWidths?[propertyId] = Double(width)
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func renameProperty(_ propertyId: String, to newName: String) {
-        guard var s = schema else { return }
-        guard let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
-        s.properties[idx].name = newName
-        schema = s
-        Task {
-            try? dbService.saveSchema(s, at: dbPath)
-            for row in rows {
-                try? dbService.saveRow(row, schema: s, at: dbPath)
-            }
-        }
-    }
-
-    private func deleteProperty(_ propertyId: String) {
-        guard var s = schema else { return }
-        Task {
-            try? dbService.deleteProperty(propertyId, from: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func changePropertyType(_ propertyId: String, to newType: PropertyType) {
-        guard var s = schema else { return }
-        Task {
-            try? dbService.changePropertyType(propertyId, to: newType, in: &s, rows: &rows, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func addSelectOption(_ propertyId: String, option: SelectOption) {
-        guard var s = schema else { return }
-        Task {
-            try? dbService.addSelectOption(option, toProperty: propertyId, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func updateSelectOption(_ propertyId: String, optionId: String, name: String?, color: String?) {
-        guard var s = schema else { return }
-        Task {
-            try? dbService.updateSelectOption(optionId, name: name, color: color, inProperty: propertyId, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func deleteSelectOption(_ propertyId: String, optionId: String) {
-        guard var s = schema else { return }
-        Task {
-            try? dbService.deleteSelectOption(optionId, fromProperty: propertyId, in: &s, rows: &rows, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func updateGroupBy(_ propertyId: String) {
-        guard var s = schema, var view = activeView else { return }
-        view.groupBy = propertyId
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    // MARK: - View Management
-
-    private func persistActiveView(_ viewId: String) {
-        guard var s = schema, s.defaultView != viewId else { return }
-        Task {
-            try? dbService.setDefaultView(viewId, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func addNewView(type: ViewType) {
-        guard var s = schema else { return }
-
-        // Auto-create a Status property for Kanban if no select property exists
-        if type == .kanban && s.properties.first(where: { $0.type == .select }) == nil {
-            let statusProp = PropertyDefinition(
-                id: "prop_status_\(UUID().uuidString.prefix(6).lowercased())",
-                name: "Status",
-                type: .select,
-                config: PropertyConfig(options: [
-                    SelectOption(id: "opt_not_started", name: "Not started", color: "gray"),
-                    SelectOption(id: "opt_in_progress", name: "In progress", color: "blue"),
-                    SelectOption(id: "opt_done", name: "Done", color: "green")
-                ])
-            )
-            Task {
-                try? dbService.addProperty(statusProp, to: &s, at: dbPath)
-                let view = ViewConfig(
-                    id: "view_\(UUID().uuidString)",
-                    name: type.rawValue.capitalized,
-                    type: type,
-                    sorts: [],
-                    filters: [],
-                    groupBy: statusProp.id
-                )
-                try? dbService.addView(view, to: &s, at: dbPath)
-                schema = s
-                activeViewId = view.id
-            }
-            return
-        }
-
-        let view = ViewConfig(
-            id: "view_\(UUID().uuidString)",
-            name: type.rawValue.capitalized,
-            type: type,
-            sorts: [],
-            filters: [],
-            groupBy: type == .kanban ? s.properties.first(where: { $0.type == .select })?.id : nil,
-            dateProperty: type == .calendar ? s.properties.first(where: { $0.type == .date })?.id : nil
-        )
-        Task {
-            try? dbService.addView(view, to: &s, at: dbPath)
-            schema = s
-            activeViewId = view.id
-        }
-    }
-
-    // MARK: - Filter/Sort Management
-
-    private func addFilter(propertyId: String) {
-        guard var s = schema, var view = activeView else { return }
-        let prop = s.properties.first(where: { $0.id == propertyId })
-        let defaultOp = (prop?.type == .checkbox) ? "equals" : "is_not_empty"
-        let defaultValue = (prop?.type == .checkbox) ? "true" : ""
-        let filter = FilterConfig(property: propertyId, op: defaultOp, value: defaultValue)
-        view.filters.append(filter)
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func updateFilter(_ filterId: String, property: String?, op: String?, value: String?) {
-        guard var s = schema, var view = activeView,
-              let idx = view.filters.firstIndex(where: { $0.id == filterId }) else { return }
-        if let property = property { view.filters[idx].property = property }
-        if let op = op { view.filters[idx].op = op }
-        if let value = value { view.filters[idx].value = value }
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func removeFilter(_ filterId: String) {
-        guard var s = schema, var view = activeView else { return }
-        view.filters.removeAll { $0.id == filterId }
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func addSort(propertyId: String, ascending: Bool) {
-        guard var s = schema, var view = activeView else { return }
-        let sort = SortConfig(property: propertyId, direction: ascending ? "asc" : "desc")
-        view.sorts.append(sort)
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func updateSort(_ sortId: String, property: String?, ascending: Bool?) {
-        guard var s = schema, var view = activeView,
-              let idx = view.sorts.firstIndex(where: { $0.id == sortId }) else { return }
-        if let property = property { view.sorts[idx].property = property }
-        if let ascending = ascending { view.sorts[idx].direction = ascending ? "asc" : "desc" }
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func removeSort(_ sortId: String) {
-        guard var s = schema, var view = activeView else { return }
-        view.sorts.removeAll { $0.id == sortId }
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
-    }
-
-    private func toggleColumnVisibility(_ propertyId: String) {
-        guard var s = schema, var view = activeView else { return }
-        var hidden = view.hiddenColumns ?? []
-        if hidden.contains(propertyId) {
-            hidden.removeAll { $0 == propertyId }
-        } else {
-            hidden.append(propertyId)
-        }
-        view.hiddenColumns = hidden
-        Task {
-            try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
-        }
     }
 
     // MARK: - Helpers
 
     private func iconForViewType(_ type: ViewType) -> String {
-        switch type {
-        case .table: return "tablecells"
-        case .kanban: return "rectangle.split.3x1"
-        case .list: return "list.bullet"
-        case .calendar: return "calendar"
-        }
-    }
-
-    private func defaultViewConfig() -> ViewConfig {
-        ViewConfig(id: "default", name: "Table", type: .table, sorts: [], filters: [])
-    }
-
-    private func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
-        let stringVal = stringFromValue(value)
-        switch filter.op {
-        case "equals": return stringVal == filter.value
-        case "not_equals": return stringVal != filter.value
-        case "contains": return stringVal.localizedCaseInsensitiveContains(filter.value)
-        case "not_contains": return !stringVal.localizedCaseInsensitiveContains(filter.value)
-        case "is_empty": return stringVal.isEmpty
-        case "is_not_empty": return !stringVal.isEmpty
-        case "greater_than": return stringVal > filter.value
-        case "less_than": return stringVal < filter.value
-        default: return true
-        }
-    }
-
-    private func compareValues(_ a: PropertyValue, _ b: PropertyValue) -> ComparisonResult {
-        stringFromValue(a).compare(stringFromValue(b))
-    }
-
-    private func stringFromValue(_ value: PropertyValue) -> String {
-        switch value {
-        case .text(let s): return s
-        case .number(let n): return String(n)
-        case .select(let s): return s
-        case .multiSelect(let arr): return arr.joined(separator: ",")
-        case .date(let s): return s
-        case .checkbox(let b): return b ? "1" : "0"
-        case .url(let s): return s
-        case .email(let s): return s
-        case .relation(let s): return s
-        case .relationMany(let arr): return arr.joined(separator: ",")
-        case .empty: return ""
-        }
+        type.systemImageName
     }
 }
 
@@ -1195,7 +800,7 @@ private struct PropertyManagerSheet: View {
                 NotificationCenter.default.post(
                     name: .databaseDidChange,
                     object: nil,
-                    userInfo: ["dbPath": dbPath, "origin": notificationOrigin]
+                    userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.origin: notificationOrigin]
                 )
             }
         }
@@ -1210,7 +815,7 @@ private struct PropertyManagerSheet: View {
         NotificationCenter.default.post(
             name: .databaseDidChange,
             object: nil,
-            userInfo: ["dbPath": dbPath, "origin": notificationOrigin]
+            userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.origin: notificationOrigin]
         )
     }
 }

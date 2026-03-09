@@ -4,12 +4,15 @@ import BugbookCore
 struct PropertyEditorView: View {
     let definition: PropertyDefinition
     @Binding var value: PropertyValue
+    var wrapText: Bool = false
+    var compact: Bool = false
     var onAddOption: ((String, SelectOption) -> Void)?
     var onUpdateOption: ((String, String, String?, String?) -> Void)?  // (propId, optionId, newName?, newColor?)
     var onDeleteOption: ((String, String) -> Void)?  // (propId, optionId)
 
     var body: some View {
         mainEditor
+            .databasePointerCursor()
             .popover(item: $editingOptionId) { optId in
                 editOptionPopover(optionId: optId)
             }
@@ -93,18 +96,16 @@ struct PropertyEditorView: View {
     // MARK: - Text
 
     private var textEditor: some View {
-        TextField("", text: Binding(
+        plainTextField(Binding(
             get: { if case .text(let s) = value { return s } else { return "" } },
             set: { value = .text($0) }
         ))
-        .textFieldStyle(.plain)
-        .foregroundColor(.primary)
     }
 
     // MARK: - Number
 
     private var numberEditor: some View {
-        TextField("", text: Binding(
+        TextField(compact ? "" : "Empty", text: Binding(
             get: {
                 if case .number(let n) = value {
                     return n == n.rounded() ? String(Int(n)) : String(n)
@@ -145,6 +146,10 @@ struct PropertyEditorView: View {
                     .foregroundColor(colorForName(opt.color))
                     .cornerRadius(4)
                     .contextMenu { optionContextMenu(for: opt) }
+            } else if !compact {
+                Text("Empty")
+                    .font(.body)
+                    .foregroundColor(.secondary)
             }
             Spacer(minLength: 0)
         }
@@ -221,6 +226,10 @@ struct PropertyEditorView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
+            } else if !compact {
+                Text("Empty")
+                    .font(.body)
+                    .foregroundColor(.secondary)
             }
             Spacer(minLength: 0)
         }
@@ -387,39 +396,73 @@ struct PropertyEditorView: View {
     @State private var showDatePicker: Bool = false
 
     private var dateEditor: some View {
-        let hasDate = { if case .date = value { return true } else { return false } }()
-        let dateBinding = Binding<Date>(
-            get: {
-                if case .date(let s) = value {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd"
-                    return formatter.date(from: s) ?? Date()
-                }
-                return Date()
-            },
-            set: {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd"
-                value = .date(formatter.string(from: $0))
-            }
-        )
+        let dateValue = currentDateValue
+        let hasDate = dateValue != nil
+        let label = dateValue?.displayText(compact: compact) ?? ""
+        let horizontalPadding: CGFloat = compact ? 8 : 10
+        let verticalPadding: CGFloat = compact ? 4 : 6
+        let textFont: Font = compact ? .caption : .body
 
         return HStack(spacing: 0) {
-            if hasDate {
-                DatePicker("", selection: dateBinding, displayedComponents: .date)
-                    .labelsHidden()
+            Button {
+                if currentDateValue == nil {
+                    commitDateValue(
+                        DatabaseDateValue(
+                            start: DatabaseDateValue.canonicalDayString(from: Date())
+                        )
+                    )
+                }
+                showDatePicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    if hasDate {
+                        Image(systemName: "calendar")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(label)
+                            .font(textFont)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    } else if !compact {
+                        Text("Empty")
+                            .font(textFont)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Color.clear
+                            .frame(height: 14)
+                    }
+                }
+                .padding(.horizontal, hasDate || compact ? horizontalPadding : 0)
+                .padding(.vertical, hasDate || compact ? verticalPadding : 0)
+                .background(
+                    RoundedRectangle(cornerRadius: compact ? 7 : 9)
+                        .fill(hasDate ? Color.fallbackSurfaceSubtle : Color.clear)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: compact ? 7 : 9)
+                                .stroke(
+                                    hasDate ? Color.fallbackBorderColor : Color.clear,
+                                    lineWidth: 1
+                                )
+                        )
+                )
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+            .popover(isPresented: $showDatePicker, arrowEdge: .bottom) {
+                DatePropertyPopover(
+                    value: Binding(
+                        get: { currentDateValue },
+                        set: { commitDateValue($0) }
+                    )
+                )
+            }
+
+            if !compact {
+                Spacer(minLength: 0)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 22)
+        .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if !hasDate {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd"
-                value = .date(formatter.string(from: Date()))
-            }
-        }
     }
 
     // MARK: - Checkbox
@@ -456,11 +499,10 @@ struct PropertyEditorView: View {
             Image(systemName: "link")
                 .foregroundStyle(.tertiary)
                 .font(.caption)
-            TextField("", text: Binding(
+            plainTextField(Binding(
                 get: { urlString },
                 set: { value = $0.isEmpty ? .empty : .url($0) }
             ))
-            .textFieldStyle(.plain)
         }
     }
 
@@ -476,11 +518,30 @@ struct PropertyEditorView: View {
             Image(systemName: "envelope")
                 .foregroundStyle(.tertiary)
                 .font(.caption)
-            TextField("", text: Binding(
+            plainTextField(Binding(
                 get: { emailString },
                 set: { value = $0.isEmpty ? .empty : .email($0) }
             ))
-            .textFieldStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func plainTextField(_ text: Binding<String>) -> some View {
+        let placeholder = compact ? "" : "Empty"
+        let textFont: Font = compact ? .callout : .body
+        if wrapText {
+            TextField(placeholder, text: text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(textFont)
+                .lineLimit(1...4)
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.leading)
+        } else {
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(textFont)
+                .lineLimit(1)
+                .foregroundColor(.primary)
         }
     }
 
@@ -499,4 +560,361 @@ struct PropertyEditorView: View {
         default: return .gray
         }
     }
+
+    private var currentDateValue: DatabaseDateValue? {
+        guard case .date(let raw) = value else { return nil }
+        return DatabaseDateValue.decode(from: raw)
+    }
+
+    private func commitDateValue(_ dateValue: DatabaseDateValue?) {
+        guard let dateValue else {
+            value = .empty
+            return
+        }
+        value = .date(dateValue.rawValue)
+    }
+}
+
+private enum DatePopoverEndpoint: String, CaseIterable {
+    case start
+    case end
+
+    var title: String {
+        switch self {
+        case .start: return "Start"
+        case .end: return "End"
+        }
+    }
+}
+
+private struct DatePropertyPopover: View {
+    @Binding var value: DatabaseDateValue?
+
+    @State private var displayMonth: Date = Date()
+    @State private var activeEndpoint: DatePopoverEndpoint = .start
+    @State private var didSyncInitialState = false
+
+    private let calendar = Calendar.current
+    private let weekdaySymbols = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+
+    private var workingValue: DatabaseDateValue {
+        value ?? DatabaseDateValue(start: DatabaseDateValue.canonicalDayString(from: Date()))
+    }
+
+    private static let monthTitleFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+
+    private var monthTitle: String {
+        Self.monthTitleFormatter.string(from: displayMonth)
+    }
+
+    private var selectedDate: Date {
+        workingValue.dateForPicker(activeEndpoint == .end)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            summaryChips
+            monthNavigation
+            weekdayHeader
+            dayGrid
+            Divider()
+            controls
+            Divider()
+            Button("Clear") {
+                value = nil
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+        }
+        .padding(14)
+        .frame(width: 336)
+        .background(Color.fallbackBgSecondary)
+        .onAppear {
+            guard !didSyncInitialState else { return }
+            syncFromValue()
+            didSyncInitialState = true
+        }
+        .onChange(of: value?.rawValue) { _, _ in
+            syncFromValue()
+        }
+    }
+
+    private var summaryChips: some View {
+        HStack(spacing: 8) {
+            summaryChip(for: .start)
+            if workingValue.end != nil {
+                summaryChip(for: .end)
+            }
+            Spacer()
+        }
+    }
+
+    private static let summaryDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+
+    private static let summaryDateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    private func summaryChip(for endpoint: DatePopoverEndpoint) -> some View {
+        let date = endpoint == .start ? workingValue.startDate : workingValue.endDate
+        let label: String
+        if let date {
+            let formatter = workingValue.includeTime ? Self.summaryDateTimeFormatter : Self.summaryDateFormatter
+            label = formatter.string(from: date)
+        } else {
+            label = endpoint == .start ? "Set start" : "Set end"
+        }
+
+        return Button {
+            activeEndpoint = endpoint
+            if let date {
+                displayMonth = monthStart(for: date)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: endpoint == .start ? "calendar" : "calendar.badge.clock")
+                    .font(.caption)
+                Text(label)
+                    .font(.callout)
+                    .lineLimit(1)
+            }
+            .foregroundColor(activeEndpoint == endpoint ? .primary : .secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(activeEndpoint == endpoint ? Color.fallbackSurfaceHover : Color.fallbackSurfaceSubtle)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9)
+                            .stroke(
+                                activeEndpoint == endpoint ? Color.fallbackAccent.opacity(0.7) : Color.fallbackBorderColor,
+                                lineWidth: 1
+                            )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var monthNavigation: some View {
+        HStack(spacing: 10) {
+            Text(monthTitle)
+                .font(.headline)
+            Spacer()
+            Button("Today") {
+                let today = Date()
+                displayMonth = monthStart(for: today)
+                updateDate(
+                    activeEndpoint == .start
+                        ? workingValue.settingStart(today, calendar: calendar)
+                        : workingValue.settingEnd(today, calendar: calendar)
+                )
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+
+            Button {
+                displayMonth = calendar.date(byAdding: .month, value: -1, to: displayMonth) ?? displayMonth
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                displayMonth = calendar.date(byAdding: .month, value: 1, to: displayMonth) ?? displayMonth
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var weekdayHeader: some View {
+        HStack(spacing: 6) {
+            ForEach(weekdaySymbols, id: \.self) { symbol in
+                Text(symbol)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var dayGrid: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+        return LazyVGrid(columns: columns, spacing: 6) {
+            ForEach(calendarCells) { cell in
+                Button {
+                    select(day: cell.date)
+                } label: {
+                    Text("\(calendar.component(.day, from: cell.date))")
+                        .font(.callout)
+                        .fontWeight(cell.isSelected ? .semibold : .regular)
+                        .foregroundColor(cell.isSelected ? .white : (cell.isCurrentMonth ? .primary : .secondary))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(cell.isSelected ? Color.fallbackAccent : (cell.isToday ? Color.fallbackAccentLight.opacity(0.35) : Color.clear))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(cell.isToday && !cell.isSelected ? Color.fallbackAccent.opacity(0.6) : Color.clear, lineWidth: 1)
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var controls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("End date", isOn: Binding(
+                get: { workingValue.end != nil },
+                set: { enabled in
+                    let updated = workingValue.togglingEndDate(enabled, calendar: calendar)
+                    updateDate(updated)
+                    activeEndpoint = enabled ? .end : .start
+                }
+            ))
+
+            Toggle("Include time", isOn: Binding(
+                get: { workingValue.includeTime },
+                set: { enabled in
+                    updateDate(workingValue.togglingIncludeTime(enabled, calendar: calendar))
+                }
+            ))
+
+            HStack {
+                Text("Date format")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Menu {
+                    ForEach(DatabaseDateFormat.allCases, id: \.rawValue) { format in
+                        Button {
+                            updateDate(workingValue.settingDateFormat(format))
+                        } label: {
+                            HStack {
+                                Text(format.displayName)
+                                if workingValue.dateFormat == format {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(workingValue.dateFormat.displayName)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.primary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+
+            if workingValue.includeTime {
+                timeRow(title: "Start time", usesEndDate: false)
+                if workingValue.end != nil {
+                    timeRow(title: "End time", usesEndDate: true)
+                }
+            }
+        }
+        .toggleStyle(.switch)
+    }
+
+    private func timeRow(title: String, usesEndDate: Bool) -> some View {
+        HStack {
+            Text(title)
+                .foregroundColor(.secondary)
+            Spacer()
+            DatePicker(
+                "",
+                selection: Binding(
+                    get: { workingValue.dateForPicker(usesEndDate) },
+                    set: { newValue in
+                        if usesEndDate {
+                            updateDate(workingValue.settingEnd(newValue, calendar: calendar))
+                        } else {
+                            updateDate(workingValue.settingStart(newValue, calendar: calendar))
+                        }
+                    }
+                ),
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.field)
+            .labelsHidden()
+            .frame(width: 116)
+        }
+    }
+
+    private var calendarCells: [MiniCalendarCell] {
+        let monthStart = monthStart(for: displayMonth)
+        let startWeekday = calendar.component(.weekday, from: monthStart) - 1
+        let gridStart = calendar.date(byAdding: .day, value: -startWeekday, to: monthStart) ?? monthStart
+
+        return (0..<42).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: gridStart) else {
+                return nil
+            }
+            let selected = calendar.isDate(date, inSameDayAs: selectedDate)
+            return MiniCalendarCell(
+                offset: offset,
+                date: date,
+                isCurrentMonth: calendar.isDate(date, equalTo: displayMonth, toGranularity: .month),
+                isToday: calendar.isDateInToday(date),
+                isSelected: selected
+            )
+        }
+    }
+
+    private func select(day: Date) {
+        displayMonth = monthStart(for: day)
+        if activeEndpoint == .end {
+            updateDate(workingValue.settingEnd(day, calendar: calendar))
+        } else {
+            updateDate(workingValue.settingStart(day, calendar: calendar))
+        }
+    }
+
+    private func updateDate(_ newValue: DatabaseDateValue) {
+        value = newValue
+    }
+
+    private func monthStart(for date: Date) -> Date {
+        calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+    }
+
+    private func syncFromValue() {
+        let anchorDate = selectedDate
+        displayMonth = monthStart(for: anchorDate)
+        if workingValue.end == nil {
+            activeEndpoint = .start
+        }
+    }
+}
+
+private struct MiniCalendarCell: Identifiable {
+    let offset: Int
+    let date: Date
+    let isCurrentMonth: Bool
+    let isToday: Bool
+    let isSelected: Bool
+
+    var id: Int { offset }
 }

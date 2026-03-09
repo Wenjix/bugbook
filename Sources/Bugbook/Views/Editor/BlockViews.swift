@@ -3,8 +3,10 @@ import SwiftUI
 /// Horizontal rule block.
 struct HorizontalRuleView: View {
     var body: some View {
-        Divider()
-            .padding(.vertical, 12)
+        Rectangle()
+            .fill(Color.fallbackDividerColor)
+            .frame(height: 1)
+            .padding(.vertical, 6)
     }
 }
 

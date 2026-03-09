@@ -118,7 +118,7 @@ struct KanbanView: View {
 
     private func dragPreview(_ title: String) -> some View {
         Text(title.isEmpty ? "Untitled" : title)
-            .font(.body)
+            .font(.system(size: EditorTypography.bodyFontSize))
             .fontWeight(.medium)
             .lineLimit(1)
             .padding(.horizontal, 12)
@@ -314,7 +314,7 @@ struct KanbanView: View {
 
     private func kanbanCard(_ row: DatabaseRow, title: String, columnColor: Color) -> some View {
         Text(title.isEmpty ? "Untitled" : title)
-            .font(.body)
+            .font(.system(size: EditorTypography.bodyFontSize))
             .fontWeight(.medium)
             .lineLimit(2)
             .foregroundColor(.primary)

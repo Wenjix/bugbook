@@ -1359,6 +1359,7 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(view.type, .table)
         XCTAssertTrue(view.sorts.isEmpty)
         XCTAssertTrue(view.filters.isEmpty)
+        XCTAssertNil(view.manualRowOrder)
     }
 
     func testViewConfigCodableRoundTrip() throws {
@@ -1366,13 +1367,15 @@ final class ViewModelTests: XCTestCase {
             id: "view_kanban",
             name: "Kanban Board",
             type: .kanban,
-            groupBy: "prop_status"
+            groupBy: "prop_status",
+            manualRowOrder: ["row_a", "row_b"]
         )
         let data = try JSONEncoder().encode(view)
         let decoded = try JSONDecoder().decode(ViewConfig.self, from: data)
         XCTAssertEqual(decoded.id, "view_kanban")
         XCTAssertEqual(decoded.type, .kanban)
         XCTAssertEqual(decoded.groupBy, "prop_status")
+        XCTAssertEqual(decoded.manualRowOrder, ["row_a", "row_b"])
     }
 }
 
@@ -1732,6 +1735,37 @@ final class EdgeCaseTests: XCTestCase {
         let data = try JSONEncoder().encode(value)
         let decoded = try JSONDecoder().decode(PropertyValue.self, from: data)
         XCTAssertEqual(decoded, value)
+    }
+
+    func testDatabaseDateValueRoundTripsStructuredPayload() {
+        let value = DatabaseDateValue(
+            start: "2026-03-07T09:30",
+            end: "2026-03-07T10:30",
+            includeTime: true,
+            dateFormat: .full
+        )
+
+        let decoded = DatabaseDateValue.decode(from: value.rawValue)
+        XCTAssertEqual(decoded, value)
+    }
+
+    func testDatabaseDateValuePreservesSimpleDateStorage() {
+        let value = DatabaseDateValue(start: "2026-03-07")
+        XCTAssertEqual(value.rawValue, "2026-03-07")
+    }
+
+    func testDatabaseDateValueContainsDaysAcrossRange() {
+        let value = DatabaseDateValue(
+            start: "2026-03-07",
+            end: "2026-03-09",
+            includeTime: false,
+            dateFormat: .long
+        )
+
+        XCTAssertTrue(value.contains(dayString: "2026-03-07"))
+        XCTAssertTrue(value.contains(dayString: "2026-03-08"))
+        XCTAssertTrue(value.contains(dayString: "2026-03-09"))
+        XCTAssertFalse(value.contains(dayString: "2026-03-10"))
     }
 
     func testSortWithEmptyValues() {

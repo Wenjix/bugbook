@@ -690,8 +690,7 @@ struct CommandPaletteView: View {
                 id: match.filePath,
                 name: match.fileName,
                 path: match.filePath,
-                isDirectory: false,
-                isDatabase: false
+                isDirectory: false
             )
             let query = effectiveQuery(from: searchText)
             if let handler = onSelectContentMatch {
