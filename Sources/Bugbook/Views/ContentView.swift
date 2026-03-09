@@ -26,6 +26,7 @@ struct ContentView: View {
     private struct RowTarget {
         let dbPath: String
         let rowId: String
+        var autoFocusTitle: Bool = false
     }
     @State private var peekTarget: RowTarget?
     @State private var dbInitialRowId: String?
@@ -33,7 +34,6 @@ struct ContentView: View {
     @State private var peekDragStartWidth: CGFloat?
     @State private var sidebarHiddenByPeek: Bool = false
     @State private var modalTarget: RowTarget?
-    @State private var modalAutoFocusTitle: Bool = false
 
     var body: some View {
         configuredLayout
@@ -456,7 +456,7 @@ struct ContentView: View {
                     DatabaseRowModalView(
                         dbPath: modal.dbPath,
                         rowId: modal.rowId,
-                        autoFocusTitle: modalAutoFocusTitle,
+                        autoFocusTitle: modal.autoFocusTitle,
                         onClose: { closeDatabaseRowModal() },
                         onOpenFullPage: {
                             closeDatabaseRowModal()
@@ -477,8 +477,7 @@ struct ContentView: View {
             guard let dbPath = notification.databasePath,
                   let rowId = notification.databaseRowId else { return }
             closePeekPanel()
-            modalTarget = RowTarget(dbPath: dbPath, rowId: rowId)
-            modalAutoFocusTitle = notification.databaseAutoFocusTitle
+            modalTarget = RowTarget(dbPath: dbPath, rowId: rowId, autoFocusTitle: notification.databaseAutoFocusTitle)
         }
     }
 
@@ -1444,7 +1443,6 @@ struct ContentView: View {
 
     private func closeDatabaseRowModal() {
         modalTarget = nil
-        modalAutoFocusTitle = false
     }
 
     private func syncTitle(from document: BlockDocument) {

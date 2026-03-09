@@ -12,6 +12,8 @@ final class DatabaseRowViewModel: ObservableObject {
 
     private let dbService = DatabaseService()
     private var saveTask: Task<Void, Never>?
+    private var loadTask: Task<Void, Never>?
+    private(set) var didEdit = false
 
     init(dbPath: String, origin: String) {
         self.dbPath = dbPath
@@ -19,22 +21,38 @@ final class DatabaseRowViewModel: ObservableObject {
     }
 
     func loadData(rowId: String) {
+        loadTask?.cancel()
         error = nil
-        do {
-            let (loadedSchema, loadedRows) = try dbService.loadDatabase(at: dbPath)
-            guard let loadedRow = loadedRows.first(where: { $0.id == rowId }) else {
-                error = "Row not found"
-                return
+
+        let path = dbPath
+        loadTask = Task {
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
+                do {
+                    return .success(try DatabaseService().loadDatabase(at: path))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            guard !Task.isCancelled else { return }
+
+            switch result {
+            case .success(let (loadedSchema, loadedRows)):
+                guard let loadedRow = loadedRows.first(where: { $0.id == rowId }) else {
+                    error = "Row not found"
+                    return
+                }
+                schema = loadedSchema
+                row = loadedRow
+            case .failure(let err):
+                error = err.localizedDescription
             }
-            schema = loadedSchema
-            row = loadedRow
-        } catch {
-            self.error = error.localizedDescription
         }
     }
 
     func debouncedSave(_ row: DatabaseRow, schema: DatabaseSchema) {
         self.row = row
+        didEdit = true
         saveTask?.cancel()
         saveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)

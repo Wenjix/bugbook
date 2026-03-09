@@ -87,7 +87,9 @@ struct DatabaseRowModalView: View {
         .onChange(of: rowId) { _, _ in vm.loadData(rowId: rowId) }
         .onDisappear {
             vm.flushAndCancel()
-            vm.postChangeNotification()
+            if vm.didEdit {
+                vm.postChangeNotification()
+            }
         }
     }
 }
