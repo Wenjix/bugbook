@@ -25,7 +25,10 @@ jobs:
             ${{ runner.os }}-spm-
 
       - name: Build
-        run: swift build
+        run: |
+          swift build --target BugbookCore
+          swift build --target Bugbook
+          swift build --target BugbookCLI
 
       - name: Run tests
         run: swift test
