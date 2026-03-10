@@ -127,6 +127,17 @@ struct BlockTextView: NSViewRepresentable {
             .foregroundColor: textColor
         ]
 
+        // Re-apply foreground color to existing text when textColor changes
+        if textColor != context.coordinator.lastTextColor {
+            context.coordinator.lastTextColor = textColor
+            let fullRange = NSRange(location: 0, length: textView.textStorage?.length ?? 0)
+            if fullRange.length > 0 {
+                context.coordinator.withProgrammaticViewUpdate {
+                    textView.textStorage?.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+                }
+            }
+        }
+
         // Update text if changed externally (not from user editing)
         if let block = document.block(for: blockId),
            !context.coordinator.isEditing {
@@ -215,6 +226,7 @@ struct BlockTextView: NSViewRepresentable {
         var isEditing = false
         var suppressChanges = false
         var lastFocusedSelf: Bool?
+        var lastTextColor: NSColor?
         var lastReplacementString: String?
         private var programmaticViewUpdateDepth: Int = 0
 

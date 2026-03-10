@@ -7,6 +7,7 @@ struct SidebarView: View {
     var onToggleSidebar: () -> Void
     @State private var hoveredButton: String?
     @State private var isFullScreen: Bool = false
+    @State private var showTrashPopover: Bool = false
 
     private let settingsTabs: [(id: String, label: String, icon: String)] = [
         ("general", "General", "gearshape"),
@@ -35,6 +36,11 @@ struct SidebarView: View {
         }
         .onAppear {
             isFullScreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
+            if let workspace = appState.workspacePath {
+                Task {
+                    fileSystem.purgeOldTrash(in: workspace)
+                }
+            }
         }
     }
 
@@ -171,29 +177,8 @@ struct SidebarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .accessibilityIdentifier("sidebar-file-tree")
-            .contextMenu {
-                Button { createFile() } label: {
-                    Label("New Page", systemImage: "doc.badge.plus")
-                }
-                Button { createCanvas() } label: {
-                    Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
-                }
-                Button {
-                    guard let workspace = appState.workspacePath else { return }
-                    if let path = try? fileSystem.createDatabase(in: workspace, name: "Untitled Database") {
-                        refreshTree()
-                        let db = FileEntry(
-                            id: path, name: (path as NSString).lastPathComponent,
-                            path: path, isDirectory: false, kind: .database
-                        )
-                        onSelectFile(db)
-                    }
-                } label: {
-                    Label("New Database", systemImage: "tablecells")
-                }
-            }
 
-            // Bottom bar with settings and chat
+            // Bottom bar with settings, trash, and chat
             VStack(spacing: 2) {
                 Button(action: openSettings) {
                     HStack(spacing: 8) {
@@ -213,6 +198,34 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "settings" : nil }
+
+                Button(action: { showTrashPopover.toggle() }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                        Text("Trash")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background((hoveredButton == "trash" || showTrashPopover) ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: 6))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "trash" : nil }
+                .floatingPopover(isPresented: $showTrashPopover) {
+                    TrashPopoverView(
+                        appState: appState,
+                        fileSystem: fileSystem,
+                        onRestore: {
+                            refreshTree()
+                        }
+                    )
+                }
 
                 Button(action: {
                     appState.openNotesChat()
@@ -340,6 +353,7 @@ struct SidebarView: View {
     private func openSettings() {
         NotificationCenter.default.post(name: .openSettings, object: nil)
     }
+
 
     @ViewBuilder
     private func chromeButton(

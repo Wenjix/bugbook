@@ -14,6 +14,8 @@ struct FileTreeItemView: View {
     @State private var isRenaming: Bool = false
     @State private var renameName: String = ""
     @State private var showDeleteConfirmation: Bool = false
+    @State private var showContextMenu: Bool = false
+    @State private var hoveredMenuItem: String?
 
     private static let expandedFoldersKey = "expandedFolders"
 
@@ -59,7 +61,10 @@ struct FileTreeItemView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("file-tree-item-\(displayName)")
             .onHover { hovering in isHovering = hovering }
-            .contextMenu { contextMenuItems }
+            .onNSRightClick { showContextMenu = true }
+            .floatingPopover(isPresented: $showContextMenu) {
+                sidebarContextMenu
+            }
 
             // Children (if expanded)
             if isExpanded, let children = entry.children {
@@ -80,10 +85,10 @@ struct FileTreeItemView: View {
         }
         .onAppear { loadExpandedState() }
         .alert("Delete \"\(displayName)\"?", isPresented: $showDeleteConfirmation) {
-            Button("Delete", role: .destructive) { performDelete() }
+            Button("Move to Trash", role: .destructive) { performDelete() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This action cannot be undone.")
+            Text("This page will be moved to Recently Deleted.")
         }
     }
 
@@ -209,41 +214,79 @@ struct FileTreeItemView: View {
 
     // MARK: - Context Menu
 
-    @ViewBuilder
-    private var contextMenuItems: some View {
-        Button { performCreateNote() } label: {
-            Label("New Note", systemImage: "doc.badge.plus")
-        }
-        Button { performCreateDatabase() } label: {
-            Label("New Database", systemImage: "tablecells")
-        }
-        Button { performCreateCanvas() } label: {
-            Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
-        }
-        if entry.isDirectory && !entry.isDatabase {
-            Button { performCreateFolder() } label: {
-                Label("New Folder", systemImage: "folder.badge.plus")
+    private var sidebarContextMenu: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ctxButton(id: "new-note", icon: "doc.badge.plus", label: "New Note") {
+                showContextMenu = false; performCreateNote()
+            }
+            ctxButton(id: "new-db", icon: "tablecells", label: "New Database") {
+                showContextMenu = false; performCreateDatabase()
+            }
+            ctxButton(id: "new-canvas", icon: "rectangle.on.rectangle.angled", label: "New Canvas") {
+                showContextMenu = false; performCreateCanvas()
+            }
+
+            ctxDivider
+
+            ctxButton(id: "rename", icon: "pencil", label: "Rename") {
+                showContextMenu = false; startRename()
+            }
+            ctxButton(id: "duplicate", icon: "doc.on.doc", label: "Duplicate") {
+                showContextMenu = false; performDuplicate()
+            }
+            if entry.isDirectory || entry.children != nil {
+                ctxButton(id: "sub-page", icon: "doc.text.below.ecg", label: "New Sub-page") {
+                    showContextMenu = false; performCreateSubPage()
+                }
+            }
+            ctxButton(id: "move-to", icon: "arrow.right", label: "Move to") {
+                showContextMenu = false; requestMovePage()
+            }
+
+            ctxDivider
+
+            ctxButton(id: "delete", icon: "trash", label: "Delete", isDestructive: true) {
+                showContextMenu = false; showDeleteConfirmation = true
             }
         }
-        Divider()
-        Button { startRename() } label: {
-            Label("Rename", systemImage: "pencil")
-        }
-        Button { performDuplicate() } label: {
-            Label("Duplicate", systemImage: "doc.on.doc")
-        }
-        if entry.isDirectory || entry.children != nil {
-            Button { performCreateSubPage() } label: {
-                Label("New Sub-page", systemImage: "doc.text.below.ecg")
+        .frame(width: 200)
+        .padding(.vertical, 4)
+        .popoverSurface()
+    }
+
+    private func ctxButton(
+        id: String, icon: String, label: String,
+        isDestructive: Bool = false, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isDestructive ? .red.opacity(0.8) : .secondary)
+                    .frame(width: 16, height: 16)
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isDestructive ? .red.opacity(0.8) : .primary)
+                Spacer()
             }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(hoveredMenuItem == id ? Color.primary.opacity(0.06) : Color.clear)
+                    .padding(.horizontal, 4)
+            )
         }
-        Button { requestMovePage() } label: {
-            Label("Move to", systemImage: "arrow.right")
-        }
+        .buttonStyle(.plain)
+        .onHover { isHovering in hoveredMenuItem = isHovering ? id : nil }
+    }
+
+    private var ctxDivider: some View {
         Divider()
-        Button(role: .destructive) { showDeleteConfirmation = true } label: {
-            Label("Delete", systemImage: "trash")
-        }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 10)
     }
 
     // MARK: - Actions
@@ -273,7 +316,11 @@ struct FileTreeItemView: View {
 
     private func performDelete() {
         let path = entry.path
-        try? fileSystem.deleteFile(at: path)
+        if let workspace = workspacePath {
+            try? fileSystem.trashFile(at: path, workspace: workspace)
+        } else {
+            try? fileSystem.deleteFile(at: path)
+        }
         NotificationCenter.default.post(name: .fileDeleted, object: path)
         onRefreshTree()
     }

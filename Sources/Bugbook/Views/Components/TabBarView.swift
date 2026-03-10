@@ -169,6 +169,7 @@ struct TabItemView: View {
                 .opacity(isActive || isHovered ? 1 : 0)
             }
             .padding(.horizontal, 14)
+            .frame(width: 160)
             .frame(height: 30)
             .background(
                 Group {

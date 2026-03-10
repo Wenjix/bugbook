@@ -16,10 +16,11 @@ struct FileTreeView: View {
     var onRefreshTree: () -> Void
 
     @State private var dropMode: DropMode?
+    @State private var cachedEntries: [FileEntry] = []
 
     var body: some View {
         VStack(spacing: 1) {
-            ForEach(sortedEntries.enumerated(), id: \.element.id) { index, entry in
+            ForEach(cachedEntries.enumerated(), id: \.element.id) { index, entry in
                 FileTreeItemView(
                     entry: entry,
                     activeFilePath: activeFilePath,
@@ -48,7 +49,7 @@ struct FileTreeView: View {
                 .onDrop(of: [.text], delegate: FileTreeDropDelegate(
                     targetIndex: index,
                     targetEntry: entry,
-                    entries: sortedEntries,
+                    entries: cachedEntries,
                     parentPath: effectiveParentPath,
                     fileSystem: fileSystem,
                     dropMode: $dropMode,
@@ -57,22 +58,28 @@ struct FileTreeView: View {
             }
         }
         .onDrop(of: [.text], delegate: FileTreeDropDelegate(
-            targetIndex: sortedEntries.count,
+            targetIndex: cachedEntries.count,
             targetEntry: nil,
-            entries: sortedEntries,
+            entries: cachedEntries,
             parentPath: effectiveParentPath,
             fileSystem: fileSystem,
             dropMode: $dropMode,
             onRefreshTree: onRefreshTree
         ))
+        .onAppear { recomputeEntries() }
+        .onChange(of: entries) { _, _ in recomputeEntries() }
     }
 
     private var effectiveParentPath: String {
         parentPath ?? workspacePath ?? "__root__"
     }
 
-    private var sortedEntries: [FileEntry] {
-        fileSystem.sortedEntries(entries, parentPath: effectiveParentPath)
+    private func recomputeEntries() {
+        let sorted = fileSystem.sortedEntries(entries, parentPath: effectiveParentPath)
+        // Only update if the entry ids/order actually changed to prevent unnecessary re-renders
+        if sorted.map(\.id) != cachedEntries.map(\.id) {
+            cachedEntries = sorted
+        }
     }
 }
 

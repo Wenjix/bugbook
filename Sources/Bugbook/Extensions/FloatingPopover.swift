@@ -132,10 +132,11 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
 
             var origin: NSPoint
             if arrowEdge == .leading {
-                // To the left of the anchor, top-aligned
+                // To the left of the anchor, vertically centered
+                let anchorMidY = screenRect.midY
                 origin = NSPoint(
                     x: screenRect.minX - size.width - gap,
-                    y: screenRect.maxY - size.height
+                    y: anchorMidY - size.height / 2
                 )
             } else {
                 // Below the anchor, left-aligned
@@ -160,7 +161,7 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
             // Dismiss on click outside (local)
             localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 guard let self, let panel = self.panel else { return event }
-                if event.window !== panel && !(event.window is PopoverPanel) {
+                if event.window !== panel {
                     Task { @MainActor in dismiss() }
                 }
                 return event
@@ -171,13 +172,13 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
                 Task { @MainActor in dismiss() }
             }
 
-            // Dismiss when panel loses key to a non-popover window
+            // Dismiss when panel loses key (another window focused, app switch, etc.)
             resignObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: p,
                 queue: .main
             ) { [weak self] _ in
-                guard self?.panel != nil, !(NSApp.keyWindow is PopoverPanel) else { return }
+                guard self?.panel != nil else { return }
                 Task { @MainActor in dismiss() }
             }
         }

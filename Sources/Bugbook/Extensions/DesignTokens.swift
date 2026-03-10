@@ -194,5 +194,58 @@ extension View {
     func popoverSurface(cornerRadius: CGFloat = Radius.md) -> some View {
         modifier(PopoverSurface(cornerRadius: cornerRadius))
     }
+
+    /// Attach a right-click (secondary click) action to a view.
+    func onNSRightClick(perform action: @escaping () -> Void) -> some View {
+        overlay(RightClickOverlay(action: action))
+    }
 }
+
+#if os(macOS)
+/// Invisible NSView overlay that intercepts right-click events.
+private struct RightClickOverlay: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> RightClickView {
+        let v = RightClickView()
+        v.action = action
+        return v
+    }
+
+    func updateNSView(_ nsView: RightClickView, context: Context) {
+        nsView.action = action
+    }
+
+    class RightClickView: NSView {
+        var action: (() -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil && monitor == nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+                    guard let self, let window = self.window else { return event }
+                    let locationInWindow = event.locationInWindow
+                    let locationInView = self.convert(locationInWindow, from: nil)
+                    if self.bounds.contains(locationInView) && event.window === window {
+                        self.action?()
+                    }
+                    return event
+                }
+            } else if window == nil, let m = monitor {
+                NSEvent.removeMonitor(m)
+                monitor = nil
+            }
+        }
+
+        override func removeFromSuperview() {
+            if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+            super.removeFromSuperview()
+        }
+
+        // Invisible to hit testing — left clicks pass through
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+#endif
 

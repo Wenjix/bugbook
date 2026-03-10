@@ -282,7 +282,15 @@ enum ViewMode {
     }
 
     /// Close any tabs that point to the given path (used when a file is deleted).
+    /// Opens an empty tab if this would close the last tab (instead of quitting).
     func closeTabsForPath(_ path: String) {
+        let matchingCount = openTabs.count(where: { $0.path == path })
+        if matchingCount >= openTabs.count {
+            // All tabs point to this path — replace with empty tab instead of quitting
+            openTabs = []
+            newEmptyTab()
+            return
+        }
         // Iterate in reverse so removal indices stay valid
         for i in stride(from: openTabs.count - 1, through: 0, by: -1) {
             if openTabs[i].path == path {

@@ -519,25 +519,28 @@ class FileSystemService {
     }
 
     /// Sort entries using custom order if available, falling back to directories-first then alphabetical.
+    /// This is called from computed properties during rendering — it must be side-effect-free.
+    /// Only applies custom order when it covers ALL current entries to prevent partial/stale orders
+    /// from causing items to jump around.
     func sortedEntries(_ entries: [FileEntry], parentPath: String) -> [FileEntry] {
         guard let order = customOrder(for: parentPath), !order.isEmpty else {
             return defaultSortedEntries(entries)
         }
 
+        let entryNames = Set(entries.map(\.name))
+
+        // Only use custom order if it covers every current entry.
+        // A partial/stale order causes unrecognized items to jump to the bottom.
+        let coversAll = entryNames.allSatisfy { order.contains($0) }
+        guard coversAll else {
+            return defaultSortedEntries(entries)
+        }
+
         let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
         return entries.sorted { a, b in
-            let idxA = orderMap[a.name]
-            let idxB = orderMap[b.name]
-            switch (idxA, idxB) {
-            case let (.some(ia), .some(ib)):
-                return ia < ib
-            case (.some, .none):
-                return true
-            case (.none, .some):
-                return false
-            case (.none, .none):
-                return defaultCompare(a, b)
-            }
+            let idxA = orderMap[a.name] ?? Int.max
+            let idxB = orderMap[b.name] ?? Int.max
+            return idxA < idxB
         }
     }
 
@@ -563,7 +566,179 @@ class FileSystemService {
         saveCustomOrder(names, for: parentPath)
     }
 
+    // MARK: - Trash (Recently Deleted)
+
+    /// Metadata sidecar stored alongside each trashed item.
+    struct TrashMeta: Codable {
+        let originalPath: String
+        let trashedAt: Date
+    }
+
+    /// An item in the trash.
+    struct TrashItem: Identifiable {
+        let id: String  // filename in .trash
+        let name: String
+        let originalPath: String
+        let trashedAt: Date
+        let trashPath: String
+    }
+
+    private func trashDirectory(in workspace: String) -> String {
+        (workspace as NSString).appendingPathComponent(".trash")
+    }
+
+    /// Move a file (and companion folder) to `.trash/` instead of permanently deleting.
+    func trashFile(at path: String, workspace: String) throws {
+        let trashDir = trashDirectory(in: workspace)
+        if !fileManager.fileExists(atPath: trashDir) {
+            try fileManager.createDirectory(atPath: trashDir, withIntermediateDirectories: true)
+        }
+
+        let name = (path as NSString).lastPathComponent
+        let timestamp = Int(Date.now.timeIntervalSince1970)
+        let trashName = "\(timestamp)_\(name)"
+        let trashPath = (trashDir as NSString).appendingPathComponent(trashName)
+
+        try fileManager.moveItem(atPath: path, toPath: trashPath)
+
+        // Move companion folder if it exists
+        let companion = companionFolderPath(for: path)
+        if fileManager.fileExists(atPath: companion) {
+            let companionName = (companion as NSString).lastPathComponent
+            let trashCompanionName = "\(timestamp)_\(companionName)"
+            let trashCompanionPath = (trashDir as NSString).appendingPathComponent(trashCompanionName)
+            try fileManager.moveItem(atPath: companion, toPath: trashCompanionPath)
+        }
+
+        // Write metadata sidecar
+        let meta = TrashMeta(originalPath: path, trashedAt: .now)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let metaData = try encoder.encode(meta)
+        let metaPath = trashPath + ".meta.json"
+        try metaData.write(to: URL(fileURLWithPath: metaPath), options: .atomic)
+
+        Log.fileSystem.info("Trashed file: \(name)")
+        SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "file.trash"))
+    }
+
+    /// List all items in the trash.
+    func listTrash(in workspace: String) -> [TrashItem] {
+        let trashDir = trashDirectory(in: workspace)
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: trashDir) else { return [] }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        return contents.compactMap { name -> TrashItem? in
+            guard !name.hasSuffix(".meta.json") else { return nil }
+            // Skip companion folders in trash (they'll be restored with their page)
+            let fullPath = (trashDir as NSString).appendingPathComponent(name)
+            var isDir: ObjCBool = false
+            if fileManager.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue,
+               !isDatabaseFolder(at: fullPath), !isCanvasFolder(at: fullPath) {
+                return nil
+            }
+
+            let metaPath = fullPath + ".meta.json"
+            guard let metaData = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
+                  let meta = try? decoder.decode(TrashMeta.self, from: metaData) else {
+                return nil
+            }
+
+            let displayName = (meta.originalPath as NSString).lastPathComponent
+            return TrashItem(
+                id: name,
+                name: displayName,
+                originalPath: meta.originalPath,
+                trashedAt: meta.trashedAt,
+                trashPath: fullPath
+            )
+        }
+        .sorted { $0.trashedAt > $1.trashedAt }
+    }
+
+    /// Restore a trashed item to its original location.
+    func restoreFromTrash(_ item: TrashItem, workspace: String) throws {
+        let destDir = (item.originalPath as NSString).deletingLastPathComponent
+        if !fileManager.fileExists(atPath: destDir) {
+            try fileManager.createDirectory(atPath: destDir, withIntermediateDirectories: true)
+        }
+
+        // Handle name conflicts
+        var destPath = item.originalPath
+        if fileManager.fileExists(atPath: destPath) {
+            let dir = (destPath as NSString).deletingLastPathComponent
+            let name = (destPath as NSString).lastPathComponent
+            let baseName = (name as NSString).deletingPathExtension
+            let ext = (name as NSString).pathExtension
+            if ext.isEmpty {
+                destPath = uniqueDirectoryPath(in: dir, base: baseName)
+            } else {
+                let newName = uniqueFilename(in: dir, base: baseName, ext: ext)
+                destPath = (dir as NSString).appendingPathComponent(newName)
+            }
+        }
+
+        try fileManager.moveItem(atPath: item.trashPath, toPath: destPath)
+
+        // Restore companion folder if present
+        if let companionPath = trashCompanionPath(for: item, workspace: workspace) {
+            let destCompanion = companionFolderPath(for: destPath)
+            try? fileManager.moveItem(atPath: companionPath, toPath: destCompanion)
+        }
+
+        // Clean up metadata
+        let metaPath = item.trashPath + ".meta.json"
+        try? fileManager.removeItem(atPath: metaPath)
+
+        Log.fileSystem.info("Restored from trash: \(item.name)")
+    }
+
+    /// Permanently delete a single item from the trash.
+    func deletePermanently(_ item: TrashItem, workspace: String) throws {
+        try fileManager.removeItem(atPath: item.trashPath)
+        let metaPath = item.trashPath + ".meta.json"
+        try? fileManager.removeItem(atPath: metaPath)
+
+        // Delete companion folder if present
+        if let companionPath = trashCompanionPath(for: item, workspace: workspace) {
+            try? fileManager.removeItem(atPath: companionPath)
+            let companionMeta = companionPath + ".meta.json"
+            try? fileManager.removeItem(atPath: companionMeta)
+        }
+
+        Log.fileSystem.info("Permanently deleted: \(item.name)")
+    }
+
+    /// Empty the entire trash.
+    func emptyTrash(in workspace: String) throws {
+        let trashDir = trashDirectory(in: workspace)
+        if fileManager.fileExists(atPath: trashDir) {
+            try fileManager.removeItem(atPath: trashDir)
+        }
+        Log.fileSystem.info("Emptied trash")
+    }
+
+    /// Purge items older than 30 days. Call on app launch.
+    func purgeOldTrash(in workspace: String) {
+        let items = listTrash(in: workspace)
+        let cutoff = Date.now.addingTimeInterval(-30 * 24 * 60 * 60)
+        for item in items where item.trashedAt < cutoff {
+            try? deletePermanently(item, workspace: workspace)
+        }
+    }
+
     // MARK: - Helpers
+
+    /// Resolve the companion folder path for a trashed item (if it exists in trash).
+    private func trashCompanionPath(for item: TrashItem, workspace: String) -> String? {
+        let trashDir = trashDirectory(in: workspace)
+        let prefix = String(item.id.prefix(while: { $0 != "_" })) + "_"
+        let companionBase = companionFolderPath(for: item.name)
+        let path = (trashDir as NSString).appendingPathComponent(prefix + companionBase)
+        return fileManager.fileExists(atPath: path) ? path : nil
+    }
 
     private func companionFolderPath(for mdPath: String) -> String {
         guard mdPath.hasSuffix(".md") else { return mdPath }

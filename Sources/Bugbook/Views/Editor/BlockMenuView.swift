@@ -25,38 +25,41 @@ struct BlockMenuView: View {
     // MARK: - Main Menu
 
     private var menuContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Section 1: Actions
-            sectionHeader("Actions")
-            menuButton(id: "delete", icon: "trash", label: "Delete", shortcut: "\u{232B}") {
-                document.dismissBlockMenu()
-                document.deleteBlock(id: blockId)
-            }
-            menuButton(id: "duplicate", icon: "doc.on.doc", label: "Duplicate", shortcut: "\u{2318}D") {
-                document.dismissBlockMenu()
-                document.duplicateBlock(id: blockId)
-            }
-            moveToButton
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Section 1: Actions
+                sectionHeader("Actions")
+                menuButton(id: "delete", icon: "trash", label: "Delete", shortcut: "\u{232B}") {
+                    document.dismissBlockMenu()
+                    document.deleteBlock(id: blockId)
+                }
+                menuButton(id: "duplicate", icon: "doc.on.doc", label: "Duplicate", shortcut: "\u{2318}D") {
+                    document.dismissBlockMenu()
+                    document.duplicateBlock(id: blockId)
+                }
+                moveToButton
 
-            sectionDivider
+                sectionDivider
 
-            // Section 2: Turn Into
-            sectionHeader("Turn into")
-            turnIntoToggle
-            if turnIntoExpanded {
-                turnIntoList
-            }
+                // Section 2: Turn Into
+                sectionHeader("Turn into")
+                turnIntoToggle
+                if turnIntoExpanded {
+                    turnIntoList
+                }
 
-            sectionDivider
+                sectionDivider
 
-            // Section 3: Color
-            sectionHeader("Color")
-            colorToggle
-            if colorExpanded {
-                colorPalette
+                // Section 3: Color
+                sectionHeader("Color")
+                colorToggle
+                if colorExpanded {
+                    colorPalette
+                }
             }
         }
         .frame(width: 252)
+        .frame(maxHeight: 400)
         .padding(.vertical, 4)
         .popoverSurface()
     }
