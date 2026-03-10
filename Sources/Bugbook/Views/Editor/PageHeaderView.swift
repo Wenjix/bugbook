@@ -82,6 +82,14 @@ struct PageHeaderView: View {
                 coverPosition = 50
             }
         }
+        .task(id: coverUrl) {
+            guard let path = coverUrl, path.hasPrefix("/") else {
+                cachedCoverImage = nil
+                return
+            }
+            cachedCoverImage = NSImage(contentsOfFile: path)
+            cachedCoverPath = path
+        }
     }
 
     // MARK: - Column Alignment
@@ -165,16 +173,7 @@ struct PageHeaderView: View {
                 .font(.system(size: 36))
                 .frame(width: 56, height: 56)
         } else if value.hasPrefix("custom:") {
-            let path = String(value.dropFirst(7))
-            if let nsImage = NSImage(contentsOfFile: path) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 56, height: 56)
-                    .clipShape(.rect(cornerRadius: 8))
-            } else {
-                Text(value).font(.system(size: 40))
-            }
+            CustomIconView(path: String(value.dropFirst(7)))
         } else {
             Text(value)
                 .font(.system(size: 46))
@@ -184,24 +183,25 @@ struct PageHeaderView: View {
 
     // MARK: - Cover Image
 
+    @State private var cachedCoverImage: NSImage?
+    @State private var cachedCoverPath: String?
+
     @ViewBuilder
     private func coverImageView(path: String) -> some View {
         let coverHeight: CGFloat = 200
-        let loadedImage = NSImage(contentsOfFile: path)
-        let imgSize = loadedImage?.size ?? .zero
+        let imgSize = cachedCoverImage?.size ?? .zero
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 Group {
-                    if let nsImage = loadedImage {
+                    if let nsImage = cachedCoverImage {
                         Image(nsImage: nsImage)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: geometry.size.width, height: coverHeight)
                             .offset(y: coverOffset(imageSize: imgSize, containerSize: CGSize(width: geometry.size.width, height: coverHeight)))
                             .clipped()
-                    } else {
-                        // Local paths need fileURLWithPath (handles spaces); remote URLs use URL(string:)
-                        let url: URL? = path.hasPrefix("/") ? URL(fileURLWithPath: path) : URL(string: path)
+                    } else if !path.hasPrefix("/") {
+                        let url: URL? = URL(string: path)
                         if let url = url {
                             AsyncImage(url: url) { image in
                                 image
@@ -309,6 +309,28 @@ struct PageHeaderView: View {
         let overflow = max(0, renderedHeight - containerSize.height)
         let normalizedPosition = coverPosition / 100.0
         return (overflow / 2) - (overflow * normalizedPosition)
+    }
+}
+
+private struct CustomIconView: View {
+    let path: String
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 56, height: 56)
+                    .clipShape(.rect(cornerRadius: 8))
+            } else {
+                Color.clear.frame(width: 56, height: 56)
+            }
+        }
+        .task(id: path) {
+            image = NSImage(contentsOfFile: path)
+        }
     }
 }
 

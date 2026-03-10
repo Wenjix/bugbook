@@ -7,6 +7,17 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SwiftLint
+        uses: norio-nomura/action-swiftlint@3.2.1
+        with:
+          args: --strict
+
   build:
     runs-on: macos-14
 
@@ -25,10 +36,10 @@ jobs:
             ${{ runner.os }}-spm-
 
       - name: Build
-        run: swift build
+        run: swift build -Xswiftc -warnings-as-errors
 
       - name: Run tests
-        run: swift test
+        run: swift test -Xswiftc -warnings-as-errors
 
       - name: Run smoke test
         run: bash scripts/smoke-cli.sh

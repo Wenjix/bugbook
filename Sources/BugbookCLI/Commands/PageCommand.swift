@@ -5,7 +5,7 @@ struct Page: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "page",
         abstract: "Read and write markdown pages in the workspace",
-        subcommands: [List.self, Get.self, Headings.self, Format.self, Compact.self, EnsureBlockIDs.self, StripBlockIDs.self, Create.self, Update.self, EmbedDatabase.self, Delete.self]
+        subcommands: [List.self, Get.self, Images.self, Headings.self, Format.self, Compact.self, EnsureBlockIDs.self, StripBlockIDs.self, Create.self, Update.self, EmbedDatabase.self, Delete.self]
     )
 
     struct List: ParsableCommand {
@@ -165,6 +165,37 @@ struct Page: ParsableCommand {
             case .summary:
                 try outputJSON(pageWriteSummaryJSON(record, operation: "create"))
             }
+        }
+    }
+
+    struct Images: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "images",
+            abstract: "List image blocks in a page with their source paths"
+        )
+
+        @OptionGroup var options: Bugbook.Options
+
+        @Argument(help: "Page path, relative path, or page name")
+        var page: String
+
+        func run() throws {
+            let record = try resolveWorkspacePage(page, workspace: options.resolvedWorkspace)
+            let parsed = parsedPageDocumentJSON(from: record.body)
+            guard let blocks = parsed["blocks"] as? [[String: Any]] else {
+                try outputJSON([[String: Any]]())
+                return
+            }
+            let images: [[String: Any]] = blocks.compactMap { block in
+                guard block["type"] as? String == "image",
+                      let source = block["image_source"] as? String else { return nil }
+                var result: [String: Any] = ["image_source": source]
+                if let id = block["id"] as? String { result["id"] = id }
+                if let alt = block["image_alt"] as? String, !alt.isEmpty { result["image_alt"] = alt }
+                if let width = block["image_width"] { result["image_width"] = width }
+                return result
+            }
+            try outputJSON(images)
         }
     }
 

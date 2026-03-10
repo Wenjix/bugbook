@@ -189,31 +189,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Configure any existing windows
         DispatchQueue.main.async { self.configureWindows() }
 
-        // Cmd+Option+0-9 block type shortcuts via local event monitor
+        // Cmd+Option+0-9 block type shortcuts via local event monitor.
+        // When a BlockNSTextView has focus, route the action through its
+        // closure so it works in all editor contexts (main, peek, modal).
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let isCommandOptionOnly = flags.contains([.command, .option])
                 && !flags.contains(.shift)
                 && !flags.contains(.control)
             guard isCommandOptionOnly else { return event }
-
-            let keyToAction: [String: String] = [
-                "0": "paragraph",
-                "1": "heading1",
-                "2": "heading2",
-                "3": "heading3",
-                "4": "taskItem",
-                "5": "bulletListItem",
-                "6": "numberedListItem",
-                "7": "toggle",
-                "8": "codeBlock",
-                "9": "createPage",
-            ]
-            if let chars = event.charactersIgnoringModifiers?.lowercased(),
-               let action = keyToAction[chars] {
-                NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
-                return nil
-            }
 
             let keyCodeToAction: [UInt16: String] = [
                 29: "paragraph",        // 0
@@ -228,11 +212,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 25: "createPage",       // 9
             ]
 
-            if let action = keyCodeToAction[event.keyCode] {
-                NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
+            guard let action = keyCodeToAction[event.keyCode] else { return event }
+
+            // If a BlockNSTextView is focused, use its closure directly
+            // so the action targets the correct document in any context.
+            if let textView = NSApp.keyWindow?.firstResponder as? BlockNSTextView,
+               let handler = textView.blockTypeShortcutAction {
+                handler(action)
                 return nil
             }
-            return event
+
+            NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
+            return nil
         }
     }
 

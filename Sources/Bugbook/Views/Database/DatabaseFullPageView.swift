@@ -29,6 +29,7 @@ struct DatabaseFullPageView: View {
     var initialRowId: String? = nil
 
     @State private var state: DatabaseViewState
+    @Environment(\.workspacePath) private var workspacePath
 
     @State private var showPropertyManager = false
     @State private var showSettings = false
@@ -45,6 +46,10 @@ struct DatabaseFullPageView: View {
 
     private var filteredAndSortedRows: [DatabaseRow] {
         state.filteredAndSortedRows()
+    }
+
+    private var nonTitleProperties: [PropertyDefinition] {
+        state.schema?.properties.filter { $0.type != .title } ?? []
     }
 
     var body: some View {
@@ -130,7 +135,8 @@ struct DatabaseFullPageView: View {
 
     private func dbHeader(schema: DatabaseSchema) -> some View {
         HStack(spacing: 8) {
-            TextField("Database Name", text: $state.editingTitle)
+            TextField("Database Name", text: $state.editingTitle, axis: .vertical)
+                .lineLimit(1...10)
                 .onSubmit { state.persistTitle() }
                 .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
                 .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
@@ -255,7 +261,7 @@ struct DatabaseFullPageView: View {
                     }
                 }
                 Menu {
-                    ForEach(schema.properties.filter { $0.type != .title }) { prop in
+                    ForEach(nonTitleProperties) { prop in
                         Button(prop.name) { state.addFilter(propertyId: prop.id) }
                     }
                 } label: {
@@ -282,7 +288,7 @@ struct DatabaseFullPageView: View {
                     }
                 }
                 Menu {
-                    ForEach(schema.properties.filter { $0.type != .title }) { prop in
+                    ForEach(nonTitleProperties) { prop in
                         Button(prop.name) { state.addSort(propertyId: prop.id, ascending: true) }
                     }
                 } label: {
@@ -301,7 +307,7 @@ struct DatabaseFullPageView: View {
 
                 // Properties visibility
                 popoverSectionHeader("Properties")
-                ForEach(schema.properties.filter { $0.type != .title }) { prop in
+                ForEach(nonTitleProperties) { prop in
                     let isHidden = (state.activeView?.hiddenColumns ?? []).contains(prop.id)
                     Button { state.toggleColumnVisibility(prop.id) } label: {
                         HStack {
@@ -374,7 +380,7 @@ struct DatabaseFullPageView: View {
         return HStack(spacing: 6) {
             // Property picker
             Menu {
-                ForEach(schema.properties.filter({ $0.type != .title })) { p in
+                ForEach(nonTitleProperties) { p in
                     Button(p.name) { state.updateFilter(filter.id, property: p.id, op: nil, value: nil) }
                 }
             } label: {
@@ -477,7 +483,7 @@ struct DatabaseFullPageView: View {
 
             // Property picker
             Menu {
-                ForEach(schema.properties.filter({ $0.type != .title })) { p in
+                ForEach(nonTitleProperties) { p in
                     Button(p.name) { state.updateSort(sort.id, property: p.id, ascending: nil) }
                 }
             } label: {
@@ -562,55 +568,63 @@ struct DatabaseFullPageView: View {
 
     // MARK: - View Content
 
+    private func boundRows(filtered: [DatabaseRow]) -> Binding<[DatabaseRow]> {
+        Binding(
+            get: { filtered },
+            set: { newVal in
+                for updated in newVal {
+                    if let idx = state.rows.firstIndex(where: { $0.id == updated.id }) {
+                        state.rows[idx] = updated
+                    } else {
+                        state.rows.append(updated)
+                    }
+                }
+            }
+        )
+    }
+
     @ViewBuilder
     private func viewContent(schema: DatabaseSchema) -> some View {
         let filtered = filteredAndSortedRows
-        var boundRows: Binding<[DatabaseRow]> {
-            Binding(
-                get: { filtered },
-                set: { newVal in
-                    for updated in newVal {
-                        if let idx = state.rows.firstIndex(where: { $0.id == updated.id }) {
-                            state.rows[idx] = updated
-                        } else {
-                            state.rows.append(updated)
-                        }
-                    }
-                }
-            )
-        }
+        let filteredIds = filtered.map(\.id)
+        let boundRows = boundRows(filtered: filtered)
 
         switch state.activeView?.type ?? .table {
         case .table:
-            ScrollView {
-                TableView(
-                    schema: schema,
-                    rows: boundRows,
-                    viewConfig: state.activeView ?? state.defaultViewConfig(),
-                    onOpenRow: { row in openRow(row) },
-                    onSave: { row in state.saveRow(row) },
-                    onDelete: { row in state.deleteRow(row) },
-                    onToggleColumn: { propId in state.toggleColumnVisibility(propId) },
-                    onAddProperty: { type in state.addPropertyFromTable(type: type) },
-                    onRenameProperty: { propId, newName in
-                        state.renameProperty(propId, to: newName)
-                    },
-                    onDeleteProperty: { propId in state.deleteProperty(propId) },
-                    onChangePropertyType: { propId, newType in state.changePropertyType(propId, to: newType) },
-                    onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
-                    onUpdateSelectOption: { propId, optId, name, color in state.updateSelectOption(propId, optionId: optId, name: name, color: color) },
-                    onDeleteSelectOption: { propId, optId in state.deleteSelectOption(propId, optionId: optId) },
-                    onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
-                    onReorderRows: { draggedId, targetId in
-                        state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredAndSortedRows.map(\.id))
-                    },
-                    onNewRow: { createNewRow() },
-                    showVerticalLines: showVerticalLines,
-                    usesInnerScroll: false
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, -TableView.rowControlsInset)
+            GeometryReader { geo in
+                ScrollView([.horizontal, .vertical]) {
+                    TableView(
+                        schema: schema,
+                        rows: boundRows,
+                        viewConfig: state.activeView ?? state.defaultViewConfig(),
+                        onOpenRow: { row in openRow(row) },
+                        onSave: { row in state.saveRow(row) },
+                        onDelete: { row in state.deleteRow(row) },
+                        onToggleColumn: { propId in state.toggleColumnVisibility(propId) },
+                        onAddProperty: { type in state.addPropertyFromTable(type: type) },
+                        onRenameProperty: { propId, newName in
+                            state.renameProperty(propId, to: newName)
+                        },
+                        onDeleteProperty: { propId in state.deleteProperty(propId) },
+                        onChangePropertyType: { propId, newType in state.changePropertyType(propId, to: newType) },
+                        onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
+                        onUpdateSelectOption: { propId, optId, name, color in state.updateSelectOption(propId, optionId: optId, name: name, color: color) },
+                        onDeleteSelectOption: { propId, optId in state.deleteSelectOption(propId, optionId: optId) },
+                        onLoadRelationRows: { prop in state.loadRelationRows(for: prop) },
+                        onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
+                        onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
+                        onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
+                        onReorderRows: { draggedId, targetId in
+                            state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
+                        },
+                        onNewRow: { createNewRow() },
+                        showVerticalLines: showVerticalLines,
+                        usesInnerScroll: false
+                    )
+                    .frame(minWidth: geo.size.width, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .padding(.leading, -TableView.rowControlsInset)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .kanban:
@@ -697,7 +711,9 @@ private struct PropertyManagerSheet: View {
     let notificationOrigin: String
     @Environment(\.dismiss) private var dismiss
     @Environment(\.popoverDismiss) private var popoverDismiss
+    @Environment(\.workspacePath) private var workspacePath
     @State private var editingNames: [String: String] = [:]
+    @State private var availableDatabases: [DatabaseInfo] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -746,6 +762,10 @@ private struct PropertyManagerSheet: View {
                             .fixedSize()
                         }
 
+                        if prop.type == .relation {
+                            relationTargetPicker(for: prop)
+                        }
+
                         if !isTitle {
                             Button {
                                 deleteProperty(prop.id)
@@ -779,7 +799,15 @@ private struct PropertyManagerSheet: View {
     }
 
     private func addProperty(type: PropertyType) {
-        let config: PropertyConfig? = (type == .select || type == .multiSelect) ? PropertyConfig(options: []) : nil
+        let config: PropertyConfig?
+        switch type {
+        case .select, .multiSelect:
+            config = PropertyConfig(options: [])
+        case .relation:
+            config = PropertyConfig(target: nil)
+        default:
+            config = nil
+        }
         let prop = PropertyDefinition(
             id: "prop_\(UUID().uuidString)",
             name: "New \(type.rawValue.capitalized)",
@@ -787,6 +815,60 @@ private struct PropertyManagerSheet: View {
             config: config
         )
         schema.properties.append(prop)
+        Task {
+            try? dbService.saveSchema(schema, at: dbPath)
+        }
+    }
+
+    private func relationTargetPicker(for prop: PropertyDefinition) -> some View {
+        Menu {
+            ForEach(availableDatabases.filter({ $0.path != dbPath }), id: \.path) { db in
+                Button {
+                    setRelationTarget(prop.id, target: db.path)
+                } label: {
+                    HStack {
+                        Text(db.name)
+                        if prop.config?.target == db.path {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            let targetName = availableDatabases.first(where: { $0.path == prop.config?.target })?.name
+            Text(targetName ?? "Select DB")
+                .font(.caption)
+                .foregroundStyle(targetName != nil ? .primary : .secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .onAppear { loadAvailableDatabases() }
+    }
+
+    private func loadAvailableDatabases() {
+        guard availableDatabases.isEmpty else { return }
+        let store = DatabaseStore()
+        // Use workspacePath environment if available, otherwise derive from dbPath
+        // (dbPath is a database folder inside the workspace, so its parent chain
+        // contains the workspace root).
+        let searchRoot: String
+        if let workspace = workspacePath {
+            searchRoot = workspace
+        } else {
+            // Walk up from dbPath to find the workspace root.
+            // The dbPath is something like /workspace/SomeDB — scan from parent.
+            searchRoot = (dbPath as NSString).deletingLastPathComponent
+        }
+        availableDatabases = store.listDatabases(in: searchRoot)
+    }
+
+    private func setRelationTarget(_ propertyId: String, target: String) {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if schema.properties[idx].config == nil {
+            schema.properties[idx].config = PropertyConfig(target: target)
+        } else {
+            schema.properties[idx].config?.target = target
+        }
         Task {
             try? dbService.saveSchema(schema, at: dbPath)
         }

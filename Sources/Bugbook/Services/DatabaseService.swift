@@ -1,8 +1,21 @@
 import Foundation
 import BugbookCore
 
-class DatabaseService: ObservableObject {
+class DatabaseService {
     private let fileManager = FileManager.default
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let dateOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
 
     // MARK: - ID Generation
 
@@ -40,14 +53,27 @@ class DatabaseService: ObservableObject {
         let filename = rowFilename(title: title, suffix: suffix)
         let filePath = (dbPath as NSString).appendingPathComponent(filename)
 
-        // Remove old file if title changed (different filename)
-        let contents = try? fileManager.contentsOfDirectory(atPath: dbPath)
-        if let contents = contents {
-            for name in contents {
-                if name.contains("(\(suffix))") && name != filename {
-                    let oldPath = (dbPath as NSString).appendingPathComponent(name)
-                    try? fileManager.removeItem(atPath: oldPath)
+        // Single directory listing for both body preservation and stale file cleanup.
+        let dirContents = try? fileManager.contentsOfDirectory(atPath: dbPath)
+
+        // If the row has no in-memory body, preserve the existing body on disk
+        // (rows loaded without body for table/kanban performance).
+        var effectiveBody = row.body
+        if effectiveBody.isEmpty, let dirContents {
+            for name in dirContents where name.hasSuffix(".md") && name.contains("(\(suffix))") {
+                let existingPath = (dbPath as NSString).appendingPathComponent(name)
+                if let existing = try? String(contentsOfFile: existingPath, encoding: .utf8) {
+                    effectiveBody = extractBody(from: existing)
+                    break
                 }
+            }
+        }
+
+        // Remove old file if title changed (different filename)
+        if let dirContents {
+            for name in dirContents where name.contains("(\(suffix))") && name != filename {
+                let oldPath = (dbPath as NSString).appendingPathComponent(name)
+                try? fileManager.removeItem(atPath: oldPath)
             }
         }
 
@@ -71,14 +97,35 @@ class DatabaseService: ObservableObject {
         frontmatter += "---\n"
 
         let bodyContent: String
-        if row.body.isEmpty {
+        if effectiveBody.isEmpty {
             bodyContent = "\n"
         } else {
-            bodyContent = "\n\(row.body)"
+            bodyContent = "\n\(effectiveBody)"
         }
 
         let fileContent = frontmatter + bodyContent
         try fileContent.write(toFile: filePath, atomically: true, encoding: .utf8)
+    }
+
+    // MARK: - Load Row Body (on demand)
+
+    func loadRowBody(rowId: String, at dbPath: String) -> String {
+        let suffix = extractIdSuffix(from: rowId)
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return "" }
+        for name in contents where name.hasSuffix(".md") && name.contains("(\(suffix))") {
+            let filePath = (dbPath as NSString).appendingPathComponent(name)
+            if let content = try? String(contentsOfFile: filePath, encoding: .utf8) {
+                return extractBody(from: content)
+            }
+        }
+        return ""
+    }
+
+    private func extractBody(from content: String) -> String {
+        guard content.hasPrefix("---") else { return content }
+        let afterFirst = content.index(content.startIndex, offsetBy: 3)
+        guard let endRange = content.range(of: "\n---", range: afterFirst..<content.endIndex) else { return "" }
+        return String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
     }
 
     // MARK: - Create Row
@@ -114,8 +161,7 @@ class DatabaseService: ObservableObject {
         for name in contents {
             if name.contains("(\(suffix))") && name.hasSuffix(".md") {
                 let filePath = (dbPath as NSString).appendingPathComponent(name)
-                try fileManager.removeItem(atPath: filePath)
-                break
+                try? fileManager.removeItem(atPath: filePath)
             }
         }
     }
@@ -159,6 +205,12 @@ class DatabaseService: ObservableObject {
                 schema.properties[idx].config = PropertyConfig(options: [])
             } else if schema.properties[idx].config?.options == nil {
                 schema.properties[idx].config?.options = []
+            }
+        }
+        // Set up relation config with empty target
+        if newType == .relation {
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(target: nil)
             }
         }
         try saveSchema(schema, at: dbPath)
@@ -367,21 +419,51 @@ class DatabaseService: ObservableObject {
 
     private func loadRows(in dbPath: String, schema: DatabaseSchema) throws -> [DatabaseRow] {
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return [] }
-        var rows: [DatabaseRow] = []
-        var repairedRows: [DatabaseRow] = []
+
+        // Track best row per ID and filenames to detect duplicates.
+        var bestByID: [String: (row: DatabaseRow, filename: String, repaired: Bool)] = [:]
+        var duplicateFiles: [String] = []
 
         for name in contents {
             guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
             let filePath = (dbPath as NSString).appendingPathComponent(name)
             guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
-            if let parsed = parseRow(from: content, schema: schema) {
-                rows.append(parsed.row)
-                if parsed.repaired {
-                    repairedRows.append(parsed.row)
+            guard let parsed = parseRow(from: content, schema: schema, skipBody: true) else { continue }
+
+            let rowId = parsed.row.id
+            if let existing = bestByID[rowId] {
+                // Keep the one whose filename matches the canonical suffix pattern.
+                let suffix = extractIdSuffix(from: rowId)
+                let existingIsCanonical = existing.filename.contains("(\(suffix))")
+                let newIsCanonical = name.contains("(\(suffix))")
+
+                if newIsCanonical && !existingIsCanonical {
+                    duplicateFiles.append(existing.filename)
+                    bestByID[rowId] = (parsed.row, name, parsed.repaired)
+                } else if !newIsCanonical && existingIsCanonical {
+                    duplicateFiles.append(name)
+                } else {
+                    // Both canonical or both non-canonical — keep newer
+                    if parsed.row.updatedAt > existing.row.updatedAt {
+                        duplicateFiles.append(existing.filename)
+                        bestByID[rowId] = (parsed.row, name, parsed.repaired)
+                    } else {
+                        duplicateFiles.append(name)
+                    }
                 }
+            } else {
+                bestByID[rowId] = (parsed.row, name, parsed.repaired)
             }
         }
 
+        // Clean up orphan duplicate files.
+        for filename in duplicateFiles {
+            let filePath = (dbPath as NSString).appendingPathComponent(filename)
+            try? fileManager.removeItem(atPath: filePath)
+        }
+
+        let rows = bestByID.values.map(\.row)
+        let repairedRows = bestByID.values.filter(\.repaired).map(\.row)
         let sortedRows = rows.sorted { $0.createdAt < $1.createdAt }
 
         // If we repaired legacy properties during load, persist the mapped values.
@@ -402,13 +484,13 @@ class DatabaseService: ObservableObject {
         let repaired: Bool
     }
 
-    private func parseRow(from content: String, schema: DatabaseSchema) -> ParsedRow? {
+    private func parseRow(from content: String, schema: DatabaseSchema, skipBody: Bool = false) -> ParsedRow? {
         guard content.hasPrefix("---") else { return nil }
         let afterFirstMarker = content.index(content.startIndex, offsetBy: 3)
         guard let endRange = content.range(of: "\n---", range: afterFirstMarker..<content.endIndex) else { return nil }
 
         let yamlBlock = String(content[afterFirstMarker..<endRange.lowerBound])
-        let body = String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
+        let body = skipBody ? "" : String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
 
         var id = ""
         var createdAt = Date()
@@ -417,11 +499,8 @@ class DatabaseService: ObservableObject {
         var rawProperties: [String: String] = [:]
         var inProperties = false
 
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        let dateOnlyFormatter = DateFormatter()
-        dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
-        dateOnlyFormatter.timeZone = TimeZone(identifier: "UTC")
+        let isoFormatter = Self.isoFormatter
+        let dateOnlyFormatter = Self.dateOnlyFormatter
 
         for line in yamlBlock.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -776,9 +855,7 @@ class DatabaseService: ObservableObject {
     }
 
     private func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        Self.isoFormatter.string(from: date)
     }
 }
 

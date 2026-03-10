@@ -10,7 +10,7 @@ import CoreServices
 final class WorkspaceWatcher {
     private var stream: FSEventStreamRef?
     private var debounceItem: DispatchWorkItem?
-    private let debounceInterval: TimeInterval = 0.8
+    private let debounceInterval: TimeInterval = 2.0
     private let onChange: () -> Void
 
     init(onChange: @escaping () -> Void) {

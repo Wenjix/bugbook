@@ -110,7 +110,12 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 if let path = notification.object as? String {
+                    // Cancel pending saves before closing tabs to prevent recreating the deleted file
+                    saveTask?.cancel()
+                    saveTask = nil
+                    let closingIds = appState.openTabs.filter { $0.path == path }.map(\.id)
                     appState.closeTabsForPath(path)
+                    for id in closingIds { cleanupTabDocuments(id) }
                     removeDatabaseEmbedsFromOpenDocs(dbPath: path)
                 }
             }
@@ -137,7 +142,9 @@ struct ContentView: View {
                 appState.newEmptyTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
+                let closingId = appState.activeTab?.id
                 appState.closeTab(at: appState.activeTabIndex)
+                if let closingId { cleanupTabDocuments(closingId) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
                 forceSave()
@@ -645,6 +652,7 @@ struct ContentView: View {
             }
 
             activeTabContent
+                .environment(\.workspacePath, appState.workspacePath)
         }
         .overlay(alignment: .trailing) {
             if let peek = peekTarget {
@@ -736,8 +744,10 @@ struct ContentView: View {
                         updateDatabaseRowTabTitle(tabId: tab.id, title: title)
                     }
                 )
+                .id(tab.id)
             } else if tab.isDatabase {
                 DatabaseFullPageView(dbPath: tab.path, initialRowId: dbInitialRowId)
+                    .id(tab.id)
                     .onAppear { dbInitialRowId = nil }
             } else {
                 editorView(for: tab)
@@ -858,6 +868,18 @@ struct ContentView: View {
             if path != nil { refreshFileTree() }
             return path
         }
+        doc.onDeleteSubPage = { [weak appState] pageName in
+            guard let tab = appState?.activeTab,
+                  let workspace = appState?.workspacePath else { return }
+            // Companion folder is the .md path with extension stripped
+            let tabPath = tab.path
+            let parentDir = tabPath.hasSuffix(".md") ? String(tabPath.dropLast(3)) : tabPath
+            let childPath = (parentDir as NSString).appendingPathComponent("\(pageName).md")
+            guard FileManager.default.fileExists(atPath: childPath) else { return }
+            try? fileSystem.trashFile(at: childPath, workspace: workspace)
+            NotificationCenter.default.post(name: .fileDeleted, object: childPath)
+            refreshFileTree()
+        }
         doc.availablePages = appState.fileTree
         doc.workspacePath = appState.workspacePath
         doc.onNavigateToPage = { pageName in
@@ -880,7 +902,11 @@ struct ContentView: View {
                 if !content.hasSuffix("\n") { content += "\n" }
                 content += blockMarkdown
                 try fileSystem.saveFile(at: targetPagePath, content: content)
+                // Suppress sub-page deletion during move — we're relocating, not deleting
+                let savedCallback = doc.onDeleteSubPage
+                doc.onDeleteSubPage = nil
                 doc.deleteBlock(id: blockId)
+                doc.onDeleteSubPage = savedCallback
                 doc.moveBlockId = nil
                 doc.blockMenuBlockId = nil
                 if let targetTab = appState.openTabs.first(where: { $0.path == targetPagePath }),
@@ -1235,19 +1261,31 @@ struct ContentView: View {
     }
 
     private func handleBlockTypeShortcut(_ action: String?) {
-        guard let action = action,
-              appState.activeTabIndex < appState.openTabs.count else { return }
+        guard let action = action else { return }
+
+        // If a BlockNSTextView is focused, route through its closure so the
+        // action targets the correct document (works in peek panel, modal, etc.)
+        if let textView = NSApp.keyWindow?.firstResponder as? BlockNSTextView,
+           let handler = textView.blockTypeShortcutAction {
+            handler(action)
+            return
+        }
+
+        // Fallback: use the active tab's document
+        guard appState.activeTabIndex < appState.openTabs.count else { return }
         let tab = appState.openTabs[appState.activeTabIndex]
         guard let doc = blockDocuments[tab.id],
               let blockId = doc.focusedBlockId else { return }
 
         if action == "createPage" {
+            let currentText = doc.block(for: blockId)?.text ?? ""
+            let pageName = currentText.isEmpty ? "Untitled" : currentText
             if let createPage = doc.onCreateSubPage,
-               let pagePath = createPage("Untitled") {
-                let pageName = (pagePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+               let pagePath = createPage(pageName) {
+                let resolvedName = (pagePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
                 doc.updateBlockProperty(id: blockId) { block in
                     block.type = .pageLink
-                    block.pageLinkName = pageName
+                    block.pageLinkName = resolvedName
                     block.text = ""
                 }
             }
@@ -1297,7 +1335,7 @@ struct ContentView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(.ultraThinMaterial)
-                .cornerRadius(10)
+                .clipShape(.rect(cornerRadius: 10))
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
                 .padding(.bottom, 40)
             }
@@ -1541,10 +1579,15 @@ struct ContentView: View {
     private func saveDocument(tabId: UUID) {
         guard let index = appState.openTabs.firstIndex(where: { $0.id == tabId }),
               appState.openTabs[index].isDirty else { return }
+        let oldPath = appState.openTabs[index].path
+        // Don't recreate a file that was deleted/trashed
+        guard !oldPath.isEmpty, FileManager.default.fileExists(atPath: oldPath) else {
+            appState.openTabs[index].isDirty = false
+            return
+        }
         if let document = blockDocuments[tabId] {
             let content = document.markdown
             appState.openTabs[index].content = content
-            let oldPath = appState.openTabs[index].path
             try? fileSystem.saveFile(at: oldPath, content: content)
 
             if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
@@ -1573,6 +1616,11 @@ struct ContentView: View {
     }
 
     /// Removes any databaseEmbed blocks referencing `dbPath` from all currently open BlockDocuments.
+    private func cleanupTabDocuments(_ tabId: UUID) {
+        blockDocuments.removeValue(forKey: tabId)
+        canvasDocuments.removeValue(forKey: tabId)
+    }
+
     private func removeDatabaseEmbedsFromOpenDocs(dbPath: String) {
         for (_, doc) in blockDocuments {
             let toRemove = doc.blocks.filter { $0.type == .databaseEmbed && $0.databasePath == dbPath }.map(\.id)
@@ -1730,11 +1778,12 @@ struct ContentView: View {
         guard appState.activeTabIndex < appState.openTabs.count else { return }
         if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
             let title = AttributedStringConverter.plainText(from: rawTitle)
-            // Update tab display name
-            appState.openTabs[appState.activeTabIndex].displayName = title
-            // Update sidebar file tree entry name
-            let path = appState.openTabs[appState.activeTabIndex].path
-            updateFileTreeName(path: path, newName: title)
+            // Only write if actually changed — avoid triggering @Observable for no-op
+            if appState.openTabs[appState.activeTabIndex].displayName != title {
+                appState.openTabs[appState.activeTabIndex].displayName = title
+                let path = appState.openTabs[appState.activeTabIndex].path
+                updateFileTreeName(path: path, newName: title)
+            }
         }
     }
 

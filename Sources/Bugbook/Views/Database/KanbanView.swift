@@ -88,30 +88,32 @@ struct KanbanView: View {
                 .padding(.vertical, 6)
             }
 
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
-                        kanbanColumn(column, index: index)
-                    }
+            GeometryReader { geo in
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
+                            kanbanColumn(column, index: index, availableHeight: geo.size.height - 24)
+                        }
 
-                    // Add new option column
-                    if groupProperty != nil {
-                        addOptionColumn
+                        // Add new option column
+                        if groupProperty != nil {
+                            addOptionColumn
+                        }
+                    }
+                    .padding(12)
+                    .coordinateSpace(name: "kanban")
+                    .overlay {
+                        if let dragId = draggingRowId,
+                           let row = rows.first(where: { $0.id == dragId }) {
+                            let title = row.title(schema: schema)
+                            dragPreview(title)
+                                .position(dragLocation)
+                                .allowsHitTesting(false)
+                        }
                     }
                 }
-                .padding(12)
-                .coordinateSpace(name: "kanban")
-                .overlay {
-                    if let dragId = draggingRowId,
-                       let row = rows.first(where: { $0.id == dragId }) {
-                        let title = row.title(schema: schema)
-                        dragPreview(title)
-                            .position(dragLocation)
-                            .allowsHitTesting(false)
-                    }
-                }
+                .scrollIndicators(.hidden)
             }
-            .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -190,7 +192,7 @@ struct KanbanView: View {
 
     // MARK: - Kanban Column
 
-    private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int) -> some View {
+    private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int, availableHeight: CGFloat) -> some View {
         let isTargeted = dragTargetColumn == column.id
         let columnWidth: CGFloat = 250
         let columnColor = colorForName(column.color)
@@ -219,55 +221,59 @@ struct KanbanView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
 
-            // Cards — no scroll, just expand
-            VStack(spacing: 6) {
-                let columnRows = rowsForColumn(column.id)
+            // Cards — scroll vertically within column
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 6) {
+                    let columnRows = rowsForColumn(column.id)
 
-                ForEach(columnRows) { row in
-                    let title = row.title(schema: schema)
-                    kanbanCard(row, title: title, columnColor: columnColor)
-                        .opacity(draggingRowId == row.id ? 0.2 : 1)
-                        .gesture(
-                            DragGesture(coordinateSpace: .named("kanban"))
-                                .onChanged { value in
-                                    if draggingRowId == nil { draggingRowId = row.id }
-                                    dragLocation = value.location
-                                    let colIndex = Int(value.location.x / (columnWidth + 12))
-                                    let clampedIndex = max(0, min(colIndex, columns.count - 1))
-                                    dragTargetColumn = columns[clampedIndex].id
-                                }
-                                .onEnded { value in
-                                    if let targetCol = dragTargetColumn {
-                                        moveCard(row.id, toColumn: targetCol)
+                    ForEach(columnRows) { row in
+                        let title = row.title(schema: schema)
+                        kanbanCard(row, title: title, columnColor: columnColor)
+                            .opacity(draggingRowId == row.id ? 0.2 : 1)
+                            .gesture(
+                                DragGesture(coordinateSpace: .named("kanban"))
+                                    .onChanged { value in
+                                        if draggingRowId == nil { draggingRowId = row.id }
+                                        dragLocation = value.location
+                                        let colIndex = Int(value.location.x / (columnWidth + 12))
+                                        let clampedIndex = max(0, min(colIndex, columns.count - 1))
+                                        dragTargetColumn = columns[clampedIndex].id
                                     }
-                                    draggingRowId = nil
-                                    dragTargetColumn = nil
-                                }
-                        )
-                }
-
-                // + New page button at bottom, colored like Notion
-                Button {
-                    addCardInColumn(column.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text("New page")
+                                    .onEnded { value in
+                                        if let targetCol = dragTargetColumn {
+                                            moveCard(row.id, toColumn: targetCol)
+                                        }
+                                        draggingRowId = nil
+                                        dragTargetColumn = nil
+                                    }
+                            )
                     }
-                    .font(.caption)
-                    .foregroundStyle(columnColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(columnColor.opacity(0.08))
-                    .clipShape(.rect(cornerRadius: 6))
+
+                    // + New page button at bottom, colored like Notion
+                    Button {
+                        addCardInColumn(column.id)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                            Text("New page")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(columnColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(columnColor.opacity(0.08))
+                        .clipShape(.rect(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 6)
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 6)
+                .padding(.bottom, 8)
             }
-            .padding(.bottom, 8)
+            .scrollIndicators(.automatic)
         }
         .frame(width: columnWidth)
+        .frame(maxHeight: availableHeight)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isTargeted ? columnColor.opacity(0.12) : columnColor.opacity(0.04))
@@ -347,7 +353,7 @@ struct KanbanView: View {
         switch name {
         case "blue": return .blue
         case "green": return .green
-        case "red": return .gray
+        case "red": return .red
         case "yellow": return .yellow
         case "purple": return .purple
         case "pink": return .pink

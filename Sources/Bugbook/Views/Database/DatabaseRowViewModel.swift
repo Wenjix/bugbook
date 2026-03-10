@@ -26,10 +26,11 @@ final class DatabaseRowViewModel {
         error = nil
 
         let path = dbPath
+        let service = dbService
         loadTask = Task {
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
                 do {
-                    return .success(try DatabaseService().loadDatabase(at: path))
+                    return .success(try service.loadDatabase(at: path))
                 } catch {
                     return .failure(error)
                 }
@@ -39,10 +40,12 @@ final class DatabaseRowViewModel {
 
             switch result {
             case .success(let (loadedSchema, loadedRows)):
-                guard let loadedRow = loadedRows.first(where: { $0.id == rowId }) else {
+                guard var loadedRow = loadedRows.first(where: { $0.id == rowId }) else {
                     error = "Row not found"
                     return
                 }
+                // Load body on demand (skipped during bulk load for performance)
+                loadedRow.body = service.loadRowBody(rowId: rowId, at: path)
                 schema = loadedSchema
                 row = loadedRow
             case .failure(let err):
@@ -81,11 +84,20 @@ final class DatabaseRowViewModel {
     func addProperty(type: PropertyType) {
         guard var s = schema else { return }
         let name = type.rawValue.capitalized
-        let prop = PropertyDefinition(id: "prop_\(UUID().uuidString)", name: name, type: type)
-        Task {
-            try? dbService.addProperty(prop, to: &s, at: dbPath)
-            schema = s
-            postChangeNotification()
+        let config: PropertyConfig?
+        switch type {
+        case .select, .multiSelect:
+            config = PropertyConfig(options: [])
+        case .relation:
+            config = PropertyConfig(target: nil)
+        default:
+            config = nil
+        }
+        let prop = PropertyDefinition(id: "prop_\(UUID().uuidString)", name: name, type: type, config: config)
+        Task { [weak self] in
+            try? self?.dbService.addProperty(prop, to: &s, at: self?.dbPath ?? "")
+            self?.schema = s
+            self?.postChangeNotification()
         }
     }
 
@@ -93,7 +105,8 @@ final class DatabaseRowViewModel {
         guard var s = schema else { return }
         var rows: [DatabaseRow] = []
         if let currentRow = row { rows = [currentRow] }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             try? dbService.renameProperty(propertyId, to: newName, in: &s, rows: &rows, at: dbPath)
             schema = s
             if let updatedRow = rows.first { row = updatedRow }
@@ -103,7 +116,8 @@ final class DatabaseRowViewModel {
 
     func deleteProperty(_ propertyId: String) {
         guard var s = schema else { return }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             try? dbService.deleteProperty(propertyId, from: &s, at: dbPath)
             schema = s
             postChangeNotification()
@@ -114,7 +128,8 @@ final class DatabaseRowViewModel {
         guard var s = schema else { return }
         var rows: [DatabaseRow] = []
         if let currentRow = row { rows = [currentRow] }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             try? dbService.changePropertyType(propertyId, to: newType, in: &s, rows: &rows, at: dbPath)
             schema = s
             if let updatedRow = rows.first { row = updatedRow }
@@ -124,7 +139,8 @@ final class DatabaseRowViewModel {
 
     func addOption(_ propertyId: String, option: SelectOption) {
         guard var s = schema else { return }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             try? dbService.addSelectOption(option, toProperty: propertyId, in: &s, at: dbPath)
             schema = s
         }
@@ -132,7 +148,8 @@ final class DatabaseRowViewModel {
 
     func updateOption(_ propertyId: String, optId: String, name: String?, color: String?) {
         guard var s = schema else { return }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             try? dbService.updateSelectOption(optId, name: name, color: color, inProperty: propertyId, in: &s, at: dbPath)
             schema = s
         }
@@ -142,14 +159,51 @@ final class DatabaseRowViewModel {
         guard var s = schema else { return }
         var rows: [DatabaseRow] = []
         if let currentRow = row { rows = [currentRow] }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             try? dbService.deleteSelectOption(optId, fromProperty: propertyId, in: &s, rows: &rows, at: dbPath)
             schema = s
             if let updatedRow = rows.first { row = updatedRow }
         }
     }
 
+    func loadRelationRows(for prop: PropertyDefinition) -> [RelationRowCandidate] {
+        guard let target = prop.config?.target, !target.isEmpty else { return [] }
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: target)
+            return targetRows.map { RelationRowCandidate(id: $0.id, title: $0.title(schema: targetSchema)) }
+        } catch {
+            return []
+        }
+    }
+
+    func listAvailableDatabases() -> [RelationDatabaseCandidate] {
+        let store = DatabaseStore()
+        let searchRoot = (dbPath as NSString).deletingLastPathComponent
+        return store.listDatabases(in: searchRoot)
+            .filter { $0.path != dbPath }
+            .map { RelationDatabaseCandidate(id: $0.id, name: $0.name, path: $0.path) }
+    }
+
+    func setRelationTarget(_ propertyId: String, target: String) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig(target: target)
+        } else {
+            s.properties[idx].config?.target = target
+        }
+        schema = s
+        Task { [weak self] in
+            guard let self else { return }
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
     func deleteRow(_ rowId: String) {
+        saveTask?.cancel()
+        saveTask = nil
         try? dbService.deleteRow(rowId, in: dbPath)
         postChangeNotification()
     }
@@ -168,12 +222,16 @@ final class DatabaseRowViewModel {
                 onAddOption: { propId, option in self.addOption(propId, option: option) },
                 onUpdateOption: { propId, optId, name, color in self.updateOption(propId, optId: optId, name: name, color: color) },
                 onDeleteOption: { propId, optId in self.deleteOption(propId, optId: optId) },
+                onLoadRelationRows: { prop in self.loadRelationRows(for: prop) },
+                onListDatabases: { self.listAvailableDatabases() },
+                onSetRelationTarget: { propId, target in self.setRelationTarget(propId, target: target) },
                 onAddProperty: { type in self.addProperty(type: type) },
                 onRenameProperty: { propId, name in self.renameProperty(propId, to: name) },
                 onDeleteProperty: { propId in self.deleteProperty(propId) },
                 onChangePropertyType: { propId, type in self.changePropertyType(propId, to: type) },
                 showBreadcrumb: false,
-                autoFocusTitle: autoFocusTitle
+                autoFocusTitle: autoFocusTitle,
+                dbPath: dbPath
             )
         }
     }

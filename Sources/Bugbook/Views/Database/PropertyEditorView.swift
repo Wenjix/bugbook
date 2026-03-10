@@ -1,6 +1,19 @@
 import SwiftUI
 import BugbookCore
 
+/// Lightweight container for relation row candidates (id + display title).
+struct RelationRowCandidate: Identifiable {
+    let id: String
+    let title: String
+}
+
+/// Lightweight container for available databases (for relation target picking).
+struct RelationDatabaseCandidate: Identifiable {
+    let id: String   // database id
+    let name: String
+    let path: String
+}
+
 struct PropertyEditorView: View {
     let definition: PropertyDefinition
     @Binding var value: PropertyValue
@@ -9,6 +22,12 @@ struct PropertyEditorView: View {
     var onAddOption: ((String, SelectOption) -> Void)?
     var onUpdateOption: ((String, String, String?, String?) -> Void)?  // (propId, optionId, newName?, newColor?)
     var onDeleteOption: ((String, String) -> Void)?  // (propId, optionId)
+    /// Callback to load candidate rows for a relation property (returns rows from target database).
+    var onLoadRelationRows: (() -> [RelationRowCandidate])?
+    /// Callback to list available databases for relation target selection.
+    var onListDatabases: (() -> [RelationDatabaseCandidate])?
+    /// Callback to set the target database for a relation property.
+    var onSetRelationTarget: ((String, String) -> Void)?  // (propertyId, targetDbPath)
 
     var body: some View {
         mainEditor
@@ -559,24 +578,275 @@ struct PropertyEditorView: View {
 
     // MARK: - Relation
 
+    @State private var showRelationPicker = false
+    @State private var showRelationTargetPicker = false
+    @State private var relationCandidates: [RelationRowCandidate] = []
+    @State private var relationDatabases: [RelationDatabaseCandidate] = []
+    @State private var relationSearch = ""
+    @State private var relationDbSearch = ""
+
+    private var selectedRelationIds: Set<String> {
+        switch value {
+        case .relation(let id): return id.isEmpty ? [] : [id]
+        case .relationMany(let ids): return Set(ids)
+        default: return []
+        }
+    }
+
+    private var isMultiRelation: Bool {
+        definition.config?.cardinality == "many_to_many"
+    }
+
+    private var hasRelationTarget: Bool {
+        guard let target = definition.config?.target else { return false }
+        return !target.isEmpty
+    }
+
     private var relationEditor: some View {
-        let displayText: String = {
-            switch value {
-            case .relation(let id): return id.isEmpty ? "" : id
-            case .relationMany(let ids): return ids.joined(separator: ", ")
-            default: return ""
-            }
-        }()
-        return HStack {
-            if displayText.isEmpty {
-                Text(compact ? "" : "Empty").foregroundStyle(.secondary)
+        let candidates = relationCandidates
+        let selected = selectedRelationIds
+        let selectedCandidates = candidates.filter { selected.contains($0.id) }
+
+        return HStack(spacing: 4) {
+            if !hasRelationTarget {
+                Text(compact ? "" : "Select target database...")
+                    .foregroundStyle(.secondary)
+                    .font(compact ? .caption : .body)
+                    .onTapGesture {
+                        if relationDatabases.isEmpty {
+                            relationDatabases = (onListDatabases?() ?? [])
+                        }
+                        showRelationTargetPicker = true
+                    }
+            } else if !selectedCandidates.isEmpty {
+                // Show clickable links for each related row
+                ForEach(selectedCandidates) { candidate in
+                    Text(candidate.title)
+                        .font(compact ? .callout : .body)
+                        .foregroundStyle(Color.accentColor)
+                        .underline()
+                        .lineLimit(1)
+                        .onTapGesture {
+                            if let target = definition.config?.target {
+                                NotificationCenter.default.post(
+                                    name: .inlineDatabaseRowPeek,
+                                    object: nil,
+                                    userInfo: [
+                                        DatabaseNotificationKey.dbPath: target,
+                                        DatabaseNotificationKey.rowId: candidate.id
+                                    ]
+                                )
+                            }
+                        }
+                }
             } else {
-                Text(displayText).lineLimit(1)
+                Text(compact ? "" : "Empty")
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+            // Edit button to open/change the relation picker
+            if hasRelationTarget {
+                Image(systemName: "pencil")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .onTapGesture {
+                        if relationCandidates.isEmpty {
+                            relationCandidates = onLoadRelationRows?() ?? []
+                        }
+                        showRelationPicker = true
+                    }
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 22)
         .contentShape(Rectangle())
+        .onTapGesture {
+            guard hasRelationTarget else { return }
+            if selectedCandidates.isEmpty {
+                if relationCandidates.isEmpty {
+                    relationCandidates = onLoadRelationRows?() ?? []
+                }
+                showRelationPicker = true
+            }
+        }
+        .floatingPopover(isPresented: $showRelationTargetPicker, arrowEdge: .bottom) {
+            relationTargetPickerPopover
+        }
+        .floatingPopover(isPresented: $showRelationPicker, arrowEdge: .bottom) {
+            relationPickerPopover
+        }
+        .onAppear {
+            // Eagerly load database list so targetDatabaseName resolves to the real name.
+            if relationDatabases.isEmpty {
+                relationDatabases = onListDatabases?() ?? []
+            }
+            if hasRelationTarget && relationCandidates.isEmpty {
+                relationCandidates = onLoadRelationRows?() ?? []
+            }
+        }
+        .onChange(of: definition.config?.target) { _, newTarget in
+            if let newTarget, !newTarget.isEmpty {
+                relationCandidates = onLoadRelationRows?() ?? []
+            }
+        }
+    }
+
+    private var relationTargetPickerPopover: some View {
+        VStack(spacing: 0) {
+            TextField("Search databases...", text: $relationDbSearch)
+                .textFieldStyle(.plain)
+                .padding(8)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    let filtered = relationDbSearch.isEmpty
+                        ? relationDatabases
+                        : relationDatabases.filter { $0.name.localizedStandardContains(relationDbSearch) }
+                    if filtered.isEmpty {
+                        Text("No databases found")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .padding(10)
+                    } else {
+                        ForEach(filtered) { db in
+                            Button {
+                                onSetRelationTarget?(definition.id, db.path)
+                                showRelationTargetPicker = false
+                                relationDbSearch = ""
+                                // The schema update will re-render this view with the new
+                                // definition (which has the target set). onAppear will
+                                // then load the relation row candidates.
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "tablecells")
+                                        .foregroundStyle(.secondary)
+                                        .font(.system(size: 13))
+                                    Text(db.name)
+                                        .font(.callout)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 240)
+        }
+        .frame(width: 260)
+        .popoverSurface()
+    }
+
+    private var targetDatabaseName: String {
+        // Use the cached database list if available (has the real schema name),
+        // otherwise fall back to the folder name on disk.
+        guard let target = definition.config?.target, !target.isEmpty else { return "" }
+        if let match = relationDatabases.first(where: { $0.path == target }) {
+            return match.name
+        }
+        return (target as NSString).lastPathComponent
+    }
+
+    private var relationPickerPopover: some View {
+        VStack(spacing: 0) {
+            HStack {
+                TextField("Search...", text: $relationSearch)
+                    .textFieldStyle(.plain)
+                if !targetDatabaseName.isEmpty {
+                    Text("In")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        // Navigate to the target database
+                        if let target = definition.config?.target {
+                            showRelationPicker = false
+                            NotificationCenter.default.post(
+                                name: .databaseNameDidChange,
+                                object: nil,
+                                userInfo: [DatabaseNotificationKey.dbPath: target]
+                            )
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "tablecells")
+                                .font(.system(size: 10))
+                            Text(targetDatabaseName)
+                                .font(.caption)
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(8)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    let filtered = relationSearch.isEmpty
+                        ? relationCandidates
+                        : relationCandidates.filter { $0.title.localizedStandardContains(relationSearch) }
+                    ForEach(filtered) { candidate in
+                        let isSelected = selectedRelationIds.contains(candidate.id)
+                        Button {
+                            toggleRelation(candidate.id)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                                    .font(.system(size: 14))
+                                Text(candidate.title)
+                                    .font(.callout)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 240)
+        }
+        .frame(width: 240)
+        .popoverSurface()
+    }
+
+    private func toggleRelation(_ rowId: String) {
+        if isMultiRelation {
+            var ids: [String]
+            if case .relationMany(let existing) = value {
+                ids = existing
+            } else if case .relation(let existing) = value, !existing.isEmpty {
+                ids = [existing]
+            } else {
+                ids = []
+            }
+            if ids.contains(rowId) {
+                ids.removeAll { $0 == rowId }
+            } else {
+                ids.append(rowId)
+            }
+            value = ids.isEmpty ? .empty : .relationMany(ids)
+        } else {
+            if case .relation(let current) = value, current == rowId {
+                value = .empty
+            } else {
+                value = .relation(rowId)
+            }
+            showRelationPicker = false
+        }
     }
 
     // MARK: - Color Helper
@@ -585,7 +855,7 @@ struct PropertyEditorView: View {
         switch name {
         case "blue": return .blue
         case "green": return .green
-        case "red": return .gray
+        case "red": return .red
         case "yellow": return .yellow
         case "purple": return .purple
         case "pink": return .pink

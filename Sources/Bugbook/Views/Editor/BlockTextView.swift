@@ -95,6 +95,9 @@ struct BlockTextView: NSViewRepresentable {
         textView.selectAllBlocksAction = { [weak coordinator] in
             coordinator?.parent.document.selectAllBlocks()
         }
+        textView.blockTypeShortcutAction = { [weak coordinator] action in
+            coordinator?.handleBlockTypeShortcut(action)
+        }
         textView.onDragOutOfBlock = { [weak coordinator] in
             coordinator?.startBlockDragSelection()
         }
@@ -104,6 +107,10 @@ struct BlockTextView: NSViewRepresentable {
             if let anchor = doc.focusedBlockId {
                 doc.selectBlockRange(from: anchor, to: coordinator.parent.blockId)
             }
+        }
+        textView.onPasteImage = { [weak coordinator] in
+            guard let coordinator = coordinator else { return false }
+            return coordinator.handleImagePaste()
         }
         context.coordinator.textView = textView
 
@@ -135,6 +142,20 @@ struct BlockTextView: NSViewRepresentable {
                 context.coordinator.withProgrammaticViewUpdate {
                     textView.textStorage?.addAttribute(.foregroundColor, value: textColor, range: fullRange)
                 }
+            }
+        }
+
+        // Re-apply font to existing text when block type changes (e.g., heading → paragraph)
+        if font != context.coordinator.lastFont {
+            context.coordinator.lastFont = font
+            let fullRange = NSRange(location: 0, length: textView.textStorage?.length ?? 0)
+            if fullRange.length > 0 {
+                context.coordinator.withProgrammaticViewUpdate {
+                    textView.textStorage?.addAttribute(.font, value: font, range: fullRange)
+                }
+            }
+            DispatchQueue.main.async {
+                self.recalculateHeight(textView)
             }
         }
 
@@ -227,6 +248,7 @@ struct BlockTextView: NSViewRepresentable {
         var suppressChanges = false
         var lastFocusedSelf: Bool?
         var lastTextColor: NSColor?
+        var lastFont: NSFont?
         var lastReplacementString: String?
         private var programmaticViewUpdateDepth: Int = 0
 
@@ -326,6 +348,103 @@ struct BlockTextView: NSViewRepresentable {
             if let tv = textView as? BlockNSTextView {
                 tv.isInBlockSelection = false
                 tv.window?.makeFirstResponder(tv)
+            }
+        }
+
+        // MARK: - Image Paste
+
+        /// Handles pasting image data from the clipboard. Returns true if an image was handled.
+        func handleImagePaste() -> Bool {
+            let document = parent.document
+            let blockId = parent.blockId
+            let pb = NSPasteboard.general
+
+            // 1. Check for image file URLs (e.g. copied files from Finder)
+            if let urls = pb.readObjects(forClasses: [NSURL.self], options: [
+                .urlReadingFileURLsOnly: true,
+                .urlReadingContentsConformToTypes: ["public.image"]
+            ]) as? [URL] {
+                let imageURLs = urls.filter { supportedImageExtensions.contains($0.pathExtension.lowercased()) }
+                if let url = imageURLs.first {
+                    if let path = document.copyImageToAssets(url) {
+                        insertImageAfterCurrentBlock(document: document, blockId: blockId, imagePath: path)
+                        return true
+                    }
+                }
+            }
+
+            // 2. Check for raw image data (screenshots, browser images)
+            if let imageType = pb.availableType(from: [.png, .tiff]),
+               let data = pb.data(forType: imageType) {
+                // Convert to PNG for consistent storage
+                guard let image = NSImage(data: data),
+                      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    return false
+                }
+                let bitmap = NSBitmapImageRep(cgImage: cgImage)
+                guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                    return false
+                }
+                if let path = document.saveImageDataToAssets(pngData, fileExtension: "png") {
+                    insertImageAfterCurrentBlock(document: document, blockId: blockId, imagePath: path)
+                    return true
+                }
+            }
+
+            return false
+        }
+
+        private func insertImageAfterCurrentBlock(document: BlockDocument, blockId: UUID, imagePath: String) {
+            guard let loc = document.blockLocation(for: blockId) else { return }
+            let currentBlock = document.block(for: blockId)
+            let isEmptyParagraph = currentBlock?.type == .paragraph && (currentBlock?.text.isEmpty ?? true)
+
+            if isEmptyParagraph {
+                // Convert the current empty block into the image block
+                document.insertImageAtBlock(blockId: blockId, imagePath: imagePath)
+            } else {
+                // Insert a new image block after the current one
+                let insertIndex = loc.topLevel + 1
+                document.insertImageBlock(at: insertIndex, imagePath: imagePath)
+            }
+        }
+
+        // MARK: - Block Type Shortcuts
+
+        func handleBlockTypeShortcut(_ action: String) {
+            let doc = parent.document
+            let blockId = parent.blockId
+
+            if action == "createPage" {
+                let currentText = doc.block(for: blockId)?.text ?? ""
+                let pageName = currentText.isEmpty ? "Untitled" : currentText
+                if let createPage = doc.onCreateSubPage,
+                   let pagePath = createPage(pageName) {
+                    let resolvedName = (pagePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+                    doc.updateBlockProperty(id: blockId) { block in
+                        block.type = .pageLink
+                        block.pageLinkName = resolvedName
+                        block.text = ""
+                    }
+                }
+                return
+            }
+
+            let mapping: [(String, BlockType, Int)] = [
+                ("paragraph", .paragraph, 0),
+                ("heading1", .heading, 1),
+                ("heading2", .heading, 2),
+                ("heading3", .heading, 3),
+                ("taskItem", .taskItem, 0),
+                ("bulletListItem", .bulletListItem, 0),
+                ("numberedListItem", .numberedListItem, 0),
+                ("toggle", .toggle, 0),
+                ("codeBlock", .codeBlock, 0),
+            ]
+            guard let match = mapping.first(where: { $0.0 == action }) else { return }
+            doc.changeBlockType(id: blockId, to: match.1)
+            if match.1 == .heading {
+                doc.setHeadingLevel(id: blockId, level: match.2)
             }
         }
 
@@ -442,9 +561,9 @@ struct BlockTextView: NSViewRepresentable {
             if !isTitleBlock, textView.string.hasPrefix("/") {
                 if parent.document.slashMenuBlockId != parent.blockId {
                     parent.document.slashMenuBlockId = parent.blockId
-                    parent.document.slashMenuSelectedIndex = 0
                 }
                 parent.document.slashMenuFilter = String(textView.string.dropFirst(1))
+                parent.document.slashMenuSelectedIndex = 0
             } else if parent.document.slashMenuBlockId == parent.blockId {
                 parent.document.dismissSlashMenu()
             }
@@ -876,8 +995,10 @@ class BlockNSTextView: NSTextView {
     var undoAction: (() -> Void)?
     var redoAction: (() -> Void)?
     var selectAllBlocksAction: (() -> Void)?
+    var blockTypeShortcutAction: ((String) -> Void)?
     var onDragOutOfBlock: (() -> Void)?
     var onShiftClick: (() -> Void)?
+    var onPasteImage: (() -> Bool)?
     var isInBlockSelection = false
 
     override func viewDidMoveToWindow() {
@@ -947,6 +1068,36 @@ class BlockNSTextView: NSTextView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         return []
+    }
+
+    override func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+
+        // If the pasteboard has string content, prefer normal text paste.
+        // This avoids intercepting copy-paste of text from browsers (which also
+        // include a TIFF rendering of the selection alongside the text).
+        let hasString = pb.availableType(from: [.string, .rtf, .html]) != nil
+
+        if !hasString {
+            // Check for image data on the pasteboard (screenshots, copied images)
+            let hasImage = pb.availableType(from: [.tiff, .png]) != nil
+
+            // Check for image file URLs on the pasteboard (copied image files in Finder)
+            var hasImageFile = false
+            if pb.availableType(from: [.fileURL]) != nil,
+               let urls = pb.readObjects(forClasses: [NSURL.self], options: [
+                .urlReadingFileURLsOnly: true,
+                .urlReadingContentsConformToTypes: ["public.image"]
+               ]) as? [URL], !urls.isEmpty {
+                hasImageFile = urls.contains { supportedImageExtensions.contains($0.pathExtension.lowercased()) }
+            }
+
+            if (hasImage || hasImageFile), let handler = onPasteImage, handler() {
+                return // Image paste handled
+            }
+        }
+
+        super.paste(sender)
     }
 
     // MARK: - Cross-Block Selection
@@ -1035,22 +1186,27 @@ class BlockNSTextView: NSTextView {
             && !flags.contains(.control)
         guard isCommandOptionOnly else { return false }
 
-        let keyToAction: [String: String] = [
-            "0": "paragraph",
-            "1": "heading1",
-            "2": "heading2",
-            "3": "heading3",
-            "4": "taskItem",
-            "5": "bulletListItem",
-            "6": "numberedListItem",
-            "7": "toggle",
-            "8": "codeBlock",
-            "9": "createPage",
+        // Use keyCode exclusively — charactersIgnoringModifiers is unreliable
+        // when Option is held (returns special characters on many layouts)
+        let keyCodeToAction: [UInt16: String] = [
+            29: "paragraph",        // 0
+            18: "heading1",         // 1
+            19: "heading2",         // 2
+            20: "heading3",         // 3
+            21: "taskItem",         // 4
+            23: "bulletListItem",   // 5
+            22: "numberedListItem", // 6
+            26: "toggle",           // 7
+            28: "codeBlock",        // 8
+            25: "createPage",       // 9
         ]
-        guard let chars = event.charactersIgnoringModifiers?.lowercased(),
-              let action = keyToAction[chars] else { return false }
+        guard let action = keyCodeToAction[event.keyCode] else { return false }
 
-        NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
+        if let handler = blockTypeShortcutAction {
+            handler(action)
+        } else {
+            NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
+        }
         return true
     }
 

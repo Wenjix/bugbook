@@ -18,6 +18,9 @@ struct TableView: View {
     var onAddSelectOption: ((String, SelectOption) -> Void)?
     var onUpdateSelectOption: ((String, String, String?, String?) -> Void)?
     var onDeleteSelectOption: ((String, String) -> Void)?
+    var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
+    var onListDatabases: (() -> [RelationDatabaseCandidate])?
+    var onSetRelationTarget: ((String, String) -> Void)?
     var onResizeColumn: ((String, CGFloat) -> Void)?
     var onReorderRows: ((String, String?) -> Void)?
     var onNewRow: (() -> Void)?
@@ -87,7 +90,7 @@ struct TableView: View {
             maxHeight: usesInnerScroll ? .infinity : nil,
             alignment: .topLeading
         )
-        .fixedSize(horizontal: false, vertical: !usesInnerScroll)
+        .fixedSize(horizontal: !usesInnerScroll, vertical: !usesInnerScroll)
         .databasePointerCursor()
     }
 
@@ -259,20 +262,22 @@ struct TableView: View {
                         .databasePointerCursor()
 
                     ForEach(visibleProperties) { prop in
-                        let propValue = Binding<PropertyValue>(
-                            get: { row.wrappedValue.properties[prop.id] ?? .empty },
-                            set: { newVal in
-                                var updatedRow = row.wrappedValue
-                                updatedRow.properties[prop.id] = newVal
-                                row.wrappedValue = updatedRow
-                                onSave(updatedRow)
-                            }
+                        PropertyEditorView(
+                            definition: prop,
+                            value: propertyBinding(row: row, propertyId: prop.id),
+                            wrapText: wrapCellText,
+                            compact: true,
+                            onAddOption: onAddSelectOption,
+                            onUpdateOption: onUpdateSelectOption,
+                            onDeleteOption: onDeleteSelectOption,
+                            onLoadRelationRows: prop.type == .relation ? { onLoadRelationRows?(prop) ?? [] } : nil,
+                            onListDatabases: prop.type == .relation ? { onListDatabases?() ?? [] } : nil,
+                            onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil
                         )
-                        PropertyEditorView(definition: prop, value: propValue, wrapText: wrapCellText, compact: true, onAddOption: onAddSelectOption, onUpdateOption: onUpdateSelectOption, onDeleteOption: onDeleteSelectOption)
-                            .padding(.horizontal, 8)
-                            .frame(width: columnWidth(for: prop), alignment: .leading)
-                            .contentShape(Rectangle())
-                            .databasePointerCursor()
+                        .padding(.horizontal, 8)
+                        .frame(width: columnWidth(for: prop), alignment: .leading)
+                        .contentShape(Rectangle())
+                        .databasePointerCursor()
                     }
                 }
                 .padding(.horizontal, 8)
@@ -313,23 +318,8 @@ struct TableView: View {
     // MARK: - Title Cell
 
     private func titleCell(_ row: Binding<DatabaseRow>, isHovered: Bool) -> some View {
-        let titlePropId = schema.titleProperty?.id
         let openPillSize = CGSize(width: 74, height: 24)
-        let titleBinding = Binding(
-            get: {
-                guard let propId = titlePropId,
-                      let val = row.wrappedValue.properties[propId],
-                      case .text(let s) = val else { return "" }
-                return s
-            },
-            set: { newVal in
-                guard let propId = titlePropId else { return }
-                var updatedRow = row.wrappedValue
-                updatedRow.properties[propId] = .text(newVal)
-                row.wrappedValue = updatedRow
-                onSave(updatedRow)
-            }
-        )
+        let titleBinding = titleBinding(row: row)
 
         return titleTextField(titleBinding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -415,6 +405,37 @@ struct TableView: View {
         dragWidths[prop.id] ?? viewConfig.columnWidths?[prop.id] ?? 180
     }
 
+    private func propertyBinding(row: Binding<DatabaseRow>, propertyId: String) -> Binding<PropertyValue> {
+        Binding(
+            get: { row.wrappedValue.properties[propertyId] ?? .empty },
+            set: { newVal in
+                var updatedRow = row.wrappedValue
+                updatedRow.properties[propertyId] = newVal
+                row.wrappedValue = updatedRow
+                onSave(updatedRow)
+            }
+        )
+    }
+
+    private func titleBinding(row: Binding<DatabaseRow>) -> Binding<String> {
+        let titlePropId = schema.titleProperty?.id
+        return Binding(
+            get: {
+                guard let propId = titlePropId,
+                      let val = row.wrappedValue.properties[propId],
+                      case .text(let s) = val else { return "" }
+                return s
+            },
+            set: { newVal in
+                guard let propId = titlePropId else { return }
+                var updatedRow = row.wrappedValue
+                updatedRow.properties[propId] = .text(newVal)
+                row.wrappedValue = updatedRow
+                onSave(updatedRow)
+            }
+        )
+    }
+
     @ViewBuilder
     private var rowsRegion: some View {
         if usesInnerScroll {
@@ -441,7 +462,7 @@ struct TableView: View {
     }
 
     private var rowsStack: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .frame(height: 0)
                 .id(topAnchorKey)

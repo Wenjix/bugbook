@@ -9,14 +9,20 @@ struct RowPageView: View {
     var onAddOption: ((String, SelectOption) -> Void)?
     var onUpdateOption: ((String, String, String?, String?) -> Void)?
     var onDeleteOption: ((String, String) -> Void)?
+    var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
+    var onListDatabases: (() -> [RelationDatabaseCandidate])?
+    var onSetRelationTarget: ((String, String) -> Void)?
     var onAddProperty: ((PropertyType) -> Void)?
     var onRenameProperty: ((String, String) -> Void)?
     var onDeleteProperty: ((String) -> Void)?
     var onChangePropertyType: ((String, PropertyType) -> Void)?
     var showBreadcrumb: Bool = true
     var autoFocusTitle: Bool = false
+    var dbPath: String = ""
 
+    @Environment(\.workspacePath) private var workspacePath
     @State private var editingTitle: String = ""
+    @State private var bodyDocument: BlockDocument?
     @FocusState private var isTitleFocused: Bool
 
     private var rowTitle: String {
@@ -75,77 +81,92 @@ struct RowPageView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Title
-                    TextField("New Page", text: $editingTitle, onCommit: {
-                        persistTitle()
-                    })
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .textFieldStyle(.plain)
-                    .focused($isTitleFocused)
-                    .onChange(of: editingTitle) { _, _ in
-                        persistTitle()
+                VStack(alignment: .leading, spacing: 0) {
+                    // Title + properties
+                    VStack(alignment: .leading, spacing: 16) {
+                        TextField("New Page", text: $editingTitle, axis: .vertical)
+                        .lineLimit(1...5)
+                        .onSubmit { persistTitle() }
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .textFieldStyle(.plain)
+                        .focused($isTitleFocused)
+                        .onChange(of: editingTitle) { _, _ in
+                            persistTitle()
+                        }
+
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(schema.properties.filter({ $0.type != .title })) { prop in
+                                PropertyRowView(
+                                    prop: prop,
+                                    row: $row,
+                                    propertyLabelColumnWidth: propertyLabelColumnWidth,
+                                    onSave: onSave,
+                                    onAddOption: onAddOption,
+                                    onUpdateOption: onUpdateOption,
+                                    onDeleteOption: onDeleteOption,
+                                    onLoadRelationRows: onLoadRelationRows,
+                                    onListDatabases: onListDatabases,
+                                    onSetRelationTarget: onSetRelationTarget,
+                                    onRenameProperty: onRenameProperty,
+                                    onDeleteProperty: onDeleteProperty,
+                                    onChangePropertyType: onChangePropertyType
+                                )
+                            }
+
+                            if onAddProperty != nil {
+                                addPropertyRow
+                            }
+                        }
+                        .padding(.vertical, 8)
+
+                        Divider()
                     }
+                    .padding(.horizontal, 48)
+                    .padding(.top, 24)
 
-                    // Properties (skip title property — shown above)
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(schema.properties.filter({ $0.type != .title })) { prop in
-                            PropertyRowView(
-                                prop: prop,
-                                row: $row,
-                                propertyLabelColumnWidth: propertyLabelColumnWidth,
-                                onSave: onSave,
-                                onAddOption: onAddOption,
-                                onUpdateOption: onUpdateOption,
-                                onDeleteOption: onDeleteOption,
-                                onRenameProperty: onRenameProperty,
-                                onDeleteProperty: onDeleteProperty,
-                                onChangePropertyType: onChangePropertyType
-                            )
-                        }
-
-                        if onAddProperty != nil {
-                            addPropertyRow
-                        }
+                    // Body — block editor
+                    if let bodyDocument {
+                        BlockEditorView(
+                            document: bodyDocument,
+                            onTextChange: {
+                                row.body = bodyDocument.markdown
+                                onSave(row)
+                            }
+                        )
                     }
-                    .padding(.vertical, 8)
-
-                    Divider()
-
-                    // Body
-                    TextEditor(text: Binding(
-                        get: { row.body },
-                        set: { newVal in
-                            row.body = newVal
-                            onSave(row)
-                        }
-                    ))
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 300)
                 }
                 .frame(maxWidth: 720)
-                .padding(24)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .task {
             editingTitle = storedTitle
+            initializeBodyDocument()
             if autoFocusTitle {
                 await MainActor.run {
                     isTitleFocused = true
                 }
             }
         }
-        .onChange(of: row.id) {
+        .onChange(of: row.id) { _, _ in
             editingTitle = storedTitle
+            initializeBodyDocument()
             if autoFocusTitle {
-                DispatchQueue.main.async {
-                    isTitleFocused = true
-                }
+                Task { isTitleFocused = true }
             }
         }
+    }
+
+    private func initializeBodyDocument() {
+        let doc = BlockDocument(markdown: row.body)
+        if let ws = workspacePath, !ws.isEmpty {
+            doc.workspacePath = ws
+        } else if !dbPath.isEmpty {
+            // Fall back to deriving workspace from dbPath (parent directory)
+            doc.workspacePath = (dbPath as NSString).deletingLastPathComponent
+        }
+        bodyDocument = doc
     }
 
     private func persistTitle() {
@@ -223,6 +244,9 @@ private struct PropertyRowView: View {
     var onAddOption: ((String, SelectOption) -> Void)?
     var onUpdateOption: ((String, String, String?, String?) -> Void)?
     var onDeleteOption: ((String, String) -> Void)?
+    var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
+    var onListDatabases: (() -> [RelationDatabaseCandidate])?
+    var onSetRelationTarget: ((String, String) -> Void)?
     var onRenameProperty: ((String, String) -> Void)?
     var onDeleteProperty: ((String) -> Void)?
     var onChangePropertyType: ((String, PropertyType) -> Void)?
@@ -267,7 +291,7 @@ private struct PropertyRowView: View {
                     onSave(row)
                 }
             )
-            PropertyEditorView(definition: prop, value: propValue, compact: false, onAddOption: onAddOption, onUpdateOption: onUpdateOption, onDeleteOption: onDeleteOption)
+            PropertyEditorView(definition: prop, value: propValue, compact: false, onAddOption: onAddOption, onUpdateOption: onUpdateOption, onDeleteOption: onDeleteOption, onLoadRelationRows: prop.type == .relation ? { onLoadRelationRows?(prop) ?? [] } : nil, onListDatabases: prop.type == .relation ? { onListDatabases?() ?? [] } : nil, onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 7)

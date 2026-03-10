@@ -72,7 +72,11 @@ struct BlockCellView: View {
                 }
                 .highPriorityGesture(
                     TapGesture().onEnded {
-                        document.blockMenuBlockId = block.id
+                        if document.blockMenuBlockId == block.id {
+                            document.dismissBlockMenu()
+                        } else {
+                            document.blockMenuBlockId = block.id
+                        }
                     }
                 )
                 .draggable(block.id.uuidString)
@@ -159,7 +163,10 @@ private struct PopoverSyncModifier: ViewModifier {
             .floatingPopover(isPresented: $showSlashMenu, arrowEdge: .bottom) {
                 SlashCommandMenu(document: document)
             }
-            .floatingPopover(isPresented: $showBlockMenu, arrowEdge: .leading) {
+            .floatingPopover(isPresented: $showBlockMenu, arrowEdge: .leading, onDelete: {
+                document.dismissBlockMenu()
+                document.deleteBlock(id: block.id)
+            }) {
                 BlockMenuView(document: document, blockId: block.id)
             }
             .floatingPopover(isPresented: $showPagePicker, arrowEdge: .bottom) {
@@ -171,7 +178,8 @@ private struct PopoverSyncModifier: ViewModifier {
                 showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
             }
             .onChange(of: document.slashMenuBlockId) { _, newVal in
-                showSlashMenu = (newVal == block.id)
+                let shouldShow = (newVal == block.id)
+                if showSlashMenu != shouldShow { showSlashMenu = shouldShow }
             }
             .onChange(of: showSlashMenu) { _, show in
                 if !show && document.slashMenuBlockId == block.id {
@@ -179,7 +187,8 @@ private struct PopoverSyncModifier: ViewModifier {
                 }
             }
             .onChange(of: document.blockMenuBlockId) { _, newVal in
-                showBlockMenu = (newVal == block.id)
+                let shouldShow = (newVal == block.id)
+                if showBlockMenu != shouldShow { showBlockMenu = shouldShow }
             }
             .onChange(of: showBlockMenu) { _, show in
                 if !show && document.blockMenuBlockId == block.id {
@@ -187,10 +196,12 @@ private struct PopoverSyncModifier: ViewModifier {
                 }
             }
             .onChange(of: document.showPagePicker) { _, _ in
-                showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
+                let shouldShow = document.showPagePicker && document.pagePickerBlockId == block.id
+                if showPagePicker != shouldShow { showPagePicker = shouldShow }
             }
             .onChange(of: document.pagePickerBlockId) { _, _ in
-                showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
+                let shouldShow = document.showPagePicker && document.pagePickerBlockId == block.id
+                if showPagePicker != shouldShow { showPagePicker = shouldShow }
             }
             .onChange(of: showPagePicker) { _, show in
                 if !show && document.showPagePicker && document.pagePickerBlockId == block.id {
@@ -211,7 +222,9 @@ private struct BlockFrameReporter: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: BlockFrameReporterView, context: Context) {
-        nsView.syncRegistration(document: document, blockId: blockId)
+        if nsView.document !== document || nsView.blockId != blockId {
+            nsView.syncRegistration(document: document, blockId: blockId)
+        }
     }
 }
 

@@ -13,14 +13,16 @@ struct HorizontalRuleView: View {
 /// Image block — renders local or remote images.
 struct ImageBlockView: View {
     let block: Block
+    @State private var cachedImage: NSImage?
+
+    private var isLocalImage: Bool {
+        block.imageSource.hasPrefix("/") || block.imageSource.hasPrefix("file://")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if block.imageSource.hasPrefix("/") || block.imageSource.hasPrefix("file://") {
-                let fileURL = block.imageSource.hasPrefix("file://")
-                    ? URL(string: block.imageSource)!
-                    : URL(fileURLWithPath: block.imageSource)
-                if let nsImage = NSImage(contentsOf: fileURL) {
+            if isLocalImage {
+                if let nsImage = cachedImage {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -48,6 +50,14 @@ struct ImageBlockView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .task(id: block.imageSource) {
+            guard isLocalImage else { return }
+            let source = block.imageSource
+            let fileURL = source.hasPrefix("file://")
+                ? URL(string: source)!
+                : URL(fileURLWithPath: source)
+            cachedImage = NSImage(contentsOf: fileURL)
         }
     }
 

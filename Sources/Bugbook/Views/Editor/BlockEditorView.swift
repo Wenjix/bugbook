@@ -1,4 +1,8 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// Supported image file extensions for drag-drop and paste handling.
+let supportedImageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff", "bmp"]
 
 /// Main block editor — scroll view containing all block cells.
 struct BlockEditorView: View {
@@ -18,6 +22,8 @@ struct BlockEditorView: View {
                 handleDrop(droppedId: droppedId, targetIndex: startIndex)
             } onTargetChanged: { targeted in
                 activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
+            } onImageDrop: { urls in
+                handleImageDrop(urls, at: startIndex)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -47,6 +53,8 @@ struct BlockEditorView: View {
                 } onTargetChanged: { targeted in
                     let idx = index + 1
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
+                } onImageDrop: { urls in
+                    handleImageDrop(urls, at: index + 1)
                 }
                 .overlay {
                     Button {
@@ -93,7 +101,10 @@ struct BlockEditorView: View {
         }
         .padding(.horizontal, 48)
         .padding(.vertical, 20)
-        .onChange(of: document.blocks) { _, _ in
+        .dropDestination(for: URL.self) { urls, _ in
+            handleImageFileDrop(urls)
+        } isTargeted: { _ in }
+        .onChange(of: document.contentVersion) { _, _ in
             onTextChange?()
         }
     }
@@ -107,15 +118,40 @@ struct BlockEditorView: View {
         document.createColumnFromDrop(droppedId: droppedId, targetId: targetId)
         columnDropTargetId = nil
     }
+
+    private func handleImageDrop(_ urls: [URL], at index: Int) -> Bool {
+        let imageURLs = urls.filter { supportedImageExtensions.contains($0.pathExtension.lowercased()) }
+        guard !imageURLs.isEmpty else { return false }
+        for (offset, url) in imageURLs.enumerated() {
+            if let path = document.copyImageToAssets(url) {
+                document.insertImageBlock(at: index + offset, imagePath: path)
+            }
+        }
+        return true
+    }
+
+    /// Fallback for drops that land on blocks (not between them).
+    private func handleImageFileDrop(_ urls: [URL]) -> Bool {
+        var insertIndex = document.blocks.count
+        if let focusedId = document.focusedBlockId,
+           let idx = document.blocks.firstIndex(where: { $0.id == focusedId }) {
+            insertIndex = idx + 1
+        }
+        return handleImageDrop(urls, at: insertIndex)
+    }
 }
 
 /// Thin drop zone between blocks that shows a blue line when a drag hovers over it.
 /// Height is constant to prevent layout shifts that cause flickering.
+/// Accepts both block UUID drops (reorder) and image URL drops (insert image).
 struct DropZoneView: View {
     let isActive: Bool
     var height: CGFloat = 4
     let onDrop: (UUID) -> Void
     let onTargetChanged: (Bool) -> Void
+    var onImageDrop: (([URL]) -> Bool)?
+
+    @State private var imageDropTargeted = false
 
     var body: some View {
         Rectangle()
@@ -126,7 +162,7 @@ struct DropZoneView: View {
                 Rectangle()
                     .fill(Color.accentColor)
                     .frame(height: 2)
-                    .opacity(isActive ? 1 : 0)
+                    .opacity(isActive || imageDropTargeted ? 1 : 0)
             }
             .contentShape(Rectangle())
             .dropDestination(for: String.self) { items, _ in
@@ -136,6 +172,18 @@ struct DropZoneView: View {
                 return true
             } isTargeted: { targeted in
                 onTargetChanged(targeted)
+            }
+            .overlay {
+                if onImageDrop != nil {
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 24)
+                        .dropDestination(for: URL.self) { urls, _ in
+                            onImageDrop?(urls) ?? false
+                        } isTargeted: { targeted in
+                            imageDropTargeted = targeted
+                        }
+                }
             }
     }
 }

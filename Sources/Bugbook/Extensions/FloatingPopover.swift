@@ -2,15 +2,9 @@ import SwiftUI
 
 // MARK: - Popover Dismiss Environment Key
 
-private struct PopoverDismissKey: EnvironmentKey {
-    static var defaultValue: (() -> Void)? = nil
-}
-
 extension EnvironmentValues {
-    var popoverDismiss: (() -> Void)? {
-        get { self[PopoverDismissKey.self] }
-        set { self[PopoverDismissKey.self] = newValue }
-    }
+    @Entry var popoverDismiss: (() -> Void)? = nil
+    @Entry var workspacePath: String? = nil
 }
 
 // MARK: - Floating Popover
@@ -22,6 +16,7 @@ extension View {
     func floatingPopover<Content: View>(
         isPresented: Binding<Bool>,
         arrowEdge: Edge = .top,
+        onDelete: (() -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         #if os(macOS)
@@ -29,6 +24,7 @@ extension View {
             FloatingPopoverAnchor(
                 isPresented: isPresented,
                 arrowEdge: arrowEdge,
+                onDelete: onDelete,
                 content: content
             )
         )
@@ -63,11 +59,15 @@ extension View {
 
 private class PopoverPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// Tracks all active popover panels so sibling panels don't dismiss each other.
+    static var activePanels = NSHashTable<PopoverPanel>.weakObjects()
 }
 
 private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
     @Binding var isPresented: Bool
     let arrowEdge: Edge
+    var onDelete: (() -> Void)?
     let content: () -> PopoverContent
 
     func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
@@ -79,6 +79,7 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
                     anchor: nsView,
                     arrowEdge: arrowEdge,
                     content: content(),
+                    onDelete: onDelete,
                     dismiss: { isPresented = false }
                 )
             } else {
@@ -97,12 +98,16 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
         var localMonitor: Any?
         var globalMonitor: Any?
         var resignObserver: NSObjectProtocol?
+        /// Always kept in sync with the current SwiftUI binding so it never goes stale.
+        var dismissClosure: (() -> Void)?
 
         deinit { cleanup() }
 
-        func show(anchor: NSView, arrowEdge: Edge = .top, content: some View, dismiss: @escaping () -> Void) {
-            guard panel == nil, let window = anchor.window else { return }
+        func show(anchor: NSView, arrowEdge: Edge = .top, content: some View, onDelete: (() -> Void)? = nil, dismiss: @escaping () -> Void) {
+            if panel != nil { cleanup() }
+            guard let window = anchor.window else { return }
 
+            dismissClosure = dismiss
             let wrapped = AnyView(content.environment(\.popoverDismiss, dismiss))
             let hosting = NSHostingView(rootView: wrapped)
             hosting.setFrameSize(hosting.fittingSize)
@@ -118,7 +123,7 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
             p.isOpaque = false
             p.backgroundColor = .clear
             p.hasShadow = false
-            p.level = .popUpMenu
+            p.level = .floating
             p.contentView = hosting
             p.isMovableByWindowBackground = false
             p.isMovable = false
@@ -134,6 +139,13 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
                 let anchorMidY = screenRect.midY
                 origin = NSPoint(
                     x: screenRect.minX - size.width - gap,
+                    y: anchorMidY - size.height / 2
+                )
+            } else if arrowEdge == .trailing {
+                // To the right of the anchor, vertically centered
+                let anchorMidY = screenRect.midY
+                origin = NSPoint(
+                    x: screenRect.maxX + gap,
                     y: anchorMidY - size.height / 2
                 )
             } else {
@@ -153,46 +165,89 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
 
             p.setFrameOrigin(origin)
             p.orderFront(nil)
+            PopoverPanel.activePanels.add(p)
             self.panel = p
             self.hostingView = hosting
 
-            // Dismiss on click outside or Escape key (local)
+            // Dismiss on click outside, Escape, or Backspace (local)
             localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
                 guard let self, let panel = self.panel else { return event }
                 if event.type == .keyDown, event.keyCode == 53 {
-                    dismiss()
+                    self.dismissAndCleanup()
                     return nil
                 }
-                if event.window !== panel {
-                    dismiss()
+                // Backspace → delete block (when onDelete is provided, e.g. block menu)
+                if event.type == .keyDown, event.keyCode == 51, let onDelete {
+                    self.dismissAndCleanup()
+                    onDelete()
+                    return nil
+                }
+                if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                    if event.window !== panel,
+                       !(event.window is PopoverPanel && PopoverPanel.activePanels.contains(event.window as? PopoverPanel)) {
+                        self.dismissAndCleanup()
+                    }
                 }
                 return event
             }
 
             // Dismiss on click outside (global — other apps)
             globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-                guard self?.panel != nil else { return }
-                dismiss()
+                self?.dismissAndCleanup()
             }
 
-            // Dismiss when panel loses key (user clicked main window or another app)
+            // Dismiss when panel loses key — but only if focus went to a non-popover window
             resignObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: p,
                 queue: .main
             ) { [weak self] _ in
                 guard self?.panel != nil else { return }
-                dismiss()
+                if let keyWindow = NSApp.keyWindow as? PopoverPanel,
+                   PopoverPanel.activePanels.contains(keyWindow) {
+                    return
+                }
+                self?.dismissAndCleanup()
             }
         }
 
         func updateContent(_ content: some View, dismiss: @escaping () -> Void) {
+            dismissClosure = dismiss
             hostingView?.rootView = AnyView(content.environment(\.popoverDismiss, dismiss))
+
+            // Resize the panel to fit updated content (e.g. submenus appearing/disappearing).
+            if let hosting = hostingView, let panel {
+                let newSize = hosting.fittingSize
+                if newSize != panel.frame.size, newSize.width > 0, newSize.height > 0 {
+                    var frame = panel.frame
+                    // Keep the top-left corner anchored (macOS coordinates: pin maxY).
+                    let topY = frame.maxY
+                    frame.size = newSize
+                    frame.origin.y = topY - newSize.height
+
+                    // Clamp to the visible screen area.
+                    if let screen = panel.screen ?? NSScreen.main {
+                        let vis = screen.visibleFrame
+                        frame.origin.x = max(vis.minX + 4, min(frame.origin.x, vis.maxX - frame.width - 4))
+                        frame.origin.y = max(vis.minY + 4, min(frame.origin.y, vis.maxY - frame.height - 4))
+                    }
+
+                    panel.setFrame(frame, display: true)
+                    hosting.setFrameSize(newSize)
+                }
+            }
+        }
+
+        /// Sets binding to false AND removes the panel immediately.
+        func dismissAndCleanup() {
+            dismissClosure?()
+            cleanup()
         }
 
         func dismiss() { cleanup() }
 
         private func cleanup() {
+            if let p = panel { PopoverPanel.activePanels.remove(p) }
             panel?.close()
             panel = nil
             hostingView = nil

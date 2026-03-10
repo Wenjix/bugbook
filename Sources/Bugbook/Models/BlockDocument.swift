@@ -4,7 +4,12 @@ import SwiftUI
 @MainActor
 @Observable
 class BlockDocument {
-    var blocks: [Block]
+    var blocks: [Block] {
+        didSet { contentVersion += 1 }
+    }
+    /// Lightweight counter incremented on every `blocks` mutation. Use this
+    /// in `onChange` instead of comparing the full `[Block]` array.
+    var contentVersion: Int = 0
     var focusedBlockId: UUID?
     var cursorPosition: Int = 0
     var slashMenuBlockId: UUID?
@@ -34,6 +39,7 @@ class BlockDocument {
 
     @ObservationIgnored var onCreateDatabase: ((String) -> String?)?
     @ObservationIgnored var onCreateSubPage: ((String) -> String?)?
+    @ObservationIgnored var onDeleteSubPage: ((String) -> Void)?
     @ObservationIgnored var onNavigateToPage: ((String) -> Void)?
     @ObservationIgnored var onOpenDatabaseTab: ((String) -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
@@ -253,7 +259,7 @@ class BlockDocument {
 
     private func saveUndo() {
         undoStack.append(blocks)
-        if undoStack.count > 200 { undoStack.removeFirst() }
+        if undoStack.count > 30 { undoStack.removeFirst() }
         redoStack.removeAll()
     }
 
@@ -443,7 +449,11 @@ class BlockDocument {
         }
         updateBlockProperty(id: id) { block in
             block.type = type
-            if type == .heading { block.headingLevel = 1 }
+            if type == .heading {
+                block.headingLevel = 1
+            } else {
+                block.headingLevel = 0
+            }
         }
     }
 
@@ -475,6 +485,10 @@ class BlockDocument {
     func deleteBlock(id: UUID) {
         guard let loc = blockLocation(for: id) else { return }
 
+        // Capture pageLink name before removing so we can trash the child file
+        let deletedBlock = block(for: id)
+        let deletedPageName = (deletedBlock?.type == .pageLink) ? deletedBlock?.pageLinkName : nil
+
         if let childIdx = loc.child {
             saveUndo()
             unregisterFramesRecursively(for: blocks[loc.topLevel].children[childIdx])
@@ -485,18 +499,23 @@ class BlockDocument {
                 blocks.append(placeholder)
                 focusedBlockId = placeholder.id
                 cursorPosition = 0
+                if let name = deletedPageName, !name.isEmpty { onDeleteSubPage?(name) }
                 return
             }
             let focusIdx = min(max(0, loc.topLevel), blocks.count - 1)
             focusedBlockId = blocks[focusIdx].id
             cursorPosition = 0
+            if let name = deletedPageName, !name.isEmpty { onDeleteSubPage?(name) }
             return
         }
 
         let idx = loc.topLevel
         guard blocks.count > 1 else {
+            let wasPageLink = blocks[idx].type == .pageLink
+            let pageName = blocks[idx].pageLinkName
             unregisterFramesRecursively(for: blocks[idx])
             blocks[idx] = Block(type: .paragraph)
+            if wasPageLink, !pageName.isEmpty { onDeleteSubPage?(pageName) }
             return
         }
         saveUndo()
@@ -506,6 +525,7 @@ class BlockDocument {
         let focusIdx = min(idx, blocks.count - 1)
         focusedBlockId = blocks[focusIdx].id
         cursorPosition = 0
+        if let name = deletedPageName, !name.isEmpty { onDeleteSubPage?(name) }
     }
 
     func appendEmptyBlock() {
@@ -588,6 +608,7 @@ class BlockDocument {
         case linkToPage
         case createPage
         case template
+        case imagePicker
     }
 
     struct SlashCommand {
@@ -610,6 +631,7 @@ class BlockDocument {
         SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0)),
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
+        SlashCommand(name: "Image", icon: "photo", action: .imagePicker),
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
     ]
@@ -654,6 +676,11 @@ class BlockDocument {
         case .template:
             showTemplatePicker = true
             dismissSlashMenu()
+            return
+
+        case .imagePicker:
+            dismissSlashMenu()
+            pickAndInsertImage(blockId: blockId)
             return
 
         case let .blockType(type, headingLevel):
@@ -706,6 +733,89 @@ class BlockDocument {
         slashMenuSelectedIndex = 0
     }
 
+    // MARK: - Image Insertion
+
+    /// Copies an image file into the workspace `_assets/` directory and returns the relative path.
+    func copyImageToAssets(_ sourceURL: URL) -> String? {
+        guard let workspace = workspacePath else { return nil }
+        let assetsDir = (workspace as NSString).appendingPathComponent("_assets")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: assetsDir) {
+            try? fm.createDirectory(atPath: assetsDir, withIntermediateDirectories: true)
+        }
+        let fileName = sourceURL.lastPathComponent
+        var destPath = (assetsDir as NSString).appendingPathComponent(fileName)
+        // Avoid overwrites by appending a suffix
+        var counter = 1
+        let baseName = (fileName as NSString).deletingPathExtension
+        let ext = (fileName as NSString).pathExtension
+        while fm.fileExists(atPath: destPath) {
+            let newName = "\(baseName)_\(counter).\(ext)"
+            destPath = (assetsDir as NSString).appendingPathComponent(newName)
+            counter += 1
+        }
+        do {
+            try fm.copyItem(at: sourceURL, to: URL(fileURLWithPath: destPath))
+            return destPath
+        } catch {
+            return nil
+        }
+    }
+
+    /// Inserts an image block at the given index, or converts an existing block.
+    func insertImageAtBlock(blockId: UUID, imagePath: String) {
+        saveUndo()
+        updateBlockProperty(id: blockId) { block in
+            block.type = .image
+            block.imageSource = imagePath
+            block.text = ""
+        }
+    }
+
+    /// Inserts a new image block after the given index.
+    func insertImageBlock(at index: Int, imagePath: String) {
+        saveUndo()
+        var imageBlock = Block(type: .image)
+        imageBlock.imageSource = imagePath
+        let clampedIndex = min(index, blocks.count)
+        blocks.insert(imageBlock, at: clampedIndex)
+        focusedBlockId = imageBlock.id
+    }
+
+    /// Saves raw image data to the workspace `_assets/` directory and returns the absolute path.
+    func saveImageDataToAssets(_ data: Data, fileExtension: String = "png") -> String? {
+        guard let workspace = workspacePath else { return nil }
+        let assetsDir = (workspace as NSString).appendingPathComponent("_assets")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: assetsDir) {
+            try? fm.createDirectory(atPath: assetsDir, withIntermediateDirectories: true)
+        }
+        let fileName = "\(UUID().uuidString).\(fileExtension)"
+        let destPath = (assetsDir as NSString).appendingPathComponent(fileName)
+        do {
+            try data.write(to: URL(fileURLWithPath: destPath), options: .atomic)
+            return destPath
+        } catch {
+            return nil
+        }
+    }
+
+    #if os(macOS)
+    /// Opens a file picker for images and inserts the selected image at the given block.
+    func pickAndInsertImage(blockId: UUID) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else { return }
+            if let path = self.copyImageToAssets(url) {
+                self.insertImageAtBlock(blockId: blockId, imagePath: path)
+            }
+        }
+    }
+    #endif
+
     // MARK: - Block Selection
 
     func selectAllBlocks() {
@@ -753,6 +863,13 @@ class BlockDocument {
     func deleteSelectedBlocks() {
         guard !selectedBlockIds.isEmpty else { return }
         saveUndo()
+        // Collect pageLink names before removing blocks
+        var deletedPageNames: [String] = []
+        for blockId in selectedBlockIds {
+            if let b = block(for: blockId), b.type == .pageLink, !b.pageLinkName.isEmpty {
+                deletedPageNames.append(b.pageLinkName)
+            }
+        }
         let ordered = selectionOrder()
         for blockId in ordered.reversed() where selectedBlockIds.contains(blockId) {
             guard let loc = blockLocation(for: blockId) else { continue }
@@ -765,6 +882,7 @@ class BlockDocument {
                 blocks.remove(at: loc.topLevel)
             }
         }
+        for name in deletedPageNames { onDeleteSubPage?(name) }
         if blocks.isEmpty {
             let titleBlock = Block(type: .heading, headingLevel: 1)
             blocks.append(titleBlock)

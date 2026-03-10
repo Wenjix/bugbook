@@ -17,6 +17,7 @@ final class DatabaseViewState {
     @ObservationIgnored private var titleSaveTask: Task<Void, Never>?
     @ObservationIgnored private var rowSaveTask: Task<Void, Never>?
     @ObservationIgnored private var pendingRowSaves: [String: DatabaseRow] = [:]
+    @ObservationIgnored private var deletedRowIds: Set<String> = []
     @ObservationIgnored private var loadTask: Task<Void, Never>?
 
     var activeView: ViewConfig? {
@@ -63,10 +64,11 @@ final class DatabaseViewState {
         error = nil
 
         let path = dbPath
+        let service = dbService
         loadTask = Task {
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
                 do {
-                    return .success(try DatabaseService().loadDatabase(at: path))
+                    return .success(try service.loadDatabase(at: path))
                 } catch {
                     return .failure(error)
                 }
@@ -113,22 +115,28 @@ final class DatabaseViewState {
 
     func flushPendingRowSaves() {
         guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
-        let rowsToPersist = Array(pendingRowSaves.values)
+        let deleted = deletedRowIds
+        let rowsToPersist = pendingRowSaves.values.filter { !deleted.contains($0.id) }
         pendingRowSaves.removeAll()
 
-        Task {
+        guard !rowsToPersist.isEmpty else { return }
+        let service = dbService
+        let path = dbPath
+        Task { [weak self] in
             for row in rowsToPersist {
-                try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
+                try? service.saveRow(row, schema: currentSchema, at: path)
             }
-            postChangeNotification()
+            self?.postChangeNotification()
         }
     }
 
     func flushPendingRowSavesSynchronously() {
         guard let currentSchema = schema, !pendingRowSaves.isEmpty else { return }
-        let rowsToPersist = Array(pendingRowSaves.values)
+        let deleted = deletedRowIds
+        let rowsToPersist = pendingRowSaves.values.filter { !deleted.contains($0.id) }
         pendingRowSaves.removeAll()
 
+        guard !rowsToPersist.isEmpty else { return }
         for row in rowsToPersist {
             try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
         }
@@ -138,12 +146,12 @@ final class DatabaseViewState {
     func deleteRow(_ row: DatabaseRow) {
         guard let schema = schema else { return }
         pendingRowSaves.removeValue(forKey: row.id)
+        deletedRowIds.insert(row.id)
         rows.removeAll { $0.id == row.id }
-        Task {
-            try? dbService.deleteRow(row.id, in: dbPath)
-            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
-            postChangeNotification()
-        }
+        // Synchronous to prevent race with loadData reintroducing deleted rows
+        try? dbService.deleteRow(row.id, in: dbPath)
+        try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+        postChangeNotification()
     }
 
     @discardableResult
@@ -340,7 +348,7 @@ final class DatabaseViewState {
                 try? dbService.addProperty(statusProp, to: &s, at: dbPath)
                 let view = ViewConfig(
                     id: "view_\(UUID().uuidString)",
-                    name: type.rawValue.capitalized,
+                    name: uniqueViewName(for: type, in: s),
                     type: type,
                     sorts: [],
                     filters: [],
@@ -365,7 +373,7 @@ final class DatabaseViewState {
 
         let view = ViewConfig(
             id: "view_\(UUID().uuidString)",
-            name: type.rawValue.capitalized,
+            name: uniqueViewName(for: type, in: s),
             type: type,
             sorts: [],
             filters: [],
@@ -377,6 +385,16 @@ final class DatabaseViewState {
             self.schema = s
             activeViewId = view.id
         }
+    }
+
+    /// Returns a unique name like "Table", "Table 2", "Table 3", etc.
+    private func uniqueViewName(for type: ViewType, in schema: DatabaseSchema) -> String {
+        let baseName = type.rawValue.capitalized
+        let existingNames = Set(schema.views.map(\.name))
+        if !existingNames.contains(baseName) { return baseName }
+        var counter = 2
+        while existingNames.contains("\(baseName) \(counter)") { counter += 1 }
+        return "\(baseName) \(counter)"
     }
 
     func deleteView(_ view: ViewConfig) {
@@ -496,6 +514,61 @@ final class DatabaseViewState {
                 object: nil,
                 userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.newName: newName]
             )
+        }
+    }
+
+    // MARK: - Relation
+
+    func loadRelationRows(for prop: PropertyDefinition) -> [RelationRowCandidate] {
+        guard let target = prop.config?.target, !target.isEmpty else { return [] }
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: target)
+            return targetRows.map { RelationRowCandidate(id: $0.id, title: $0.title(schema: targetSchema)) }
+        } catch {
+            return []
+        }
+    }
+
+    func listAvailableDatabases(workspacePath: String?) -> [DatabaseInfo] {
+        let store = DatabaseStore()
+        let searchRoot: String
+        if let workspace = workspacePath, !workspace.isEmpty {
+            searchRoot = workspace
+        } else {
+            searchRoot = (dbPath as NSString).deletingLastPathComponent
+        }
+        return store.listDatabases(in: searchRoot).filter { $0.path != dbPath }
+    }
+
+    func listDatabaseCandidates(workspacePath: String?) -> [RelationDatabaseCandidate] {
+        listAvailableDatabases(workspacePath: workspacePath).map {
+            RelationDatabaseCandidate(id: $0.id, name: $0.name, path: $0.path)
+        }
+    }
+
+    func setRelationTarget(_ propertyId: String, target: String) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig(target: target)
+        } else {
+            s.properties[idx].config?.target = target
+        }
+
+        // Auto-name the property after the target database (like Notion).
+        // Look up the real schema name; fall back to the folder name.
+        let targetStore = DatabaseStore()
+        let searchRoot = (dbPath as NSString).deletingLastPathComponent
+        let targetInfo = targetStore.listDatabases(in: searchRoot).first(where: { $0.path == target })
+        let targetName = targetInfo?.name ?? (target as NSString).lastPathComponent
+        if !targetName.isEmpty, s.properties[idx].name == "New Relation" || s.properties[idx].name.isEmpty {
+            s.properties[idx].name = targetName
+        }
+
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
         }
     }
 

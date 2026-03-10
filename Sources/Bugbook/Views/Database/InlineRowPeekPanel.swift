@@ -10,6 +10,7 @@ struct InlineRowPeekPanel: View {
     var onOpenFullPage: () -> Void
 
     @State private var vm: DatabaseRowViewModel
+    @State private var showKebabMenu = false
 
     init(dbPath: String, rowId: String, onClose: @escaping () -> Void, onOpenFullPage: @escaping () -> Void) {
         self.dbPath = dbPath
@@ -45,26 +46,18 @@ struct InlineRowPeekPanel: View {
 
                 Spacer()
 
-                Menu {
-                    Button { onOpenFullPage() } label: {
-                        Label("Open as full page", systemImage: "arrow.up.left.and.arrow.down.right")
-                    }
-                    Button(role: .destructive) {
-                        deleteCurrentRow()
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
+                Button("More Options", systemImage: "ellipsis") {
+                    showKebabMenu.toggle()
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .tint(.secondary)
-                .fixedSize()
+                .labelStyle(.iconOnly)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .floatingPopover(isPresented: $showKebabMenu) {
+                    kebabMenuContent
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -92,9 +85,46 @@ struct InlineRowPeekPanel: View {
         .onDisappear { vm.flushAndCancel() }
     }
 
+    @ViewBuilder
+    private var kebabMenuContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            kebabButton(icon: "arrow.up.left.and.arrow.down.right", label: "Open as full page") {
+                showKebabMenu = false
+                onOpenFullPage()
+            }
+            kebabButton(icon: "trash", label: "Delete", isDestructive: true) {
+                showKebabMenu = false
+                deleteCurrentRow()
+            }
+        }
+        .frame(width: 200)
+        .padding(.vertical, 4)
+        .popoverSurface()
+    }
+
+    private func kebabButton(icon: String, label: String, isDestructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(isDestructive ? Color.red : .secondary)
+                    .frame(width: 16, height: 16)
+                Text(label)
+                    .font(.callout)
+                    .foregroundStyle(isDestructive ? Color.red : .primary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     private func deleteCurrentRow() {
-        guard vm.row != nil else { return }
-        vm.deleteRow(vm.row!.id)
+        guard let row = vm.row else { return }
+        vm.deleteRow(row.id)
         onClose()
     }
 }
