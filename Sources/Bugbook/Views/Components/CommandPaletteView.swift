@@ -392,7 +392,7 @@ struct CommandPaletteView: View {
         let commands = availableCommands
         if query.isEmpty { return commands.map { .command($0) } }
         return commands
-            .filter { $0.name.localizedCaseInsensitiveContains(query) }
+            .filter { $0.name.localizedStandardContains(query) }
             .map { .command($0) }
     }
 
@@ -425,7 +425,7 @@ struct CommandPaletteView: View {
         let allFiles = flattenFileTree(appState.fileTree)
         let query = effectiveQuery(from: searchText)
         if query.isEmpty { return allFiles }
-        return allFiles.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return allFiles.filter { $0.name.localizedStandardContains(query) }
     }
 
     private func flattenFileTree(_ entries: [FileEntry]) -> [FileEntry] {
@@ -550,6 +550,34 @@ struct CommandPaletteView: View {
                             lowercasedLine: trimmed.lowercased()
                         )
                     )
+                }
+            }
+
+            // Index database row titles from _index.json files
+            let indexManager = IndexManager()
+            for dir in excludedDirs {
+                guard !Task.isCancelled else { break }
+                let dbPath = (workspace as NSString).appendingPathComponent(dir)
+                guard let json = indexManager.loadIndex(at: dbPath),
+                      let rows = json["rows"] as? [String: [String: Any]] else { continue }
+
+                let dbName = (dir as NSString).lastPathComponent
+                for (_, rowData) in rows {
+                    guard let filename = rowData["filename"] as? String else { continue }
+                    let title: String
+                    if let parenRange = filename.range(of: " (", options: .backwards) {
+                        title = String(filename[..<parenRange.lowerBound])
+                    } else {
+                        title = filename
+                    }
+                    guard !title.isEmpty else { continue }
+                    indexed.append(IndexedContentLine(
+                        filePath: dbPath,
+                        fileName: dbName,
+                        lineNumber: 0,
+                        lineText: title,
+                        lowercasedLine: title.lowercased()
+                    ))
                 }
             }
 

@@ -53,6 +53,7 @@ struct BreadcrumbView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 14, height: 14)
+                        .clipShape(.rect(cornerRadius: 3))
                 }
             } else if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
@@ -65,6 +66,7 @@ struct BreadcrumbView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 14, height: 14)
+                        .clipShape(.rect(cornerRadius: 3))
                 }
             }
         }

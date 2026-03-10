@@ -655,7 +655,7 @@ struct ContentView: View {
                             .frame(width: 8)
                             .contentShape(Rectangle())
                             .onHover { hovering in
-                                EditorCursorState.setOverride(hovering ? .resizeLeftRight : nil)
+                                    if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
                             }
                             .gesture(
                                 DragGesture(coordinateSpace: .global)
@@ -752,9 +752,7 @@ struct ContentView: View {
         if let document = blockDocuments[tab.id] {
             HStack(spacing: 0) {
                 ScrollView {
-                    HStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        VStack(alignment: .leading, spacing: 0) {
+                    VStack(spacing: 0) {
                         PageHeaderView(
                             icon: Binding(
                                 get: { document.icon },
@@ -783,36 +781,39 @@ struct ContentView: View {
                                     scheduleSave()
                                 }
                             ),
-                            fullWidth: document.fullWidth
+                            fullWidth: document.fullWidth,
+                            contentColumnMaxWidth: document.fullWidth ? nil : 860
                         )
 
-                        if let titleBlock = document.titleBlock {
-                            TextBlockView(document: document, block: titleBlock, onTyping: { triggerFocusMode() })
-                                .padding(.leading, 76)
-                                .padding(.trailing, 52)
-                                .padding(.top, 8)
-                        }
-
-                        BlockEditorView(
-                            document: document,
-                            onTextChange: {
-                                guard appState.activeTabIndex < appState.openTabs.count else { return }
-                                if !appState.openTabs[appState.activeTabIndex].isDirty {
-                                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                        HStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            VStack(alignment: .leading, spacing: 0) {
+                                if let titleBlock = document.titleBlock {
+                                    TextBlockView(document: document, block: titleBlock, onTyping: { triggerFocusMode() })
+                                        .padding(.leading, 76)
+                                        .padding(.trailing, 52)
+                                        .padding(.top, 8)
                                 }
-                                syncTitle(from: document)
-                                scheduleSave()
-                            },
-                            onTyping: { triggerFocusMode() }
-                        )
 
+                                BlockEditorView(
+                                    document: document,
+                                    onTextChange: {
+                                        guard appState.activeTabIndex < appState.openTabs.count else { return }
+                                        if !appState.openTabs[appState.activeTabIndex].isDirty {
+                                            appState.openTabs[appState.activeTabIndex].isDirty = true
+                                        }
+                                        syncTitle(from: document)
+                                        scheduleSave()
+                                    },
+                                    onTyping: { triggerFocusMode() }
+                                )
+                            }
+                            .frame(maxWidth: document.fullWidth ? .infinity : 860)
+                            Spacer(minLength: 0)
+                        }
                     }
-                    .frame(maxWidth: document.fullWidth ? .infinity : 860)
-                    Spacer(minLength: 0)
-                }
                 }
                 .background(Color.fallbackEditorBg)
-                .editorIBeamCursor()
                 .accessibilityIdentifier("editor")
                 .overlay {
                     if document.showTemplatePicker {

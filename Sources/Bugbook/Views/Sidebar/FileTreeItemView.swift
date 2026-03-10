@@ -24,19 +24,24 @@ struct FileTreeItemView: View {
             // Row
             Button(action: { handleTap() }) {
                 HStack(spacing: 6) {
-                    // Icon slot: show chevron on hover (if expandable), otherwise show icon
-                    if isExpandable && isHovering {
-                        Button(action: { toggleExpanded() }) {
-                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16, height: 16)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    } else {
+                    // Icon slot: ZStack keeps layout stable during hover transitions
+                    ZStack {
                         iconView
+                            .opacity(isExpandable && isHovering ? 0 : 1)
+
+                        if isExpandable {
+                            Button(action: toggleExpanded) {
+                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 16, height: 16)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .opacity(isHovering ? 1 : 0)
+                        }
                     }
+                    .frame(width: 16, height: 16)
 
                     if isRenaming {
                         TextField("", text: $renameName, onCommit: { commitRename() })
@@ -103,6 +108,7 @@ struct FileTreeItemView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 16, height: 16)
+                        .clipShape(.rect(cornerRadius: 3))
                 } else {
                     defaultIcon
                 }
@@ -122,6 +128,7 @@ struct FileTreeItemView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 16, height: 16)
+                        .clipShape(.rect(cornerRadius: 3))
                 } else {
                     defaultIcon
                 }

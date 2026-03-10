@@ -621,7 +621,8 @@ struct DatabaseFullPageView: View {
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
-                onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) }
+                onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
+                onDelete: { row in state.deleteRow(row) }
             )
         case .list:
             ListView(

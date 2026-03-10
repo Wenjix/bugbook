@@ -68,7 +68,7 @@ struct BlockCellView: View {
                 .contentShape(Rectangle())
                 .onHover { inside in
                     isHandleHovering = inside
-                    EditorCursorState.setOverride(inside ? .openHand : nil)
+                    if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
                 }
                 .highPriorityGesture(
                     TapGesture().onEnded {
@@ -95,7 +95,6 @@ struct BlockCellView: View {
         isHandleHovering
             || document.blockMenuBlockId == block.id
             || document.selectedBlockIds.contains(block.id)
-            || document.focusedBlockId == block.id
     }
 
     private func findPageIcon(named name: String) -> String? {

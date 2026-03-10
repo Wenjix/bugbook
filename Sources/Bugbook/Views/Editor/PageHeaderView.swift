@@ -6,6 +6,7 @@ struct PageHeaderView: View {
     @Binding var coverUrl: String?
     @Binding var coverPosition: Double
     var fullWidth: Bool
+    var contentColumnMaxWidth: CGFloat? = nil
 
     @State private var showIconPicker = false
     @State private var showCoverPicker = false
@@ -29,9 +30,11 @@ struct PageHeaderView: View {
                     coverImageView(path: coverPath)
 
                     if let iconValue = icon, !iconValue.isEmpty {
-                        iconPickerButton(iconValue)
-                            .padding(.leading, horizontalPadding)
-                            .offset(y: 22)
+                        columnAligned {
+                            iconPickerButton(iconValue)
+                                .padding(.leading, horizontalPadding)
+                        }
+                        .offset(y: 22)
                     }
                 }
                 .padding(.bottom, hasIcon ? 26 : 0)
@@ -39,30 +42,34 @@ struct PageHeaderView: View {
 
             // Action buttons — show on hover when missing icon/cover
             if needsIcon || needsCover {
-                HStack(spacing: 8) {
-                    if needsIcon {
-                        addIconButton
-                    }
+                columnAligned {
+                    HStack(spacing: 8) {
+                        if needsIcon {
+                            addIconButton
+                        }
 
-                    if needsCover {
-                        addCoverButton
-                    }
+                        if needsCover {
+                            addCoverButton
+                        }
 
-                    Spacer()
+                        Spacer()
+                    }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, coverUrl != nil ? 10 : 12)
+                    .opacity(isHovering || showIconPicker || showCoverPicker ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.15), value: isHovering)
                 }
-                .padding(.horizontal, horizontalPadding)
-                .padding(.top, coverUrl != nil ? 10 : 12)
-                .opacity(isHovering || showIconPicker || showCoverPicker ? 1 : 0)
-                .animation(.easeInOut(duration: 0.15), value: isHovering)
             }
 
             if coverUrl == nil, let iconValue = icon, !iconValue.isEmpty {
-                HStack(spacing: 0) {
-                    iconPickerButton(iconValue)
-                    Spacer(minLength: 0)
-                }
+                columnAligned {
+                    HStack(spacing: 0) {
+                        iconPickerButton(iconValue)
+                        Spacer(minLength: 0)
+                    }
                     .padding(.leading, horizontalPadding)
                     .padding(.top, 8)
+                }
             }
         }
         .contentShape(Rectangle())
@@ -74,6 +81,22 @@ struct PageHeaderView: View {
                 isRepositioning = false
                 coverPosition = 50
             }
+        }
+    }
+
+    // MARK: - Column Alignment
+
+    @ViewBuilder
+    private func columnAligned<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if let maxWidth = contentColumnMaxWidth {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                content()
+                    .frame(maxWidth: maxWidth, alignment: .leading)
+                Spacer(minLength: 0)
+            }
+        } else {
+            content()
         }
     }
 
@@ -148,7 +171,7 @@ struct PageHeaderView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(.rect(cornerRadius: 8))
             } else {
                 Text(value).font(.system(size: 40))
             }

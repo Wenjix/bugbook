@@ -62,9 +62,7 @@ extension View {
 #if os(macOS)
 
 private class PopoverPanel: NSPanel {
-    var onDismiss: (() -> Void)?
     override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { onDismiss?() }
 }
 
 private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
@@ -123,7 +121,7 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
             p.level = .popUpMenu
             p.contentView = hosting
             p.isMovableByWindowBackground = false
-            p.onDismiss = dismiss
+            p.isMovable = false
 
             // Position below the anchor by default, or to the left for .leading
             let anchorBounds = anchor.convert(anchor.bounds, to: nil)
@@ -154,32 +152,37 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
             }
 
             p.setFrameOrigin(origin)
-            p.makeKeyAndOrderFront(nil)
+            p.orderFront(nil)
             self.panel = p
             self.hostingView = hosting
 
-            // Dismiss on click outside (local)
-            localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            // Dismiss on click outside or Escape key (local)
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
                 guard let self, let panel = self.panel else { return event }
+                if event.type == .keyDown, event.keyCode == 53 {
+                    dismiss()
+                    return nil
+                }
                 if event.window !== panel {
-                    Task { @MainActor in dismiss() }
+                    dismiss()
                 }
                 return event
             }
 
             // Dismiss on click outside (global — other apps)
-            globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
-                Task { @MainActor in dismiss() }
+            globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                guard self?.panel != nil else { return }
+                dismiss()
             }
 
-            // Dismiss when panel loses key (another window focused, app switch, etc.)
+            // Dismiss when panel loses key (user clicked main window or another app)
             resignObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: p,
                 queue: .main
             ) { [weak self] _ in
                 guard self?.panel != nil else { return }
-                Task { @MainActor in dismiss() }
+                dismiss()
             }
         }
 

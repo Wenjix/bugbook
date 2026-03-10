@@ -19,7 +19,7 @@ struct CanvasCardView: View {
             cardContent
                 .frame(width: node.width, height: node.height)
                 .background(cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(.rect(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: isSelected ? 2 : 1)
@@ -143,6 +143,7 @@ struct CanvasCardView: View {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
+                    .contentShape(Rectangle())
             } else {
                 VStack(spacing: 4) {
                     Image(systemName: "photo")
@@ -282,12 +283,15 @@ struct CanvasCardView: View {
 private struct TextEditorWrapper: View {
     @Binding var text: String
     var onCommit: () -> Void
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         TextEditor(text: $text)
             .font(.system(size: 14))
             .scrollContentBackground(.hidden)
             .background(Color.clear)
+            .focused($isFocused)
+            .onAppear { isFocused = true }
             .onKeyPress(.escape) {
                 onCommit()
                 return .handled

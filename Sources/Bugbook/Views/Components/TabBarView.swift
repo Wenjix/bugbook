@@ -150,6 +150,7 @@ struct TabItemView: View {
     var onClose: () -> Void
 
     @State private var isHovered = false
+    @State private var isCloseHovered = false
     private let wingRadius: CGFloat = 5
 
     var body: some View {
@@ -161,15 +162,23 @@ struct TabItemView: View {
                     .font(.system(size: 13))
                     .lineLimit(1)
 
-                Button("Close Tab", systemImage: "xmark", action: onClose)
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .buttonStyle(.plain)
-                .opacity(isActive || isHovered ? 1 : 0)
+                Spacer(minLength: 0)
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(isCloseHovered ? Color.primary.opacity(0.1) : .clear)
+                        .clipShape(.rect(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .onHover { isCloseHovered = $0 }
+                .opacity(isHovered ? 1 : 0)
             }
-            .padding(.horizontal, 14)
-            .frame(width: 160)
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .frame(width: 190, alignment: .leading)
             .frame(height: 30)
             .background(
                 Group {
@@ -199,22 +208,23 @@ struct TabItemView: View {
     private var tabIcon: some View {
         if tab.path == "__settings__" {
             Image(systemName: "gearshape").font(.system(size: 12))
-        } else if tab.isDatabaseRow {
-            Image(systemName: "doc.text").font(.system(size: 12))
-        } else if tab.isDatabase {
-            Image(systemName: "tablecells").font(.system(size: 12))
         } else if let icon = tab.icon, !icon.isEmpty {
             if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+            } else if icon.hasPrefix("custom:") {
+                let path = String(icon.dropFirst(7))
+                if let nsImage = NSImage(contentsOfFile: path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                        .clipShape(.rect(cornerRadius: 3))
+                }
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 14))
-            } else {
-                Image(systemName: "doc.text").font(.system(size: 12))
             }
-        } else {
-            Image(systemName: "doc.text").font(.system(size: 12))
         }
     }
 

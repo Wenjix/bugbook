@@ -931,7 +931,13 @@ class BlockNSTextView: NSTextView {
     }
 
     override func selectAll(_ sender: Any?) {
-        selectAllBlocksAction?()
+        if selectedRange().length < string.count && !string.isEmpty {
+            // First Cmd+A: select all text within this block
+            setSelectedRange(NSRange(location: 0, length: string.count))
+        } else {
+            // Second Cmd+A (or empty block): select all blocks
+            selectAllBlocksAction?()
+        }
     }
 
     // Reject all external drops to prevent UUID string insertion from drag-and-drop
@@ -960,6 +966,9 @@ class BlockNSTextView: NSTextView {
         let localPoint = convert(event.locationInWindow, from: nil)
         if !bounds.contains(localPoint) {
             isInBlockSelection = true
+            // Collapse selection before switching to block selection
+            let loc = selectedRange().location
+            setSelectedRange(NSRange(location: loc, length: 0))
             onDragOutOfBlock?()
             return
         }
@@ -1021,10 +1030,10 @@ class BlockNSTextView: NSTextView {
     }
 
     private func handleBlockTypeShortcut(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
-        let isCommandShiftOnly = flags.contains([.command, .shift])
-            && !flags.contains(.option)
+        let isCommandOptionOnly = flags.contains([.command, .option])
+            && !flags.contains(.shift)
             && !flags.contains(.control)
-        guard isCommandShiftOnly else { return false }
+        guard isCommandOptionOnly else { return false }
 
         let keyToAction: [String: String] = [
             "0": "paragraph",

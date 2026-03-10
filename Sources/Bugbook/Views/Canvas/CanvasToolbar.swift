@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CanvasToolbar: View {
     var document: CanvasDocument
+    var visibleCenter: CGPoint
     var onAddFilePicker: () -> Void
     var onAddImage: () -> Void
 
@@ -85,9 +86,7 @@ struct CanvasToolbar: View {
     }
 
     private func addTextNode() {
-        let x = -document.viewport.x + 400
-        let y = -document.viewport.y + 300
-        document.addTextNode(at: CGPoint(x: x, y: y))
+        document.addTextNode(at: visibleCenter)
     }
 
     private func deleteSelected() {

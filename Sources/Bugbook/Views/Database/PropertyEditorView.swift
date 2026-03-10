@@ -55,7 +55,7 @@ struct PropertyEditorView: View {
         case .email:
             emailEditor
         case .relation:
-            textEditor
+            relationEditor
         }
     }
 
@@ -314,7 +314,7 @@ struct PropertyEditorView: View {
 
     // MARK: - Option Context Menu
 
-    private static let optionColors = ["blue", "green", "purple", "orange", "pink", "teal", "yellow", "red", "gray", "default"]
+    private static let optionColors = ["blue", "green", "purple", "orange", "pink", "teal", "yellow", "gray", "default"]
 
     @ViewBuilder
     private func optionContextMenu(for option: SelectOption) -> some View {
@@ -384,7 +384,7 @@ struct PropertyEditorView: View {
     private func commitNewOption(isSelect: Bool) {
         let name = (isSelect ? newSelectOptionName : newTagName).trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
-        let colors = ["blue", "green", "purple", "orange", "pink", "teal", "yellow", "red"]
+        let colors = ["blue", "green", "purple", "orange", "pink", "teal", "yellow", "gray"]
         let color = colors.randomElement() ?? "blue"
         let option = SelectOption(id: "opt_\(UUID().uuidString)", name: name, color: color)
         onAddOption?(definition.id, option)
@@ -557,13 +557,35 @@ struct PropertyEditorView: View {
         }
     }
 
+    // MARK: - Relation
+
+    private var relationEditor: some View {
+        let displayText: String = {
+            switch value {
+            case .relation(let id): return id.isEmpty ? "" : id
+            case .relationMany(let ids): return ids.joined(separator: ", ")
+            default: return ""
+            }
+        }()
+        return HStack {
+            if displayText.isEmpty {
+                Text(compact ? "" : "Empty").foregroundStyle(.secondary)
+            } else {
+                Text(displayText).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 22)
+        .contentShape(Rectangle())
+    }
+
     // MARK: - Color Helper
 
     private func colorForName(_ name: String) -> Color {
         switch name {
         case "blue": return .blue
         case "green": return .green
-        case "red": return .red
+        case "red": return .gray
         case "yellow": return .yellow
         case "purple": return .purple
         case "pink": return .pink

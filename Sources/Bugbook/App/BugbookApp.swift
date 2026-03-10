@@ -97,58 +97,57 @@ struct BugbookApp: App {
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
 
-            // Block type shortcuts: Cmd+Shift+0-9
-            // Use shifted chars (!, @, #...) with .command — workaround for SwiftUI shift+number bug
+            // Block type shortcuts: Cmd+Option+0-9
             CommandGroup(after: .textFormatting) {
                 Button("Text") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "paragraph")
                 }
-                .keyboardShortcut(")", modifiers: .command) // Shift+0
+                .keyboardShortcut("0", modifiers: [.command, .option])
 
                 Button("Heading 1") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "heading1")
                 }
-                .keyboardShortcut("!", modifiers: .command) // Shift+1
+                .keyboardShortcut("1", modifiers: [.command, .option])
 
                 Button("Heading 2") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "heading2")
                 }
-                .keyboardShortcut("@", modifiers: .command) // Shift+2
+                .keyboardShortcut("2", modifiers: [.command, .option])
 
                 Button("Heading 3") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "heading3")
                 }
-                .keyboardShortcut("#", modifiers: .command) // Shift+3
+                .keyboardShortcut("3", modifiers: [.command, .option])
 
                 Button("To-do") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "taskItem")
                 }
-                .keyboardShortcut("$", modifiers: .command) // Shift+4
+                .keyboardShortcut("4", modifiers: [.command, .option])
 
                 Button("Bullet List") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "bulletListItem")
                 }
-                .keyboardShortcut("%", modifiers: .command) // Shift+5
+                .keyboardShortcut("5", modifiers: [.command, .option])
 
                 Button("Numbered List") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "numberedListItem")
                 }
-                .keyboardShortcut("^", modifiers: .command) // Shift+6
+                .keyboardShortcut("6", modifiers: [.command, .option])
 
                 Button("Toggle") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "toggle")
                 }
-                .keyboardShortcut("&", modifiers: .command) // Shift+7
+                .keyboardShortcut("7", modifiers: [.command, .option])
 
                 Button("Code Block") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "codeBlock")
                 }
-                .keyboardShortcut("*", modifiers: .command) // Shift+8
+                .keyboardShortcut("8", modifiers: [.command, .option])
 
                 Button("Page") {
                     NotificationCenter.default.post(name: .blockTypeShortcut, object: "createPage")
                 }
-                .keyboardShortcut("(", modifiers: .command) // Shift+9
+                .keyboardShortcut("9", modifiers: [.command, .option])
             }
 
             CommandGroup(replacing: .appSettings) {
@@ -190,14 +189,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Configure any existing windows
         DispatchQueue.main.async { self.configureWindows() }
 
-        // Cmd+Shift+0-9 block type shortcuts via local event monitor
-        // (SwiftUI .keyboardShortcut is unreliable for shifted number combos)
+        // Cmd+Option+0-9 block type shortcuts via local event monitor
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            let isCommandShiftOnly = flags.contains([.command, .shift])
-                && !flags.contains(.option)
+            let isCommandOptionOnly = flags.contains([.command, .option])
+                && !flags.contains(.shift)
                 && !flags.contains(.control)
-            guard isCommandShiftOnly else { return event }
+            guard isCommandOptionOnly else { return event }
 
             let keyToAction: [String: String] = [
                 "0": "paragraph",

@@ -196,6 +196,7 @@ class CanvasDocument {
         nodes.append(node)
         nodeTexts[id] = ""
         selectedNodeId = id
+        editingNodeId = id
         isDirty = true
     }
 

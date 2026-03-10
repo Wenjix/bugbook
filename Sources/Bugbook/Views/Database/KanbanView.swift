@@ -9,6 +9,7 @@ struct KanbanView: View {
     var onSave: (DatabaseRow) -> Void
     var onUpdateGroupBy: ((String) -> Void)?
     var onAddSelectOption: ((String, SelectOption) -> Void)?
+    var onDelete: ((DatabaseRow) -> Void)?
 
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
@@ -179,7 +180,7 @@ struct KanbanView: View {
     private func createNewOption() {
         let name = newOptionName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty, let prop = groupProperty else { return }
-        let colors = ["blue", "green", "red", "yellow", "purple", "pink", "orange", "teal"]
+        let colors = ["blue", "green", "yellow", "purple", "pink", "orange", "teal", "gray"]
         let randomColor = colors.randomElement() ?? "blue"
         let option = SelectOption(id: "opt_\(UUID().uuidString)", name: name, color: randomColor)
         onAddSelectOption?(prop.id, option)
@@ -325,6 +326,11 @@ struct KanbanView: View {
             .clipShape(.rect(cornerRadius: 6))
             .contentShape(Rectangle())
             .onTapGesture { onOpenRow(row) }
+            .contextMenu {
+                Button(role: .destructive, action: { onDelete?(row) }) {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
             .onHover { hovering in
                 if hovering {
                     NSCursor.openHand.push()
@@ -341,7 +347,7 @@ struct KanbanView: View {
         switch name {
         case "blue": return .blue
         case "green": return .green
-        case "red": return .red
+        case "red": return .gray
         case "yellow": return .yellow
         case "purple": return .purple
         case "pink": return .pink

@@ -433,6 +433,14 @@ class BlockDocument {
     func changeBlockType(id: UUID, to type: BlockType) {
         guard blockLocation(for: id) != nil else { return }
         saveUndo()
+        // Rescue pageLinkName into text when converting from pageLink
+        if let current = block(for: id), current.type == .pageLink, type != .pageLink {
+            updateBlockProperty(id: id) { block in
+                if block.text.isEmpty, !block.pageLinkName.isEmpty {
+                    block.text = block.pageLinkName
+                }
+            }
+        }
         updateBlockProperty(id: id) { block in
             block.type = type
             if type == .heading { block.headingLevel = 1 }
@@ -494,6 +502,7 @@ class BlockDocument {
         saveUndo()
         unregisterFramesRecursively(for: blocks[idx])
         blocks.remove(at: idx)
+        ensureTrailingParagraph()
         let focusIdx = min(idx, blocks.count - 1)
         focusedBlockId = blocks[focusIdx].id
         cursorPosition = 0
@@ -504,6 +513,13 @@ class BlockDocument {
         blocks.append(newBlock)
         focusedBlockId = newBlock.id
         cursorPosition = 0
+    }
+
+    func ensureTrailingParagraph() {
+        guard let last = blocks.last else { return }
+        if last.type != .paragraph || !last.text.isEmpty {
+            blocks.append(Block(type: .paragraph))
+        }
     }
 
     func duplicateBlock(id: UUID) {
@@ -600,7 +616,7 @@ class BlockDocument {
 
     var filteredSlashCommands: [SlashCommand] {
         if slashMenuFilter.isEmpty { return Self.slashCommands }
-        return Self.slashCommands.filter { $0.name.localizedCaseInsensitiveContains(slashMenuFilter) }
+        return Self.slashCommands.filter { $0.name.localizedStandardContains(slashMenuFilter) }
     }
 
     func executeSlashCommand() {
@@ -756,6 +772,7 @@ class BlockDocument {
         } else {
             focusedBlockId = blocks.first?.id
         }
+        ensureTrailingParagraph()
         cursorPosition = 0
         clearBlockSelection()
     }

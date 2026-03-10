@@ -238,7 +238,15 @@ final class DatabaseViewState {
 
     func addPropertyFromTable(type: PropertyType) {
         guard var s = schema else { return }
-        let config: PropertyConfig? = (type == .select || type == .multiSelect) ? PropertyConfig(options: []) : nil
+        let config: PropertyConfig?
+        switch type {
+        case .select, .multiSelect:
+            config = PropertyConfig(options: [])
+        case .relation:
+            config = PropertyConfig(target: nil)
+        default:
+            config = nil
+        }
         let prop = PropertyDefinition(
             id: "prop_\(UUID().uuidString)",
             name: "New \(type.rawValue.capitalized)",

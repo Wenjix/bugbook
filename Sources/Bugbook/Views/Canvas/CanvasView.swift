@@ -12,8 +12,17 @@ struct CanvasView: View {
     @State private var showFilePicker = false
     @State private var baseZoom: CGFloat = 1.0
     @State private var dropTargetActive = false
+    @State private var canvasSize: CGSize = CGSize(width: 800, height: 600)
+    @State private var lastMouseLocation: CGPoint = CGPoint(x: 400, y: 300)
 
     private var zoom: CGFloat { document.viewport.zoom }
+
+    private var visibleCenter: CGPoint {
+        CGPoint(
+            x: (canvasSize.width / 2 - document.viewport.x) / zoom,
+            y: (canvasSize.height / 2 - document.viewport.y) / zoom
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -45,7 +54,7 @@ struct CanvasView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(24)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .background(.ultraThinMaterial, in: .rect(cornerRadius: 12))
             }
 
             // Floating toolbar
@@ -53,6 +62,7 @@ struct CanvasView: View {
                 Spacer()
                 CanvasToolbar(
                     document: document,
+                    visibleCenter: visibleCenter,
                     onAddFilePicker: { showFilePicker = true },
                     onAddImage: { pickImageFromDisk() }
                 )
@@ -61,6 +71,12 @@ struct CanvasView: View {
             }
         }
         .clipped()
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
+        .onContinuousHover { phase in
+            if case .active(let location) = phase {
+                lastMouseLocation = location
+            }
+        }
         .overlay(CanvasScrollZoomView(document: document, baseZoom: $baseZoom))
         .onKeyPress(.delete) {
             deleteSelected()
@@ -78,10 +94,8 @@ struct CanvasView: View {
             for provider in providers {
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
                     guard let data = data, let image = NSImage(data: data) else { return }
-                    DispatchQueue.main.async {
-                        let x = -document.viewport.x + 400
-                        let y = -document.viewport.y + 300
-                        document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+                    Task { @MainActor in
+                        document.addImageNode(at: visibleCenter, image: image)
                     }
                 }
             }
@@ -99,9 +113,7 @@ struct CanvasView: View {
             CanvasFilePickerView(
                 pages: availablePages,
                 onSelect: { entry in
-                    let x = -document.viewport.x + 400
-                    let y = -document.viewport.y + 300
-                    document.addFileNode(at: CGPoint(x: x, y: y), filePath: entry.path)
+                    document.addFileNode(at: visibleCenter, filePath: entry.path)
                     showFilePicker = false
                 },
                 onDismiss: { showFilePicker = false }
@@ -158,14 +170,16 @@ struct CanvasView: View {
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
                 // Double-click creates a text node at the location
-                let x = -document.viewport.x + 400
-                let y = -document.viewport.y + 300
-                document.addTextNode(at: CGPoint(x: x, y: y))
+                document.addTextNode(at: visibleCenter)
             }
         )
         .gesture(backgroundPanGesture)
         .gesture(zoomGesture)
         .onDrop(of: [.fileURL, .image, .png, .tiff, .jpeg], isTargeted: $dropTargetActive) { providers, location in
+            let dropPoint = CGPoint(
+                x: (location.x - document.viewport.x) / document.viewport.zoom,
+                y: (location.y - document.viewport.y) / document.viewport.zoom
+            )
             for provider in providers {
                 // Try loading as a file URL first (drag from Finder)
                 if provider.hasItemConformingToTypeIdentifier("public.file-url") {
@@ -173,10 +187,8 @@ struct CanvasView: View {
                         guard let data = item as? Data,
                               let url = URL(dataRepresentation: data, relativeTo: nil),
                               let image = NSImage(contentsOf: url) else { return }
-                        DispatchQueue.main.async {
-                            let x = -document.viewport.x + location.x / document.viewport.zoom
-                            let y = -document.viewport.y + location.y / document.viewport.zoom
-                            document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+                        Task { @MainActor in
+                            document.addImageNode(at: dropPoint, image: image)
                         }
                     }
                     return true
@@ -184,10 +196,8 @@ struct CanvasView: View {
                 // Try loading as image data directly
                 provider.loadDataRepresentation(forTypeIdentifier: "public.image") { data, _ in
                     guard let data = data, let image = NSImage(data: data) else { return }
-                    DispatchQueue.main.async {
-                        let x = -document.viewport.x + location.x / document.viewport.zoom
-                        let y = -document.viewport.y + location.y / document.viewport.zoom
-                        document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+                    Task { @MainActor in
+                        document.addImageNode(at: dropPoint, image: image)
                     }
                 }
             }
@@ -292,7 +302,13 @@ struct CanvasView: View {
     private var zoomGesture: some Gesture {
         MagnifyGesture()
             .onChanged { value in
-                document.viewport.zoom = max(0.3, min(3.0, baseZoom * value.magnification))
+                let oldZoom = document.viewport.zoom
+                guard oldZoom > 0 else { return }
+                let newZoom = max(0.3, min(3.0, baseZoom * value.magnification))
+                let pivot = lastMouseLocation
+                document.viewport.x += pivot.x * (1 - newZoom / oldZoom)
+                document.viewport.y += pivot.y * (1 - newZoom / oldZoom)
+                document.viewport.zoom = newZoom
             }
             .onEnded { _ in
                 baseZoom = document.viewport.zoom
@@ -346,9 +362,7 @@ struct CanvasView: View {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard let image = NSImage(contentsOf: url) else { return }
-        let x = -document.viewport.x + 400
-        let y = -document.viewport.y + 300
-        document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+        document.addImageNode(at: visibleCenter, image: image)
     }
 
     private func pasteFromClipboard() {
@@ -357,10 +371,7 @@ struct CanvasView: View {
         guard let imageType = pb.availableType(from: [.tiff, .png]),
               let data = pb.data(forType: imageType),
               let image = NSImage(data: data) else { return }
-
-        let x = -document.viewport.x + 400
-        let y = -document.viewport.y + 300
-        document.addImageNode(at: CGPoint(x: x, y: y), image: image)
+        document.addImageNode(at: visibleCenter, image: image)
     }
 
     private func deleteSelected() {
@@ -380,7 +391,7 @@ struct CanvasFilePickerView: View {
     private var filteredPages: [FileEntry] {
         let flat = flattenEntries(pages)
         if searchText.isEmpty { return flat }
-        return flat.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return flat.filter { $0.name.localizedStandardContains(searchText) }
     }
 
     var body: some View {
@@ -435,10 +446,15 @@ private struct CanvasScrollZoomView: NSViewRepresentable {
     var document: CanvasDocument
     @Binding var baseZoom: CGFloat
 
-    private var zoomHandler: (CGFloat) -> Void {
-        { [document, baseZoom = _baseZoom] deltaY in
+    private var zoomHandler: (CGFloat, CGPoint) -> Void {
+        { [document, baseZoom = _baseZoom] deltaY, mouseLocation in
             let sensitivity: CGFloat = 0.01
-            let newZoom = max(0.3, min(3.0, document.viewport.zoom + deltaY * sensitivity))
+            let oldZoom = document.viewport.zoom
+            guard oldZoom > 0 else { return }
+            let newZoom = max(0.3, min(3.0, oldZoom + deltaY * sensitivity))
+            // Pivot zoom around the mouse location
+            document.viewport.x += mouseLocation.x * (1 - newZoom / oldZoom)
+            document.viewport.y += mouseLocation.y * (1 - newZoom / oldZoom)
             document.viewport.zoom = newZoom
             baseZoom.wrappedValue = newZoom
         }
@@ -456,11 +472,14 @@ private struct CanvasScrollZoomView: NSViewRepresentable {
 }
 
 private class CanvasScrollCaptureNSView: NSView {
-    var onCmdScroll: ((CGFloat) -> Void)?
+    var onCmdScroll: ((CGFloat, CGPoint) -> Void)?
+
+    override var isFlipped: Bool { true }
 
     override func scrollWheel(with event: NSEvent) {
         if event.modifierFlags.contains(.command) {
-            onCmdScroll?(event.scrollingDeltaY)
+            let locationInView = convert(event.locationInWindow, from: nil)
+            onCmdScroll?(event.scrollingDeltaY, locationInView)
         } else {
             super.scrollWheel(with: event)
         }
