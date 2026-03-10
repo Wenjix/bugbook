@@ -90,7 +90,7 @@ struct PageHeaderView: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showIconPicker, arrowEdge: .top) {
+        .floatingPopover(isPresented: $showIconPicker, arrowEdge: .top) {
             iconPickerPopover
         }
     }
@@ -106,7 +106,7 @@ struct PageHeaderView: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showCoverPicker, arrowEdge: .top) {
+        .floatingPopover(isPresented: $showCoverPicker, arrowEdge: .top) {
             coverPickerPopover
         }
     }
@@ -116,7 +116,7 @@ struct PageHeaderView: View {
             iconDisplay(value)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showIconPicker, arrowEdge: .top) {
+        .floatingPopover(isPresented: $showIconPicker, arrowEdge: .top) {
             iconPickerPopover
         }
     }
@@ -231,7 +231,7 @@ struct PageHeaderView: View {
                             .font(.system(size: 12))
                     }
                     .buttonStyle(CoverActionButtonStyle())
-                    .popover(isPresented: $showCoverPicker, arrowEdge: .bottom) {
+                    .floatingPopover(isPresented: $showCoverPicker, arrowEdge: .bottom) {
                         coverPickerPopover
                     }
 

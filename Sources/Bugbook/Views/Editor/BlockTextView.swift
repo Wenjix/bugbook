@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum EditorTypography {
-    static let bodyFontSize: CGFloat = 16
+    static let bodyFontSize: CGFloat = Typography.content
 }
 
 /// NSViewRepresentable wrapping NSTextView for per-block text editing.

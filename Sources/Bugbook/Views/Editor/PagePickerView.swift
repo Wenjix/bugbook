@@ -82,9 +82,7 @@ struct PagePickerView: View {
             }
         }
         .frame(width: 240)
-        .background(.regularMaterial)
-        .clipShape(.rect(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        .popoverSurface()
     }
 
     private func selectCurrent() {

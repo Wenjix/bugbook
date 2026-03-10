@@ -75,14 +75,18 @@ struct DatabaseRowModalView: View {
             }
         }
         .frame(maxWidth: 880, maxHeight: 700)
-        .background(Color.fallbackEditorBg)
+        .background(Elevation.popoverBg)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay {
             RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.fallbackChromeBorder, lineWidth: 1)
+                .stroke(Elevation.popoverBorder, lineWidth: 0.5)
                 .allowsHitTesting(false)
         }
-        .shadow(color: Color.black.opacity(0.22), radius: 26, y: 12)
+        .shadow(
+            color: Elevation.shadowColor.opacity(0.18),
+            radius: 24,
+            y: Elevation.shadowY * 2
+        )
         .onTapGesture { }
         .onExitCommand { onClose() }
         .task { vm.loadData(rowId: rowId) }

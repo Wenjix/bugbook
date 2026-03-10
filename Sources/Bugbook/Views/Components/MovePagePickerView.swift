@@ -84,9 +84,7 @@ struct MovePagePickerView: View {
         }
         .frame(width: 300)
         .frame(maxHeight: 460)
-        .background(Color.fallbackBgPrimary)
-        .clipShape(.rect(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
+        .popoverSurface(cornerRadius: Radius.lg)
         .onKeyPress(.upArrow) {
             selectedIndex = max(0, selectedIndex - 1)
             return .handled

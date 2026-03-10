@@ -89,8 +89,6 @@ struct TemplatePickerView: View {
             }
         }
         .frame(width: 260)
-        .background(.ultraThinMaterial)
-        .clipShape(.rect(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        .popoverSurface(cornerRadius: Radius.lg)
     }
 }

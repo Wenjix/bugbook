@@ -184,7 +184,7 @@ struct NotesChatView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Reference files")
-                .popover(isPresented: $showFileReferencePicker, arrowEdge: .top) {
+                .floatingPopover(isPresented: $showFileReferencePicker, arrowEdge: .top) {
                     fileReferencePicker
                 }
 
@@ -274,6 +274,7 @@ struct NotesChatView: View {
         }
         .padding(12)
         .frame(width: 420, height: 320)
+        .popoverSurface()
     }
 
     // MARK: - Engine Picker

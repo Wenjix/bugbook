@@ -132,9 +132,7 @@ struct CommandPaletteView: View {
             }
         }
         .frame(width: 600)
-        .background(Color.fallbackBgPrimary)
-        .clipShape(.rect(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
+        .popoverSurface(cornerRadius: Radius.xl)
         .onKeyPress(.upArrow) {
             selectedIndex = max(0, selectedIndex - 1)
             return .handled

@@ -677,7 +677,7 @@ private struct ColumnHeaderCell: View {
             if inside { NSCursor.pointingHand.push() }
             else { NSCursor.pop() }
         }
-        .popover(isPresented: $showPopover, arrowEdge: .bottom) {
+        .floatingPopover(isPresented: $showPopover, arrowEdge: .bottom) {
             popoverContent
         }
     }
@@ -687,6 +687,7 @@ private struct ColumnHeaderCell: View {
             TextField("Property name", text: $editingName)
                 .textFieldStyle(.roundedBorder)
                 .font(.callout)
+                .focusEffectDisabled()
                 .onSubmit {
                     let trimmed = editingName.trimmingCharacters(in: .whitespaces)
                     if !trimmed.isEmpty && trimmed != prop.name {
@@ -718,6 +719,7 @@ private struct ColumnHeaderCell: View {
                         Text(prop.type.rawValue.capitalized)
                             .font(.callout)
                     }
+                    .foregroundStyle(.primary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -751,12 +753,13 @@ private struct ColumnHeaderCell: View {
                     Text("Delete property")
                         .font(.callout)
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
         }
         .padding(12)
         .frame(width: 220)
+        .popoverSurface()
     }
 
 }

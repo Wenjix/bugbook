@@ -155,7 +155,7 @@ struct DatabaseFullPageView: View {
                     .foregroundStyle(showSettings ? .primary : .secondary)
             }
             .buttonStyle(.plain)
-            .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+            .floatingPopover(isPresented: $showSettings, arrowEdge: .bottom) {
                 settingsPopover(schema: schema)
             }
         }
@@ -354,6 +354,7 @@ struct DatabaseFullPageView: View {
         }
         .frame(width: 280)
         .frame(maxHeight: 420)
+        .popoverSurface()
     }
 
     private func popoverSectionHeader(_ title: String) -> some View {
@@ -694,6 +695,7 @@ private struct PropertyManagerSheet: View {
     let dbService: DatabaseService
     let notificationOrigin: String
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.popoverDismiss) private var popoverDismiss
     @State private var editingNames: [String: String] = [:]
 
     var body: some View {
@@ -702,7 +704,7 @@ private struct PropertyManagerSheet: View {
                 Text("Properties")
                     .font(.headline)
                 Spacer()
-                Button("Done") { dismiss() }
+                Button("Done") { (popoverDismiss ?? { dismiss() })() }
             }
 
             List {
@@ -749,7 +751,7 @@ private struct PropertyManagerSheet: View {
                             } label: {
                                 Image(systemName: "trash")
                                     .font(.caption)
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                         }

@@ -58,9 +58,7 @@ struct BlockMenuView: View {
         }
         .frame(width: 252)
         .padding(.vertical, 4)
-        .background(.regularMaterial)
-        .clipShape(.rect(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        .popoverSurface()
     }
 
     // MARK: - Move To Button (with arrow)

@@ -13,7 +13,7 @@ struct PropertyEditorView: View {
     var body: some View {
         mainEditor
             .databasePointerCursor()
-            .popover(item: $editingOptionId) { optId in
+            .floatingPopover(item: $editingOptionId) { optId in
                 editOptionPopover(optionId: optId)
             }
             .alert("Delete Option", isPresented: $showDeleteAlert) {
@@ -94,6 +94,7 @@ struct PropertyEditorView: View {
             }
         }
         .padding(12)
+        .popoverSurface()
     }
 
     // MARK: - Text
@@ -162,10 +163,10 @@ struct PropertyEditorView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showSelectPopover, arrowEdge: .bottom) {
+        .floatingPopover(isPresented: $showSelectPopover, arrowEdge: .bottom) {
             selectOptionList(options: options, currentValue: currentValue)
         }
-        .popover(isPresented: $showNewSelectOption, arrowEdge: .bottom) {
+        .floatingPopover(isPresented: $showNewSelectOption, arrowEdge: .bottom) {
             createOptionPopover(isSelect: true)
         }
     }
@@ -196,6 +197,7 @@ struct PropertyEditorView: View {
         }
         .frame(width: 200)
         .padding(6)
+        .popoverSurface()
     }
 
     // MARK: - Multi Select
@@ -244,10 +246,10 @@ struct PropertyEditorView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showMultiSelectPopover, arrowEdge: .bottom) {
+        .floatingPopover(isPresented: $showMultiSelectPopover, arrowEdge: .bottom) {
             multiSelectOptionList(options: options, selectedIds: selectedIds)
         }
-        .popover(isPresented: $showNewTag, arrowEdge: .bottom) {
+        .floatingPopover(isPresented: $showNewTag, arrowEdge: .bottom) {
             createOptionPopover(isSelect: false)
         }
     }
@@ -279,6 +281,7 @@ struct PropertyEditorView: View {
         }
         .frame(width: 200)
         .padding(6)
+        .popoverSurface()
     }
 
     // MARK: - Shared Option Button
@@ -293,12 +296,12 @@ struct PropertyEditorView: View {
                 }
                 Text(label)
                     .font(.callout)
-                    .foregroundStyle(isAction ? Color.accentColor : Color.primary)
+                    .foregroundStyle(isAction ? Color.secondary : Color.primary)
                 Spacer()
                 if isActive {
                     Image(systemName: "checkmark")
                         .font(.caption)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(.primary)
                 }
             }
             .padding(.horizontal, 8)
@@ -375,6 +378,7 @@ struct PropertyEditorView: View {
             }
         }
         .padding(12)
+        .popoverSurface()
     }
 
     private func commitNewOption(isSelect: Bool) {
@@ -456,7 +460,7 @@ struct PropertyEditorView: View {
                 )
             }
             .buttonStyle(.plain)
-            .popover(isPresented: $showDatePicker, arrowEdge: .bottom) {
+            .floatingPopover(isPresented: $showDatePicker, arrowEdge: .bottom) {
                 DatePropertyPopover(
                     value: Binding(
                         get: { currentDateValue },
@@ -640,7 +644,7 @@ private struct DatePropertyPopover: View {
         }
         .padding(14)
         .frame(width: 336)
-        .background(Color.fallbackBgSecondary)
+        .popoverSurface()
         .onAppear {
             guard !didSyncInitialState else { return }
             syncFromValue()

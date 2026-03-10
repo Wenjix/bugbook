@@ -231,7 +231,7 @@ struct CalendarView: View {
                                 .foregroundStyle(Color.accentColor)
                         }
                         .buttonStyle(.plain)
-                        .popover(isPresented: Binding(
+                        .floatingPopover(isPresented: Binding(
                             get: { morePopoverDate == cell.dateString },
                             set: { if !$0 { morePopoverDate = nil } }
                         )) {
@@ -247,6 +247,7 @@ struct CalendarView: View {
                             }
                             .padding(8)
                             .frame(minWidth: 180)
+                            .popoverSurface()
                         }
                     }
                 }

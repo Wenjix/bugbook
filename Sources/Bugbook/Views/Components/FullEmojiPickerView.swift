@@ -712,6 +712,7 @@ struct FullEmojiPickerView: View {
     @Binding var selectedEmoji: String?
     var onCustomIconSelected: ((String) -> Void)?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.popoverDismiss) private var popoverDismiss
 
     @State private var searchText = ""
     @State private var selectedTab: EmojiPickerTab = .emoji
@@ -767,15 +768,16 @@ struct FullEmojiPickerView: View {
 
                 Button("Remove") {
                     selectedEmoji = nil
-                    dismiss()
+                    (popoverDismiss ?? { dismiss() })()
                 }
                 .font(.system(size: 13))
-                .foregroundStyle(.red)
+                .foregroundStyle(.primary)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
         }
         .frame(width: 420, height: 520)
+        .popoverSurface()
         .onAppear {
             recentEmojis = RecentEmojisManager.shared.getRecent()
         }
@@ -949,7 +951,7 @@ struct FullEmojiPickerView: View {
                     Button(action: {
                         // Store SF Symbol as special format
                         selectedEmoji = "sf:\(name)"
-                        dismiss()
+                        (popoverDismiss ?? { dismiss() })()
                     }) {
                         Image(systemName: name)
                             .font(.system(size: 17))
@@ -1002,7 +1004,7 @@ struct FullEmojiPickerView: View {
         selectedEmoji = emoji
         RecentEmojisManager.shared.addRecent(emoji)
         recentEmojis = RecentEmojisManager.shared.getRecent()
-        dismiss()
+        (popoverDismiss ?? { dismiss() })()
     }
 
     private func selectRandomEmoji() {
@@ -1036,7 +1038,7 @@ struct FullEmojiPickerView: View {
         // Copy to app support directory
         if let savedPath = FileSystemService.saveIcon(from: url) {
             onCustomIconSelected?(savedPath)
-            dismiss()
+            (popoverDismiss ?? { dismiss() })()
         }
     }
 }

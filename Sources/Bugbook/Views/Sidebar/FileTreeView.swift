@@ -18,7 +18,7 @@ struct FileTreeView: View {
     @State private var dropMode: DropMode?
 
     var body: some View {
-        LazyVStack(spacing: 1) {
+        VStack(spacing: 1) {
             ForEach(sortedEntries.enumerated(), id: \.element.id) { index, entry in
                 FileTreeItemView(
                     entry: entry,

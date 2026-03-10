@@ -34,6 +34,7 @@ struct ContentView: View {
     @State private var peekDragStartWidth: CGFloat?
     @State private var sidebarHiddenByPeek: Bool = false
     @State private var modalTarget: RowTarget?
+    @State private var showPageOptionsMenu = false
 
     var body: some View {
         configuredLayout
@@ -572,34 +573,71 @@ struct ContentView: View {
                     // Page options menu (notes only)
                     if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase && !tab.isDatabaseRow,
                        let doc = blockDocuments[tab.id] {
-                        Menu {
-                            Button {
-                                doc.fullWidth.toggle()
-                                if appState.activeTabIndex < appState.openTabs.count {
-                                    appState.openTabs[appState.activeTabIndex].isDirty = true
-                                }
-                                scheduleSave()
-                            } label: {
-                                HStack {
-                                    Label("Full width", systemImage: "arrow.left.and.right")
-                                    if doc.fullWidth { Spacer(); Image(systemName: "checkmark") }
-                                }
-                            }
-                            Button {
-                                appState.movePagePath = tab.path
-                            } label: {
-                                Label("Move to", systemImage: "arrow.right")
-                            }
+                        Button {
+                            showPageOptionsMenu.toggle()
                         } label: {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 13))
                                 .foregroundStyle(.primary)
                                 .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
+                        .buttonStyle(.plain)
                         .padding(.trailing, 4)
+                        .floatingPopover(isPresented: $showPageOptionsMenu) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Button {
+                                    doc.fullWidth.toggle()
+                                    if appState.activeTabIndex < appState.openTabs.count {
+                                        appState.openTabs[appState.activeTabIndex].isDirty = true
+                                    }
+                                    scheduleSave()
+                                    showPageOptionsMenu = false
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "arrow.left.and.right")
+                                            .frame(width: 16)
+                                        Text("Full width")
+                                        Spacer()
+                                        if doc.fullWidth {
+                                            Image(systemName: "checkmark")
+                                                .font(.caption)
+                                        }
+                                    }
+                                    .font(.system(size: Typography.bodySmall))
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .background(
+                                    RoundedRectangle(cornerRadius: Radius.xs)
+                                        .fill(Color.clear)
+                                )
+
+                                Button {
+                                    appState.movePagePath = tab.path
+                                    showPageOptionsMenu = false
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "arrow.right")
+                                            .frame(width: 16)
+                                        Text("Move to")
+                                        Spacer()
+                                    }
+                                    .font(.system(size: Typography.bodySmall))
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(4)
+                            .frame(width: 200)
+                            .popoverSurface()
+                        }
                     }
                 }
                 .padding(.leading, appState.sidebarOpen ? 0 : 78)

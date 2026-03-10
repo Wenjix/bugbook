@@ -157,13 +157,13 @@ private struct PopoverSyncModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .popover(isPresented: $showSlashMenu, arrowEdge: .bottom) {
+            .floatingPopover(isPresented: $showSlashMenu, arrowEdge: .bottom) {
                 SlashCommandMenu(document: document)
             }
-            .popover(isPresented: $showBlockMenu, arrowEdge: .leading) {
+            .floatingPopover(isPresented: $showBlockMenu, arrowEdge: .leading) {
                 BlockMenuView(document: document, blockId: block.id)
             }
-            .popover(isPresented: $showPagePicker, arrowEdge: .bottom) {
+            .floatingPopover(isPresented: $showPagePicker, arrowEdge: .bottom) {
                 PagePickerView(document: document)
             }
             .onAppear {

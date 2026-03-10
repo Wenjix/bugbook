@@ -181,7 +181,7 @@ struct RowPageView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showAddPropertyMenu, arrowEdge: .bottom) {
+        .floatingPopover(isPresented: $showAddPropertyMenu, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(PropertyType.allCases, id: \.rawValue) { type in
                     if type != .title {
@@ -208,6 +208,7 @@ struct RowPageView: View {
             }
             .padding(6)
             .frame(width: 200)
+            .popoverSurface()
         }
     }
 }
@@ -254,7 +255,7 @@ private struct PropertyRowView: View {
             }
             .buttonStyle(.plain)
             .onHover { labelHovered = $0 }
-            .popover(isPresented: $showPropertyMenu, arrowEdge: .bottom) {
+            .floatingPopover(isPresented: $showPropertyMenu, arrowEdge: .bottom) {
                 propertySettingsPopover
             }
 
@@ -284,6 +285,7 @@ private struct PropertyRowView: View {
             TextField("Property name", text: $editingName)
                 .textFieldStyle(.roundedBorder)
                 .font(.callout)
+                .focusEffectDisabled()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .onSubmit {
@@ -338,11 +340,11 @@ private struct PropertyRowView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "trash")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.secondary)
                         .frame(width: 20)
                     Text("Delete property")
                         .font(.callout)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.primary)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -353,5 +355,6 @@ private struct PropertyRowView: View {
         }
         .padding(6)
         .frame(width: 220)
+        .popoverSurface()
     }
 }

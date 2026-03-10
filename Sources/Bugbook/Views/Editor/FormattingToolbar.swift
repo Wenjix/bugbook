@@ -21,9 +21,7 @@ struct FormattingToolbar: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .background(.regularMaterial)
-        .clipShape(.rect(cornerRadius: 6))
-        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+        .popoverSurface(cornerRadius: Radius.sm)
     }
 
     @ViewBuilder

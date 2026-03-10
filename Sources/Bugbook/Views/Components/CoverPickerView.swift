@@ -6,6 +6,7 @@ struct CoverPickerView: View {
     @Binding var coverUrl: String?
     @Binding var coverYPosition: Double
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.popoverDismiss) private var popoverDismiss
 
     var body: some View {
         VStack(spacing: 16) {
@@ -42,9 +43,9 @@ struct CoverPickerView: View {
                     Button("Remove Cover") {
                         coverUrl = nil
                         coverYPosition = 50
-                        dismiss()
+                        (popoverDismiss ?? { dismiss() })()
                     }
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.primary)
                 }
                 .font(.system(size: 13))
                 .padding(.horizontal, 12)
@@ -72,6 +73,7 @@ struct CoverPickerView: View {
         }
         .frame(width: 320, height: 300)
         .padding(8)
+        .popoverSurface()
     }
 
     private func loadCoverImage(from path: String) -> NSImage? {
@@ -95,7 +97,7 @@ struct CoverPickerView: View {
         if let savedPath = FileSystemService.saveCover(from: url) {
             coverUrl = savedPath
             coverYPosition = 50
-            dismiss()
+            (popoverDismiss ?? { dismiss() })()
         }
     }
 }
