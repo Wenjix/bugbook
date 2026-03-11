@@ -641,7 +641,6 @@ struct DatabaseInlineEmbedView: View {
                     usesInnerScroll: false
                 )
                 .fixedSize(horizontal: true, vertical: true)
-                .padding(.leading, -TableView.rowControlsInset)
             }
             .scrollIndicators(.visible)
         case .kanban:

@@ -35,6 +35,7 @@ struct ContentView: View {
     @State private var sidebarHiddenByPeek: Bool = false
     @State private var modalTarget: RowTarget?
     @State private var showPageOptionsMenu = false
+    @State private var databaseRowFullWidth: [UUID: Bool] = [:]
 
     var body: some View {
         configuredLayout
@@ -577,92 +578,24 @@ struct ContentView: View {
 
                     Spacer()
 
-                    // Page options menu (notes only)
-                    if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase && !tab.isDatabaseRow,
-                       let doc = blockDocuments[tab.id] {
+                    if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase {
                         Button {
                             showPageOptionsMenu.toggle()
                         } label: {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 13))
                                 .foregroundStyle(.primary)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 32, height: 32)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .padding(.trailing, 4)
                         .floatingPopover(isPresented: $showPageOptionsMenu) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Button {
-                                    doc.fullWidth.toggle()
-                                    if appState.activeTabIndex < appState.openTabs.count {
-                                        appState.openTabs[appState.activeTabIndex].isDirty = true
-                                    }
-                                    scheduleSave()
-                                    showPageOptionsMenu = false
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "arrow.left.and.right")
-                                            .frame(width: 16)
-                                        Text("Full width")
-                                        Spacer()
-                                        if doc.fullWidth {
-                                            Image(systemName: "checkmark")
-                                                .font(.caption)
-                                        }
-                                    }
-                                    .font(.system(size: Typography.bodySmall))
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .background(
-                                    RoundedRectangle(cornerRadius: Radius.xs)
-                                        .fill(Color.clear)
-                                )
-
-                                Button {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(tab.path, forType: .string)
-                                    showPageOptionsMenu = false
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "doc.on.doc")
-                                            .frame(width: 16)
-                                        Text("Copy file path")
-                                        Spacer()
-                                    }
-                                    .font(.system(size: Typography.bodySmall))
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    appState.movePagePath = tab.path
-                                    showPageOptionsMenu = false
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "arrow.right")
-                                            .frame(width: 16)
-                                        Text("Move to")
-                                        Spacer()
-                                    }
-                                    .font(.system(size: Typography.bodySmall))
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
+                            if tab.isDatabaseRow {
+                                databaseRowOptionsMenu(for: tab)
+                            } else if let doc = blockDocuments[tab.id] {
+                                pageOptionsMenu(for: tab, document: doc)
                             }
-                            .padding(4)
-                            .frame(width: 200)
-                            .popoverSurface()
                         }
                     }
                 }
@@ -762,9 +695,7 @@ struct ContentView: View {
                     onTitleChange: { title in
                         updateDatabaseRowTabTitle(tabId: tab.id, title: title)
                     },
-                    onDelete: {
-                        appState.closeTab(at: appState.activeTabIndex)
-                    }
+                    fullWidth: databaseRowFullWidth[tab.id, default: false]
                 )
                 .id(tab.id)
             } else if tab.isDatabase {
@@ -1643,6 +1574,184 @@ struct ContentView: View {
     private func cleanupTabDocuments(_ tabId: UUID) {
         blockDocuments.removeValue(forKey: tabId)
         canvasDocuments.removeValue(forKey: tabId)
+        databaseRowFullWidth.removeValue(forKey: tabId)
+    }
+
+    private func pageOptionsMenu(for tab: OpenFile, document: BlockDocument) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                document.fullWidth.toggle()
+                if appState.activeTabIndex < appState.openTabs.count {
+                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                }
+                scheduleSave()
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.left.and.right")
+                        .frame(width: 16)
+                    Text("Full width")
+                    Spacer()
+                    if document.fullWidth {
+                        Image(systemName: "checkmark")
+                            .font(.caption)
+                    }
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.xs)
+                    .fill(Color.clear)
+            )
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(tab.path, forType: .string)
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.on.doc")
+                        .frame(width: 16)
+                    Text("Copy file path")
+                    Spacer()
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                appState.movePagePath = tab.path
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.right")
+                        .frame(width: 16)
+                    Text("Move to")
+                    Spacer()
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(4)
+        .frame(width: 200)
+        .popoverSurface()
+    }
+
+    private func databaseRowOptionsMenu(for tab: OpenFile) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                databaseRowFullWidth[tab.id, default: false].toggle()
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.left.and.right")
+                        .frame(width: 16)
+                    Text("Full width")
+                    Spacer()
+                    if databaseRowFullWidth[tab.id, default: false] {
+                        Image(systemName: "checkmark")
+                            .font(.caption)
+                    }
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                if let path = databaseRowFilePath(for: tab) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(path, forType: .string)
+                }
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.on.doc")
+                        .frame(width: 16)
+                    Text("Copy file path")
+                    Spacer()
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                deleteDatabaseRow(for: tab)
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "trash")
+                        .frame(width: 16)
+                    Text("Delete")
+                    Spacer()
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.red)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(4)
+        .frame(width: 200)
+        .popoverSurface()
+    }
+
+    private func databaseRowFilePath(for tab: OpenFile) -> String? {
+        guard let dbPath = tab.databasePath,
+              let rowId = tab.databaseRowId,
+              let contents = try? FileManager.default.contentsOfDirectory(atPath: dbPath) else {
+            return nil
+        }
+
+        let suffix = rowId.hasPrefix("row_") ? String(rowId.dropFirst(4)) : rowId
+        for name in contents where name.hasSuffix(".md") && name.contains("(\(suffix))") {
+            return (dbPath as NSString).appendingPathComponent(name)
+        }
+        return nil
+    }
+
+    private func deleteDatabaseRow(for tab: OpenFile) {
+        guard let dbPath = tab.databasePath,
+              let rowId = tab.databaseRowId else {
+            return
+        }
+
+        let dbService = DatabaseService()
+        try? dbService.deleteRow(rowId, in: dbPath)
+        if let (schema, rows) = try? dbService.loadDatabase(at: dbPath) {
+            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+        }
+
+        NotificationCenter.default.post(
+            name: .databaseRowDeleted,
+            object: nil,
+            userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.rowId: rowId]
+        )
+        postDatabaseChangeNotification(dbPath: dbPath, origin: "contentView.databaseRowMenu")
+        appState.closeTab(at: appState.activeTabIndex)
     }
 
     private func removeDatabaseEmbedsFromOpenDocs(dbPath: String) {

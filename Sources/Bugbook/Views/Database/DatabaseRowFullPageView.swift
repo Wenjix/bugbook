@@ -5,18 +5,21 @@ struct DatabaseRowFullPageView: View {
     let dbPath: String
     let rowId: String
     var onTitleChange: (String) -> Void
+    var fullWidth: Bool = false
 
     @State private var vm: DatabaseRowViewModel
+    @Environment(\.workspacePath) private var workspacePath
 
-    init(dbPath: String, rowId: String, onTitleChange: @escaping (String) -> Void) {
+    init(dbPath: String, rowId: String, onTitleChange: @escaping (String) -> Void, fullWidth: Bool = false) {
         self.dbPath = dbPath
         self.rowId = rowId
         self.onTitleChange = onTitleChange
+        self.fullWidth = fullWidth
         _vm = State(initialValue: DatabaseRowViewModel(dbPath: dbPath, origin: "rowFullPage"))
     }
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             if let error = vm.error {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
@@ -32,7 +35,7 @@ struct DatabaseRowFullPageView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if vm.schema != nil, vm.row != nil {
-                vm.rowPageView()
+                vm.rowPageView(fullWidth: fullWidth, workspacePath: workspacePath)
             } else {
                 ProgressView("Loading row...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

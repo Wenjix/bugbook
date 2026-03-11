@@ -624,7 +624,6 @@ struct DatabaseFullPageView: View {
                     )
                     .frame(minWidth: geo.size.width, alignment: .leading)
                     .fixedSize(horizontal: true, vertical: true)
-                    .padding(.leading, -TableView.rowControlsInset)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -14,6 +14,8 @@ final class DatabaseRowViewModel {
     private let dbService = DatabaseService()
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var isLoadInFlight = false
+    @ObservationIgnored private var pendingRowIdForReload: String?
     @ObservationIgnored private(set) var didEdit = false
     @ObservationIgnored private var deletedRowIds: Set<String> = []
     @ObservationIgnored private var deletionObserver: NSObjectProtocol?
@@ -47,12 +49,18 @@ final class DatabaseRowViewModel {
     }
 
     func loadData(rowId: String) {
-        loadTask?.cancel()
+        if isLoadInFlight {
+            pendingRowIdForReload = rowId
+            return
+        }
+
         error = nil
+        isLoadInFlight = true
 
         let path = dbPath
         let service = dbService
-        loadTask = Task {
+        loadTask = Task { [weak self] in
+            guard let self else { return }
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
                 do {
                     return .success(try service.loadDatabase(at: path))
@@ -60,6 +68,11 @@ final class DatabaseRowViewModel {
                     return .failure(error)
                 }
             }.value
+
+            defer {
+                loadTask = nil
+                isLoadInFlight = false
+            }
 
             guard !Task.isCancelled else { return }
 
@@ -75,6 +88,11 @@ final class DatabaseRowViewModel {
                 row = loadedRow
             case .failure(let err):
                 error = err.localizedDescription
+            }
+
+            if let pendingRowIdForReload {
+                self.pendingRowIdForReload = nil
+                loadData(rowId: pendingRowIdForReload)
             }
         }
     }
@@ -98,6 +116,10 @@ final class DatabaseRowViewModel {
 
     func flushAndCancel() {
         saveTask?.cancel()
+        loadTask?.cancel()
+        loadTask = nil
+        isLoadInFlight = false
+        pendingRowIdForReload = nil
         if let currentRow = row, let currentSchema = schema,
            !deletedRowIds.contains(currentRow.id) {
             try? dbService.saveRow(currentRow, schema: currentSchema, at: dbPath)

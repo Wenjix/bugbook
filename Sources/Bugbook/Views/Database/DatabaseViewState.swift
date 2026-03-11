@@ -19,6 +19,8 @@ final class DatabaseViewState {
     @ObservationIgnored private var pendingRowSaves: [String: DatabaseRow] = [:]
     @ObservationIgnored private var deletedRowIds: Set<String> = []
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var isLoadInFlight = false
+    @ObservationIgnored private var reloadRequestedWhileLoading = false
 
     var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
@@ -60,12 +62,18 @@ final class DatabaseViewState {
     // MARK: - Data Loading
 
     func loadData(onLoaded: (() -> Void)? = nil) {
-        loadTask?.cancel()
+        if isLoadInFlight {
+            reloadRequestedWhileLoading = true
+            return
+        }
+
         error = nil
+        isLoadInFlight = true
 
         let path = dbPath
         let service = dbService
-        loadTask = Task {
+        loadTask = Task { [weak self] in
+            guard let self else { return }
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(DatabaseSchema, [DatabaseRow]), Error> in
                 do {
                     return .success(try service.loadDatabase(at: path))
@@ -73,6 +81,11 @@ final class DatabaseViewState {
                     return .failure(error)
                 }
             }.value
+
+            defer {
+                loadTask = nil
+                isLoadInFlight = false
+            }
 
             guard !Task.isCancelled else { return }
 
@@ -84,12 +97,17 @@ final class DatabaseViewState {
                 if editingTitle.isEmpty || editingTitle != loadedSchema.name {
                     editingTitle = loadedSchema.name
                 }
-                if activeViewId.isEmpty || !loadedSchema.views.contains(where: { $0.id == activeViewId }) {
-                    activeViewId = loadedSchema.defaultView
+                if activeViewId.isEmpty || !loadedSchema.views.contains(where: { $0.id == self.activeViewId }) {
+                    self.activeViewId = loadedSchema.defaultView
                 }
                 onLoaded?()
             case .failure(let error):
                 self.error = error.localizedDescription
+            }
+
+            if reloadRequestedWhileLoading {
+                reloadRequestedWhileLoading = false
+                loadData()
             }
         }
     }
@@ -588,6 +606,8 @@ final class DatabaseViewState {
         rowSaveTask = nil
         loadTask?.cancel()
         loadTask = nil
+        isLoadInFlight = false
+        reloadRequestedWhileLoading = false
         flushPendingRowSavesSynchronously()
     }
 
