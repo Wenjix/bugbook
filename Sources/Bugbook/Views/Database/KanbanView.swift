@@ -2,6 +2,8 @@ import SwiftUI
 import BugbookCore
 
 struct KanbanView: View {
+    private static let coordinateSpaceName = "kanban"
+
     let schema: DatabaseSchema
     @Binding var rows: [DatabaseRow]
     let viewConfig: ViewConfig
@@ -10,6 +12,8 @@ struct KanbanView: View {
     var onUpdateGroupBy: ((String) -> Void)?
     var onAddSelectOption: ((String, SelectOption) -> Void)?
     var onDelete: ((DatabaseRow) -> Void)?
+    var onReorderRows: ((String, String?) -> Void)?
+    var onClearSorts: (() -> Void)?
 
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
@@ -18,6 +22,8 @@ struct KanbanView: View {
     @State private var draggingRowId: String? = nil
     @State private var dragLocation: CGPoint = .zero
     @State private var dragTargetColumn: String? = nil
+    @State private var cardFrames: [String: CGRect] = [:]
+    @State private var reorderTarget: KanbanReorderTarget?
 
     private var selectProperties: [PropertyDefinition] {
         schema.properties.filter { $0.type == .select }
@@ -35,6 +41,22 @@ struct KanbanView: View {
         var cols: [(id: String, name: String, color: String)] = [("__none__", "No \(prop.name)", "gray")]
         if let options = prop.options {
             cols += options.map { ($0.id, $0.name, $0.color) }
+        }
+        // Hide columns excluded by filters on the group property
+        let groupFilters = viewConfig.filters.filter { $0.property == prop.id }
+        for filter in groupFilters {
+            switch filter.op {
+            case "equals":
+                cols = cols.filter { $0.id == filter.value || $0.id == "__none__" }
+            case "not_equals":
+                cols = cols.filter { $0.id != filter.value }
+            case "is_empty":
+                cols = [("__none__", "No \(prop.name)", "gray")]
+            case "is_not_empty":
+                cols = cols.filter { $0.id != "__none__" }
+            default:
+                break
+            }
         }
         return cols
     }
@@ -101,7 +123,8 @@ struct KanbanView: View {
                         }
                     }
                     .padding(12)
-                    .coordinateSpace(name: "kanban")
+                    .coordinateSpace(name: Self.coordinateSpaceName)
+                    .onPreferenceChange(KanbanCardFramePreferenceKey.self) { cardFrames = $0 }
                     .overlay {
                         if let dragId = draggingRowId,
                            let row = rows.first(where: { $0.id == dragId }) {
@@ -231,20 +254,12 @@ struct KanbanView: View {
                         kanbanCard(row, title: title, columnColor: columnColor)
                             .opacity(draggingRowId == row.id ? 0.2 : 1)
                             .gesture(
-                                DragGesture(coordinateSpace: .named("kanban"))
+                                DragGesture(coordinateSpace: .named(Self.coordinateSpaceName))
                                     .onChanged { value in
-                                        if draggingRowId == nil { draggingRowId = row.id }
-                                        dragLocation = value.location
-                                        let colIndex = Int(value.location.x / (columnWidth + 12))
-                                        let clampedIndex = max(0, min(colIndex, columns.count - 1))
-                                        dragTargetColumn = columns[clampedIndex].id
+                                        updateDrag(for: row, at: value.location)
                                     }
                                     .onEnded { value in
-                                        if let targetCol = dragTargetColumn {
-                                            moveCard(row.id, toColumn: targetCol)
-                                        }
-                                        draggingRowId = nil
-                                        dragTargetColumn = nil
+                                        endDrag(for: row, at: value.location)
                                     }
                             )
                     }
@@ -345,9 +360,119 @@ struct KanbanView: View {
                 }
             }
             .padding(.horizontal, 6)
+            .overlay(alignment: .topLeading) {
+                if showsInsertionIndicator(for: row.id, placement: .before) {
+                    kanbanInsertionIndicator
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if showsInsertionIndicator(for: row.id, placement: .after) {
+                    kanbanInsertionIndicator
+                }
+            }
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: KanbanCardFramePreferenceKey.self,
+                        value: [row.id: proxy.frame(in: .named(Self.coordinateSpaceName))]
+                    )
+                }
+            }
     }
 
     // MARK: - Helpers
+
+    private var kanbanInsertionIndicator: some View {
+        Rectangle()
+            .fill(Color.accentColor.opacity(0.9))
+            .frame(height: 2)
+            .padding(.horizontal, 6)
+    }
+
+    private func showsInsertionIndicator(for rowId: String, placement: KanbanReorderPlacement) -> Bool {
+        reorderTarget?.rowId == rowId && reorderTarget?.placement == placement
+    }
+
+    private func updateDrag(for row: DatabaseRow, at location: CGPoint) {
+        if draggingRowId == nil {
+            draggingRowId = row.id
+            if !viewConfig.sorts.isEmpty {
+                onClearSorts?()
+            }
+        }
+        dragLocation = location
+        dragTargetColumn = targetColumnId(at: location)
+        reorderTarget = reorderTarget(for: location)
+    }
+
+    private func endDrag(for row: DatabaseRow, at location: CGPoint) {
+        dragLocation = location
+        let target = reorderTarget(for: location)
+        let targetColumn = targetColumnId(at: location)
+        draggingRowId = nil
+        dragTargetColumn = nil
+        reorderTarget = nil
+
+        if let targetColumn {
+            moveCard(row.id, toColumn: targetColumn)
+        }
+        guard let target else { return }
+        onReorderRows?(row.id, beforeId(for: target))
+    }
+
+    private func targetColumnId(at location: CGPoint) -> String? {
+        guard !columns.isEmpty else { return nil }
+        let columnWidth: CGFloat = 250
+        let colIndex = Int(location.x / (columnWidth + 12))
+        let clampedIndex = max(0, min(colIndex, columns.count - 1))
+        return columns[clampedIndex].id
+    }
+
+    private func reorderTarget(for location: CGPoint) -> KanbanReorderTarget? {
+        guard let columnId = targetColumnId(at: location) else { return nil }
+        let columnRowIds = rowsForColumn(columnId)
+            .map(\.id)
+            .filter { $0 != draggingRowId }
+
+        guard let firstId = columnRowIds.first else {
+            return nil
+        }
+
+        for rowId in columnRowIds {
+            guard let frame = cardFrames[rowId] else { continue }
+            if location.y < frame.minY {
+                return KanbanReorderTarget(columnId: columnId, rowId: rowId, placement: .before)
+            }
+            if location.y <= frame.maxY {
+                let placement: KanbanReorderPlacement = location.y < frame.midY ? .before : .after
+                return KanbanReorderTarget(columnId: columnId, rowId: rowId, placement: placement)
+            }
+        }
+
+        if let firstFrame = cardFrames[firstId], location.y < firstFrame.minY {
+            return KanbanReorderTarget(columnId: columnId, rowId: firstId, placement: .before)
+        }
+        if let lastId = columnRowIds.last {
+            return KanbanReorderTarget(columnId: columnId, rowId: lastId, placement: .after)
+        }
+        return nil
+    }
+
+    private func beforeId(for target: KanbanReorderTarget) -> String? {
+        switch target.placement {
+        case .before:
+            return target.rowId
+        case .after:
+            guard let rowId = target.rowId else { return nil }
+            return nextVisibleRowId(after: rowId)
+        }
+    }
+
+    private func nextVisibleRowId(after rowId: String) -> String? {
+        guard let index = rows.firstIndex(where: { $0.id == rowId }),
+              rows.indices.contains(index + 1) else { return nil }
+        return rows[index + 1].id
+    }
 
     private func colorForName(_ name: String) -> Color {
         switch name {
@@ -361,5 +486,24 @@ struct KanbanView: View {
         case "teal": return .teal
         default: return .gray
         }
+    }
+}
+
+private enum KanbanReorderPlacement {
+    case before
+    case after
+}
+
+private struct KanbanReorderTarget {
+    let columnId: String
+    let rowId: String?
+    let placement: KanbanReorderPlacement
+}
+
+private struct KanbanCardFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

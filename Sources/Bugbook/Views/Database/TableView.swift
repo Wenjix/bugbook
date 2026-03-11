@@ -2,7 +2,8 @@ import SwiftUI
 import BugbookCore
 
 struct TableView: View {
-    static let rowControlsInset: CGFloat = 46
+    static let rowControlsInset: CGFloat = 52
+    private static let reorderCoordinateSpace = "table-reorder"
 
     let schema: DatabaseSchema
     @Binding var rows: [DatabaseRow]
@@ -23,6 +24,7 @@ struct TableView: View {
     var onSetRelationTarget: ((String, String) -> Void)?
     var onResizeColumn: ((String, CGFloat) -> Void)?
     var onReorderRows: ((String, String?) -> Void)?
+    var onClearSorts: (() -> Void)?
     var onNewRow: (() -> Void)?
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
@@ -34,10 +36,15 @@ struct TableView: View {
     @State private var selectedRowIds: Set<String> = []
     @State private var lastSelectedRowId: String? = nil
     @State private var didInitialScroll = false
+    @State private var displayedRowCount: Int = 20
+    @State private var draggingRowId: String? = nil
+    @State private var dragLocation: CGPoint = .zero
+    @State private var rowFrames: [String: CGRect] = [:]
+    @State private var reorderTarget: TableReorderTarget?
 
     private let titleColumnKey = "__title__"
     private let topAnchorKey = "__table_top__"
-    private let rowHandleWidth: CGFloat = 12
+    private let rowHandleWidth: CGFloat = 20
     private let checkboxWidth: CGFloat = 18
     private let rowControlsSpacing: CGFloat = 6
 
@@ -58,32 +65,36 @@ struct TableView: View {
         viewConfig.sorts.isEmpty
     }
 
+    private var draggingRow: DatabaseRow? {
+        guard let draggingRowId else { return nil }
+        return rows.first(where: { $0.id == draggingRowId })
+    }
+
+    private var visibleRowIds: [String] {
+        Array(rows.prefix(min(displayedRowCount, rows.count)).map(\.id))
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if rows.count >= 2000 {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle")
-                    Text("Large dataset (\(rows.count) rows). Performance may be affected.")
-                    Spacer()
-                }
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.orange.opacity(0.08))
-            }
-
-            // Header
-            headerRow
-            tableDivider
-
-            // Selection toolbar
-            if !selectedRowIds.isEmpty {
-                selectionBar
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
+                headerRow
                 tableDivider
+
+                // Selection toolbar
+                if !selectedRowIds.isEmpty {
+                    selectionBar
+                    tableDivider
+                }
+
+                rowsRegion
             }
 
-            rowsRegion
+            if let draggingRow {
+                dragPreview(for: draggingRow)
+                    .position(dragLocation)
+                    .allowsHitTesting(false)
+            }
         }
         .frame(
             maxWidth: .infinity,
@@ -92,15 +103,14 @@ struct TableView: View {
         )
         .fixedSize(horizontal: !usesInnerScroll, vertical: !usesInnerScroll)
         .databasePointerCursor()
+        .coordinateSpace(name: Self.reorderCoordinateSpace)
+        .onPreferenceChange(TableRowFramePreferenceKey.self) { rowFrames = $0 }
     }
 
     // MARK: - Selection Bar
 
     private var selectionBar: some View {
         HStack(spacing: 0) {
-            Color.clear
-                .frame(width: Self.rowControlsInset)
-
             HStack(spacing: 16) {
                 Text("\(selectedRowIds.count) selected")
                     .font(.callout)
@@ -252,11 +262,12 @@ struct TableView: View {
         HoverRow { isHovered in
             HStack(alignment: .center, spacing: 0) {
                 rowControls(for: row.wrappedValue, isHovered: isHovered)
-                    .frame(width: Self.rowControlsInset)
+                    .frame(width: Self.rowControlsInset, alignment: .trailing)
 
                 HStack(alignment: .top, spacing: 0) {
                     titleCell(row, isHovered: isHovered)
                         .padding(.horizontal, 8)
+                        .padding(.vertical, 14)
                         .frame(width: titleColumnWidth, alignment: .leading)
                         .contentShape(Rectangle())
                         .databasePointerCursor()
@@ -275,24 +286,35 @@ struct TableView: View {
                             onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil
                         )
                         .padding(.horizontal, 8)
+                        .padding(.vertical, 14)
                         .frame(width: columnWidth(for: prop), alignment: .leading)
                         .contentShape(Rectangle())
                         .databasePointerCursor()
                     }
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
                         .fill(isHovered ? Color.primary.opacity(0.04) : Color.clear)
                 )
                 .overlay { columnDividers().allowsHitTesting(false) }
-                .dropDestination(for: String.self) { droppedIds, _ in
-                    guard canReorderRows,
-                          let draggedId = droppedIds.first,
-                          draggedId != row.wrappedValue.id else { return false }
-                    onReorderRows?(draggedId, row.wrappedValue.id)
-                    return true
+            }
+            .overlay(alignment: .topLeading) {
+                if showsInsertionIndicator(for: row.wrappedValue.id, placement: .before) {
+                    insertionIndicator
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if showsInsertionIndicator(for: row.wrappedValue.id, placement: .after) {
+                    insertionIndicator
+                }
+            }
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: TableRowFramePreferenceKey.self,
+                        value: [row.wrappedValue.id: proxy.frame(in: .named(Self.reorderCoordinateSpace))]
+                    )
                 }
             }
         }
@@ -367,7 +389,6 @@ struct TableView: View {
                             Image(systemName: "plus")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.primary.opacity(0.25))
-                                .padding(.trailing, 8)
                         }
                     }
 
@@ -462,24 +483,40 @@ struct TableView: View {
     }
 
     private var rowsStack: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        let totalCount = rows.count
+        let visibleCount = min(displayedRowCount, totalCount)
+
+        return LazyVStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .frame(height: 0)
                 .id(topAnchorKey)
 
-            ForEach($rows) { $row in
+            ForEach($rows.prefix(visibleCount)) { $row in
                 dataRow($row)
                     .id($row.wrappedValue.id)
                 tableDivider.opacity(0.5)
             }
 
+            if visibleCount < totalCount {
+                Button {
+                    displayedRowCount += 20
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 11))
+                        Text("Load more (\(totalCount - visibleCount) remaining)")
+                            .font(.callout)
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+            }
+
             ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
                 phantomRow(isFirst: rows.isEmpty && i == 0)
                 tableDivider.opacity(0.5)
-            }
-
-            if canReorderRows && !rows.isEmpty {
-                tailDropTarget
             }
         }
     }
@@ -504,20 +541,17 @@ struct TableView: View {
 
     private var tableDivider: some View {
         Divider()
-            .padding(.leading, Self.rowControlsInset + 8)
+            .padding(.leading, 8)
     }
 
     private func rowControls(for row: DatabaseRow, isHovered: Bool) -> some View {
         HStack(spacing: rowControlsSpacing) {
-            if canReorderRows {
-                dragHandle(for: row, isHovered: isHovered)
-                    .frame(width: rowHandleWidth, height: 18)
-            }
+            dragHandle(for: row, isHovered: isHovered)
+                .frame(width: rowHandleWidth, height: 18)
 
             checkbox(for: row.id, isHovered: isHovered)
                 .frame(width: checkboxWidth, height: 18)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.trailing, 6)
     }
 
@@ -542,34 +576,23 @@ struct TableView: View {
     }
 
     private func dragHandle(for row: DatabaseRow, isHovered: Bool) -> some View {
-        RowDragHandleDots()
-            .foregroundStyle(Color.secondary.opacity(isHovered ? 0.8 : 0.35))
-            .help("Drag to reorder row")
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.openHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .draggable(row.id) {
-                Text(row.title(schema: schema))
-                    .font(.callout)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial)
-                    .clipShape(.rect(cornerRadius: 6))
-            }
-    }
+        let isVisible = isHovered || selectedRowIds.contains(row.id) || draggingRowId == row.id
 
-    private var tailDropTarget: some View {
-        Color.clear
-            .frame(height: 20)
-            .dropDestination(for: String.self) { droppedIds, _ in
-                guard let draggedId = droppedIds.first else { return false }
-                onReorderRows?(draggedId, nil)
-                return true
-            }
+        return RowDragHandleDots()
+            .foregroundStyle(Color.secondary.opacity(isVisible ? 0.8 : 0))
+            .contentShape(Rectangle())
+            .allowsHitTesting(isVisible)
+            .help(canReorderRows ? "Drag to reorder row" : "Drag to reorder (will clear sort)")
+            .appCursor(draggingRowId == row.id ? .closedHand : .openHand)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.reorderCoordinateSpace))
+                    .onChanged { value in
+                        beginRowDrag(row, at: value.location)
+                    }
+                    .onEnded { value in
+                        endRowDrag(for: row, at: value.location)
+                    }
+            )
     }
 
     private func toggleSelection(for rowId: String) {
@@ -604,7 +627,6 @@ struct TableView: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
-                .cursor(.pointingHand)
         } else {
             TextField("New Page", text: text)
                 .textFieldStyle(.plain)
@@ -613,8 +635,92 @@ struct TableView: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
-                .cursor(.pointingHand)
         }
+    }
+
+    private var insertionIndicator: some View {
+        Rectangle()
+            .fill(Color.accentColor.opacity(0.9))
+            .frame(height: 2)
+    }
+
+    private func showsInsertionIndicator(for rowId: String, placement: TableReorderPlacement) -> Bool {
+        reorderTarget?.rowId == rowId && reorderTarget?.placement == placement
+    }
+
+    private func dragPreview(for row: DatabaseRow) -> some View {
+        Text(row.title(schema: schema).isEmpty ? "Untitled" : row.title(schema: schema))
+            .font(.callout)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
+            .clipShape(.rect(cornerRadius: 6))
+            .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+    }
+
+    private func beginRowDrag(_ row: DatabaseRow, at location: CGPoint) {
+        if draggingRowId == nil {
+            draggingRowId = row.id
+            if !canReorderRows {
+                onClearSorts?()
+            }
+        }
+        dragLocation = location
+        reorderTarget = reorderTarget(for: location)
+    }
+
+    private func endRowDrag(for row: DatabaseRow, at location: CGPoint) {
+        dragLocation = location
+        let target = reorderTarget(for: location)
+        draggingRowId = nil
+        reorderTarget = nil
+
+        guard let target else { return }
+        guard !(target.rowId == row.id && target.placement == .before) else { return }
+
+        let beforeId = insertionTargetId(for: row.id, target: target)
+        onReorderRows?(row.id, beforeId)
+    }
+
+    private func reorderTarget(for location: CGPoint) -> TableReorderTarget? {
+        let candidateIds = visibleRowIds
+        guard let firstId = candidateIds.first,
+              let lastId = candidateIds.last else { return nil }
+
+        for rowId in candidateIds {
+            guard let frame = rowFrames[rowId] else { continue }
+            if location.y < frame.minY {
+                return TableReorderTarget(rowId: rowId, placement: .before)
+            }
+            if location.y <= frame.maxY {
+                let placement: TableReorderPlacement = location.y < frame.midY ? .before : .after
+                return TableReorderTarget(rowId: rowId, placement: placement)
+            }
+        }
+
+        if let firstFrame = rowFrames[firstId], location.y < firstFrame.minY {
+            return TableReorderTarget(rowId: firstId, placement: .before)
+        }
+        if let lastFrame = rowFrames[lastId], location.y >= lastFrame.maxY {
+            return TableReorderTarget(rowId: lastId, placement: .after)
+        }
+        return nil
+    }
+
+    private func insertionTargetId(for draggedId: String, target: TableReorderTarget) -> String? {
+        switch target.placement {
+        case .before:
+            return target.rowId
+        case .after:
+            return nextRowId(after: target.rowId)
+        }
+    }
+
+    private func nextRowId(after rowId: String) -> String? {
+        guard let index = rows.firstIndex(where: { $0.id == rowId }),
+              rows.indices.contains(index + 1) else { return nil }
+        return rows[index + 1].id
     }
 
 }
@@ -638,24 +744,26 @@ private struct HoverRow<Content: View>: View {
 
 private struct RowDragHandleDots: View {
     var body: some View {
-        HStack(spacing: 2) {
-            VStack(spacing: 2) {
-                dot
-                dot
-                dot
-            }
-            VStack(spacing: 2) {
-                dot
-                dot
-                dot
-            }
-        }
-        .frame(width: 10, height: 14)
+        GripDotsView()
+            .frame(width: 20, height: 24)
     }
+}
 
-    private var dot: some View {
-        Circle()
-            .frame(width: 2, height: 2)
+private enum TableReorderPlacement {
+    case before
+    case after
+}
+
+private struct TableReorderTarget {
+    let rowId: String
+    let placement: TableReorderPlacement
+}
+
+private struct TableRowFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 
@@ -689,14 +797,14 @@ private struct ColumnHeaderCell: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { inside in
             isHovered = inside
-            if inside { NSCursor.pointingHand.push() }
-            else { NSCursor.pop() }
         }
         .floatingPopover(isPresented: $showPopover, arrowEdge: .bottom) {
             popoverContent

@@ -33,6 +33,10 @@ struct DatabaseInlineEmbedView: View {
         state.filteredAndSortedRows(extraFilter: searchFilter)
     }
 
+    private var tableLeadingInset: CGFloat {
+        (state.activeView?.type ?? .table) == .table ? TableView.rowControlsInset : 0
+    }
+
     private var searchFilter: ((DatabaseRow) -> Bool)? {
         guard !searchText.isEmpty, let schema = state.schema else { return nil }
         let titlePropId = schema.properties.first(where: { $0.type == .title })?.id ?? ""
@@ -211,7 +215,8 @@ struct DatabaseInlineEmbedView: View {
                 settingsPopover(schema: schema)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12 + tableLeadingInset)
+        .padding(.trailing, 12)
         .padding(.top, 8)
         .padding(.bottom, 4)
         .onHover { hovering in
@@ -251,7 +256,8 @@ struct DatabaseInlineEmbedView: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12 + tableLeadingInset)
+        .padding(.trailing, 12)
         .padding(.vertical, 4)
     }
 
@@ -557,14 +563,15 @@ struct DatabaseInlineEmbedView: View {
                     ("not_contains", "doesn't contain"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         case .number:
             return [("equals", "="), ("not_equals", "\u{2260}"), ("greater_than", ">"), ("less_than", "<"),
+                    ("greater_than_or_equal", "\u{2265}"), ("less_than_or_equal", "\u{2264}"),
                     ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         case .select, .multiSelect:
             return [("equals", "is"), ("not_equals", "is not"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         case .date:
-            return [("equals", "is"), ("greater_than", "after"), ("less_than", "before"),
+            return [("equals", "is"), ("greater_than", "is after"), ("less_than", "is before"),
                     ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         case .checkbox:
-            return [("equals", "is")]
+            return [("is_checked", "is checked"), ("is_not_checked", "is not checked")]
         case .relation:
             return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         }
@@ -578,6 +585,10 @@ struct DatabaseInlineEmbedView: View {
         case "not_contains": return "doesn't contain"
         case "greater_than": return ">"
         case "less_than": return "<"
+        case "greater_than_or_equal": return "\u{2265}"
+        case "less_than_or_equal": return "\u{2264}"
+        case "is_checked": return "is checked"
+        case "is_not_checked": return "is not checked"
         case "is_empty": return "is empty"
         case "is_not_empty": return "is not empty"
         default: return op
@@ -585,7 +596,7 @@ struct DatabaseInlineEmbedView: View {
     }
 
     private func opNeedsValue(_ op: String) -> Bool {
-        op != "is_empty" && op != "is_not_empty"
+        op != "is_empty" && op != "is_not_empty" && op != "is_checked" && op != "is_not_checked"
     }
 
     // MARK: - View Content
@@ -636,6 +647,7 @@ struct DatabaseInlineEmbedView: View {
                     onReorderRows: { draggedId, targetId in
                         state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
                     },
+                    onClearSorts: { state.clearSorts() },
                     onNewRow: { addNewRow() },
                     scrollToRowId: newRowScrollId,
                     usesInnerScroll: false
@@ -652,7 +664,11 @@ struct DatabaseInlineEmbedView: View {
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
                 onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
-                onDelete: { row in state.deleteRow(row) }
+                onDelete: { row in state.deleteRow(row) },
+                onReorderRows: { draggedId, targetId in
+                    state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
+                },
+                onClearSorts: { state.clearSorts() }
             )
             .frame(height: 360)
         case .list:
