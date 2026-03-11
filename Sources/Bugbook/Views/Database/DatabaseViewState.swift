@@ -79,7 +79,8 @@ final class DatabaseViewState {
             switch result {
             case .success(let (loadedSchema, loadedRows)):
                 schema = loadedSchema
-                rows = loadedRows
+                let deleted = deletedRowIds
+                rows = deleted.isEmpty ? loadedRows : loadedRows.filter { !deleted.contains($0.id) }
                 if editingTitle.isEmpty || editingTitle != loadedSchema.name {
                     editingTitle = loadedSchema.name
                 }
@@ -151,6 +152,12 @@ final class DatabaseViewState {
         // Synchronous to prevent race with loadData reintroducing deleted rows
         try? dbService.deleteRow(row.id, in: dbPath)
         try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+        // Notify all views so stale saves for this row are cancelled
+        NotificationCenter.default.post(
+            name: .databaseRowDeleted,
+            object: nil,
+            userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.rowId: row.id]
+        )
         postChangeNotification()
     }
 

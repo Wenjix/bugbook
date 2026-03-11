@@ -9,6 +9,19 @@ struct ShortcutsSettingsView: View {
                 shortcutRow("Select All (block → page)", "Cmd + A")
             }
 
+            SettingsSection("Block Type") {
+                shortcutRow("Text", "Cmd + Opt + 0")
+                shortcutRow("Heading 1", "Cmd + Opt + 1")
+                shortcutRow("Heading 2", "Cmd + Opt + 2")
+                shortcutRow("Heading 3", "Cmd + Opt + 3")
+                shortcutRow("To-do", "Cmd + Opt + 4")
+                shortcutRow("Bullet List", "Cmd + Opt + 5")
+                shortcutRow("Numbered List", "Cmd + Opt + 6")
+                shortcutRow("Toggle", "Cmd + Opt + 7")
+                shortcutRow("Code Block", "Cmd + Opt + 8")
+                shortcutRow("Create Page", "Cmd + Opt + 9")
+            }
+
             SettingsSection("Navigation") {
                 shortcutRow("Quick Open", "Cmd + K / Cmd + P")
                 shortcutRow("Toggle Sidebar", "Cmd + .")

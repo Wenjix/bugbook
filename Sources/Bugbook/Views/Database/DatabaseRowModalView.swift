@@ -9,6 +9,7 @@ struct DatabaseRowModalView: View {
     var onOpenFullPage: () -> Void
 
     @State private var vm: DatabaseRowViewModel
+    @Environment(\.workspacePath) private var workspacePath
 
     init(dbPath: String, rowId: String, autoFocusTitle: Bool = false, onClose: @escaping () -> Void, onOpenFullPage: @escaping () -> Void) {
         self.dbPath = dbPath
@@ -64,7 +65,7 @@ struct DatabaseRowModalView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(24)
             } else if vm.schema != nil, vm.row != nil {
-                vm.rowPageView(onBack: { onClose() }, autoFocusTitle: autoFocusTitle)
+                vm.rowPageView(onBack: { onClose() }, autoFocusTitle: autoFocusTitle, workspacePath: workspacePath)
             } else {
                 VStack {
                     Spacer()

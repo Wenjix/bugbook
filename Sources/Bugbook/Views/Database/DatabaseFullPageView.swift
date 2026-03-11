@@ -6,6 +6,7 @@ extension Notification.Name {
     static let databaseNameDidChange = Notification.Name("databaseNameDidChange")
     static let inlineDatabaseRowPeek = Notification.Name("inlineDatabaseRowPeek")
     static let databaseRowModalRequested = Notification.Name("databaseRowModalRequested")
+    static let databaseRowDeleted = Notification.Name("databaseRowDeleted")
 }
 
 enum DatabaseNotificationKey {

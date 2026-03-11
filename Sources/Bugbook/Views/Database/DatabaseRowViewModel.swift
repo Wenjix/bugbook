@@ -15,10 +15,35 @@ final class DatabaseRowViewModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private(set) var didEdit = false
+    @ObservationIgnored private var deletedRowIds: Set<String> = []
+    @ObservationIgnored private var deletionObserver: NSObjectProtocol?
 
     init(dbPath: String, origin: String) {
         self.dbPath = dbPath
         self.origin = origin
+        // Listen for row deletions to cancel stale saves
+        deletionObserver = NotificationCenter.default.addObserver(
+            forName: .databaseRowDeleted,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let deletedPath = notification.userInfo?[DatabaseNotificationKey.dbPath] as? String,
+                  let rowId = notification.userInfo?[DatabaseNotificationKey.rowId] as? String else { return }
+            MainActor.assumeIsolated {
+                guard let self, deletedPath == self.dbPath else { return }
+                self.deletedRowIds.insert(rowId)
+                if self.row?.id == rowId {
+                    self.saveTask?.cancel()
+                    self.saveTask = nil
+                }
+            }
+        }
+    }
+
+    deinit {
+        if let deletionObserver {
+            NotificationCenter.default.removeObserver(deletionObserver)
+        }
     }
 
     func loadData(rowId: String) {
@@ -55,12 +80,13 @@ final class DatabaseRowViewModel {
     }
 
     func debouncedSave(_ row: DatabaseRow, schema: DatabaseSchema) {
+        guard !deletedRowIds.contains(row.id) else { return }
         self.row = row
         didEdit = true
         saveTask?.cancel()
         saveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !deletedRowIds.contains(row.id) else { return }
             try? dbService.saveRow(row, schema: schema, at: dbPath)
             NotificationCenter.default.post(
                 name: .databaseDidChange,
@@ -72,7 +98,8 @@ final class DatabaseRowViewModel {
 
     func flushAndCancel() {
         saveTask?.cancel()
-        if let currentRow = row, let currentSchema = schema {
+        if let currentRow = row, let currentSchema = schema,
+           !deletedRowIds.contains(currentRow.id) {
             try? dbService.saveRow(currentRow, schema: currentSchema, at: dbPath)
         }
     }
@@ -177,9 +204,23 @@ final class DatabaseRowViewModel {
         }
     }
 
-    func listAvailableDatabases() -> [RelationDatabaseCandidate] {
+    func rowFilePath(rowId: String) -> String? {
+        let suffix = rowId.hasPrefix("row_") ? String(rowId.dropFirst(4)) : rowId
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: dbPath) else { return nil }
+        for name in contents where name.hasSuffix(".md") && name.contains("(\(suffix))") {
+            return (dbPath as NSString).appendingPathComponent(name)
+        }
+        return nil
+    }
+
+    func listAvailableDatabases(workspacePath: String? = nil) -> [RelationDatabaseCandidate] {
         let store = DatabaseStore()
-        let searchRoot = (dbPath as NSString).deletingLastPathComponent
+        let searchRoot: String
+        if let workspace = workspacePath, !workspace.isEmpty {
+            searchRoot = workspace
+        } else {
+            searchRoot = (dbPath as NSString).deletingLastPathComponent
+        }
         return store.listDatabases(in: searchRoot)
             .filter { $0.path != dbPath }
             .map { RelationDatabaseCandidate(id: $0.id, name: $0.name, path: $0.path) }
@@ -204,12 +245,24 @@ final class DatabaseRowViewModel {
     func deleteRow(_ rowId: String) {
         saveTask?.cancel()
         saveTask = nil
+        deletedRowIds.insert(rowId)
         try? dbService.deleteRow(rowId, in: dbPath)
+        // Rebuild the index so the deleted row is no longer referenced
+        if let schema = schema {
+            let (_, remainingRows) = (try? dbService.loadDatabase(at: dbPath)) ?? (schema, [])
+            try? dbService.updateIndex(rows: remainingRows, schema: schema, at: dbPath)
+        }
+        // Notify all views so stale saves for this row are cancelled
+        NotificationCenter.default.post(
+            name: .databaseRowDeleted,
+            object: nil,
+            userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.rowId: rowId]
+        )
         postChangeNotification()
     }
 
     @ViewBuilder
-    func rowPageView(onBack: @escaping () -> Void = {}, autoFocusTitle: Bool = false) -> some View {
+    func rowPageView(onBack: @escaping () -> Void = {}, autoFocusTitle: Bool = false, fullWidth: Bool = false, workspacePath: String? = nil) -> some View {
         if let schema = schema, row != nil {
             RowPageView(
                 schema: schema,
@@ -223,7 +276,7 @@ final class DatabaseRowViewModel {
                 onUpdateOption: { propId, optId, name, color in self.updateOption(propId, optId: optId, name: name, color: color) },
                 onDeleteOption: { propId, optId in self.deleteOption(propId, optId: optId) },
                 onLoadRelationRows: { prop in self.loadRelationRows(for: prop) },
-                onListDatabases: { self.listAvailableDatabases() },
+                onListDatabases: { self.listAvailableDatabases(workspacePath: workspacePath) },
                 onSetRelationTarget: { propId, target in self.setRelationTarget(propId, target: target) },
                 onAddProperty: { type in self.addProperty(type: type) },
                 onRenameProperty: { propId, name in self.renameProperty(propId, to: name) },
@@ -231,6 +284,7 @@ final class DatabaseRowViewModel {
                 onChangePropertyType: { propId, type in self.changePropertyType(propId, to: type) },
                 showBreadcrumb: false,
                 autoFocusTitle: autoFocusTitle,
+                fullWidth: fullWidth,
                 dbPath: dbPath
             )
         }

@@ -624,6 +624,25 @@ struct ContentView: View {
                                 )
 
                                 Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(tab.path, forType: .string)
+                                    showPageOptionsMenu = false
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "doc.on.doc")
+                                            .frame(width: 16)
+                                        Text("Copy file path")
+                                        Spacer()
+                                    }
+                                    .font(.system(size: Typography.bodySmall))
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
                                     appState.movePagePath = tab.path
                                     showPageOptionsMenu = false
                                 } label: {
@@ -742,6 +761,9 @@ struct ContentView: View {
                     rowId: rowId,
                     onTitleChange: { title in
                         updateDatabaseRowTabTitle(tabId: tab.id, title: title)
+                    },
+                    onDelete: {
+                        appState.closeTab(at: appState.activeTabIndex)
                     }
                 )
                 .id(tab.id)
@@ -878,6 +900,8 @@ struct ContentView: View {
             guard FileManager.default.fileExists(atPath: childPath) else { return }
             try? fileSystem.trashFile(at: childPath, workspace: workspace)
             NotificationCenter.default.post(name: .fileDeleted, object: childPath)
+            // Immediately save the parent page so the deleted block doesn't reappear on reload
+            performSave(tabId: tab.id)
             refreshFileTree()
         }
         doc.availablePages = appState.fileTree

@@ -7,7 +7,7 @@ import AppKit
 
 enum Typography {
     /// Editor body text (markdown content)
-    static let content: CGFloat = 16
+    static let content: CGFloat = 17
 
     /// Primary UI text (navigation, card titles, buttons)
     static let body: CGFloat = 14

@@ -18,6 +18,7 @@ struct RowPageView: View {
     var onChangePropertyType: ((String, PropertyType) -> Void)?
     var showBreadcrumb: Bool = true
     var autoFocusTitle: Bool = false
+    var fullWidth: Bool = false
     var dbPath: String = ""
 
     @Environment(\.workspacePath) private var workspacePath
@@ -136,8 +137,8 @@ struct RowPageView: View {
                         )
                     }
                 }
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(maxWidth: fullWidth ? .infinity : 720)
+                .frame(maxWidth: .infinity, alignment: fullWidth ? .leading : .center)
             }
         }
         .task {
@@ -165,6 +166,22 @@ struct RowPageView: View {
         } else if !dbPath.isEmpty {
             // Fall back to deriving workspace from dbPath (parent directory)
             doc.workspacePath = (dbPath as NSString).deletingLastPathComponent
+        }
+        // Wire up onCreateSubPage so cmd+opt+9 works in peek/modal editors.
+        let pageDir = doc.workspacePath ?? (dbPath as NSString).deletingLastPathComponent
+        doc.onCreateSubPage = { name in
+            let sanitized = name.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
+            let baseName = sanitized.isEmpty ? "Untitled" : sanitized
+            let fm = FileManager.default
+            var fileName = "\(baseName).md"
+            var counter = 2
+            while fm.fileExists(atPath: (pageDir as NSString).appendingPathComponent(fileName)) {
+                fileName = "\(baseName) \(counter).md"
+                counter += 1
+            }
+            let filePath = (pageDir as NSString).appendingPathComponent(fileName)
+            try? "# \(baseName)\n\n".write(toFile: filePath, atomically: true, encoding: .utf8)
+            return fm.fileExists(atPath: filePath) ? filePath : nil
         }
         bodyDocument = doc
     }

@@ -161,7 +161,7 @@ class DatabaseService {
         for name in contents {
             if name.contains("(\(suffix))") && name.hasSuffix(".md") {
                 let filePath = (dbPath as NSString).appendingPathComponent(name)
-                try? fileManager.removeItem(atPath: filePath)
+                try fileManager.removeItem(atPath: filePath)
             }
         }
     }

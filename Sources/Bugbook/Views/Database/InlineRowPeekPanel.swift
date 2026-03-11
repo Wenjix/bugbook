@@ -11,6 +11,7 @@ struct InlineRowPeekPanel: View {
 
     @State private var vm: DatabaseRowViewModel
     @State private var showKebabMenu = false
+    @Environment(\.workspacePath) private var workspacePath
 
     init(dbPath: String, rowId: String, onClose: @escaping () -> Void, onOpenFullPage: @escaping () -> Void) {
         self.dbPath = dbPath
@@ -63,7 +64,7 @@ struct InlineRowPeekPanel: View {
             .padding(.vertical, 8)
 
             if vm.schema != nil, vm.row != nil {
-                vm.rowPageView(onBack: { onClose() })
+                vm.rowPageView(onBack: { onClose() }, workspacePath: workspacePath)
             } else {
                 Spacer()
                 HStack {
@@ -91,6 +92,10 @@ struct InlineRowPeekPanel: View {
             kebabButton(icon: "arrow.up.left.and.arrow.down.right", label: "Open as full page") {
                 showKebabMenu = false
                 onOpenFullPage()
+            }
+            kebabButton(icon: "doc.on.doc", label: "Copy file path") {
+                showKebabMenu = false
+                copyFilePath()
             }
             kebabButton(icon: "trash", label: "Delete", isDestructive: true) {
                 showKebabMenu = false
@@ -120,6 +125,13 @@ struct InlineRowPeekPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func copyFilePath() {
+        if let path = vm.rowFilePath(rowId: rowId) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(path, forType: .string)
+        }
     }
 
     private func deleteCurrentRow() {
