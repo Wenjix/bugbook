@@ -12,6 +12,10 @@ struct CalendarView: View {
     @State private var displayMonth: Date = Date()
     @State private var selectedDatePropertyId: String?
     @State private var morePopoverDate: String? = nil
+    @State private var dragTargetDate: String? = nil
+    @State private var draggingRowId: String? = nil
+    @State private var dragLocation: CGPoint = .zero
+    @State private var dayFrames: [String: CGRect] = [:]
 
     private let calendar = Calendar.current
     private let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -171,11 +175,21 @@ struct CalendarView: View {
             GeometryReader { geo in
                 let numberOfRows = max(1, Int(ceil(Double(daysInMonth.count) / 7.0)))
                 let cellHeight = max(110, (geo.size.height - CGFloat(numberOfRows - 1)) / CGFloat(numberOfRows))
-                LazyVGrid(columns: gridColumns, spacing: 1) {
-                    ForEach(daysInMonth) { cell in
-                        dayCell(cell, height: cellHeight)
+                ZStack(alignment: .topLeading) {
+                    LazyVGrid(columns: gridColumns, spacing: 1) {
+                        ForEach(daysInMonth) { cell in
+                            dayCell(cell, height: cellHeight)
+                        }
+                    }
+
+                    if let draggingRow {
+                        dragPreview(for: draggingRow)
+                            .position(dragLocation)
+                            .allowsHitTesting(false)
                     }
                 }
+                .coordinateSpace(name: "calendar-grid")
+                .onPreferenceChange(CalendarDayFramePreferenceKey.self) { dayFrames = $0 }
             }
         }
         .padding(12)
@@ -242,7 +256,7 @@ struct CalendarView: View {
                                     .foregroundStyle(.secondary)
                                 Divider()
                                 ForEach(dayRows) { row in
-                                    eventPill(row)
+                                    eventPill(row, allowsDragging: false)
                                 }
                             }
                             .padding(8)
@@ -256,32 +270,48 @@ struct CalendarView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .frame(height: height)
             .padding(4)
-            .background(cell.isCurrentMonth ? Color.fallbackCardBg : Color.clear)
-            .overlay(
-                Rectangle()
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(backgroundColor(for: cell))
             )
-            .dropDestination(for: String.self) { droppedIds, _ in
-                guard let prop = dateProperty, cell.isCurrentMonth else { return false }
-                for droppedId in droppedIds {
-                    if let idx = rows.firstIndex(where: { $0.id == droppedId }) {
-                        if case .date(let raw) = rows[idx].properties[prop.id],
-                           let parsed = DatabaseDateValue.decode(from: raw) {
-                            rows[idx].properties[prop.id] = .date(parsed.movingStartDay(to: cell.dateString, calendar: calendar).rawValue)
-                        } else {
-                            rows[idx].properties[prop.id] = .date(cell.dateString)
-                        }
-                        onSave?(rows[idx])
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        dragTargetDate == cell.dateString ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.08),
+                        lineWidth: dragTargetDate == cell.dateString ? 1.5 : 0.5
+                    )
+            )
+            .background {
+                if cell.isCurrentMonth {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(
+                                key: CalendarDayFramePreferenceKey.self,
+                                value: [cell.dateString: proxy.frame(in: .named("calendar-grid"))]
+                            )
                     }
                 }
-                return true
             }
         }
     }
 
-    private func eventPill(_ row: DatabaseRow) -> some View {
+    private func backgroundColor(for cell: DayCell) -> Color {
+        guard cell.isCurrentMonth else { return .clear }
+        if dragTargetDate == cell.dateString {
+            return Color.accentColor.opacity(0.12)
+        }
+        return Color.fallbackCardBg
+    }
+
+    private var draggingRow: DatabaseRow? {
+        guard let draggingRowId else { return nil }
+        return rows.first(where: { $0.id == draggingRowId })
+    }
+
+    private func eventPill(_ row: DatabaseRow, allowsDragging: Bool = true) -> some View {
         let title = row.title(schema: schema)
-        return Text(title.isEmpty ? "Untitled" : title)
+        let pill = Text(title.isEmpty ? "Untitled" : title)
             .font(.caption)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -297,13 +327,84 @@ struct CalendarView: View {
                             .stroke(Color.fallbackBorderColor.opacity(0.9), lineWidth: 1)
                     )
             )
-            .draggable(row.id) {
-                Text(title)
-                    .padding(6)
-                    .background(.ultraThinMaterial)
-                    .clipShape(.rect(cornerRadius: 4))
+            .opacity(draggingRowId == row.id ? 0.25 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: 5))
+
+        return Group {
+            if allowsDragging {
+                pill
+                    .gesture(
+                        DragGesture(minimumDistance: 4, coordinateSpace: .named("calendar-grid"))
+                            .onChanged { value in
+                                beginDragging(row, at: value.location)
+                            }
+                            .onEnded { value in
+                                completeDrag(for: row, at: value.location)
+                            }
+                    )
+                    .onTapGesture {
+                        guard draggingRowId == nil else { return }
+                        onOpenRow(row)
+                    }
+            } else {
+                pill
+                    .onTapGesture { onOpenRow(row) }
             }
-            .simultaneousGesture(TapGesture().onEnded { onOpenRow(row) })
+        }
+    }
+
+    private func dragPreview(for row: DatabaseRow) -> some View {
+        let title = row.title(schema: schema)
+        return Text(title.isEmpty ? "Untitled" : title)
+            .font(.caption)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial)
+            .clipShape(.rect(cornerRadius: 6))
+            .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+    }
+
+    private func beginDragging(_ row: DatabaseRow, at location: CGPoint) {
+        if draggingRowId == nil {
+            draggingRowId = row.id
+        }
+        dragLocation = location
+        dragTargetDate = date(at: location)
+    }
+
+    private func completeDrag(for row: DatabaseRow, at location: CGPoint) {
+        dragLocation = location
+        let targetDate = date(at: location)
+        draggingRowId = nil
+        dragTargetDate = nil
+
+        guard let targetDate else { return }
+        moveRow(row.id, to: targetDate)
+    }
+
+    private func date(at location: CGPoint) -> String? {
+        daysInMonth.first { cell in
+            guard cell.isCurrentMonth, let frame = dayFrames[cell.dateString] else { return false }
+            return frame.contains(location)
+        }?.dateString
+    }
+
+    private func moveRow(_ rowId: String, to targetDate: String) {
+        guard let prop = dateProperty,
+              let idx = rows.firstIndex(where: { $0.id == rowId }) else { return }
+
+        var updatedRow = rows[idx]
+        if case .date(let raw) = updatedRow.properties[prop.id],
+           let parsed = DatabaseDateValue.decode(from: raw) {
+            guard !parsed.contains(dayString: targetDate, calendar: calendar) else { return }
+            updatedRow.properties[prop.id] = .date(parsed.movingStartDay(to: targetDate, calendar: calendar).rawValue)
+        } else {
+            updatedRow.properties[prop.id] = .date(targetDate)
+        }
+
+        rows[idx] = updatedRow
+        onSave?(updatedRow)
     }
 
 }
@@ -327,5 +428,13 @@ private struct HoverDayCell<Content: View>: View {
     var body: some View {
         content(isHovered)
             .onHover { isHovered = $0 }
+    }
+}
+
+private struct CalendarDayFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
