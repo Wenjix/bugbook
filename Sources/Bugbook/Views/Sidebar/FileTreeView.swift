@@ -76,8 +76,8 @@ struct FileTreeView: View {
 
     private func recomputeEntries() {
         let sorted = fileSystem.sortedEntries(entries, parentPath: effectiveParentPath)
-        // Only update if the entry ids/order actually changed to prevent unnecessary re-renders
-        if sorted.map(\.id) != cachedEntries.map(\.id) {
+        // Update if entries changed (ids, order, or properties like icon)
+        if sorted != cachedEntries {
             cachedEntries = sorted
         }
     }

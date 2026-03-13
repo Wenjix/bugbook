@@ -136,7 +136,8 @@ struct RowPageView: View {
                             onTextChange: {
                                 row.body = bodyDocument.markdown
                                 onSave(row)
-                            }
+                            },
+                            horizontalPadding: 20
                         )
                     }
                 }

@@ -22,6 +22,7 @@ struct BlockEditorView: View {
     var onTextChange: (() -> Void)?
     var onTyping: (() -> Void)?
     var contentColumnMaxWidth: CGFloat? = nil
+    var horizontalPadding: CGFloat = 48
     @State private var activeDropIndex: Int?
     @State private var columnDropTargetId: UUID?
     @State private var localColumnDropTarget: LocalColumnDropTarget?
@@ -172,7 +173,7 @@ struct BlockEditorView: View {
             .buttonStyle(.plain)
             .editorTextCursor()
         }
-        .padding(.horizontal, 48)
+        .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
     }

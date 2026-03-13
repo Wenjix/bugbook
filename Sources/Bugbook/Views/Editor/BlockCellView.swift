@@ -66,7 +66,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image:
+        case .databaseEmbed, .image, .pageLink:
             true
         default:
             false
@@ -135,11 +135,15 @@ struct BlockCellView: View {
     }
 
     private func findPageIcon(named name: String) -> String? {
-        func search(in entries: [FileEntry]) -> String? {
+        findPageEntry(named: name)?.icon
+    }
+
+    private func findPageEntry(named name: String) -> FileEntry? {
+        func search(in entries: [FileEntry]) -> FileEntry? {
             for entry in entries {
                 let entryName = entry.name.replacingOccurrences(of: ".md", with: "")
                 if entryName.localizedCaseInsensitiveCompare(name) == .orderedSame {
-                    return entry.icon
+                    return entry
                 }
                 if let children = entry.children, let found = search(in: children) {
                     return found
@@ -148,6 +152,16 @@ struct BlockCellView: View {
             return nil
         }
         return search(in: document.availablePages)
+    }
+
+    private var pageLinkSidebarReferencePayload: SidebarReferenceDragPayload? {
+        guard let entry = findPageEntry(named: block.pageLinkName) else { return nil }
+        return SidebarReferenceDragPayload.page(path: entry.path)
+    }
+
+    private var databaseSidebarReferencePayload: SidebarReferenceDragPayload? {
+        guard !block.databasePath.isEmpty else { return nil }
+        return SidebarReferenceDragPayload.database(path: block.databasePath)
     }
 
     @ViewBuilder
@@ -202,13 +216,18 @@ struct BlockCellView: View {
             ImageBlockView(document: document, block: block)
 
         case .databaseEmbed:
-            DatabaseEmbedBlockView(block: block, onOpenDatabaseTab: document.onOpenDatabaseTab)
+            DatabaseEmbedBlockView(
+                block: block,
+                onOpenDatabaseTab: document.onOpenDatabaseTab,
+                sidebarReferencePayload: databaseSidebarReferencePayload
+            )
 
         case .pageLink:
             WikiLinkView(
                 pageName: block.pageLinkName,
                 icon: findPageIcon(named: block.pageLinkName),
-                onNavigate: { document.onNavigateToPage?(block.pageLinkName) }
+                onNavigate: { document.onNavigateToPage?(block.pageLinkName) },
+                sidebarReferencePayload: pageLinkSidebarReferencePayload
             )
 
         case .toggle:

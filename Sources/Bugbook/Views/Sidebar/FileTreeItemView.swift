@@ -8,6 +8,7 @@ struct FileTreeItemView: View {
     var workspacePath: String?
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
+    var isSidebarReference: Bool = false
 
     @State private var isExpanded: Bool = false
     @State private var isHovering: Bool = false
@@ -22,57 +23,18 @@ struct FileTreeItemView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Row
-            Button(action: { handleTap() }) {
-                HStack(spacing: ShellZoomMetrics.size(6)) {
-                    // Icon slot: ZStack keeps layout stable during hover transitions
-                    ZStack {
-                        iconView
-                            .opacity(isExpandable && isHovering ? 0 : 1)
-
-                        if isExpandable {
-                            Button(action: toggleExpanded) {
-                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                    .font(ShellZoomMetrics.font(Typography.caption2))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .opacity(isHovering ? 1 : 0)
-                        }
+            if isSidebarReference {
+                rowButton
+            } else {
+                rowButton
+                    .onNSRightClick { showContextMenu = true }
+                    .floatingPopover(isPresented: $showContextMenu) {
+                        sidebarContextMenu
                     }
-                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-
-                    if isRenaming {
-                        TextField("", text: $renameName, onCommit: { commitRename() })
-                            .textFieldStyle(.plain)
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .onExitCommand { isRenaming = false }
-                    } else {
-                        Text(displayName)
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-
-                    Spacer()
-                }
-                .padding(.vertical, ShellZoomMetrics.size(4))
-                .padding(.horizontal, ShellZoomMetrics.size(12))
-                .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
-                .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.xs)))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("file-tree-item-\(displayName)")
-            .onHover { hovering in isHovering = hovering }
-            .onNSRightClick { showContextMenu = true }
-            .floatingPopover(isPresented: $showContextMenu) {
-                sidebarContextMenu
             }
 
             // Children (if expanded)
-            if isExpanded, let children = entry.children {
+            if !isSidebarReference, isExpanded, let children = entry.children {
                 let childParentPath = entry.name.hasSuffix(".md") && !entry.isDirectory
                     ? String(entry.path.dropLast(3))  // companion folder path
                     : entry.path
@@ -95,6 +57,54 @@ struct FileTreeItemView: View {
         } message: {
             Text("This page will be moved to Recently Deleted.")
         }
+    }
+
+    @ViewBuilder
+    private var rowButton: some View {
+        Button(action: { handleTap() }) {
+            HStack(spacing: ShellZoomMetrics.size(6)) {
+                // Icon slot: ZStack keeps layout stable during hover transitions
+                ZStack {
+                    iconView
+                        .opacity(isExpandable && isHovering ? 0 : 1)
+
+                    if isExpandable {
+                        Button(action: toggleExpanded) {
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(ShellZoomMetrics.font(Typography.caption2))
+                                .foregroundStyle(.secondary)
+                                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(isHovering ? 1 : 0)
+                    }
+                }
+                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
+
+                if isRenaming {
+                    TextField("", text: $renameName, onCommit: { commitRename() })
+                        .textFieldStyle(.plain)
+                        .font(ShellZoomMetrics.font(Typography.body))
+                        .onExitCommand { isRenaming = false }
+                } else {
+                    Text(displayName)
+                        .font(ShellZoomMetrics.font(Typography.body))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Spacer()
+            }
+            .padding(.vertical, ShellZoomMetrics.size(4))
+            .padding(.horizontal, ShellZoomMetrics.size(12))
+            .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
+            .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.xs)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("file-tree-item-\(displayName)")
+        .onHover { hovering in isHovering = hovering }
     }
 
     @ViewBuilder
@@ -175,6 +185,7 @@ struct FileTreeItemView: View {
 
     /// Whether this entry can be expanded (directories or pages with sub-pages).
     private var isExpandable: Bool {
+        if isSidebarReference { return false }
         if entry.isDatabase { return false }
         return entry.isDirectory || (entry.children != nil && !(entry.children?.isEmpty ?? true))
     }

@@ -5,9 +5,11 @@ struct SidebarView: View {
     var fileSystem: FileSystemService
     var onSelectFile: (FileEntry) -> Void
     var onToggleSidebar: () -> Void
+    var onAddSidebarReference: (SidebarReferenceDragPayload) -> Void
     @State private var hoveredButton: String?
     @State private var isFullScreen: Bool = false
     @State private var showTrashPopover: Bool = false
+    @State private var isSidebarReferenceDropTargeted = false
 
     private let settingsTabs: [(id: String, label: String, icon: String)] = [
         ("general", "General", "gearshape"),
@@ -40,11 +42,6 @@ struct SidebarView: View {
         }
         .onAppear {
             isFullScreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
-            if let workspace = appState.workspacePath {
-                Task {
-                    fileSystem.purgeOldTrash(in: workspace)
-                }
-            }
         }
     }
 
@@ -168,17 +165,53 @@ struct SidebarView: View {
 
             // File tree
             ScrollView {
-                FileTreeView(
-                    entries: appState.fileTree,
-                    activeFilePath: appState.activeTab?.path,
-                    fileSystem: fileSystem,
-                    workspacePath: appState.workspacePath,
-                    onSelectFile: onSelectFile,
-                    onRefreshTree: refreshTree
-                )
+                VStack(spacing: ShellZoomMetrics.size(4)) {
+                    if !appState.sidebarReferences.isEmpty {
+                        VStack(spacing: ShellZoomMetrics.size(1)) {
+                            ForEach(appState.sidebarReferences) { entry in
+                                FileTreeItemView(
+                                    entry: entry,
+                                    activeFilePath: appState.activeTab?.path,
+                                    fileSystem: fileSystem,
+                                    workspacePath: appState.workspacePath,
+                                    onSelectFile: onSelectFile,
+                                    onRefreshTree: refreshTree,
+                                    isSidebarReference: true
+                                )
+                            }
+                        }
+                    }
+
+                    FileTreeView(
+                        entries: appState.fileTree,
+                        activeFilePath: appState.activeTab?.path,
+                        fileSystem: fileSystem,
+                        workspacePath: appState.workspacePath,
+                        onSelectFile: onSelectFile,
+                        onRefreshTree: refreshTree
+                    )
+                }
                 .padding(.horizontal, ShellZoomMetrics.size(8))
                 .padding(.vertical, ShellZoomMetrics.size(4))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .dropDestination(
+                for: SidebarReferenceDragPayload.self,
+                action: { items, _ in
+                    guard let payload = items.first else { return false }
+                    onAddSidebarReference(payload)
+                    return true
+                },
+                isTargeted: { isTargeted in
+                    isSidebarReferenceDropTargeted = isTargeted
+                }
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
+                    .stroke(isSidebarReferenceDropTargeted ? Color.accentColor.opacity(0.8) : Color.clear, lineWidth: 1.5)
+                    .padding(.horizontal, ShellZoomMetrics.size(8))
+                    .padding(.vertical, ShellZoomMetrics.size(4))
+                    .allowsHitTesting(false)
             }
             .accessibilityIdentifier("sidebar-file-tree")
 

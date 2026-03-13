@@ -30,7 +30,8 @@ struct BreadcrumbView: View {
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
-                            .padding(.horizontal, ShellZoomMetrics.size(6))
+                            .padding(.leading, index == 0 ? 0 : ShellZoomMetrics.size(6))
+                            .padding(.trailing, ShellZoomMetrics.size(6))
                             .padding(.vertical, ShellZoomMetrics.size(4))
                             .contentShape(Rectangle())
                         }
@@ -43,7 +44,6 @@ struct BreadcrumbView: View {
             .scrollIndicators(.hidden)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, ShellZoomMetrics.size(10))
         .padding(.vertical, ShellZoomMetrics.size(6))
         .background(Color.fallbackEditorBg)
     }

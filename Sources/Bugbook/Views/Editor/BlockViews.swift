@@ -236,8 +236,18 @@ struct ImageBlockView: View {
 struct DatabaseEmbedBlockView: View {
     let block: Block
     var onOpenDatabaseTab: ((String) -> Void)?
+    var sidebarReferencePayload: SidebarReferenceDragPayload?
 
     var body: some View {
+        if let sidebarReferencePayload {
+            databaseEmbedView
+                .draggable(sidebarReferencePayload)
+        } else {
+            databaseEmbedView
+        }
+    }
+
+    private var databaseEmbedView: some View {
         DatabaseInlineEmbedView(
             dbPath: block.databasePath,
             onOpenDatabase: { onOpenDatabaseTab?(block.databasePath) }

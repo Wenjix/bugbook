@@ -21,6 +21,7 @@ struct FileEntry: Identifiable, Hashable {
     var kind: TabKind
     var icon: String?
     var children: [FileEntry]?
+    var isSidebarReference: Bool
 
     // Shims forwarding to kind for incremental migration
     var isDatabase: Bool { kind.isDatabase }
@@ -36,7 +37,8 @@ struct FileEntry: Identifiable, Hashable {
         isDirectory: Bool,
         kind: TabKind = .page,
         icon: String? = nil,
-        children: [FileEntry]? = nil
+        children: [FileEntry]? = nil,
+        isSidebarReference: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -45,5 +47,6 @@ struct FileEntry: Identifiable, Hashable {
         self.kind = kind
         self.icon = icon
         self.children = children
+        self.isSidebarReference = isSidebarReference
     }
 }

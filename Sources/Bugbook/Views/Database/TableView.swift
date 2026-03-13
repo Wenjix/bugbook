@@ -168,16 +168,15 @@ struct TableView: View {
                 .frame(width: scaledRowControlsInset)
 
             // Title column header
-            Text(schema.titleProperty?.name ?? "Name")
-                .font(DatabaseZoomMetrics.font(15))
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, DatabaseZoomMetrics.size(8))
-                .frame(width: titleColumnWidth)
-                .overlay(alignment: .trailing) {
-                    resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 320)
-                }
+            TitleColumnHeaderCell(
+                name: schema.titleProperty?.name ?? "Name",
+                propertyId: schema.titleProperty?.id,
+                onRename: onRenameProperty
+            )
+            .frame(width: titleColumnWidth)
+            .overlay(alignment: .trailing) {
+                resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 320)
+            }
 
             // Property column headers
             ForEach(visibleProperties) { prop in
@@ -220,8 +219,7 @@ struct TableView: View {
             .menuIndicator(.hidden)
             .fixedSize()
         }
-        .padding(.horizontal, DatabaseZoomMetrics.size(8))
-        .padding(.vertical, DatabaseZoomMetrics.size(10))
+        .padding(.horizontal, DatabaseZoomMetrics.size(4))
     }
 
     // MARK: - Resize Handle (overlaid on column trailing edge)
@@ -293,7 +291,7 @@ struct TableView: View {
                         .databasePointerCursor()
                     }
                 }
-                .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                .padding(.horizontal, DatabaseZoomMetrics.size(4))
                 .background(
                     RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(4))
                         .fill(isHovered ? Color.primary.opacity(0.04) : Color.clear)
@@ -327,7 +325,7 @@ struct TableView: View {
     private func columnDividers() -> some View {
         if showVerticalLines {
             HStack(spacing: 0) {
-                Color.clear.frame(width: DatabaseZoomMetrics.size(8) + titleColumnWidth)
+                Color.clear.frame(width: DatabaseZoomMetrics.size(4) + titleColumnWidth)
                 Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
                 ForEach(visibleProperties) { prop in
                     Color.clear.frame(width: columnWidth(for: prop))
@@ -412,7 +410,7 @@ struct TableView: View {
                             .frame(width: columnWidth(for: prop), alignment: .leading)
                     }
                 }
-                .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                .padding(.horizontal, DatabaseZoomMetrics.size(4))
                 .padding(.vertical, DatabaseZoomMetrics.size(14))
             }
             .contentShape(Rectangle())
@@ -542,7 +540,7 @@ struct TableView: View {
 
     private var tableDivider: some View {
         Divider()
-            .padding(.leading, DatabaseZoomMetrics.size(8))
+            .padding(.leading, DatabaseZoomMetrics.size(4))
     }
 
     private func rowControls(for row: DatabaseRow, isHovered: Bool) -> some View {
@@ -798,12 +796,14 @@ private struct ColumnHeaderCell: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
-            .padding(.vertical, DatabaseZoomMetrics.size(6))
+            .padding(.vertical, DatabaseZoomMetrics.size(10))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(maxHeight: .infinity)
+        .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
+        .contentShape(Rectangle())
         .onHover { inside in
             isHovered = inside
         }
@@ -892,6 +892,78 @@ private struct ColumnHeaderCell: View {
         .popoverSurface()
     }
 
+}
+
+// MARK: - Title Column Header Cell
+
+private struct TitleColumnHeaderCell: View {
+    let name: String
+    let propertyId: String?
+    var onRename: ((String, String) -> Void)?
+
+    @State private var isHovered = false
+    @State private var showPopover = false
+    @State private var editingName: String = ""
+
+    var body: some View {
+        Button {
+            editingName = name
+            showPopover = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "textformat")
+                    .font(DatabaseZoomMetrics.font(11))
+                    .foregroundStyle(.secondary)
+                Text(name)
+                    .font(DatabaseZoomMetrics.font(15))
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(10))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxHeight: .infinity)
+        .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .floatingPopover(isPresented: $showPopover, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Column name", text: $editingName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(DatabaseZoomMetrics.font(15))
+                    .focusEffectDisabled()
+                    .onSubmit {
+                        let trimmed = editingName.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty && trimmed != name, let propId = propertyId {
+                            onRename?(propId, trimmed)
+                        }
+                        showPopover = false
+                    }
+
+                HStack {
+                    Text("Type")
+                        .font(DatabaseZoomMetrics.font(12))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "textformat")
+                            .font(DatabaseZoomMetrics.font(12))
+                        Text("Title")
+                            .font(DatabaseZoomMetrics.font(15))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .padding(DatabaseZoomMetrics.size(12))
+            .frame(width: DatabaseZoomMetrics.size(220))
+            .popoverSurface()
+        }
+    }
 }
 
 // Cursor helper for resize handles

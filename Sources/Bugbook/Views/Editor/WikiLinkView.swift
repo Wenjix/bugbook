@@ -4,8 +4,19 @@ struct WikiLinkView: View {
     let pageName: String
     let icon: String?
     var onNavigate: () -> Void
+    var sidebarReferencePayload: SidebarReferenceDragPayload?
 
     var body: some View {
+        if let sidebarReferencePayload {
+            linkButton
+                .draggable(sidebarReferencePayload)
+        } else {
+            linkButton
+        }
+    }
+
+    @ViewBuilder
+    private var linkButton: some View {
         Button(action: onNavigate) {
             HStack(spacing: 4) {
                 iconView

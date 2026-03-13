@@ -4,6 +4,8 @@ import os
 import Sentry
 
 struct ContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private let editorDraftStore = EditorDraftStore()
 
     @State private var appState = AppState()
@@ -23,6 +25,12 @@ struct ContentView: View {
     @State private var aiInitTask: Task<Void, Never>?
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
+    @State private var lastTrashPurgeWorkspace: String?
+    @State private var sidebarPeekVisible = false
+    @State private var sidebarToggleHovering = false
+    @State private var sidebarEdgeHovering = false
+    @State private var sidebarOverlayHovering = false
+    @State private var sidebarPeekDismissTask: Task<Void, Never>?
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
     @State private var editorZoomHudVisible = false
     @State private var editorZoomHudHovered = false
@@ -57,7 +65,9 @@ struct ContentView: View {
                 mainContentWithAiPanel
             }
 
+            sidebarPeekEdgeHotspot
             sidebarToggleOverlay
+            sidebarPeekOverlay
             commandPaletteOverlay
             movePageOverlay
             themeToastOverlay
@@ -97,10 +107,20 @@ struct ContentView: View {
             .onChange(of: appState.settings.qmdSearchMode) { _, mode in
                 QmdService.prewarmDaemonIfNeeded(mode: mode)
             }
+            .onChange(of: appState.sidebarOpen) { _, _ in
+                syncSidebarPeekVisibility()
+            }
+            .onChange(of: appState.fileTree) { _, newTree in
+                syncAvailablePages(newTree)
+                refreshSidebarReferences(using: newTree)
+            }
             .onChange(of: appState.aiSidePanelOpen) { _, isOpen in
                 if isOpen {
                     ensureAiInitializedIfNeeded()
                 }
+            }
+            .onChange(of: focusModeActive) { _, _ in
+                syncSidebarPeekVisibility()
             }
             .onChange(of: appState.activeTab?.id) { _, _ in
                 hideFormattingPanel()
@@ -125,6 +145,8 @@ struct ContentView: View {
                 aiInitTask?.cancel()
                 aiInitTask = nil
                 editorZoomHudTask?.cancel()
+                sidebarPeekDismissTask?.cancel()
+                sidebarPeekDismissTask = nil
                 workspaceWatcher?.stop()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
@@ -178,9 +200,7 @@ struct ContentView: View {
                 forceSave()
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-                if !appState.showSettings {
-                    appState.sidebarOpen.toggle()
-                }
+                handleSidebarToggleRequest()
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
                 appState.commandPaletteMode = .search
@@ -269,27 +289,125 @@ struct ContentView: View {
                 onSelectFile: { entry in
                     handleSidebarFileSelect(entry)
                 },
-                onToggleSidebar: { appState.sidebarOpen.toggle() }
+                onToggleSidebar: { handleSidebarToggleRequest() },
+                onAddSidebarReference: { payload in
+                    addSidebarReference(payload)
+                }
             )
             .layoutPriority(1)
         }
     }
 
     @ViewBuilder
+    private var sidebarPeekEdgeHotspot: some View {
+        if sidebarPeekEligible {
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 2)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        setSidebarEdgeHovering(hovering)
+                    }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
     private var sidebarToggleOverlay: some View {
-        if !appState.sidebarOpen {
+        if sidebarPeekEligible {
             VStack {
                 HStack {
-                    sidebarChromeButton(icon: "sidebar.left", help: "Open Sidebar") {
-                        appState.sidebarOpen = true
+                    HStack {
+                        sidebarChromeButton(icon: "sidebar.left", help: "Open Sidebar") {
+                            openSidebarPinned()
+                        }
+                        .padding(.leading, ShellZoomMetrics.size(84))
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: ShellZoomMetrics.size(200), alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        setSidebarToggleHovering(hovering)
                     }
                     Spacer()
                 }
-                .padding(.leading, ShellZoomMetrics.size(84))
                 .padding(.top, ShellZoomMetrics.size(10))
                 Spacer()
             }
             .opacity(focusModeActive ? 0.0 : 1.0)
+        }
+    }
+
+    @ViewBuilder
+    private var sidebarPeekOverlay: some View {
+        if sidebarPeekEligible {
+            VStack(spacing: 0) {
+                // Pages header
+                HStack {
+                    Text("Pages")
+                        .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    Spacer()
+                }
+                .padding(.horizontal, ShellZoomMetrics.size(14))
+                .padding(.top, ShellZoomMetrics.size(10))
+                .padding(.bottom, ShellZoomMetrics.size(4))
+
+                // Compact file tree
+                ScrollView {
+                    VStack(spacing: ShellZoomMetrics.size(4)) {
+                        if !appState.sidebarReferences.isEmpty {
+                            VStack(spacing: ShellZoomMetrics.size(1)) {
+                                ForEach(appState.sidebarReferences) { entry in
+                                    FileTreeItemView(
+                                        entry: entry,
+                                        activeFilePath: appState.activeTab?.path,
+                                        fileSystem: fileSystem,
+                                        workspacePath: appState.workspacePath,
+                                        onSelectFile: { entry in handleSidebarFileSelect(entry) },
+                                        onRefreshTree: { refreshFileTree() },
+                                        isSidebarReference: true
+                                    )
+                                }
+                            }
+                        }
+
+                        FileTreeView(
+                            entries: appState.fileTree,
+                            activeFilePath: appState.activeTab?.path,
+                            fileSystem: fileSystem,
+                            workspacePath: appState.workspacePath,
+                            onSelectFile: { entry in handleSidebarFileSelect(entry) },
+                            onRefreshTree: { refreshFileTree() }
+                        )
+                    }
+                    .padding(.horizontal, ShellZoomMetrics.size(8))
+                    .padding(.vertical, ShellZoomMetrics.size(4))
+                    .frame(maxWidth: .infinity, alignment: .top)
+                }
+            }
+            .frame(width: ShellZoomMetrics.size(190))
+            .frame(maxHeight: ShellZoomMetrics.size(360), alignment: .topLeading)
+            .background(Color.fallbackSidebarBg)
+            .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.md)))
+            .overlay {
+                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.md))
+                    .stroke(Color.fallbackChromeBorder, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: Color.black.opacity(0.15), radius: 18, x: 4, y: 4)
+            .padding(.top, ShellZoomMetrics.size(38))
+            .padding(.leading, ShellZoomMetrics.size(4))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .offset(x: sidebarPeekVisible ? 0 : sidebarPeekHiddenOffset)
+            .opacity(sidebarPeekVisible ? 1 : 0)
+            .allowsHitTesting(sidebarPeekVisible)
+            .onHover { hovering in
+                setSidebarOverlayHovering(hovering)
+            }
+            .zIndex(1)
         }
     }
 
@@ -358,6 +476,107 @@ struct ContentView: View {
         .buttonStyle(.borderless)
         .help(help)
         .disabled(!isEnabled)
+    }
+
+    private var sidebarPeekEligible: Bool {
+        !appState.sidebarOpen && !focusModeActive && !sidebarHiddenByPeek
+    }
+
+    private var sidebarPeekHiddenOffset: CGFloat {
+        reduceMotion ? 0 : -ShellZoomMetrics.size(18)
+    }
+
+    private var sidebarPeekAnimation: Animation {
+        .easeInOut(duration: reduceMotion ? 0.1 : 0.18)
+    }
+
+    private func cancelSidebarPeekDismissTask() {
+        sidebarPeekDismissTask?.cancel()
+        guard sidebarPeekDismissTask != nil else { return }
+        sidebarPeekDismissTask = nil
+    }
+
+    private func resetSidebarPeekHoverState() {
+        guard sidebarToggleHovering || sidebarEdgeHovering || sidebarOverlayHovering else { return }
+        sidebarToggleHovering = false
+        sidebarEdgeHovering = false
+        sidebarOverlayHovering = false
+    }
+
+    private func setSidebarToggleHovering(_ hovering: Bool) {
+        guard sidebarToggleHovering != hovering else { return }
+        sidebarToggleHovering = hovering
+        syncSidebarPeekVisibility()
+    }
+
+    private func setSidebarEdgeHovering(_ hovering: Bool) {
+        guard sidebarEdgeHovering != hovering else { return }
+        sidebarEdgeHovering = hovering
+        syncSidebarPeekVisibility()
+    }
+
+    private func setSidebarOverlayHovering(_ hovering: Bool) {
+        guard sidebarOverlayHovering != hovering else { return }
+        sidebarOverlayHovering = hovering
+        syncSidebarPeekVisibility()
+    }
+
+    private func openSidebarPinned() {
+        dismissSidebarPeek(immediately: true)
+        appState.sidebarOpen = true
+    }
+
+    private func handleSidebarToggleRequest() {
+        guard !appState.showSettings else { return }
+        if appState.sidebarOpen {
+            appState.sidebarOpen = false
+            dismissSidebarPeek(immediately: true)
+        } else {
+            openSidebarPinned()
+        }
+    }
+
+    private func dismissSidebarPeek(immediately: Bool = false) {
+        cancelSidebarPeekDismissTask()
+        resetSidebarPeekHoverState()
+        guard sidebarPeekVisible else { return }
+        if immediately {
+            sidebarPeekVisible = false
+        } else {
+            withAnimation(sidebarPeekAnimation) {
+                sidebarPeekVisible = false
+            }
+        }
+    }
+
+    private func syncSidebarPeekVisibility() {
+        cancelSidebarPeekDismissTask()
+
+        guard sidebarPeekEligible else {
+            dismissSidebarPeek(immediately: true)
+            return
+        }
+
+        if sidebarToggleHovering || sidebarEdgeHovering || sidebarOverlayHovering {
+            guard !sidebarPeekVisible else { return }
+            withAnimation(sidebarPeekAnimation) {
+                sidebarPeekVisible = true
+            }
+            return
+        }
+
+        guard sidebarPeekVisible else { return }
+        sidebarPeekDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 140_000_000)
+            guard !Task.isCancelled else { return }
+            guard sidebarPeekEligible,
+                  !sidebarToggleHovering,
+                  !sidebarEdgeHovering,
+                  !sidebarOverlayHovering else { return }
+            withAnimation(sidebarPeekAnimation) {
+                sidebarPeekVisible = false
+            }
+        }
     }
 
     // MARK: - Move Page Overlay
@@ -1131,6 +1350,7 @@ struct ContentView: View {
             try? FileManager.default.createDirectory(atPath: workspacePath, withIntermediateDirectories: true)
         }
         fileSystem.setWorkspace(workspacePath)
+        scheduleTrashPurgeIfNeeded(for: workspacePath)
         appState.workspacePath = workspacePath
 
         // Register workspace as a qmd collection in the background (no-op if qmd not installed)
@@ -1167,7 +1387,11 @@ struct ContentView: View {
         let watcher = WorkspaceWatcher { [weak appState] in
             guard let appState = appState,
                   let workspace = appState.workspacePath else { return }
-            appState.fileTree = fileSystem.buildFileTree(at: workspace)
+            let tree = fileSystem.buildFileTree(at: workspace)
+            Task { @MainActor in
+                self.appState.fileTree = tree
+                refreshSidebarReferences(using: tree)
+            }
         }
         watcher.watch(path: path)
         workspaceWatcher = watcher
@@ -1175,7 +1399,95 @@ struct ContentView: View {
 
     private func refreshFileTree() {
         guard let path = appState.workspacePath else { return }
-        appState.fileTree = fileSystem.buildFileTree(at: path)
+        let tree = fileSystem.buildFileTree(at: path)
+        appState.fileTree = tree
+        refreshSidebarReferences(using: tree)
+    }
+
+    private func syncAvailablePages(_ pages: [FileEntry]) {
+        for document in blockDocuments.values {
+            document.availablePages = pages
+        }
+    }
+
+    private func refreshSidebarReferences(using fileTree: [FileEntry]? = nil) {
+        guard let workspace = appState.workspacePath else {
+            appState.sidebarReferences = []
+            return
+        }
+
+        let tree = fileTree ?? appState.fileTree
+        let storedPaths = fileSystem.sidebarReferencePaths(for: workspace)
+        var resolvedPaths: [String] = []
+        let resolvedEntries = storedPaths.compactMap { path -> FileEntry? in
+            guard let entry = buildSidebarReferenceEntry(for: path, in: tree) else { return nil }
+            resolvedPaths.append(path)
+            return entry
+        }
+
+        if resolvedPaths != storedPaths {
+            fileSystem.saveSidebarReferencePaths(resolvedPaths, for: workspace)
+        }
+        appState.sidebarReferences = resolvedEntries
+    }
+
+    private func buildSidebarReferenceEntry(for path: String, in fileTree: [FileEntry]) -> FileEntry? {
+        if let entry = findEntryByPath(path, in: fileTree) {
+            return FileEntry(
+                id: "sidebar-ref:\(path)",
+                name: entry.name,
+                path: entry.path,
+                isDirectory: false,
+                kind: entry.kind,
+                icon: entry.icon,
+                isSidebarReference: true
+            )
+        }
+
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+
+        let kind: TabKind
+        let name: String
+        if isDatabaseFolderPath(path) {
+            kind = .database
+            name = databaseDisplayName(at: path) ?? (path as NSString).lastPathComponent
+        } else if isCanvasFolderPath(path) {
+            kind = .canvas
+            name = (path as NSString).lastPathComponent
+        } else {
+            kind = .page
+            name = (path as NSString).lastPathComponent
+        }
+
+        return FileEntry(
+            id: "sidebar-ref:\(path)",
+            name: name,
+            path: path,
+            isDirectory: false,
+            kind: kind,
+            isSidebarReference: true
+        )
+    }
+
+    private func databaseDisplayName(at path: String) -> String? {
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json["name"] as? String
+    }
+
+    private func addSidebarReference(_ payload: SidebarReferenceDragPayload) {
+        guard let workspace = appState.workspacePath else { return }
+
+        let targetPath = payload.path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetPath.isEmpty else { return }
+        guard !appState.sidebarReferences.contains(where: { $0.path == targetPath }) else { return }
+        guard buildSidebarReferenceEntry(for: targetPath, in: appState.fileTree) != nil else { return }
+
+        fileSystem.addSidebarReferencePath(targetPath, for: workspace)
+        refreshSidebarReferences()
     }
 
     private func loadFileContent(for entry: FileEntry) {
@@ -1645,9 +1957,18 @@ struct ContentView: View {
 
     private func openWorkspace() async {
         if let path = await fileSystem.openFolder() {
+            scheduleTrashPurgeIfNeeded(for: path)
             appState.workspacePath = path
             refreshFileTree()
             startWorkspaceWatcher(path: path)
+        }
+    }
+
+    private func scheduleTrashPurgeIfNeeded(for workspace: String) {
+        guard lastTrashPurgeWorkspace != workspace else { return }
+        lastTrashPurgeWorkspace = workspace
+        Task { @MainActor in
+            fileSystem.purgeOldTrash(in: workspace)
         }
     }
 

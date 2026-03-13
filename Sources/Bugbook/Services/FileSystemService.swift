@@ -14,6 +14,7 @@ class FileSystemService {
     private let recentWorkspacesKey = "recentWorkspaces"
     private let maxRecentWorkspaces = 20
     private let customOrderPrefix = "sidebarOrder_"
+    private let sidebarReferencePrefix = "sidebarReference_"
 
     init() {
         loadRecentWorkspaces()
@@ -564,6 +565,30 @@ class FileSystemService {
         let insertAt = min(newIndex, names.count)
         names.insert(name, at: insertAt)
         saveCustomOrder(names, for: parentPath)
+    }
+
+    private func sidebarReferenceKey(for workspacePath: String) -> String {
+        "\(sidebarReferencePrefix)\(workspacePath)"
+    }
+
+    func sidebarReferencePaths(for workspacePath: String) -> [String] {
+        UserDefaults.standard.stringArray(forKey: sidebarReferenceKey(for: workspacePath)) ?? []
+    }
+
+    func saveSidebarReferencePaths(_ paths: [String], for workspacePath: String) {
+        UserDefaults.standard.set(paths, forKey: sidebarReferenceKey(for: workspacePath))
+    }
+
+    func addSidebarReferencePath(_ path: String, for workspacePath: String) {
+        var paths = sidebarReferencePaths(for: workspacePath)
+        guard !paths.contains(path) else { return }
+        paths.append(path)
+        saveSidebarReferencePaths(paths, for: workspacePath)
+    }
+
+    func removeSidebarReferencePath(_ path: String, for workspacePath: String) {
+        let filtered = sidebarReferencePaths(for: workspacePath).filter { $0 != path }
+        saveSidebarReferencePaths(filtered, for: workspacePath)
     }
 
     // MARK: - Trash (Recently Deleted)
