@@ -2,6 +2,10 @@ import Foundation
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let blockDocumentFrameRefreshRequested = Notification.Name("BlockDocumentFrameRefreshRequested")
+}
+
 struct BlockTextSelectionPoint: Equatable {
     let blockId: UUID
     let displayOffset: Int
@@ -639,6 +643,24 @@ class BlockDocument {
         cursorPosition = 0
     }
 
+    /// Focus the empty paragraph right after the given block, or insert one if needed.
+    func focusOrInsertParagraphAfter(blockId: UUID) {
+        guard let idx = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        let nextIdx = idx + 1
+        if nextIdx < blocks.count {
+            let next = blocks[nextIdx]
+            if next.type == .paragraph, next.text.isEmpty {
+                focusedBlockId = next.id
+                cursorPosition = 0
+                return
+            }
+        }
+        let newBlock = Block(type: .paragraph)
+        blocks.insert(newBlock, at: nextIdx)
+        focusedBlockId = newBlock.id
+        cursorPosition = 0
+    }
+
     func ensureTrailingParagraph() {
         guard let last = blocks.last else { return }
         if last.type != .paragraph || !last.text.isEmpty {
@@ -1185,6 +1207,12 @@ class BlockDocument {
 
     func unregisterBlockFrame(for blockId: UUID) {
         registeredBlockFrames.removeValue(forKey: blockId)
+    }
+
+    /// Refresh cached window-space block frames only when block hit-testing is needed.
+    /// Recomputing every block's frame on every scroll tick is too expensive for long pages.
+    func requestBlockFrameRefresh() {
+        NotificationCenter.default.post(name: .blockDocumentFrameRefreshRequested, object: self)
     }
 
     func blockId(atWindowPoint point: CGPoint) -> UUID? {

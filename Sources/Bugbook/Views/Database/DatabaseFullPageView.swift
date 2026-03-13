@@ -653,7 +653,16 @@ struct DatabaseFullPageView: View {
                 onReorderRows: { draggedId, targetId in
                     state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
                 },
-                onClearSorts: { state.clearSorts() }
+                onClearSorts: { state.clearSorts() },
+                onRenameSelectOption: { propId, optionId, newName in
+                    state.updateSelectOption(propId, optionId: optionId, name: newName, color: nil)
+                },
+                onDeleteSelectOption: { propId, optionId in
+                    state.deleteSelectOption(propId, optionId: optionId)
+                },
+                onHideColumn: { propId, optionId in
+                    state.hideKanbanColumn(propertyId: propId, optionId: optionId)
+                }
             )
         case .list:
             ListView(

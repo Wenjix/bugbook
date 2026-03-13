@@ -160,6 +160,13 @@ struct BlockTextView: NSViewRepresentable {
         textView.cutSelectionAction = { [weak coordinator] in
             coordinator?.handleCutSelection() ?? false
         }
+        let heightRecalc = { [weak textView] in
+            guard let textView else { return }
+            self.recalculateHeight(textView)
+        }
+        textView.onFrameWidthChanged = {
+            DispatchQueue.main.async { heightRecalc() }
+        }
         context.coordinator.textView = textView
 
         DispatchQueue.main.async {
@@ -1144,7 +1151,9 @@ class BlockNSTextView: NSTextView {
     var onPasteImage: (() -> Bool)?
     var copySelectionAction: (() -> Bool)?
     var cutSelectionAction: (() -> Bool)?
+    var onFrameWidthChanged: (() -> Void)?
     var isInBlockSelection = false
+    private var lastKnownWidth: CGFloat = 0
     private var dragSelectionAnchorOffset = 0
     private var dragStartWindowPoint = NSPoint.zero
     private var selectionDragTimer: Timer?
@@ -1155,6 +1164,15 @@ class BlockNSTextView: NSTextView {
             Self.liveTextViews.remove(self)
         } else {
             Self.liveTextViews.add(self)
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = abs(newSize.width - lastKnownWidth) > 0.5
+        super.setFrameSize(newSize)
+        if widthChanged && newSize.width > 0 {
+            lastKnownWidth = newSize.width
+            onFrameWidthChanged?()
         }
     }
 

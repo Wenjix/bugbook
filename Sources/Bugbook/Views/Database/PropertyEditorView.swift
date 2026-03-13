@@ -584,6 +584,7 @@ struct PropertyEditorView: View {
     @State private var relationDatabases: [RelationDatabaseCandidate] = []
     @State private var relationSearch = ""
     @State private var relationDbSearch = ""
+    @State private var isRelationHovered = false
 
     private var selectedRelationIds: Set<String> {
         switch value {
@@ -593,8 +594,8 @@ struct PropertyEditorView: View {
         }
     }
 
-    private var isMultiRelation: Bool {
-        definition.config?.cardinality == "many_to_many"
+    private var supportsMultipleRelations: Bool {
+        definition.config?.cardinality != "one_to_one"
     }
 
     private var hasRelationTarget: Bool {
@@ -606,66 +607,58 @@ struct PropertyEditorView: View {
         let candidates = relationCandidates
         let selected = selectedRelationIds
         let selectedCandidates = candidates.filter { selected.contains($0.id) }
+        let showsRelationAction = hasRelationTarget && isRelationHovered
 
-        return HStack(spacing: 4) {
-            if !hasRelationTarget {
-                Text(compact ? "" : "Select target database...")
-                    .foregroundStyle(.secondary)
-                    .font(compact ? .caption : .body)
-                    .onTapGesture {
-                        if relationDatabases.isEmpty {
-                            relationDatabases = (onListDatabases?() ?? [])
+        return ZStack(alignment: .topTrailing) {
+            RelationFlowLayout(spacing: 4) {
+                if !hasRelationTarget {
+                    Text(compact ? "" : "Select target database...")
+                        .foregroundStyle(.secondary)
+                        .font(compact ? .caption : .body)
+                } else if !selectedCandidates.isEmpty {
+                    ForEach(selectedCandidates) { candidate in
+                        Button {
+                            openRelatedRow(candidate.id)
+                        } label: {
+                            Text(candidate.title)
+                                .font(compact ? .callout : .body)
+                                .foregroundStyle(.primary)
+                                .underline()
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
-                        showRelationTargetPicker = true
+                        .buttonStyle(.plain)
                     }
-            } else if !selectedCandidates.isEmpty {
-                // Show clickable links for each related row
-                ForEach(selectedCandidates) { candidate in
-                    Text(candidate.title)
-                        .font(compact ? .callout : .body)
-                        .foregroundStyle(Color.accentColor)
-                        .underline()
-                        .lineLimit(1)
-                        .onTapGesture {
-                            if let target = definition.config?.target {
-                                NotificationCenter.default.post(
-                                    name: .inlineDatabaseRowPeek,
-                                    object: nil,
-                                    userInfo: [
-                                        DatabaseNotificationKey.dbPath: target,
-                                        DatabaseNotificationKey.rowId: candidate.id
-                                    ]
-                                )
-                            }
-                        }
+                } else {
+                    Text(compact ? "" : "Empty")
+                        .foregroundStyle(.secondary)
                 }
-            } else {
-                Text(compact ? "" : "Empty")
-                    .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
-            // Edit button to open/change the relation picker
-            if hasRelationTarget {
-                Image(systemName: "pencil")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .onTapGesture {
-                        if relationCandidates.isEmpty {
-                            relationCandidates = onLoadRelationRows?() ?? []
-                        }
-                        showRelationPicker = true
-                    }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showsRelationAction {
+                Button {
+                    presentRelationPicker()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.accentColor)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(selectedCandidates.isEmpty ? "Add related pages" : "Edit related pages")
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 22)
+        .frame(maxWidth: .infinity, minHeight: 22, maxHeight: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
+        .onHover { isRelationHovered = $0 }
         .onTapGesture {
-            guard hasRelationTarget else { return }
-            if selectedCandidates.isEmpty {
-                if relationCandidates.isEmpty {
-                    relationCandidates = onLoadRelationRows?() ?? []
-                }
-                showRelationPicker = true
+            if !hasRelationTarget {
+                presentRelationTargetPicker()
+            } else if selectedCandidates.isEmpty {
+                presentRelationPicker()
             }
         }
         .floatingPopover(isPresented: $showRelationTargetPicker, arrowEdge: .bottom) {
@@ -674,8 +667,7 @@ struct PropertyEditorView: View {
         .floatingPopover(isPresented: $showRelationPicker, arrowEdge: .bottom) {
             relationPickerPopover
         }
-        .onAppear {
-            // Eagerly load database list so targetDatabaseName resolves to the real name.
+        .task {
             if relationDatabases.isEmpty {
                 relationDatabases = onListDatabases?() ?? []
             }
@@ -763,15 +755,7 @@ struct PropertyEditorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Button {
-                        // Navigate to the target database
-                        if let target = definition.config?.target {
-                            showRelationPicker = false
-                            NotificationCenter.default.post(
-                                name: .databaseNameDidChange,
-                                object: nil,
-                                userInfo: [DatabaseNotificationKey.dbPath: target]
-                            )
-                        }
+                        openTargetDatabase()
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "tablecells")
@@ -783,6 +767,7 @@ struct PropertyEditorView: View {
                         .foregroundStyle(Color.accentColor)
                     }
                     .buttonStyle(.plain)
+                    .help("Open \(targetDatabaseName)")
                 }
             }
             .padding(8)
@@ -794,26 +779,35 @@ struct PropertyEditorView: View {
                     let filtered = relationSearch.isEmpty
                         ? relationCandidates
                         : relationCandidates.filter { $0.title.localizedStandardContains(relationSearch) }
-                    ForEach(filtered) { candidate in
-                        let isSelected = selectedRelationIds.contains(candidate.id)
-                        Button {
-                            toggleRelation(candidate.id)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                                    .font(.system(size: 14))
-                                Text(candidate.title)
-                                    .font(.callout)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                Spacer()
+                    if filtered.isEmpty {
+                        Text(relationCandidates.isEmpty ? "No rows available" : "No matching rows")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .padding(10)
+                    } else {
+                        ForEach(filtered) { candidate in
+                            let isSelected = selectedRelationIds.contains(candidate.id)
+                            Button {
+                                toggleRelation(candidate.id)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text(candidate.title)
+                                        .font(.callout)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    if isSelected {
+                                        Image(systemName: "checkmark")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(Color.accentColor)
+                                    }
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -824,7 +818,7 @@ struct PropertyEditorView: View {
     }
 
     private func toggleRelation(_ rowId: String) {
-        if isMultiRelation {
+        if supportsMultipleRelations {
             var ids: [String]
             if case .relationMany(let existing) = value {
                 ids = existing
@@ -847,6 +841,40 @@ struct PropertyEditorView: View {
             }
             showRelationPicker = false
         }
+    }
+
+    private func presentRelationTargetPicker() {
+        if relationDatabases.isEmpty {
+            relationDatabases = onListDatabases?() ?? []
+        }
+        showRelationTargetPicker = true
+    }
+
+    private func presentRelationPicker() {
+        relationCandidates = onLoadRelationRows?() ?? []
+        showRelationPicker = true
+    }
+
+    private func openRelatedRow(_ rowId: String) {
+        guard let target = definition.config?.target else { return }
+        NotificationCenter.default.post(
+            name: .inlineDatabaseRowPeek,
+            object: nil,
+            userInfo: [
+                DatabaseNotificationKey.dbPath: target,
+                DatabaseNotificationKey.rowId: rowId
+            ]
+        )
+    }
+
+    private func openTargetDatabase() {
+        guard let target = definition.config?.target, !target.isEmpty else { return }
+        showRelationPicker = false
+        NotificationCenter.default.post(
+            name: .databaseOpenRequested,
+            object: nil,
+            userInfo: [DatabaseNotificationKey.dbPath: target]
+        )
     }
 
     // MARK: - Color Helper
@@ -1222,3 +1250,65 @@ private struct MiniCalendarCell: Identifiable {
 
     var id: Int { offset }
 }
+
+// MARK: - Relation Flow Layout
+
+private struct RelationFlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? .infinity
+        let rows = computeRows(maxWidth: maxW, subviews: subviews)
+        guard !rows.isEmpty else { return .zero }
+        let height = rows.reduce(CGFloat(0)) { $0 + $1.height } + CGFloat(rows.count - 1) * spacing
+        return CGSize(width: proposal.width ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let maxW = bounds.width
+        let rows = computeRows(maxWidth: maxW, subviews: subviews)
+        var y = bounds.minY
+        var subviewIndex = 0
+        for row in rows {
+            var x = bounds.minX
+            for _ in 0..<row.count {
+                let natural = subviews[subviewIndex].sizeThatFits(.unspecified)
+                let clamped = min(natural.width, maxW - (x - bounds.minX))
+                subviews[subviewIndex].place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(width: max(clamped, 0), height: natural.height)
+                )
+                x += clamped + spacing
+                subviewIndex += 1
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [(count: Int, height: CGFloat)] {
+        var rows: [(count: Int, height: CGFloat)] = []
+        var currentWidth: CGFloat = 0
+        var currentHeight: CGFloat = 0
+        var currentCount = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let w = min(size.width, maxWidth)
+            if currentCount > 0 && currentWidth + spacing + w > maxWidth {
+                rows.append((count: currentCount, height: currentHeight))
+                currentWidth = w
+                currentHeight = size.height
+                currentCount = 1
+            } else {
+                currentWidth += (currentCount > 0 ? spacing : 0) + w
+                currentHeight = max(currentHeight, size.height)
+                currentCount += 1
+            }
+        }
+        if currentCount > 0 {
+            rows.append((count: currentCount, height: currentHeight))
+        }
+        return rows
+    }
+}
+
+// MARK: - Relation Flow Layout

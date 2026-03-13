@@ -130,7 +130,8 @@ struct FileTreeItemView: View {
                     .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon)
-                    .font(ShellZoomMetrics.font(15))
+                    .font(ShellZoomMetrics.font(13))
+                    .minimumScaleFactor(0.5)
                     .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
             } else if FileManager.default.fileExists(atPath: icon) {
                 // Raw file path (legacy)

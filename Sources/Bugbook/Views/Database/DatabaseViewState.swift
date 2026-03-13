@@ -478,6 +478,16 @@ final class DatabaseViewState {
         }
     }
 
+    func hideKanbanColumn(propertyId: String, optionId: String) {
+        guard var s = schema, var view = activeView else { return }
+        let filter = FilterConfig(property: propertyId, op: "not_equals", value: optionId)
+        view.filters.append(filter)
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
     func removeFilter(_ filterId: String) {
         guard var s = schema, var view = activeView else { return }
         view.filters.removeAll { $0.id == filterId }
@@ -565,11 +575,16 @@ final class DatabaseViewState {
 
     // MARK: - Relation
 
+    private var relationRowCache: [String: [RelationRowCandidate]] = [:]
+
     func loadRelationRows(for prop: PropertyDefinition) -> [RelationRowCandidate] {
         guard let target = prop.config?.target, !target.isEmpty else { return [] }
+        if let cached = relationRowCache[target] { return cached }
         do {
             let (targetSchema, targetRows) = try dbService.loadDatabase(at: target)
-            return targetRows.map { RelationRowCandidate(id: $0.id, title: $0.title(schema: targetSchema)) }
+            let candidates = targetRows.map { RelationRowCandidate(id: $0.id, title: $0.title(schema: targetSchema)) }
+            relationRowCache[target] = candidates
+            return candidates
         } catch {
             return []
         }
@@ -586,10 +601,15 @@ final class DatabaseViewState {
         return store.listDatabases(in: searchRoot).filter { $0.path != dbPath }
     }
 
+    private var databaseCandidateCache: [RelationDatabaseCandidate]?
+
     func listDatabaseCandidates(workspacePath: String?) -> [RelationDatabaseCandidate] {
-        listAvailableDatabases(workspacePath: workspacePath).map {
+        if let cached = databaseCandidateCache { return cached }
+        let result = listAvailableDatabases(workspacePath: workspacePath).map {
             RelationDatabaseCandidate(id: $0.id, name: $0.name, path: $0.path)
         }
+        databaseCandidateCache = result
+        return result
     }
 
     func setRelationTarget(_ propertyId: String, target: String) {

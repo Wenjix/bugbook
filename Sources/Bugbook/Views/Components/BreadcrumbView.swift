@@ -4,6 +4,7 @@ import AppKit
 struct BreadcrumbView: View {
     let items: [BreadcrumbItem]
     var onNavigate: (BreadcrumbItem) -> Void
+    var sidebarOpen: Bool = true
 
     var body: some View {
         HStack(spacing: 0) {
@@ -30,7 +31,7 @@ struct BreadcrumbView: View {
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
-                            .padding(.leading, index == 0 ? ShellZoomMetrics.size(2) : ShellZoomMetrics.size(6))
+                            .padding(.leading, index == 0 && !sidebarOpen ? ShellZoomMetrics.size(2) : ShellZoomMetrics.size(6))
                             .padding(.trailing, ShellZoomMetrics.size(6))
                             .padding(.vertical, ShellZoomMetrics.size(4))
                             .contentShape(Rectangle())

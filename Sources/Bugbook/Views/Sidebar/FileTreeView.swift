@@ -6,6 +6,12 @@ enum DropMode: Equatable {
     case onto(Int)    // highlight this row (move into)
 }
 
+/// Reference-type wrapper so all drop delegates share a single stable instance,
+/// preventing stale-binding issues when SwiftUI re-creates delegate structs.
+final class DropIndicatorState: ObservableObject {
+    @Published var mode: DropMode?
+}
+
 struct FileTreeView: View {
     let entries: [FileEntry]
     let activeFilePath: String?
@@ -15,7 +21,7 @@ struct FileTreeView: View {
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
 
-    @State private var dropMode: DropMode?
+    @StateObject private var dropState = DropIndicatorState()
     @State private var cachedEntries: [FileEntry] = []
 
     var body: some View {
@@ -31,7 +37,7 @@ struct FileTreeView: View {
                 )
                 // Use overlays instead of conditional views to avoid layout shifts
                 .overlay(alignment: .top) {
-                    if case .above(index) = dropMode {
+                    if case .above(index) = dropState.mode {
                         Rectangle()
                             .fill(Color.accentColor)
                             .frame(height: 2)
@@ -40,7 +46,7 @@ struct FileTreeView: View {
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
-                        .fill(dropMode == .onto(index) ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .fill(dropState.mode == .onto(index) ? Color.accentColor.opacity(0.15) : Color.clear)
                         .allowsHitTesting(false)
                 )
                 .onDrag {
@@ -52,7 +58,7 @@ struct FileTreeView: View {
                     entries: cachedEntries,
                     parentPath: effectiveParentPath,
                     fileSystem: fileSystem,
-                    dropMode: $dropMode,
+                    dropState: dropState,
                     onRefreshTree: onRefreshTree
                 ))
             }
@@ -63,7 +69,7 @@ struct FileTreeView: View {
             entries: cachedEntries,
             parentPath: effectiveParentPath,
             fileSystem: fileSystem,
-            dropMode: $dropMode,
+            dropState: dropState,
             onRefreshTree: onRefreshTree
         ))
         .onAppear { recomputeEntries() }
@@ -91,7 +97,7 @@ struct FileTreeDropDelegate: DropDelegate {
     let entries: [FileEntry]
     let parentPath: String
     let fileSystem: FileSystemService
-    @Binding var dropMode: DropMode?
+    let dropState: DropIndicatorState
     let onRefreshTree: () -> Void
 
     /// Whether the target entry can accept children (pages can, databases/canvases cannot).
@@ -106,9 +112,7 @@ struct FileTreeDropDelegate: DropDelegate {
     }
 
     func dropExited(info: DropInfo) {
-        if dropMode == .above(targetIndex) || dropMode == .onto(targetIndex) {
-            dropMode = nil
-        }
+        dropState.mode = nil
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -118,7 +122,7 @@ struct FileTreeDropDelegate: DropDelegate {
 
     private func updateDropMode(info: DropInfo) {
         guard targetAcceptsChildren else {
-            dropMode = .above(targetIndex)
+            dropState.mode = .above(targetIndex)
             return
         }
         // Vertical position within the row: top 25% = above, middle 50% = into, bottom 25% = above next
@@ -126,25 +130,34 @@ struct FileTreeDropDelegate: DropDelegate {
         let rowHeight = ShellZoomMetrics.size(28)
         let fraction = y / rowHeight
         if fraction < 0.25 {
-            dropMode = .above(targetIndex)
+            dropState.mode = .above(targetIndex)
         } else if fraction > 0.75 {
-            dropMode = .above(targetIndex + 1)
+            dropState.mode = .above(targetIndex + 1)
         } else {
-            dropMode = .onto(targetIndex)
+            dropState.mode = .onto(targetIndex)
         }
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        let currentMode = dropMode
-        dropMode = nil
+        let currentMode = dropState.mode
+        dropState.mode = nil
 
         guard let provider = info.itemProviders(for: [.text]).first else { return false }
 
+        // Capture reference for use in async callback
+        let state = dropState
+
         provider.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
             guard let data = data as? Data,
-                  let draggedPath = String(data: data, encoding: .utf8) else { return }
+                  let draggedPath = String(data: data, encoding: .utf8) else {
+                DispatchQueue.main.async { state.mode = nil }
+                return
+            }
 
             DispatchQueue.main.async {
+                // Belt-and-suspenders: clear indicator on every exit path
+                defer { state.mode = nil }
+
                 switch currentMode {
                 case .onto(let idx):
                     guard idx < entries.count else { return }

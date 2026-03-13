@@ -319,8 +319,7 @@ private struct BlockFrameReporter: NSViewRepresentable {
 final class BlockFrameReporterView: NSView {
     weak var document: BlockDocument?
     var blockId: UUID?
-    private weak var observedClipView: NSClipView?
-    private var clipViewObserver: NSObjectProtocol?
+    private var refreshObserver: NSObjectProtocol?
     private var frameReportScheduled = false
 
     func syncRegistration(document: BlockDocument, blockId: UUID) {
@@ -332,57 +331,53 @@ final class BlockFrameReporterView: NSView {
             }
         }
 
+        let needsRefreshObserverUpdate = self.document !== document
         self.document = document
         self.blockId = blockId
-        updateClipViewObservation()
-        reportFrame()
+        if needsRefreshObserverUpdate || refreshObserver == nil {
+            updateRefreshObservation()
+        }
+        scheduleFrameReport()
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil, let document, let blockId {
-            Task { @MainActor [weak document] in
-                document?.unregisterBlockFrame(for: blockId)
-            }
-        }
+        if newWindow == nil { unregisterCurrentFrame() }
         super.viewWillMove(toWindow: newWindow)
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateClipViewObservation()
-        reportFrame()
+        scheduleFrameReport()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if superview == nil {
+            unregisterCurrentFrame()
+        } else {
+            scheduleFrameReport()
+        }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        // Only report on size changes (layout), not origin changes (scroll).
         scheduleFrameReport()
     }
 
-    override func setFrameOrigin(_ newOrigin: NSPoint) {
-        super.setFrameOrigin(newOrigin)
-        scheduleFrameReport()
-    }
-
-    private func updateClipViewObservation() {
-        let clipView = enclosingScrollView?.contentView
-        guard clipView !== observedClipView else { return }
-
-        if let clipViewObserver {
-            NotificationCenter.default.removeObserver(clipViewObserver)
-            self.clipViewObserver = nil
+    private func updateRefreshObservation() {
+        if let refreshObserver {
+            NotificationCenter.default.removeObserver(refreshObserver)
+            self.refreshObserver = nil
         }
 
-        observedClipView = clipView
-        clipView?.postsBoundsChangedNotifications = true
-
-        if let clipView {
-            clipViewObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: clipView,
-                queue: .main
-            ) { [weak self] _ in
-                self?.scheduleFrameReport()
-            }
+        guard let document else { return }
+        refreshObserver = NotificationCenter.default.addObserver(
+            forName: .blockDocumentFrameRefreshRequested,
+            object: document,
+            queue: nil
+        ) { [weak self] _ in
+            self?.reportFrame()
         }
     }
 
@@ -401,9 +396,17 @@ final class BlockFrameReporterView: NSView {
         document.registerBlockFrame(frameInWindow, for: blockId)
     }
 
-    deinit {
-        if let clipViewObserver {
-            NotificationCenter.default.removeObserver(clipViewObserver)
+    private func unregisterCurrentFrame() {
+        guard let document, let blockId else { return }
+        Task { @MainActor [weak document] in
+            document?.unregisterBlockFrame(for: blockId)
         }
+    }
+
+    deinit {
+        if let refreshObserver {
+            NotificationCenter.default.removeObserver(refreshObserver)
+        }
+        unregisterCurrentFrame()
     }
 }

@@ -64,7 +64,7 @@ struct InlineRowPeekPanel: View {
             .padding(.vertical, 8)
 
             if vm.schema != nil, vm.row != nil {
-                vm.rowPageView(onBack: { onClose() }, workspacePath: workspacePath)
+                vm.rowPageView(onBack: { onClose() }, fullWidth: true, workspacePath: workspacePath)
             } else {
                 Spacer()
                 HStack {

@@ -14,9 +14,14 @@ struct KanbanView: View {
     var onDelete: ((DatabaseRow) -> Void)?
     var onReorderRows: ((String, String?) -> Void)?
     var onClearSorts: (() -> Void)?
+    var onRenameSelectOption: ((String, String, String) -> Void)?
+    var onDeleteSelectOption: ((String, String) -> Void)?
+    var onHideColumn: ((String, String) -> Void)?
 
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
+    @State private var renamingColumnId: String? = nil
+    @State private var renamingColumnName: String = ""
 
     // Custom drag state
     @State private var draggingRowId: String? = nil
@@ -143,6 +148,20 @@ struct KanbanView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert("Rename Column", isPresented: Binding(
+            get: { renamingColumnId != nil },
+            set: { if !$0 { renamingColumnId = nil } }
+        )) {
+            TextField("Name", text: $renamingColumnName)
+            Button("Cancel", role: .cancel) { renamingColumnId = nil }
+            Button("Rename") {
+                let trimmed = renamingColumnName.trimmingCharacters(in: .whitespaces)
+                if let colId = renamingColumnId, let prop = groupProperty, !trimmed.isEmpty {
+                    onRenameSelectOption?(prop.id, colId, trimmed)
+                }
+                renamingColumnId = nil
+            }
+        }
     }
 
     // MARK: - Drag Preview
@@ -246,6 +265,35 @@ struct KanbanView: View {
             }
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
             .padding(.vertical, DatabaseZoomMetrics.size(8))
+            .contentShape(Rectangle())
+            .contextMenu {
+                if column.id != "__none__" {
+                    Button {
+                        renamingColumnName = column.name
+                        renamingColumnId = column.id
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+
+                    Button {
+                        if let prop = groupProperty {
+                            onHideColumn?(prop.id, column.id)
+                        }
+                    } label: {
+                        Label("Hide", systemImage: "eye.slash")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        if let prop = groupProperty {
+                            onDeleteSelectOption?(prop.id, column.id)
+                        }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
 
             // Cards — scroll vertically within column
             ScrollView(.vertical) {

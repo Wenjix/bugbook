@@ -284,6 +284,10 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .blockTypeShortcut)) { notification in
                 handleBlockTypeShortcut(notification.object as? String)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .databaseOpenRequested)) { notification in
+                guard let dbPath = notification.databasePath else { return }
+                openDatabase(at: dbPath)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .databaseNameDidChange)) { notification in
                 guard let dbPath = notification.databasePath,
                       let newName = notification.databaseNewName else { return }
@@ -859,7 +863,8 @@ struct ContentView: View {
                 HStack {
                     BreadcrumbView(
                         items: breadcrumbs(for: tab),
-                        onNavigate: { item in navigateToBreadcrumb(item) }
+                        onNavigate: { item in navigateToBreadcrumb(item) },
+                        sidebarOpen: appState.sidebarOpen
                     )
 
                     Spacer()

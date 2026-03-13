@@ -85,9 +85,11 @@ struct BlockEditorView: View {
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
                 let nextBlock = index + 1 < document.blocks.count ? document.blocks[index + 1] : nil
                 let useTallDropZone = block.type == .databaseEmbed
-                    || block.type == .image
                     || nextBlock?.type == .image
-                let dropZoneHeight: CGFloat = useTallDropZone ? 24 : 6
+                // After an image block use a slimmer drop zone since ImageBlockView
+                // already provides a generous 44pt tap region internally.
+                let dropZoneAfterImage = block.type == .image
+                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 6)
 
                 BlockCellView(
                     document: document,
@@ -116,8 +118,8 @@ struct BlockEditorView: View {
                         }
                     }
 
-                // Drop zone after each block (also clickable to focus nearby block)
-                // Use a taller drop zone after database embeds so users can easily click below them.
+                // Drop zone after each block (also clickable to focus nearby block).
+                // Taller after database embeds; slimmer after images (which have their own 44pt tap zone).
                 DropZoneView(isActive: activeDropIndex == index + 1, height: dropZoneHeight) { droppedIds in
                     handleDrop(droppedIds: droppedIds, targetIndex: index + 1)
                 } onTargetChanged: { targeted in
@@ -132,11 +134,18 @@ struct BlockEditorView: View {
                             return
                         }
                         document.clearMultiBlockTextSelection()
-                        // Click between blocks: focus the block below if it exists, otherwise the one above
-                        if index + 1 < document.blocks.count {
+                        // After an image block, always focus or insert an empty paragraph
+                        if block.type == .image {
+                            document.focusOrInsertParagraphAfter(blockId: block.id)
+                        } else if index + 1 < document.blocks.count {
                             let next = document.blocks[index + 1]
-                            document.focusedBlockId = next.id
-                            document.cursorPosition = 0
+                            // If next block is non-editable (image, etc.), insert a paragraph between
+                            if next.type == .image || next.type == .databaseEmbed {
+                                document.focusOrInsertParagraphAfter(blockId: block.id)
+                            } else {
+                                document.focusedBlockId = next.id
+                                document.cursorPosition = 0
+                            }
                         } else {
                             document.focusedBlockId = block.id
                             document.cursorPosition = block.text.count
@@ -233,6 +242,9 @@ struct BlockEditorView: View {
         guard editorFrameInWindow != .zero,
               blockMoveDragState == nil else { return }
         if marqueeDragState == nil {
+            // Block frames are stored in window coordinates for hit-testing.
+            // Refresh them on demand instead of on every scroll event.
+            document.requestBlockFrameRefresh()
             marqueeDragState = MarqueeDragState(
                 startLocalPoint: value.startLocation,
                 canStart: shouldStartMarqueeSelection(at: windowPoint(for: value.startLocation))
@@ -327,6 +339,7 @@ struct BlockEditorView: View {
 
     private func startBlockMoveDrag(blockId: UUID, localPoint: CGPoint) {
         guard blockMoveDragState == nil else { return }
+        document.requestBlockFrameRefresh()
         let draggedIds = document.dragSelectionBlockIds(startingWith: blockId)
         clearEditorSelections()
         blockMoveDragState = BlockMoveDragState(

@@ -88,6 +88,24 @@ struct ImageBlockView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            // Tappable region below image — click here to focus/create an
+            // empty paragraph underneath instead of selecting the image.
+            // Uses a Button (not onTapGesture) so it participates in the
+            // responder chain and doesn't get swallowed by parent gestures.
+            Button {
+                document.clearMultiBlockTextSelection()
+                document.clearBlockSelection()
+                document.focusOrInsertParagraphAfter(blockId: block.id)
+            } label: {
+                Rectangle()
+                    .fill(Color.white.opacity(0.001))
+                    .frame(height: 44)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .appCursor(.iBeam)
         }
         .focusable()
         .focused($isKeyboardFocused)
