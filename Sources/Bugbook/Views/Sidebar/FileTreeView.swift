@@ -9,7 +9,26 @@ enum DropMode: Equatable {
 /// Reference-type wrapper so all drop delegates share a single stable instance,
 /// preventing stale-binding issues when SwiftUI re-creates delegate structs.
 final class DropIndicatorState: ObservableObject {
-    @Published var mode: DropMode?
+    @Published var mode: DropMode? {
+        didSet { scheduleAutoCleanup() }
+    }
+
+    private var cleanupWorkItem: DispatchWorkItem?
+
+    /// During an active drag, `dropUpdated` sets `mode` continuously (~20 Hz),
+    /// resetting this timer each time. When the drag ends and no delegate
+    /// callback fires (`dropExited` is unreliable in SwiftUI), the timer
+    /// expires and clears the lingering indicator.
+    private func scheduleAutoCleanup() {
+        cleanupWorkItem?.cancel()
+        cleanupWorkItem = nil
+        guard mode != nil else { return }
+        let item = DispatchWorkItem { [weak self] in
+            self?.mode = nil
+        }
+        cleanupWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+    }
 }
 
 struct FileTreeView: View {

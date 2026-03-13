@@ -20,8 +20,8 @@ struct KanbanView: View {
 
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
-    @State private var renamingColumnId: String? = nil
-    @State private var renamingColumnName: String = ""
+    @State private var showColumnPopover: String? = nil
+    @State private var editingColumnName: String = ""
 
     // Custom drag state
     @State private var draggingRowId: String? = nil
@@ -148,20 +148,6 @@ struct KanbanView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .alert("Rename Column", isPresented: Binding(
-            get: { renamingColumnId != nil },
-            set: { if !$0 { renamingColumnId = nil } }
-        )) {
-            TextField("Name", text: $renamingColumnName)
-            Button("Cancel", role: .cancel) { renamingColumnId = nil }
-            Button("Rename") {
-                let trimmed = renamingColumnName.trimmingCharacters(in: .whitespaces)
-                if let colId = renamingColumnId, let prop = groupProperty, !trimmed.isEmpty {
-                    onRenameSelectOption?(prop.id, colId, trimmed)
-                }
-                renamingColumnId = nil
-            }
-        }
     }
 
     // MARK: - Drag Preview
@@ -236,6 +222,118 @@ struct KanbanView: View {
         addingOptionForColumn = false
     }
 
+    private func openColumnPopover(for column: (id: String, name: String, color: String)) {
+        guard column.id != "__none__" else { return }
+        editingColumnName = column.name
+        showColumnPopover = column.id
+    }
+
+    private func columnPopoverBinding(for columnId: String) -> Binding<Bool> {
+        guard columnId != "__none__" else { return .constant(false) }
+        return Binding(
+            get: { showColumnPopover == columnId },
+            set: { isPresented in
+                if !isPresented && showColumnPopover == columnId {
+                    showColumnPopover = nil
+                }
+            }
+        )
+    }
+
+    private func commitColumnRename(for column: (id: String, name: String, color: String)) {
+        let trimmed = editingColumnName.trimmingCharacters(in: .whitespaces)
+        if let prop = groupProperty, !trimmed.isEmpty, trimmed != column.name {
+            onRenameSelectOption?(prop.id, column.id, trimmed)
+        }
+        showColumnPopover = nil
+    }
+
+    private func hideColumn(_ columnId: String) {
+        guard let prop = groupProperty else { return }
+        showColumnPopover = nil
+        // Defer so the popover dismisses before the column is removed from the view
+        DispatchQueue.main.async {
+            onHideColumn?(prop.id, columnId)
+        }
+    }
+
+    private func deleteColumn(_ columnId: String) {
+        guard let prop = groupProperty else { return }
+        showColumnPopover = nil
+        DispatchQueue.main.async {
+            onDeleteSelectOption?(prop.id, columnId)
+        }
+    }
+
+    @ViewBuilder
+    private func columnNameLabel(_ column: (id: String, name: String, color: String), color: Color) -> some View {
+        Text(column.name)
+            .font(DatabaseZoomMetrics.font(12))
+            .fontWeight(.semibold)
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(3))
+            .background(color.opacity(0.2))
+            .foregroundStyle(color)
+            .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+    }
+
+    @ViewBuilder
+    private func columnHeaderNameView(_ column: (id: String, name: String, color: String), color: Color) -> some View {
+        if column.id == "__none__" {
+            columnNameLabel(column, color: color)
+        } else {
+            Button {
+                openColumnPopover(for: column)
+            } label: {
+                columnNameLabel(column, color: color)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func columnPopoverContent(for column: (id: String, name: String, color: String)) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Option name", text: $editingColumnName)
+                .textFieldStyle(.roundedBorder)
+                .font(DatabaseZoomMetrics.font(15))
+                .focusEffectDisabled()
+                .onSubmit {
+                    commitColumnRename(for: column)
+                }
+
+            Button {
+                hideColumn(column.id)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "eye.slash")
+                        .font(DatabaseZoomMetrics.font(12))
+                    Text("Hide option")
+                        .font(DatabaseZoomMetrics.font(15))
+                }
+                .foregroundStyle(.primary)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
+            Button(role: .destructive) {
+                deleteColumn(column.id)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "trash")
+                        .font(DatabaseZoomMetrics.font(12))
+                    Text("Delete option")
+                        .font(DatabaseZoomMetrics.font(15))
+                }
+                .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(DatabaseZoomMetrics.size(12))
+        .frame(width: DatabaseZoomMetrics.size(220))
+        .popoverSurface()
+    }
+
     // MARK: - Kanban Column
 
     private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int, availableHeight: CGFloat) -> some View {
@@ -244,14 +342,7 @@ struct KanbanView: View {
         return VStack(alignment: .leading, spacing: 0) {
             // Column header with colored label
             HStack {
-                Text(column.name)
-                    .font(DatabaseZoomMetrics.font(12))
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                    .padding(.vertical, DatabaseZoomMetrics.size(3))
-                    .background(columnColor.opacity(0.2))
-                    .foregroundStyle(columnColor)
-                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+                columnHeaderNameView(column, color: columnColor)
 
                 Spacer()
 
@@ -266,33 +357,11 @@ struct KanbanView: View {
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
             .padding(.vertical, DatabaseZoomMetrics.size(8))
             .contentShape(Rectangle())
-            .contextMenu {
-                if column.id != "__none__" {
-                    Button {
-                        renamingColumnName = column.name
-                        renamingColumnId = column.id
-                    } label: {
-                        Label("Rename", systemImage: "pencil")
-                    }
-
-                    Button {
-                        if let prop = groupProperty {
-                            onHideColumn?(prop.id, column.id)
-                        }
-                    } label: {
-                        Label("Hide", systemImage: "eye.slash")
-                    }
-
-                    Divider()
-
-                    Button(role: .destructive) {
-                        if let prop = groupProperty {
-                            onDeleteSelectOption?(prop.id, column.id)
-                        }
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
+            .onNSRightClick {
+                openColumnPopover(for: column)
+            }
+            .floatingPopover(isPresented: columnPopoverBinding(for: column.id), arrowEdge: .bottom) {
+                columnPopoverContent(for: column)
             }
 
             // Cards — scroll vertically within column
