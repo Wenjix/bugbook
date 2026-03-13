@@ -1,5 +1,7 @@
 .build/
 .swiftpm/
+build/
+macos/build/
 *.xcodeproj/
 !ios/BugbookMobile.xcodeproj/
 !ios/BugbookMobile.xcodeproj/project.pbxproj
@@ -8,3 +10,34 @@
 xcuserdata/
 DerivedData/
 .DS_Store
+
+# Local coding-agent/tooling folders
+.agent/
+.agents/
+.claude/
+.codebuddy/
+.commandcode/
+.continue/
+.crush/
+.factory/
+.goose/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.windsurf/
+.zencoder/
+
+# Local skill/tool metadata
+skills-lock.json
+.swiftlint.yml

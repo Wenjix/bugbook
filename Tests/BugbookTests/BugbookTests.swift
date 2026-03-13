@@ -345,9 +345,13 @@ final class BlockDocumentTests: XCTestCase {
             return
         }
         let blockToDelete = doc.blocks[1].id
+        let survivorId = doc.blocks[2].id
         doc.deleteBlock(id: blockToDelete)
-        XCTAssertEqual(doc.blocks.count, initialCount - 1)
+        XCTAssertEqual(doc.blocks.count, initialCount)
         XCTAssertNil(doc.blocks.first(where: { $0.id == blockToDelete }))
+        XCTAssertEqual(doc.blocks[1].id, survivorId)
+        XCTAssertEqual(doc.blocks.last?.type, .paragraph)
+        XCTAssertEqual(doc.blocks.last?.text, "")
     }
 
     func testChangeBlockType() {
@@ -437,9 +441,13 @@ final class BlockDocumentTests: XCTestCase {
             XCTFail("Expected at least 4 blocks")
             return
         }
-        doc.selectedBlockIds = [doc.blocks[1].id, doc.blocks[2].id]
+        let deletedIds = [doc.blocks[1].id, doc.blocks[2].id]
+        doc.selectedBlockIds = Set(deletedIds)
         doc.deleteSelectedBlocks()
-        XCTAssertEqual(doc.blocks.count, initialCount - 2)
+        XCTAssertEqual(doc.blocks.count, initialCount - 1)
+        XCTAssertNil(doc.blocks.first(where: { deletedIds.contains($0.id) }))
+        XCTAssertEqual(doc.blocks.last?.type, .paragraph)
+        XCTAssertEqual(doc.blocks.last?.text, "")
         XCTAssertTrue(doc.selectedBlockIds.isEmpty)
     }
 
@@ -460,19 +468,28 @@ final class BlockDocumentTests: XCTestCase {
     func testUndoBlockOperation() {
         let doc = BlockDocument(markdown: "# Title\nOriginal\n")
         let initialCount = doc.blocks.count
-        doc.deleteBlock(id: doc.blocks[1].id)
-        XCTAssertEqual(doc.blocks.count, initialCount - 1)
+        let deletedId = doc.blocks[1].id
+        doc.deleteBlock(id: deletedId)
+        XCTAssertEqual(doc.blocks.count, initialCount)
+        XCTAssertNil(doc.blocks.first(where: { $0.id == deletedId }))
+        XCTAssertEqual(doc.blocks.last?.type, .paragraph)
+        XCTAssertEqual(doc.blocks.last?.text, "")
         doc.undo()
         XCTAssertEqual(doc.blocks.count, initialCount)
+        XCTAssertNotNil(doc.blocks.first(where: { $0.id == deletedId }))
     }
 
     func testRedoBlockOperation() {
         let doc = BlockDocument(markdown: "# Title\nOriginal\n")
-        let afterDelete = doc.blocks.count - 1
-        doc.deleteBlock(id: doc.blocks[1].id)
+        let initialCount = doc.blocks.count
+        let deletedId = doc.blocks[1].id
+        doc.deleteBlock(id: deletedId)
         doc.undo()
         doc.redo()
-        XCTAssertEqual(doc.blocks.count, afterDelete)
+        XCTAssertEqual(doc.blocks.count, initialCount)
+        XCTAssertNil(doc.blocks.first(where: { $0.id == deletedId }))
+        XCTAssertEqual(doc.blocks.last?.type, .paragraph)
+        XCTAssertEqual(doc.blocks.last?.text, "")
     }
 
     func testSplitBlock() {

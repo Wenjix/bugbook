@@ -14,14 +14,32 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
+        id: toolchain
         run: |
+          set -euo pipefail
           # Project targets macOS 26 / Swift 6.2 — find the best available Xcode
           if [ -d "/Applications/Xcode_26.0.app" ]; then
             sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
           elif [ -d "/Applications/Xcode_16.2.app" ]; then
             sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
           fi
+
           swift --version
+
+          SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version || echo 0)"
+          echo "sdk_version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
+
+          if python3 - "$SDK_VERSION" <<'PY'
+import sys
+version = sys.argv[1].split(".")
+major = int(version[0]) if version and version[0].isdigit() else 0
+sys.exit(0 if major >= 26 else 1)
+PY
+          then
+            echo "has_required_sdk=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_required_sdk=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
@@ -31,16 +49,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      - name: Build
+      - name: Report skipped build matrix
+        if: steps.toolchain.outputs.has_required_sdk != 'true'
         run: |
-          # Requires macOS 26 SDK (Xcode 26) for full build.
-          # Skip build gracefully if SDK is unavailable.
-          if swift build 2>&1 | tee /dev/stderr | grep -q "error:"; then
-            echo "::warning::Build requires macOS 26 SDK — skipping until GH Actions runner is available"
-          fi
+          echo "::warning::macOS SDK ${{ steps.toolchain.outputs.sdk_version }} is below the required macOS 26 SDK; build/test/smoke steps are skipped on this runner"
+
+      - name: Build
+        if: steps.toolchain.outputs.has_required_sdk == 'true'
+        run: |
+          swift build
 
       - name: Run tests
-        run: swift test || echo "::warning::Tests require macOS 26 SDK — skipping"
+        if: steps.toolchain.outputs.has_required_sdk == 'true'
+        run: swift test
 
       - name: Run smoke test
-        run: bash scripts/smoke-cli.sh || echo "::warning::Smoke test requires macOS 26 SDK — skipping"
+        if: steps.toolchain.outputs.has_required_sdk == 'true'
+        run: bash scripts/smoke-cli.sh
