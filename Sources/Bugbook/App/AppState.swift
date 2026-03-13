@@ -363,4 +363,29 @@ enum ViewMode {
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1
     }
+
+    /// Update the icon for a file entry in the tree so the sidebar reflects the change immediately.
+    func updateFileTreeIcon(for path: String, icon: String?) {
+        func update(entries: inout [FileEntry]) -> Bool {
+            for i in entries.indices {
+                if entries[i].path == path {
+                    entries[i].icon = icon
+                    return true
+                }
+                if var children = entries[i].children {
+                    if update(entries: &children) {
+                        entries[i].children = children
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+        if update(entries: &fileTree) {
+            // Also update sidebar references that mirror this path
+            for i in sidebarReferences.indices where sidebarReferences[i].path == path {
+                sidebarReferences[i].icon = icon
+            }
+        }
+    }
 }

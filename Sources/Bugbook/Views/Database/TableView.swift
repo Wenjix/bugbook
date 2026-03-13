@@ -2,7 +2,7 @@ import SwiftUI
 import BugbookCore
 
 struct TableView: View {
-    static let rowControlsInset: CGFloat = 52
+    static let rowControlsInset: CGFloat = 32
     private static let reorderCoordinateSpace = "table-reorder"
 
     let schema: DatabaseSchema
@@ -44,9 +44,9 @@ struct TableView: View {
 
     private let titleColumnKey = "__title__"
     private let topAnchorKey = "__table_top__"
-    private let rowHandleWidth: CGFloat = DatabaseZoomMetrics.size(20)
-    private let checkboxWidth: CGFloat = DatabaseZoomMetrics.size(18)
-    private let rowControlsSpacing: CGFloat = DatabaseZoomMetrics.size(6)
+    private let rowHandleWidth: CGFloat = DatabaseZoomMetrics.size(12)
+    private let checkboxWidth: CGFloat = DatabaseZoomMetrics.size(14)
+    private let rowControlsSpacing: CGFloat = DatabaseZoomMetrics.size(2)
     private var scaledRowControlsInset: CGFloat { DatabaseZoomMetrics.size(Self.rowControlsInset) }
 
     private var visibleProperties: [PropertyDefinition] {
@@ -546,12 +546,12 @@ struct TableView: View {
     private func rowControls(for row: DatabaseRow, isHovered: Bool) -> some View {
         HStack(spacing: rowControlsSpacing) {
             dragHandle(for: row, isHovered: isHovered)
-                .frame(width: rowHandleWidth, height: 18)
+                .frame(width: rowHandleWidth, height: DatabaseZoomMetrics.size(18))
 
             checkbox(for: row.id, isHovered: isHovered)
-                .frame(width: checkboxWidth, height: 18)
+                .frame(width: checkboxWidth, height: DatabaseZoomMetrics.size(18))
         }
-        .padding(.trailing, 6)
+        .padding(.trailing, DatabaseZoomMetrics.size(4))
     }
 
     @ViewBuilder
@@ -744,7 +744,7 @@ private struct HoverRow<Content: View>: View {
 private struct RowDragHandleDots: View {
     var body: some View {
         GripDotsView()
-            .frame(width: 20, height: 24)
+            .frame(width: DatabaseZoomMetrics.size(12), height: DatabaseZoomMetrics.size(20))
     }
 }
 

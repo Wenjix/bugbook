@@ -30,7 +30,9 @@ struct ContentView: View {
     @State private var sidebarToggleHovering = false
     @State private var sidebarEdgeHovering = false
     @State private var sidebarOverlayHovering = false
+    @State private var sidebarPeekTrashPopoverPresented = false
     @State private var sidebarPeekDismissTask: Task<Void, Never>?
+    @State private var sidebarPeekDwellTask: Task<Void, Never>?
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
     @State private var editorZoomHudVisible = false
     @State private var editorZoomHudHovered = false
@@ -47,6 +49,7 @@ struct ContentView: View {
     @State private var peekWidth: CGFloat = 640
     @State private var peekDragStartWidth: CGFloat?
     @State private var sidebarHiddenByPeek: Bool = false
+    @State private var sidebarWasOpenBeforeSettings: Bool = true
     @State private var modalTarget: RowTarget?
     @State private var showPageOptionsMenu = false
     @State private var databaseRowFullWidth: [UUID: Bool] = [:]
@@ -110,6 +113,16 @@ struct ContentView: View {
             .onChange(of: appState.sidebarOpen) { _, _ in
                 syncSidebarPeekVisibility()
             }
+            .onChange(of: appState.showSettings) { _, showingSettings in
+                if showingSettings {
+                    dismissSidebarPeek(immediately: true)
+                    sidebarWasOpenBeforeSettings = appState.sidebarOpen
+                    appState.sidebarOpen = true
+                } else {
+                    appState.sidebarOpen = sidebarWasOpenBeforeSettings
+                }
+                syncSidebarPeekVisibility()
+            }
             .onChange(of: appState.fileTree) { _, newTree in
                 syncAvailablePages(newTree)
                 refreshSidebarReferences(using: newTree)
@@ -120,6 +133,9 @@ struct ContentView: View {
                 }
             }
             .onChange(of: focusModeActive) { _, _ in
+                syncSidebarPeekVisibility()
+            }
+            .onChange(of: sidebarPeekTrashPopoverPresented) { _, _ in
                 syncSidebarPeekVisibility()
             }
             .onChange(of: appState.activeTab?.id) { _, _ in
@@ -303,7 +319,7 @@ struct ContentView: View {
         if sidebarPeekEligible {
             HStack(spacing: 0) {
                 Color.clear
-                    .frame(width: 2)
+                    .frame(width: 4)
                     .contentShape(Rectangle())
                     .onHover { hovering in
                         setSidebarEdgeHovering(hovering)
@@ -319,21 +335,18 @@ struct ContentView: View {
         if sidebarPeekEligible {
             VStack {
                 HStack {
-                    HStack {
-                        sidebarChromeButton(icon: "sidebar.left", help: "Open Sidebar") {
-                            openSidebarPinned()
-                        }
-                        .padding(.leading, ShellZoomMetrics.size(84))
-                        Spacer(minLength: 0)
+                    sidebarChromeButton(icon: "sidebar.left", help: "Open Sidebar") {
+                        openSidebarPinned()
                     }
-                    .frame(width: ShellZoomMetrics.size(200), alignment: .leading)
+                    .padding(ShellZoomMetrics.size(4))
                     .contentShape(Rectangle())
                     .onHover { hovering in
                         setSidebarToggleHovering(hovering)
                     }
+                    .padding(.leading, ShellZoomMetrics.size(80))
                     Spacer()
                 }
-                .padding(.top, ShellZoomMetrics.size(10))
+                .padding(.top, ShellZoomMetrics.size(4))
                 Spacer()
             }
             .opacity(focusModeActive ? 0.0 : 1.0)
@@ -343,70 +356,50 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebarPeekOverlay: some View {
         if sidebarPeekEligible {
-            VStack(spacing: 0) {
-                // Pages header
-                HStack {
-                    Text("Pages")
-                        .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
-                        .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                    Spacer()
-                }
-                .padding(.horizontal, ShellZoomMetrics.size(14))
-                .padding(.top, ShellZoomMetrics.size(10))
-                .padding(.bottom, ShellZoomMetrics.size(4))
-
-                // Compact file tree
-                ScrollView {
-                    VStack(spacing: ShellZoomMetrics.size(4)) {
-                        if !appState.sidebarReferences.isEmpty {
-                            VStack(spacing: ShellZoomMetrics.size(1)) {
-                                ForEach(appState.sidebarReferences) { entry in
-                                    FileTreeItemView(
-                                        entry: entry,
-                                        activeFilePath: appState.activeTab?.path,
-                                        fileSystem: fileSystem,
-                                        workspacePath: appState.workspacePath,
-                                        onSelectFile: { entry in handleSidebarFileSelect(entry) },
-                                        onRefreshTree: { refreshFileTree() },
-                                        isSidebarReference: true
-                                    )
-                                }
-                            }
-                        }
-
-                        FileTreeView(
-                            entries: appState.fileTree,
-                            activeFilePath: appState.activeTab?.path,
-                            fileSystem: fileSystem,
-                            workspacePath: appState.workspacePath,
-                            onSelectFile: { entry in handleSidebarFileSelect(entry) },
-                            onRefreshTree: { refreshFileTree() }
-                        )
-                    }
-                    .padding(.horizontal, ShellZoomMetrics.size(8))
-                    .padding(.vertical, ShellZoomMetrics.size(4))
-                    .frame(maxWidth: .infinity, alignment: .top)
-                }
-            }
-            .frame(width: ShellZoomMetrics.size(190))
-            .frame(maxHeight: ShellZoomMetrics.size(360), alignment: .topLeading)
-            .background(Color.fallbackSidebarBg)
+            SidebarView(
+                appState: appState,
+                fileSystem: fileSystem,
+                onSelectFile: { entry in
+                    handleSidebarFileSelect(entry)
+                    dismissSidebarPeek(immediately: true)
+                },
+                onToggleSidebar: {
+                    openSidebarPinned()
+                },
+                onAddSidebarReference: { payload in
+                    addSidebarReference(payload)
+                },
+                layoutMode: .compact,
+                onActionInvoked: {
+                    dismissSidebarPeek(immediately: true)
+                },
+                trashPopoverOverride: $sidebarPeekTrashPopoverPresented
+            )
+            .frame(width: ShellZoomMetrics.size(208))
+            .frame(maxHeight: ShellZoomMetrics.size(430), alignment: .topLeading)
             .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.md)))
             .overlay {
                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.md))
-                    .stroke(Color.fallbackChromeBorder, lineWidth: 1)
+                    .stroke(Color.fallbackChromeBorder, lineWidth: 0.5)
                     .allowsHitTesting(false)
             }
-            .shadow(color: Color.black.opacity(0.15), radius: 18, x: 4, y: 4)
-            .padding(.top, ShellZoomMetrics.size(38))
-            .padding(.leading, ShellZoomMetrics.size(4))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 4, y: 4)
+            .contentShape(Rectangle())
             .offset(x: sidebarPeekVisible ? 0 : sidebarPeekHiddenOffset)
             .opacity(sidebarPeekVisible ? 1 : 0)
             .allowsHitTesting(sidebarPeekVisible)
             .onHover { hovering in
+                // Only track overlay hover when peek is actually visible —
+                // .onHover fires even with allowsHitTesting(false)
+                guard sidebarPeekVisible else {
+                    if sidebarOverlayHovering { setSidebarOverlayHovering(false) }
+                    return
+                }
                 setSidebarOverlayHovering(hovering)
             }
+            .padding(.top, ShellZoomMetrics.size(72))
+            .padding(.leading, ShellZoomMetrics.size(8))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .zIndex(1)
         }
     }
@@ -479,7 +472,7 @@ struct ContentView: View {
     }
 
     private var sidebarPeekEligible: Bool {
-        !appState.sidebarOpen && !focusModeActive && !sidebarHiddenByPeek
+        !appState.sidebarOpen && !appState.showSettings && !focusModeActive && !sidebarHiddenByPeek
     }
 
     private var sidebarPeekHiddenOffset: CGFloat {
@@ -488,6 +481,10 @@ struct ContentView: View {
 
     private var sidebarPeekAnimation: Animation {
         .easeInOut(duration: reduceMotion ? 0.1 : 0.18)
+    }
+
+    private var sidebarPeekInteractionActive: Bool {
+        sidebarToggleHovering || sidebarEdgeHovering || sidebarOverlayHovering || sidebarPeekTrashPopoverPresented
     }
 
     private func cancelSidebarPeekDismissTask() {
@@ -538,6 +535,7 @@ struct ContentView: View {
 
     private func dismissSidebarPeek(immediately: Bool = false) {
         cancelSidebarPeekDismissTask()
+        sidebarPeekTrashPopoverPresented = false
         resetSidebarPeekHoverState()
         guard sidebarPeekVisible else { return }
         if immediately {
@@ -553,30 +551,55 @@ struct ContentView: View {
         cancelSidebarPeekDismissTask()
 
         guard sidebarPeekEligible else {
+            cancelSidebarPeekDwellTask()
             dismissSidebarPeek(immediately: true)
             return
         }
 
-        if sidebarToggleHovering || sidebarEdgeHovering || sidebarOverlayHovering {
-            guard !sidebarPeekVisible else { return }
-            withAnimation(sidebarPeekAnimation) {
-                sidebarPeekVisible = true
+        if sidebarPeekInteractionActive {
+            if sidebarPeekVisible {
+                // Already visible — cancel any pending dismiss
+                return
+            }
+            // Toggle icon or overlay hover: show immediately
+            if sidebarToggleHovering || sidebarOverlayHovering {
+                cancelSidebarPeekDwellTask()
+                withAnimation(sidebarPeekAnimation) {
+                    sidebarPeekVisible = true
+                }
+                return
+            }
+            // Edge hover: require dwell time before showing
+            if sidebarEdgeHovering && sidebarPeekDwellTask == nil {
+                sidebarPeekDwellTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    guard !Task.isCancelled else { return }
+                    guard sidebarPeekEligible, sidebarEdgeHovering else { return }
+                    withAnimation(sidebarPeekAnimation) {
+                        sidebarPeekVisible = true
+                    }
+                }
             }
             return
         }
 
+        // No interaction — schedule dismiss
+        cancelSidebarPeekDwellTask()
         guard sidebarPeekVisible else { return }
         sidebarPeekDismissTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 140_000_000)
+            try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
             guard sidebarPeekEligible,
-                  !sidebarToggleHovering,
-                  !sidebarEdgeHovering,
-                  !sidebarOverlayHovering else { return }
+                  !sidebarPeekInteractionActive else { return }
             withAnimation(sidebarPeekAnimation) {
                 sidebarPeekVisible = false
             }
         }
+    }
+
+    private func cancelSidebarPeekDwellTask() {
+        sidebarPeekDwellTask?.cancel()
+        sidebarPeekDwellTask = nil
     }
 
     // MARK: - Move Page Overlay
@@ -986,7 +1009,9 @@ struct ContentView: View {
                                     document.icon = $0
                                     markActiveEditorTabDirty()
                                     if appState.activeTabIndex < appState.openTabs.count {
+                                        let tab = appState.openTabs[appState.activeTabIndex]
                                         appState.openTabs[appState.activeTabIndex].icon = $0
+                                        appState.updateFileTreeIcon(for: tab.path, icon: $0)
                                     }
                                     scheduleSave()
                                 }
@@ -1136,9 +1161,7 @@ struct ContentView: View {
             }
         }
         doc.onOpenDatabaseTab = { dbPath in
-            let name = (dbPath as NSString).lastPathComponent
-            let entry = FileEntry(id: dbPath, name: name, path: dbPath, isDirectory: false, kind: .database)
-            navigateToEntry(entry, preferExistingTab: false)
+            openDatabase(at: dbPath)
         }
     }
 

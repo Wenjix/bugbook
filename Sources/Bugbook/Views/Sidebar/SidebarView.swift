@@ -1,14 +1,22 @@
 import SwiftUI
 
 struct SidebarView: View {
+    enum LayoutMode {
+        case full
+        case compact
+    }
+
     var appState: AppState
     var fileSystem: FileSystemService
     var onSelectFile: (FileEntry) -> Void
     var onToggleSidebar: () -> Void
     var onAddSidebarReference: (SidebarReferenceDragPayload) -> Void
+    var layoutMode: LayoutMode = .full
+    var onActionInvoked: (() -> Void)? = nil
+    var trashPopoverOverride: Binding<Bool>? = nil
     @State private var hoveredButton: String?
     @State private var isFullScreen: Bool = false
-    @State private var showTrashPopover: Bool = false
+    @State private var localTrashPopoverPresented: Bool = false
     @State private var isSidebarReferenceDropTargeted = false
 
     private let settingsTabs: [(id: String, label: String, icon: String)] = [
@@ -20,6 +28,62 @@ struct SidebarView: View {
         ("shortcuts", "Shortcuts", "keyboard"),
     ]
 
+    private var isCompact: Bool {
+        layoutMode == .compact
+    }
+
+    private var sidebarMinWidth: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 170 : 160)
+    }
+
+    private var sidebarIdealWidth: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 185 : 190)
+    }
+
+    private var sidebarMaxWidth: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 195 : 240)
+    }
+
+    private var topSpacerHeight: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 4 : 12)
+    }
+
+    private var chromeButtonSpacing: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 4 : 8)
+    }
+
+    private var sectionSpacing: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 0 : 2)
+    }
+
+    private var sectionHorizontalPadding: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 5 : 8)
+    }
+
+    private var sectionVerticalPadding: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 3 : 6)
+    }
+
+    private var rowHorizontalPadding: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 8 : 12)
+    }
+
+    private var rowVerticalPadding: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 3 : 6)
+    }
+
+    private var headerTopPadding: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 1 : 4)
+    }
+
+    private var treeVerticalPadding: CGFloat {
+        ShellZoomMetrics.size(isCompact ? 2 : 4)
+    }
+
+    private var trashPopoverPresented: Binding<Bool> {
+        trashPopoverOverride ?? $localTrashPopoverPresented
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if appState.showSettings {
@@ -29,11 +93,11 @@ struct SidebarView: View {
             }
         }
         .frame(
-            minWidth: ShellZoomMetrics.size(160),
-            idealWidth: ShellZoomMetrics.size(190),
-            maxWidth: ShellZoomMetrics.size(240)
+            minWidth: sidebarMinWidth,
+            idealWidth: sidebarIdealWidth,
+            maxWidth: sidebarMaxWidth
         )
-        .background(Color.fallbackSidebarBg)
+        .background(isCompact ? Color.fallbackEditorBg : Color.fallbackSidebarBg)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             isFullScreen = true
         }
@@ -50,27 +114,32 @@ struct SidebarView: View {
     private var fileTreeNav: some View {
         VStack(spacing: 0) {
             // Traffic light spacing
-            Spacer().frame(height: ShellZoomMetrics.size(12))
+            Spacer().frame(height: topSpacerHeight)
 
             // Action buttons
-            HStack(spacing: ShellZoomMetrics.size(8)) {
-                if !isFullScreen {
+            HStack(spacing: chromeButtonSpacing) {
+                if isCompact {
                     Spacer()
-                }
-                chromeButton(icon: "sidebar.left", help: "Toggle Sidebar", action: onToggleSidebar)
-                newPageMenuButton
-                if isFullScreen {
-                    Spacer()
+                    newPageMenuButton
+                } else {
+                    if !isFullScreen {
+                        Spacer()
+                    }
+                    chromeButton(icon: "sidebar.left", help: "Toggle Sidebar", action: onToggleSidebar)
+                    newPageMenuButton
+                    if isFullScreen {
+                        Spacer()
+                    }
                 }
             }
-            .padding(.horizontal, ShellZoomMetrics.size(12))
-            .padding(.leading, isFullScreen ? ShellZoomMetrics.size(8) : 0)
-            .padding(.bottom, ShellZoomMetrics.size(6))
+            .padding(.horizontal, ShellZoomMetrics.size(isCompact ? 10 : 12))
+            .padding(.leading, !isCompact && isFullScreen ? ShellZoomMetrics.size(8) : 0)
+            .padding(.bottom, ShellZoomMetrics.size(isCompact ? 2 : 6))
 
             // Search & AI
-            VStack(spacing: ShellZoomMetrics.size(2)) {
-                Button(action: { NotificationCenter.default.post(name: .quickOpen, object: nil) }) {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
+            VStack(spacing: sectionSpacing) {
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .quickOpen, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "magnifyingglass")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
@@ -79,8 +148,8 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
                     .background(hoveredButton == "search" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
@@ -88,8 +157,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "search" : nil }
 
-                Button(action: { NotificationCenter.default.post(name: .openAIPanel, object: nil) }) {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openAIPanel, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "sparkles")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
@@ -98,8 +167,8 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
                     .background(hoveredButton == "ai" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
@@ -107,13 +176,14 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "ai" : nil }
             }
-            .padding(.horizontal, ShellZoomMetrics.size(8))
-            .padding(.vertical, ShellZoomMetrics.size(6))
+            .padding(.horizontal, sectionHorizontalPadding)
+            .padding(.vertical, sectionVerticalPadding)
 
-            // Daily note & Graph
-            VStack(spacing: ShellZoomMetrics.size(2)) {
-                Button(action: { NotificationCenter.default.post(name: .openDailyNote, object: nil) }) {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
+            // Daily note & Graph (hidden in compact/peek mode)
+            if !isCompact {
+            VStack(spacing: sectionSpacing) {
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openDailyNote, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "calendar")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
@@ -122,8 +192,8 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
                     .background(hoveredButton == "today" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
@@ -131,8 +201,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "today" : nil }
 
-                Button(action: { NotificationCenter.default.post(name: .openGraphView, object: nil) }) {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openGraphView, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "point.3.connected.trianglepath.dotted")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
@@ -141,8 +211,8 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
                     .background(hoveredButton == "graph" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
@@ -150,7 +220,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "graph" : nil }
             }
-            .padding(.horizontal, ShellZoomMetrics.size(8))
+            .padding(.horizontal, sectionHorizontalPadding)
+            }
 
             // Pages header
             HStack {
@@ -159,13 +230,13 @@ struct SidebarView: View {
                     .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                 Spacer()
             }
-            .padding(.horizontal, ShellZoomMetrics.size(14))
-            .padding(.top, ShellZoomMetrics.size(4))
+            .padding(.horizontal, ShellZoomMetrics.size(isCompact ? 12 : 14))
+            .padding(.top, headerTopPadding)
             .padding(.bottom, ShellZoomMetrics.size(2))
 
             // File tree
             ScrollView {
-                VStack(spacing: ShellZoomMetrics.size(4)) {
+                VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
                     if !appState.sidebarReferences.isEmpty {
                         VStack(spacing: ShellZoomMetrics.size(1)) {
                             ForEach(appState.sidebarReferences) { entry in
@@ -191,8 +262,8 @@ struct SidebarView: View {
                         onRefreshTree: refreshTree
                     )
                 }
-                .padding(.horizontal, ShellZoomMetrics.size(8))
-                .padding(.vertical, ShellZoomMetrics.size(4))
+                .padding(.horizontal, sectionHorizontalPadding)
+                .padding(.vertical, treeVerticalPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .dropDestination(
@@ -209,16 +280,16 @@ struct SidebarView: View {
             .overlay {
                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
                     .stroke(isSidebarReferenceDropTargeted ? Color.accentColor.opacity(0.8) : Color.clear, lineWidth: 1.5)
-                    .padding(.horizontal, ShellZoomMetrics.size(8))
-                    .padding(.vertical, ShellZoomMetrics.size(4))
+                    .padding(.horizontal, sectionHorizontalPadding)
+                    .padding(.vertical, treeVerticalPadding)
                     .allowsHitTesting(false)
             }
             .accessibilityIdentifier("sidebar-file-tree")
 
             // Bottom bar with settings, trash, and chat
-            VStack(spacing: ShellZoomMetrics.size(2)) {
+            VStack(spacing: sectionSpacing) {
                 Button(action: openSettings) {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
+                    HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "gearshape")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
@@ -227,8 +298,8 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
                     .background(hoveredButton == "settings" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
@@ -236,8 +307,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "settings" : nil }
 
-                Button(action: { showTrashPopover.toggle() }) {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
+                Button(action: { trashPopoverPresented.wrappedValue.toggle() }) {
+                    HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "trash")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
@@ -246,15 +317,15 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.vertical, ShellZoomMetrics.size(6))
-                    .background((hoveredButton == "trash" || showTrashPopover) ? Color.primary.opacity(0.06) : Color.clear)
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
+                    .background((hoveredButton == "trash" || trashPopoverPresented.wrappedValue) ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "trash" : nil }
-                .floatingPopover(isPresented: $showTrashPopover) {
+                .floatingPopover(isPresented: trashPopoverPresented) {
                     TrashPopoverView(
                         appState: appState,
                         fileSystem: fileSystem,
@@ -265,9 +336,11 @@ struct SidebarView: View {
                 }
 
                 Button(action: {
-                    appState.openNotesChat()
+                    invokeAction {
+                        appState.openNotesChat()
+                    }
                 }) {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
+                    HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "bubble.left.and.text.bubble.right")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
@@ -276,8 +349,8 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
                     .background(hoveredButton == "chat" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
@@ -285,8 +358,8 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "chat" : nil }
             }
-            .padding(.horizontal, ShellZoomMetrics.size(8))
-            .padding(.vertical, ShellZoomMetrics.size(6))
+            .padding(.horizontal, sectionHorizontalPadding)
+            .padding(.vertical, sectionVerticalPadding)
         }
     }
 
@@ -353,12 +426,21 @@ struct SidebarView: View {
         appState.fileTree = fileSystem.buildFileTree(at: workspace)
     }
 
+    private func invokeAction(_ action: () -> Void) {
+        action()
+        onActionInvoked?()
+    }
+
     private func createFile() {
-        NotificationCenter.default.post(name: .newNote, object: nil)
+        invokeAction {
+            NotificationCenter.default.post(name: .newNote, object: nil)
+        }
     }
 
     private func createCanvas() {
-        NotificationCenter.default.post(name: .newCanvas, object: nil)
+        invokeAction {
+            NotificationCenter.default.post(name: .newCanvas, object: nil)
+        }
     }
 
     private var newPageMenuButton: some View {
@@ -388,7 +470,9 @@ struct SidebarView: View {
     }
 
     private func openSettings() {
-        NotificationCenter.default.post(name: .openSettings, object: nil)
+        invokeAction {
+            NotificationCenter.default.post(name: .openSettings, object: nil)
+        }
     }
 
 

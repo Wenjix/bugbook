@@ -100,6 +100,14 @@ final class DatabaseViewState {
                 if activeViewId.isEmpty || !loadedSchema.views.contains(where: { $0.id == self.activeViewId }) {
                     self.activeViewId = loadedSchema.defaultView
                 }
+                // Sync tab displayName with schema name so breadcrumbs show the correct title
+                if !loadedSchema.name.isEmpty {
+                    NotificationCenter.default.post(
+                        name: .databaseNameDidChange,
+                        object: nil,
+                        userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.newName: loadedSchema.name]
+                    )
+                }
                 onLoaded?()
             case .failure(let error):
                 self.error = error.localizedDescription
