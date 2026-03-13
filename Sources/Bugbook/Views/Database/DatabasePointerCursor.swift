@@ -1,17 +1,34 @@
 import SwiftUI
 
-struct DatabasePointerCursorOverlay: NSViewRepresentable {
-    func makeNSView(context: Context) -> DatabasePointerCursorNSView {
-        DatabasePointerCursorNSView()
+struct CursorRectOverlay: NSViewRepresentable {
+    let cursor: NSCursor
+
+    func makeNSView(context: Context) -> CursorRectNSView {
+        CursorRectNSView(cursor: cursor)
     }
 
-    func updateNSView(_ nsView: DatabasePointerCursorNSView, context: Context) {
+    func updateNSView(_ nsView: CursorRectNSView, context: Context) {
+        nsView.cursor = cursor
     }
 }
 
-final class DatabasePointerCursorNSView: NSView {
+final class CursorRectNSView: NSView {
+    var cursor: NSCursor {
+        didSet {
+            guard oldValue !== cursor else { return }
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
     override init(frame frameRect: NSRect) {
+        self.cursor = .arrow
         super.init(frame: frameRect)
+        wantsLayer = false
+    }
+
+    init(cursor: NSCursor) {
+        self.cursor = cursor
+        super.init(frame: .zero)
         wantsLayer = false
     }
 
@@ -25,7 +42,7 @@ final class DatabasePointerCursorNSView: NSView {
 
     override func resetCursorRects() {
         discardCursorRects()
-        addCursorRect(bounds, cursor: .pointingHand)
+        addCursorRect(bounds, cursor: cursor)
     }
 
     override func layout() {
@@ -35,7 +52,15 @@ final class DatabasePointerCursorNSView: NSView {
 }
 
 extension View {
+    func appCursor(_ cursor: NSCursor) -> some View {
+        overlay(CursorRectOverlay(cursor: cursor))
+    }
+
     func databasePointerCursor() -> some View {
-        overlay(DatabasePointerCursorOverlay())
+        appCursor(.arrow)
+    }
+
+    func editorTextCursor() -> some View {
+        appCursor(.iBeam)
     }
 }

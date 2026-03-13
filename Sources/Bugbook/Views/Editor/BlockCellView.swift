@@ -5,8 +5,14 @@ import AppKit
 struct BlockCellView: View {
     var document: BlockDocument
     let block: Block
+    var isBeingDragged: Bool = false
     var onTyping: (() -> Void)? = nil
+    var onHandleDragStart: ((UUID, CGPoint) -> Void)? = nil
+    var onHandleDragChange: ((UUID, CGPoint) -> Void)? = nil
+    var onHandleDragEnd: ((UUID, CGPoint) -> Void)? = nil
+    @State private var isRowHovering = false
     @State private var isHandleHovering = false
+    @State private var isHandleDragging = false
     @State private var showSlashMenu = false
     @State private var showBlockMenu = false
     @State private var showPagePicker = false
@@ -25,35 +31,11 @@ struct BlockCellView: View {
     }
 
     private var blockBase: some View {
-        Group {
-            if block.type == .databaseEmbed {
-                blockShell
-            } else {
-                blockShell
-                    .contentShape(Rectangle())
-                    .overlay {
-                        Button {
-                            if document.consumePendingEditorTapAfterBlockSelection() {
-                                return
-                            }
-                            if NSEvent.modifierFlags.contains(.shift),
-                               let anchor = document.focusedBlockId {
-                                document.selectBlockRange(from: anchor, to: block.id)
-                            } else {
-                                document.clearBlockSelection()
-                                document.focusedBlockId = block.id
-                            }
-                        } label: {
-                            Color.clear
-                        }
-                        .buttonStyle(.plain)
-                    }
-            }
-        }
+        blockShell
         .overlay(
             RoundedRectangle(cornerRadius: 4)
                 .fill(Color.accentColor.opacity(
-                    document.selectedBlockIds.contains(block.id) ? 0.15 : 0
+                    isBlockHighlighted ? 0.15 : 0
                 ))
                 .allowsHitTesting(false)
         )
@@ -62,26 +44,9 @@ struct BlockCellView: View {
     private var blockShell: some View {
         HStack(alignment: .top, spacing: 4) {
             // Drag handle — click to open block menu
-            GripDotsView()
-                .frame(width: 20, height: 24)
-                .opacity(handleIsVisible ? 1 : 0)
-                .contentShape(Rectangle())
-                .onHover { inside in
-                    isHandleHovering = inside
-                    if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
-                }
-                .highPriorityGesture(
-                    TapGesture().onEnded {
-                        if document.blockMenuBlockId == block.id {
-                            document.dismissBlockMenu()
-                        } else {
-                            document.blockMenuBlockId = block.id
-                        }
-                    }
-                )
-                .draggable(block.id.uuidString)
+            handleView
 
-            blockContent
+            interactiveBlockContent
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 4)
@@ -91,14 +56,82 @@ struct BlockCellView: View {
                 ? block.backgroundColor.backgroundColor
                 : Color.clear
         )
+        .opacity(isBeingDragged ? 0.22 : 1)
         .background(BlockFrameReporter(document: document, blockId: block.id))
         .clipShape(.rect(cornerRadius: block.backgroundColor != .default ? 4 : 0))
+        .onHover { inside in
+            isRowHovering = inside
+        }
+    }
+
+    private var blockUsesOwnInteractions: Bool {
+        switch block.type {
+        case .databaseEmbed, .image:
+            true
+        default:
+            false
+        }
     }
 
     private var handleIsVisible: Bool {
-        isHandleHovering
+        isRowHovering
+            || isHandleHovering
+            || isHandleDragging
             || document.blockMenuBlockId == block.id
-            || document.selectedBlockIds.contains(block.id)
+    }
+
+    private var isBlockHighlighted: Bool {
+        document.selectedBlockIds.contains(block.id)
+    }
+
+    private var blockInteractionCursor: NSCursor {
+        switch block.type {
+        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .codeBlock, .toggle:
+            return .iBeam
+        default:
+            return .arrow
+        }
+    }
+
+    @ViewBuilder
+    private var handleView: some View {
+        let baseHandle = GripDotsView()
+            .frame(width: 20, height: 24)
+            .opacity(handleIsVisible ? 1 : 0)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                isHandleHovering = inside
+            }
+            .appCursor(isHandleDragging ? .closedHand : .openHand)
+            .highPriorityGesture(
+                TapGesture().onEnded {
+                    guard !isHandleDragging else { return }
+                    if document.blockMenuBlockId == block.id {
+                        document.dismissBlockMenu()
+                    } else {
+                        document.blockMenuBlockId = block.id
+                    }
+                }
+            )
+
+        if let onHandleDragStart, let onHandleDragChange, let onHandleDragEnd {
+            baseHandle.gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .named(blockEditorCoordinateSpace))
+                    .onChanged { value in
+                        if !isHandleDragging {
+                            isHandleDragging = true
+                            onHandleDragStart(block.id, value.startLocation)
+                        }
+                        onHandleDragChange(block.id, value.location)
+                    }
+                    .onEnded { value in
+                        onHandleDragEnd(block.id, value.location)
+                        isHandleDragging = false
+                    }
+            )
+        } else {
+            baseHandle.draggable(document.dragPayload(for: block.id))
+        }
     }
 
     private func findPageIcon(named name: String) -> String? {
@@ -118,6 +151,42 @@ struct BlockCellView: View {
     }
 
     @ViewBuilder
+    private var interactiveBlockContent: some View {
+        if blockUsesOwnInteractions {
+            blockContent
+        } else {
+            blockContent
+                .contentShape(Rectangle())
+                .overlay {
+                    blockInteractionOverlay
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var blockInteractionOverlay: some View {
+        Button(action: handleBlockTap) {
+            Color.clear
+        }
+        .buttonStyle(.plain)
+        .appCursor(blockInteractionCursor)
+    }
+
+    private func handleBlockTap() {
+        if document.consumePendingEditorTapAfterBlockSelection() {
+            return
+        }
+        if NSEvent.modifierFlags.contains(.shift),
+           let anchor = document.focusedBlockId {
+            document.selectBlockRange(from: anchor, to: block.id)
+        } else {
+            document.clearBlockSelection()
+            document.clearMultiBlockTextSelection()
+            document.focusedBlockId = block.id
+        }
+    }
+
+    @ViewBuilder
     private var blockContent: some View {
         switch block.type {
         case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote:
@@ -130,7 +199,7 @@ struct BlockCellView: View {
             HorizontalRuleView()
 
         case .image:
-            ImageBlockView(block: block)
+            ImageBlockView(document: document, block: block)
 
         case .databaseEmbed:
             DatabaseEmbedBlockView(block: block, onOpenDatabaseTab: document.onOpenDatabaseTab)

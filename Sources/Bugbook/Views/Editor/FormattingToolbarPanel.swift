@@ -26,7 +26,7 @@ class FormattingToolbarPanel: NSPanel {
         level = .floating
         isOpaque = false
         backgroundColor = .clear
-        hidesOnDeactivate = false
+        hidesOnDeactivate = true
 
         contentView = hostingView
     }

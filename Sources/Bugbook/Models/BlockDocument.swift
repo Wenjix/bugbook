@@ -1,5 +1,16 @@
 import Foundation
+import AppKit
 import SwiftUI
+
+struct BlockTextSelectionPoint: Equatable {
+    let blockId: UUID
+    let displayOffset: Int
+}
+
+struct MultiBlockTextSelection: Equatable {
+    var anchor: BlockTextSelectionPoint
+    var focus: BlockTextSelectionPoint
+}
 
 @MainActor
 @Observable
@@ -10,6 +21,7 @@ class BlockDocument {
     /// Lightweight counter incremented on every `blocks` mutation. Use this
     /// in `onChange` instead of comparing the full `[Block]` array.
     var contentVersion: Int = 0
+    var selectionVersion: Int = 0
     var focusedBlockId: UUID?
     var cursorPosition: Int = 0
     var slashMenuBlockId: UUID?
@@ -27,6 +39,7 @@ class BlockDocument {
     var moveBlockId: UUID?
     var selectionRect: CGRect?
     var selectionBlockId: UUID?
+    var multiBlockTextSelection: MultiBlockTextSelection?
     @ObservationIgnored var blockSelectionAnchor: UUID?
     @ObservationIgnored private var suppressNextEditorTapAfterBlockSelection = false
     @ObservationIgnored var registeredBlockFrames: [UUID: CGRect] = [:]
@@ -172,7 +185,7 @@ class BlockDocument {
     }
 
     /// Creates or extends a column layout by dropping a block to the right of a target.
-    func createColumnFromDrop(droppedId: UUID, targetId: UUID) {
+    func createColumnFromDrop(droppedId: UUID, targetId: UUID, onLeadingEdge: Bool = false) {
         guard droppedId != targetId,
               blockLocation(for: droppedId) != nil,
               let targetLoc = blockLocation(for: targetId) else { return }
@@ -190,7 +203,12 @@ class BlockDocument {
             guard var extracted = extractBlock(id: droppedId) else { return }
             // Re-find column (indices may have shifted after extraction)
             if let newIdx = index(for: columnBlockId) {
-                let newColIndex = (blocks[newIdx].children.map(\.columnIndex).max() ?? -1) + 1
+                if onLeadingEdge {
+                    for childIndex in blocks[newIdx].children.indices {
+                        blocks[newIdx].children[childIndex].columnIndex += 1
+                    }
+                }
+                let newColIndex = onLeadingEdge ? 0 : (blocks[newIdx].children.map(\.columnIndex).max() ?? -1) + 1
                 extracted.columnIndex = newColIndex
                 blocks[newIdx].children.append(extracted)
             }
@@ -206,7 +224,12 @@ class BlockDocument {
             saveUndo()
             guard var extracted = extractBlock(id: droppedId) else { return }
             if let newIdx = index(for: targetBlock.id) {
-                let newColIndex = (blocks[newIdx].children.map(\.columnIndex).max() ?? -1) + 1
+                if onLeadingEdge {
+                    for childIndex in blocks[newIdx].children.indices {
+                        blocks[newIdx].children[childIndex].columnIndex += 1
+                    }
+                }
+                let newColIndex = onLeadingEdge ? 0 : (blocks[newIdx].children.map(\.columnIndex).max() ?? -1) + 1
                 extracted.columnIndex = newColIndex
                 blocks[newIdx].children.append(extracted)
             }
@@ -216,11 +239,16 @@ class BlockDocument {
             guard var extracted = extractBlock(id: droppedId) else { return }
             guard let newTargetIdx = index(for: targetId) else { return }
             var target = blocks[newTargetIdx]
-            target.columnIndex = 0
-            extracted.columnIndex = 1
+            if onLeadingEdge {
+                extracted.columnIndex = 0
+                target.columnIndex = 1
+            } else {
+                target.columnIndex = 0
+                extracted.columnIndex = 1
+            }
             let columnBlock = Block(
                 type: .column,
-                children: [target, extracted]
+                children: onLeadingEdge ? [extracted, target] : [target, extracted]
             )
             blocks[newTargetIdx] = columnBlock
         }
@@ -422,18 +450,94 @@ class BlockDocument {
 
     /// Move a block by ID to a target index, handling extraction from columns.
     func moveBlockById(_ id: UUID, toIndex: Int) {
-        guard let loc = blockLocation(for: id) else { return }
+        moveBlocksById([id], toIndex: toIndex)
+    }
+
+    func moveBlocksById(_ ids: [UUID], toIndex: Int) {
+        let draggedIds = orderedDraggedBlockIds(ids)
+        guard !draggedIds.isEmpty else { return }
+
+        let draggedSet = Set(draggedIds)
+        let topLevelIdsBefore = blocks.map(\.id)
+        let clampedTarget = min(max(0, toIndex), topLevelIdsBefore.count)
+        let remainingInsertionIndex = topLevelIdsBefore
+            .prefix(clampedTarget)
+            .filter { !draggedSet.contains($0) }
+            .count
+        let insertionAnchorId = topLevelIdsBefore
+            .filter { !draggedSet.contains($0) }
+            .dropFirst(remainingInsertionIndex)
+            .first
+
         saveUndo()
-        var extracted: Block
-        if let childIdx = loc.child {
-            extracted = blocks[loc.topLevel].children.remove(at: childIdx)
-            extracted.columnIndex = 0
-            dissolveColumnIfNeeded(at: loc.topLevel)
-        } else {
-            extracted = blocks.remove(at: loc.topLevel)
+
+        var extractedBlocks: [Block] = []
+        for draggedId in draggedIds {
+            guard let extracted = extractBlock(id: draggedId) else { continue }
+            extractedBlocks.append(extracted)
         }
-        let adjustedIdx = min(toIndex, blocks.count)
-        blocks.insert(extracted, at: adjustedIdx)
+        guard !extractedBlocks.isEmpty else { return }
+
+        let insertionIndex: Int
+        if let insertionAnchorId,
+           let anchorIndex = blocks.firstIndex(where: { $0.id == insertionAnchorId }) {
+            insertionIndex = anchorIndex
+        } else {
+            insertionIndex = min(remainingInsertionIndex, blocks.count)
+        }
+
+        for (offset, block) in extractedBlocks.enumerated() {
+            blocks.insert(block, at: min(insertionIndex + offset, blocks.count))
+        }
+    }
+
+    var orderedSelectedBlockIds: [UUID] {
+        selectionOrder().filter { selectedBlockIds.contains($0) }
+    }
+
+    var orderedMultiBlockSelectedTextBlockIds: [UUID] {
+        guard let normalized = normalizedMultiBlockTextSelection() else { return [] }
+        return selectionBlockIdsBetween(start: normalized.start.blockId, end: normalized.end.blockId)
+    }
+
+    func dragSelectionBlockIds(startingWith blockId: UUID) -> [UUID] {
+        if selectedBlockIds.contains(blockId), selectedBlockIds.count > 1 {
+            return orderedSelectedBlockIds
+        }
+
+        let multiBlockIds = orderedMultiBlockSelectedTextBlockIds
+        if multiBlockIds.contains(blockId), multiBlockIds.count > 1 {
+            return multiBlockIds
+        }
+
+        return orderedDraggedBlockIds([blockId])
+    }
+
+    func dragPayload(for blockId: UUID) -> String {
+        let draggedIds = dragSelectionBlockIds(startingWith: blockId)
+        if draggedIds.count == 1, let onlyId = draggedIds.first {
+            return onlyId.uuidString
+        }
+        return "blocks:" + draggedIds.map(\.uuidString).joined(separator: ",")
+    }
+
+    static func draggedBlockIds(from payload: String) -> [UUID] {
+        if let id = UUID(uuidString: payload) {
+            return [id]
+        }
+
+        guard payload.hasPrefix("blocks:") else { return [] }
+        let rawIds = payload.dropFirst("blocks:".count).split(separator: ",")
+        return rawIds.compactMap { UUID(uuidString: String($0)) }
+    }
+
+    private func orderedDraggedBlockIds(_ ids: [UUID]) -> [UUID] {
+        let requestedIds = Set(ids)
+        let orderedSelection = selectionOrder().filter { requestedIds.contains($0) }
+        if !orderedSelection.isEmpty {
+            return orderedSelection
+        }
+        return ids.filter { blockLocation(for: $0) != nil }
     }
 
     func changeBlockType(id: UUID, to type: BlockType) {
@@ -583,6 +687,10 @@ class BlockDocument {
         guard blockLocation(for: id) != nil else { return }
         saveUndo()
         updateBlockProperty(id: id) { $0.backgroundColor = color }
+    }
+
+    func updateImageWidth(blockId: UUID, width: Double) {
+        updateBlockProperty(id: blockId) { $0.imageWidth = Int(width) }
     }
 
     func dismissBlockMenu() {
@@ -819,6 +927,7 @@ class BlockDocument {
     // MARK: - Block Selection
 
     func selectAllBlocks() {
+        clearMultiBlockTextSelection()
         selectedBlockIds = Set(selectionOrder())
         selectionRect = nil
         selectionBlockId = nil
@@ -832,6 +941,7 @@ class BlockDocument {
     }
 
     func selectBlockRange(from anchorId: UUID, to currentId: UUID) {
+        clearMultiBlockTextSelection()
         let ordered = selectionOrder()
         guard let anchorIdx = ordered.firstIndex(of: anchorId),
               let currentIdx = ordered.firstIndex(of: currentId) else { return }
@@ -842,6 +952,7 @@ class BlockDocument {
     }
 
     func beginBlockSelectionDrag(from anchorId: UUID) {
+        clearMultiBlockTextSelection()
         blockSelectionAnchor = anchorId
         selectedBlockIds = [anchorId]
         selectionRect = nil
@@ -854,10 +965,163 @@ class BlockDocument {
         suppressNextEditorTapAfterBlockSelection = !selectedBlockIds.isEmpty
     }
 
+    func beginMarqueeBlockSelection() {
+        clearMultiBlockTextSelection()
+        blockSelectionAnchor = nil
+        selectedBlockIds.removeAll()
+        selectionRect = nil
+        selectionBlockId = nil
+        suppressNextEditorTapAfterBlockSelection = false
+    }
+
+    func updateMarqueeBlockSelection(in windowRect: CGRect, within selectionSurfaceRect: CGRect) {
+        let normalizedRect = windowRect.standardized
+        let normalizedSurfaceRect = selectionSurfaceRect.standardized
+        selectedBlockIds = Set(
+            registeredBlockFrames.compactMap { blockId, frame in
+                let marqueeRowFrame = CGRect(
+                    x: normalizedSurfaceRect.minX,
+                    y: frame.minY - 2,
+                    width: normalizedSurfaceRect.width,
+                    height: frame.height + 4
+                )
+                return marqueeRowFrame.intersects(normalizedRect) ? blockId : nil
+            }
+        )
+    }
+
+    func endMarqueeBlockSelection() {
+        blockSelectionAnchor = nil
+        suppressNextEditorTapAfterBlockSelection = !selectedBlockIds.isEmpty
+    }
+
     func consumePendingEditorTapAfterBlockSelection() -> Bool {
         guard suppressNextEditorTapAfterBlockSelection else { return false }
         suppressNextEditorTapAfterBlockSelection = false
         return true
+    }
+
+    var hasMultiBlockTextSelection: Bool {
+        guard let normalized = normalizedMultiBlockTextSelection() else { return false }
+        return normalized.start != normalized.end
+    }
+
+    func beginMultiBlockTextSelection(anchor: BlockTextSelectionPoint, focus: BlockTextSelectionPoint) {
+        clearBlockSelection()
+        selectionRect = nil
+        selectionBlockId = nil
+        multiBlockTextSelection = MultiBlockTextSelection(anchor: anchor, focus: focus)
+        selectionVersion += 1
+    }
+
+    func updateMultiBlockTextSelection(focus: BlockTextSelectionPoint) {
+        guard var selection = multiBlockTextSelection else {
+            beginMultiBlockTextSelection(anchor: focus, focus: focus)
+            return
+        }
+        selection.focus = focus
+        multiBlockTextSelection = selection
+        selectionRect = nil
+        selectionBlockId = nil
+        selectionVersion += 1
+    }
+
+    func clearMultiBlockTextSelection() {
+        let hadSelection = multiBlockTextSelection != nil
+        multiBlockTextSelection = nil
+        selectionRect = nil
+        selectionBlockId = nil
+        if hadSelection {
+            selectionVersion += 1
+        }
+    }
+
+    func multiBlockSelectionRange(for blockId: UUID, visibleLength: Int) -> NSRange? {
+        guard let normalized = normalizedMultiBlockTextSelection() else { return nil }
+        let ordered = selectionOrder()
+        guard let startIndex = ordered.firstIndex(of: normalized.start.blockId),
+              let endIndex = ordered.firstIndex(of: normalized.end.blockId),
+              let currentIndex = ordered.firstIndex(of: blockId),
+              currentIndex >= startIndex, currentIndex <= endIndex else {
+            return nil
+        }
+
+        let clampedLength = max(0, visibleLength)
+        if normalized.start.blockId == normalized.end.blockId {
+            let lower = min(normalized.start.displayOffset, normalized.end.displayOffset)
+            let upper = max(normalized.start.displayOffset, normalized.end.displayOffset)
+            let location = min(lower, clampedLength)
+            let length = min(max(0, upper - lower), max(0, clampedLength - location))
+            return NSRange(location: location, length: length)
+        }
+
+        if blockId == normalized.start.blockId {
+            let location = min(normalized.start.displayOffset, clampedLength)
+            return NSRange(location: location, length: max(0, clampedLength - location))
+        }
+
+        if blockId == normalized.end.blockId {
+            let upper = min(normalized.end.displayOffset, clampedLength)
+            return NSRange(location: 0, length: upper)
+        }
+
+        return NSRange(location: 0, length: clampedLength)
+    }
+
+    func copyMultiBlockSelectedText() -> Bool {
+        guard let text = multiBlockSelectedText(), !text.isEmpty else { return false }
+        writeTextToPasteboard(text)
+        return true
+    }
+
+    func cutMultiBlockSelectedText() -> Bool {
+        guard let text = multiBlockSelectedText(), !text.isEmpty else { return false }
+        writeTextToPasteboard(text)
+        deleteMultiBlockSelectedText()
+        return true
+    }
+
+    func deleteMultiBlockSelectedText() {
+        guard let normalized = normalizedMultiBlockTextSelection(),
+              normalized.start.blockId != normalized.end.blockId,
+              let startBlock = block(for: normalized.start.blockId),
+              let endBlock = block(for: normalized.end.blockId) else { return }
+
+        saveUndo()
+
+        let startMarkdownOffset = AttributedStringConverter.markdownOffset(
+            forDisplayOffset: normalized.start.displayOffset,
+            in: startBlock.text
+        )
+        let endMarkdownOffset = AttributedStringConverter.markdownOffset(
+            forDisplayOffset: normalized.end.displayOffset,
+            in: endBlock.text
+        )
+
+        let startNSString = startBlock.text as NSString
+        let endNSString = endBlock.text as NSString
+        let preservedPrefix = startNSString.substring(to: min(startMarkdownOffset, startNSString.length))
+        let preservedSuffix = endNSString.substring(from: min(endMarkdownOffset, endNSString.length))
+
+        updateBlockText(id: normalized.start.blockId, text: preservedPrefix + preservedSuffix)
+
+        let orderedIds = selectionBlockIdsBetween(start: normalized.start.blockId, end: normalized.end.blockId)
+        for blockId in orderedIds.reversed() where blockId != normalized.start.blockId {
+            guard let loc = blockLocation(for: blockId) else { continue }
+            if let childIdx = loc.child {
+                unregisterFramesRecursively(for: blocks[loc.topLevel].children[childIdx])
+                blocks[loc.topLevel].children.remove(at: childIdx)
+                dissolveColumnIfNeeded(at: loc.topLevel)
+            } else {
+                unregisterFramesRecursively(for: blocks[loc.topLevel])
+                blocks.remove(at: loc.topLevel)
+            }
+        }
+
+        focusedBlockId = normalized.start.blockId
+        cursorPosition = startMarkdownOffset
+        ensureTrailingParagraph()
+        clearMultiBlockTextSelection()
     }
 
     func deleteSelectedBlocks() {
@@ -928,5 +1192,70 @@ class BlockDocument {
             .filter { $0.value.contains(point) }
             .min(by: { $0.value.width * $0.value.height < $1.value.width * $1.value.height })?
             .key
+    }
+
+    private func multiBlockSelectedText() -> String? {
+        guard let normalized = normalizedMultiBlockTextSelection(),
+              normalized.start.blockId != normalized.end.blockId else { return nil }
+
+        let orderedIds = selectionBlockIdsBetween(start: normalized.start.blockId, end: normalized.end.blockId)
+        var parts: [String] = []
+
+        for blockId in orderedIds {
+            guard let block = block(for: blockId) else { continue }
+            let plainText = AttributedStringConverter.plainText(from: block.text)
+            let visibleLength = (plainText as NSString).length
+            guard let range = multiBlockSelectionRange(for: blockId, visibleLength: visibleLength),
+                  range.length > 0 else {
+                continue
+            }
+            parts.append((plainText as NSString).substring(with: range))
+        }
+
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+
+    private func normalizedMultiBlockTextSelection() -> (start: BlockTextSelectionPoint, end: BlockTextSelectionPoint)? {
+        guard let selection = multiBlockTextSelection else { return nil }
+        let ordered = selectionOrder()
+        guard let anchorIndex = ordered.firstIndex(of: selection.anchor.blockId),
+              let focusIndex = ordered.firstIndex(of: selection.focus.blockId) else {
+            return nil
+        }
+
+        if anchorIndex < focusIndex {
+            return (selection.anchor, selection.focus)
+        }
+
+        if anchorIndex > focusIndex {
+            return (selection.focus, selection.anchor)
+        }
+
+        if selection.anchor.displayOffset <= selection.focus.displayOffset {
+            return (selection.anchor, selection.focus)
+        }
+
+        return (selection.focus, selection.anchor)
+    }
+
+    private func selectionBlockIdsBetween(start: UUID, end: UUID) -> [UUID] {
+        let ordered = selectionOrder()
+        guard let startIndex = ordered.firstIndex(of: start),
+              let endIndex = ordered.firstIndex(of: end) else {
+            return []
+        }
+        return Array(ordered[min(startIndex, endIndex)...max(startIndex, endIndex)])
+    }
+
+    var multiBlockSelectedBlockIds: Set<UUID> {
+        guard let normalized = normalizedMultiBlockTextSelection() else { return [] }
+        let orderedIds = selectionBlockIdsBetween(start: normalized.start.blockId, end: normalized.end.blockId)
+        guard orderedIds.count > 2 else { return [] }
+        return Set(orderedIds.dropFirst().dropLast())
+    }
+
+    private func writeTextToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }

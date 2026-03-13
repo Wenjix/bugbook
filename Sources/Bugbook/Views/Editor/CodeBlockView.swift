@@ -22,6 +22,7 @@ struct CodeBlockView: View {
             BlockTextView(
                 document: document,
                 blockId: block.id,
+                selectionVersion: document.selectionVersion,
                 isMultiline: true,
                 font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
                 textColor: .labelColor,
@@ -39,5 +40,6 @@ struct CodeBlockView: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.fallbackBorderColor, lineWidth: 1)
         )
+        .editorTextCursor()
     }
 }

@@ -1,8 +1,36 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 enum EditorTypography {
-    static let bodyFontSize: CGFloat = Typography.content
+    static let zoomScaleKey = "editorZoomScale"
+    static let minZoomScale: CGFloat = 0.8
+    static let maxZoomScale: CGFloat = 1.6
+    static let defaultZoomScale: CGFloat = 1
+
+    static var zoomScale: CGFloat {
+        let stored = UserDefaults.standard.double(forKey: zoomScaleKey)
+        let resolved = stored == 0 ? defaultZoomScale : CGFloat(stored)
+        return min(max(resolved, minZoomScale), maxZoomScale)
+    }
+
+    static var bodyFontSize: CGFloat {
+        scaled(Typography.content)
+    }
+
+    static func scaled(_ baseSize: CGFloat) -> CGFloat {
+        baseSize * zoomScale
+    }
+}
+
+enum EditorSelectionStyle {
+    static var backgroundColor: NSColor {
+        NSColor.controlAccentColor.withAlphaComponent(0.28)
+    }
+
+    static var foregroundColor: NSColor {
+        NSColor.labelColor
+    }
 }
 
 /// NSViewRepresentable wrapping NSTextView for per-block text editing.
@@ -11,6 +39,7 @@ enum EditorTypography {
 struct BlockTextView: NSViewRepresentable {
     var document: BlockDocument
     let blockId: UUID
+    var selectionVersion: Int = 0
     var isMultiline: Bool = false
     var font: NSFont = .systemFont(ofSize: EditorTypography.bodyFontSize)
     var textColor: NSColor = .labelColor
@@ -63,10 +92,17 @@ struct BlockTextView: NSViewRepresentable {
             .font: font,
             .foregroundColor: textColor
         ]
+        textView.selectedTextAttributes = [
+            .backgroundColor: EditorSelectionStyle.backgroundColor,
+            .foregroundColor: EditorSelectionStyle.foregroundColor
+        ]
 
         let coordinator = context.coordinator
         textView.onBecomeFirstResponder = { [weak coordinator] in
             coordinator?.handleBecomeFirstResponder()
+        }
+        textView.onMouseDownAction = { [weak coordinator] in
+            coordinator?.handleMouseDown()
         }
         textView.onResignFirstResponder = { [weak coordinator] in
             coordinator?.handleResignFirstResponder()
@@ -98,8 +134,14 @@ struct BlockTextView: NSViewRepresentable {
         textView.blockTypeShortcutAction = { [weak coordinator] action in
             coordinator?.handleBlockTypeShortcut(action)
         }
-        textView.onDragOutOfBlock = { [weak coordinator] in
-            coordinator?.startBlockDragSelection()
+        textView.onDragOutOfBlock = { [weak coordinator] anchorOffset, windowPoint in
+            coordinator?.startMultiBlockTextSelection(anchorOffset: anchorOffset, initialWindowPoint: windowPoint)
+        }
+        textView.onMultiBlockSelectionDrag = { [weak coordinator] windowPoint in
+            coordinator?.updateMultiBlockTextSelection(windowPoint: windowPoint)
+        }
+        textView.onMultiBlockSelectionEnd = { [weak coordinator] in
+            coordinator?.endMultiBlockTextSelection()
         }
         textView.onShiftClick = { [weak coordinator] in
             guard let coordinator = coordinator else { return }
@@ -111,6 +153,12 @@ struct BlockTextView: NSViewRepresentable {
         textView.onPasteImage = { [weak coordinator] in
             guard let coordinator = coordinator else { return false }
             return coordinator.handleImagePaste()
+        }
+        textView.copySelectionAction = { [weak coordinator] in
+            coordinator?.handleCopySelection() ?? false
+        }
+        textView.cutSelectionAction = { [weak coordinator] in
+            coordinator?.handleCutSelection() ?? false
         }
         context.coordinator.textView = textView
 
@@ -132,6 +180,10 @@ struct BlockTextView: NSViewRepresentable {
         textView.typingAttributes = [
             .font: font,
             .foregroundColor: textColor
+        ]
+        textView.selectedTextAttributes = [
+            .backgroundColor: EditorSelectionStyle.backgroundColor,
+            .foregroundColor: EditorSelectionStyle.foregroundColor
         ]
 
         // Re-apply foreground color to existing text when textColor changes
@@ -191,8 +243,47 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
+        let multiBlockRange = document.multiBlockSelectionRange(
+            for: blockId,
+            visibleLength: (textView.string as NSString).length
+        )
+        let isFirstResponder = textView.window?.firstResponder === textView
+        let isActivelyDraggingMultiBlockSelection = textView.isInBlockSelection
+        context.coordinator.updateTemporaryMultiBlockHighlight(on: textView, range: multiBlockRange)
+
+        if let range = multiBlockRange, isFirstResponder, !isActivelyDraggingMultiBlockSelection {
+            context.coordinator.withProgrammaticViewUpdate {
+                if textView.selectedRange() != range {
+                    textView.setSelectedRange(range)
+                }
+            }
+        } else if multiBlockRange != nil, !isFirstResponder {
+            let caret = NSRange(
+                location: min(textView.selectedRange().location, (textView.string as NSString).length),
+                length: 0
+            )
+            context.coordinator.withProgrammaticViewUpdate {
+                if textView.selectedRange() != caret {
+                    textView.setSelectedRange(caret)
+                }
+            }
+        } else if document.multiBlockTextSelection == nil,
+                  document.focusedBlockId != blockId,
+                  textView.selectedRange().length > 0 {
+            let caret = NSRange(
+                location: min(textView.selectedRange().location, (textView.string as NSString).length),
+                length: 0
+            )
+            context.coordinator.withProgrammaticViewUpdate {
+                if textView.selectedRange() != caret {
+                    textView.setSelectedRange(caret)
+                }
+            }
+        }
+
         // Focus management: only when focus transitions to this block
-        if document.focusedBlockId == blockId,
+        if document.multiBlockTextSelection == nil,
+           document.focusedBlockId == blockId,
            context.coordinator.lastFocusedSelf != true {
             context.coordinator.lastFocusedSelf = true
             let cursorPos = self.document.cursorPosition
@@ -256,8 +347,6 @@ struct BlockTextView: NSViewRepresentable {
             self.parent = parent
         }
 
-        private var dragMonitor: Any?
-
         var isProgrammaticViewUpdateInFlight: Bool {
             programmaticViewUpdateDepth > 0
         }
@@ -283,6 +372,15 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
+        func handleMouseDown() {
+            if parent.document.multiBlockTextSelection != nil {
+                parent.document.clearMultiBlockTextSelection()
+            }
+            if !parent.document.selectedBlockIds.isEmpty {
+                parent.document.clearBlockSelection()
+            }
+        }
+
         func handleResignFirstResponder() {
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -292,63 +390,71 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
-        // MARK: - Block Drag Selection
+        // MARK: - Cross-Block Text Selection
 
-        func startBlockDragSelection() {
-            let anchorId = parent.blockId
-            parent.document.beginBlockSelectionDrag(from: anchorId)
-            parent.document.selectionRect = nil
-            parent.document.selectionBlockId = nil
-            if let textView {
-                let caret = NSRange(location: textView.selectedRange().location, length: 0)
-                withProgrammaticViewUpdate {
-                    if textView.selectedRange() != caret {
-                        textView.setSelectedRange(caret)
-                    }
-                }
+        func startMultiBlockTextSelection(anchorOffset: Int, initialWindowPoint: NSPoint) {
+            parent.document.beginMultiBlockTextSelection(
+                anchor: BlockTextSelectionPoint(blockId: parent.blockId, displayOffset: anchorOffset),
+                focus: BlockTextSelectionPoint(blockId: parent.blockId, displayOffset: anchorOffset)
+            )
+            updateMultiBlockTextSelection(windowPoint: initialWindowPoint)
+        }
+
+        func updateMultiBlockTextSelection(windowPoint: NSPoint) {
+            guard let window = textView?.window else { return }
+            guard let target = BlockNSTextView.textPosition(atWindowPoint: windowPoint, in: window) else {
+                return
             }
+            parent.document.updateMultiBlockTextSelection(
+                focus: BlockTextSelectionPoint(blockId: target.blockId, displayOffset: target.offset)
+            )
+        }
 
-            dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
-                guard let self = self else { return event }
-
-                if event.type == .leftMouseUp {
-                    self.endBlockDragSelection()
-                    return event
-                }
-
-                // Hit test to find which block is under the mouse
-                let point = event.locationInWindow
-                if let targetId = self.parent.document.blockId(atWindowPoint: point) {
-                    self.parent.document.selectBlockRange(from: anchorId, to: targetId)
-                } else if let contentView = event.window?.contentView {
-                    let converted = contentView.convert(point, from: nil)
-                    if let hitView = contentView.hitTest(converted) {
-                        var view: NSView? = hitView
-                        while let v = view {
-                            if let blockTV = v as? BlockNSTextView,
-                               let targetId = blockTV.blockId {
-                                self.parent.document.selectBlockRange(from: anchorId, to: targetId)
-                                break
-                            }
-                            view = v.superview
-                        }
-                    }
-                }
-
-                return event
+        func endMultiBlockTextSelection() {
+            if let tv = textView as? BlockNSTextView {
+                tv.isInBlockSelection = false
             }
         }
 
-        func endBlockDragSelection() {
-            if let monitor = dragMonitor {
-                NSEvent.removeMonitor(monitor)
-                dragMonitor = nil
+        func handleCopySelection() -> Bool {
+            parent.document.copyMultiBlockSelectedText()
+        }
+
+        func handleCutSelection() -> Bool {
+            parent.document.cutMultiBlockSelectedText()
+        }
+
+        func updateTemporaryMultiBlockHighlight(on textView: NSTextView, range: NSRange?) {
+            guard let layoutManager = textView.layoutManager else { return }
+
+            let fullLength = (textView.string as NSString).length
+            let fullRange = NSRange(location: 0, length: fullLength)
+            if fullRange.length > 0 {
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
+                layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
             }
-            parent.document.endBlockSelectionDrag()
-            if let tv = textView as? BlockNSTextView {
-                tv.isInBlockSelection = false
-                tv.window?.makeFirstResponder(tv)
+
+            guard let range,
+                  range.length > 0,
+                  textView.window?.firstResponder !== textView else {
+                return
             }
+
+            let location = min(max(0, range.location), fullLength)
+            let length = min(max(0, range.length), max(0, fullLength - location))
+            guard length > 0 else { return }
+
+            let highlightRange = NSRange(location: location, length: length)
+            layoutManager.addTemporaryAttribute(
+                .backgroundColor,
+                value: EditorSelectionStyle.backgroundColor,
+                forCharacterRange: highlightRange
+            )
+            layoutManager.addTemporaryAttribute(
+                .foregroundColor,
+                value: EditorSelectionStyle.foregroundColor,
+                forCharacterRange: highlightRange
+            )
         }
 
         // MARK: - Image Paste
@@ -373,25 +479,41 @@ struct BlockTextView: NSViewRepresentable {
                 }
             }
 
-            // 2. Check for raw image data (screenshots, browser images)
-            if let imageType = pb.availableType(from: [.png, .tiff]),
-               let data = pb.data(forType: imageType) {
-                // Convert to PNG for consistent storage
-                guard let image = NSImage(data: data),
-                      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                    return false
-                }
-                let bitmap = NSBitmapImageRep(cgImage: cgImage)
-                guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
-                    return false
-                }
-                if let path = document.saveImageDataToAssets(pngData, fileExtension: "png") {
-                    insertImageAfterCurrentBlock(document: document, blockId: blockId, imagePath: path)
-                    return true
-                }
+            // 2. Check for any pasteboard payload AppKit can decode into an image.
+            if let image = pastedImage(from: pb),
+               let pngData = pngData(from: image),
+               let path = document.saveImageDataToAssets(pngData, fileExtension: "png") {
+                insertImageAfterCurrentBlock(document: document, blockId: blockId, imagePath: path)
+                return true
             }
 
             return false
+        }
+
+        private func pastedImage(from pasteboard: NSPasteboard) -> NSImage? {
+            if let image = (pasteboard.readObjects(forClasses: [NSImage.self]) as? [NSImage])?.first {
+                return image
+            }
+
+            if let imageType = pasteboard.types?.first(where: Self.isImagePasteboardType),
+               let data = pasteboard.data(forType: imageType),
+               let image = NSImage(data: data) {
+                return image
+            }
+
+            return NSImage(pasteboard: pasteboard)
+        }
+
+        private func pngData(from image: NSImage) -> Data? {
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData) else {
+                return nil
+            }
+            return bitmap.representation(using: .png, properties: [:])
+        }
+
+        private static func isImagePasteboardType(_ type: NSPasteboard.PasteboardType) -> Bool {
+            UTType(type.rawValue)?.conforms(to: .image) == true
         }
 
         private func insertImageAfterCurrentBlock(document: BlockDocument, blockId: UUID, imagePath: String) {
@@ -552,6 +674,9 @@ struct BlockTextView: NSViewRepresentable {
             if !parent.document.selectedBlockIds.isEmpty {
                 parent.document.clearBlockSelection()
             }
+            if parent.document.multiBlockTextSelection != nil {
+                parent.document.clearMultiBlockTextSelection()
+            }
 
             // Persist block text in markdown form so inline styles round-trip to disk.
             parent.document.updateBlockText(id: parent.blockId, text: markdownFromTextView(textView))
@@ -581,6 +706,14 @@ struct BlockTextView: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isProgrammaticViewUpdateInFlight else { return }
             guard let textView = notification.object as? NSTextView else { return }
+            if parent.document.multiBlockTextSelection != nil {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.parent.document.selectionRect = nil
+                    self.parent.document.selectionBlockId = nil
+                }
+                return
+            }
             let range = textView.selectedRange()
             if range.length > 0 {
                 // firstRect returns screen coordinates (bottom-left origin),
@@ -800,6 +933,13 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if parent.document.hasMultiBlockTextSelection,
+               (commandSelector == #selector(NSResponder.deleteBackward(_:))
+                || commandSelector == #selector(NSResponder.deleteForward(_:))) {
+                parent.document.deleteMultiBlockSelectedText()
+                return true
+            }
+
             // Delete all selected blocks (e.g. Cmd+A then Backspace)
             if (commandSelector == #selector(NSResponder.deleteBackward(_:))
                 || commandSelector == #selector(NSResponder.deleteForward(_:))),
@@ -981,6 +1121,7 @@ class BlockNSTextView: NSTextView {
     private static let liveTextViews = NSHashTable<BlockNSTextView>.weakObjects()
 
     var onBecomeFirstResponder: (() -> Void)?
+    var onMouseDownAction: (() -> Void)?
     var onResignFirstResponder: (() -> Void)?
     var placeholderString: String?
     var placeholderFont: NSFont?
@@ -996,10 +1137,17 @@ class BlockNSTextView: NSTextView {
     var redoAction: (() -> Void)?
     var selectAllBlocksAction: (() -> Void)?
     var blockTypeShortcutAction: ((String) -> Void)?
-    var onDragOutOfBlock: (() -> Void)?
+    var onDragOutOfBlock: ((Int, NSPoint) -> Void)?
+    var onMultiBlockSelectionDrag: ((NSPoint) -> Void)?
+    var onMultiBlockSelectionEnd: (() -> Void)?
     var onShiftClick: (() -> Void)?
     var onPasteImage: (() -> Bool)?
+    var copySelectionAction: (() -> Bool)?
+    var cutSelectionAction: (() -> Bool)?
     var isInBlockSelection = false
+    private var dragSelectionAnchorOffset = 0
+    private var dragStartWindowPoint = NSPoint.zero
+    private var selectionDragTimer: Timer?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -1011,6 +1159,7 @@ class BlockNSTextView: NSTextView {
     }
 
     deinit {
+        finishSelectionDragMonitoring()
         Self.liveTextViews.remove(self)
     }
 
@@ -1071,30 +1220,9 @@ class BlockNSTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        let pb = NSPasteboard.general
-
-        // If the pasteboard has string content, prefer normal text paste.
-        // This avoids intercepting copy-paste of text from browsers (which also
-        // include a TIFF rendering of the selection alongside the text).
-        let hasString = pb.availableType(from: [.string, .rtf, .html]) != nil
-
-        if !hasString {
-            // Check for image data on the pasteboard (screenshots, copied images)
-            let hasImage = pb.availableType(from: [.tiff, .png]) != nil
-
-            // Check for image file URLs on the pasteboard (copied image files in Finder)
-            var hasImageFile = false
-            if pb.availableType(from: [.fileURL]) != nil,
-               let urls = pb.readObjects(forClasses: [NSURL.self], options: [
-                .urlReadingFileURLsOnly: true,
-                .urlReadingContentsConformToTypes: ["public.image"]
-               ]) as? [URL], !urls.isEmpty {
-                hasImageFile = urls.contains { supportedImageExtensions.contains($0.pathExtension.lowercased()) }
-            }
-
-            if (hasImage || hasImageFile), let handler = onPasteImage, handler() {
-                return // Image paste handled
-            }
+        if let handler = onPasteImage,
+           handler() {
+            return // Image paste handled
         }
 
         super.paste(sender)
@@ -1107,28 +1235,39 @@ class BlockNSTextView: NSTextView {
             onShiftClick?()
             return
         }
+        let localPoint = convert(event.locationInWindow, from: nil)
+        dragSelectionAnchorOffset = textOffset(for: localPoint)
+        dragStartWindowPoint = event.locationInWindow
+        beginSelectionDragMonitoring()
+        onMouseDownAction?()
         super.mouseDown(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
         if isInBlockSelection {
-            return // Block selection is active — don't do text selection
+            handleSelectionDrag(at: event.locationInWindow)
+            return
         }
-        let localPoint = convert(event.locationInWindow, from: nil)
-        if !bounds.contains(localPoint) {
-            isInBlockSelection = true
-            // Collapse selection before switching to block selection
-            let loc = selectedRange().location
-            setSelectedRange(NSRange(location: loc, length: 0))
-            onDragOutOfBlock?()
+        if shouldStartCrossBlockSelection(at: event.locationInWindow) {
+            handleSelectionDrag(at: event.locationInWindow)
             return
         }
         super.mouseDragged(with: event)
+        handleSelectionDrag(at: event.locationInWindow)
     }
 
     override func mouseUp(with event: NSEvent) {
-        isInBlockSelection = false
+        let wasInBlockSelection = isInBlockSelection
+        finishSelectionDragMonitoring()
+        if wasInBlockSelection { return }
         super.mouseUp(with: event)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            finishSelectionDragMonitoring()
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     // MARK: - Keyboard Shortcuts
@@ -1145,6 +1284,17 @@ class BlockNSTextView: NSTextView {
             case "z":
                 undoAction?()
                 return
+            case "v":
+                paste(nil)
+                return
+            case "c":
+                if copySelectionAction?() == true {
+                    return
+                }
+            case "x":
+                if cutSelectionAction?() == true {
+                    return
+                }
             case "b":
                 formatBoldAction?()
                 return
@@ -1178,6 +1328,20 @@ class BlockNSTextView: NSTextView {
         }
 
         super.keyDown(with: event)
+    }
+
+    override func copy(_ sender: Any?) {
+        if copySelectionAction?() == true {
+            return
+        }
+        super.copy(sender)
+    }
+
+    override func cut(_ sender: Any?) {
+        if cutSelectionAction?() == true {
+            return
+        }
+        super.cut(sender)
     }
 
     private func handleBlockTypeShortcut(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
@@ -1221,5 +1385,135 @@ class BlockNSTextView: NSTextView {
             }
         }
         return nil
+    }
+
+    static func textPosition(atWindowPoint point: NSPoint, in window: NSWindow) -> (blockId: UUID, offset: Int)? {
+        let visibleTextViews = liveTextViews.allObjects.compactMap { textView -> (BlockNSTextView, NSRect, UUID)? in
+            guard textView.window === window,
+                  !textView.isHiddenOrHasHiddenAncestor,
+                  let blockId = textView.blockId else {
+                return nil
+            }
+            return (textView, textView.convert(textView.bounds, to: nil), blockId)
+        }
+
+        guard !visibleTextViews.isEmpty else { return nil }
+
+        if let exactMatch = visibleTextViews.reversed().first(where: { $0.1.contains(point) }) {
+            let localPoint = exactMatch.0.convert(point, from: nil)
+            return (exactMatch.2, exactMatch.0.textOffset(for: localPoint))
+        }
+
+        guard let nearest = visibleTextViews.min(by: { distance(from: point, to: $0.1) < distance(from: point, to: $1.1) }) else {
+            return nil
+        }
+
+        let clampedPoint = NSPoint(
+            x: min(max(point.x, nearest.1.minX), nearest.1.maxX),
+            y: min(max(point.y, nearest.1.minY), nearest.1.maxY)
+        )
+        let localPoint = nearest.0.convert(clampedPoint, from: nil)
+        return (nearest.2, nearest.0.textOffset(for: localPoint))
+    }
+
+    static func textPosition(for blockId: UUID, atWindowPoint point: NSPoint, in window: NSWindow) -> (blockId: UUID, offset: Int)? {
+        guard let textView = liveTextViews.allObjects.first(where: {
+            $0.window === window && !$0.isHiddenOrHasHiddenAncestor && $0.blockId == blockId
+        }) else {
+            return nil
+        }
+
+        let frameInWindow = textView.convert(textView.bounds, to: nil)
+        let clampedPoint = NSPoint(
+            x: min(max(point.x, frameInWindow.minX), frameInWindow.maxX),
+            y: min(max(point.y, frameInWindow.minY), frameInWindow.maxY)
+        )
+        let localPoint = textView.convert(clampedPoint, from: nil)
+        return (blockId, textView.textOffset(for: localPoint))
+    }
+
+    private func textOffset(for localPoint: NSPoint) -> Int {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer else {
+            return (string as NSString).length
+        }
+
+        let adjustedPoint = NSPoint(
+            x: max(0, localPoint.x - textContainerInset.width),
+            y: max(0, localPoint.y - textContainerInset.height)
+        )
+
+        guard layoutManager.numberOfGlyphs > 0 else { return 0 }
+        let glyphIndex = layoutManager.glyphIndex(for: adjustedPoint, in: textContainer)
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        return min(characterIndex, (string as NSString).length)
+    }
+
+    private static func distance(from point: NSPoint, to rect: NSRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return hypot(dx, dy)
+    }
+
+    private func beginSelectionDragMonitoring() {
+        finishSelectionDragMonitoring()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.pollSelectionDrag()
+        }
+        selectionDragTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: .eventTracking)
+    }
+
+    private func pollSelectionDrag() {
+        guard let window else {
+            finishSelectionDragMonitoring()
+            return
+        }
+        if (NSEvent.pressedMouseButtons & 1) == 0 {
+            finishSelectionDragMonitoring()
+            return
+        }
+        handleSelectionDrag(at: window.mouseLocationOutsideOfEventStream)
+    }
+
+    private func handleSelectionDrag(at point: NSPoint) {
+        if isInBlockSelection {
+            onMultiBlockSelectionDrag?(point)
+            return
+        }
+        let dragDistance = hypot(point.x - dragStartWindowPoint.x, point.y - dragStartWindowPoint.y)
+        guard dragDistance >= 3,
+              shouldStartCrossBlockSelection(at: point) else { return }
+        isInBlockSelection = true
+        onDragOutOfBlock?(dragSelectionAnchorOffset, point)
+    }
+
+    private func shouldStartCrossBlockSelection(at point: NSPoint) -> Bool {
+        guard let blockId else { return false }
+
+        let localPoint = convert(point, from: nil)
+        if !bounds.insetBy(dx: 0, dy: -2).contains(localPoint) {
+            return true
+        }
+
+        guard let window else { return false }
+        guard let target = Self.textPosition(atWindowPoint: point, in: window) else {
+            return false
+        }
+        return target.blockId != blockId
+    }
+
+    private func finishSelectionDragMonitoring() {
+        if let selectionDragTimer {
+            selectionDragTimer.invalidate()
+            self.selectionDragTimer = nil
+        }
+
+        let wasInBlockSelection = isInBlockSelection
+        isInBlockSelection = false
+        if wasInBlockSelection {
+            onMultiBlockSelectionEnd?()
+        }
     }
 }

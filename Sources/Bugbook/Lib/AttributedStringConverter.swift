@@ -120,6 +120,13 @@ enum AttributedStringConverter {
         return attributedString(from: markdown).string
     }
 
+    static func markdownOffset(forDisplayOffset displayOffset: Int, in markdown: String) -> Int {
+        let attributed = attributedString(from: markdown)
+        let clamped = max(0, min(displayOffset, attributed.length))
+        let prefix = attributed.attributedSubstring(from: NSRange(location: 0, length: clamped))
+        return (self.markdown(from: prefix) as NSString).length
+    }
+
     // MARK: - NSAttributedString -> Markdown
 
     /// Converts an attributed string back to markdown with inline formatting.

@@ -20,6 +20,7 @@ struct TextBlockView: View {
                 BlockTextView(
                     document: document,
                     blockId: block.id,
+                    selectionVersion: document.selectionVersion,
                     isMultiline: false,
                     font: nsFont,
                     textColor: nsTextColor,
@@ -39,6 +40,7 @@ struct TextBlockView: View {
                 }
             }
         }
+        .editorTextCursor()
     }
 
     @ViewBuilder
@@ -92,9 +94,9 @@ struct TextBlockView: View {
         switch block.type {
         case .heading:
             switch block.headingLevel {
-            case 1: return .system(size: 30, weight: .bold)
-            case 2: return .system(size: 24, weight: .semibold)
-            case 3: return .system(size: 21, weight: .semibold)
+            case 1: return .system(size: EditorTypography.scaled(30), weight: .bold)
+            case 2: return .system(size: EditorTypography.scaled(24), weight: .semibold)
+            case 3: return .system(size: EditorTypography.scaled(21), weight: .semibold)
             default: return .system(size: EditorTypography.bodyFontSize)
             }
         default:
@@ -106,12 +108,12 @@ struct TextBlockView: View {
         switch block.type {
         case .heading:
             switch block.headingLevel {
-            case 1: return .systemFont(ofSize: 30, weight: .bold)
-            case 2: return .systemFont(ofSize: 24, weight: .semibold)
-            case 3: return .systemFont(ofSize: 20, weight: .semibold)
-            case 4: return .systemFont(ofSize: 17, weight: .semibold)
+            case 1: return .systemFont(ofSize: EditorTypography.scaled(30), weight: .bold)
+            case 2: return .systemFont(ofSize: EditorTypography.scaled(24), weight: .semibold)
+            case 3: return .systemFont(ofSize: EditorTypography.scaled(20), weight: .semibold)
+            case 4: return .systemFont(ofSize: EditorTypography.scaled(17), weight: .semibold)
             case 5: return .systemFont(ofSize: EditorTypography.bodyFontSize, weight: .semibold)
-            case 6: return .systemFont(ofSize: 13, weight: .semibold)
+            case 6: return .systemFont(ofSize: EditorTypography.scaled(13), weight: .semibold)
             default: return .systemFont(ofSize: EditorTypography.bodyFontSize)
             }
         default:
