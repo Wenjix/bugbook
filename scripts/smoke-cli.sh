@@ -5,11 +5,17 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "jq is required for smoke-cli.sh"
-  exit 1
+  if command -v brew >/dev/null 2>&1; then
+    echo "[smoke] jq not found; installing with Homebrew"
+    brew install jq
+  else
+    echo "jq is required for smoke-cli.sh. Install it with Homebrew ('brew install jq') and rerun."
+    exit 1
+  fi
 fi
 
 WS="$(mktemp -d)"
+trap 'rm -rf "$WS"' EXIT
 echo "[smoke] workspace: $WS"
 
 run_bb() {

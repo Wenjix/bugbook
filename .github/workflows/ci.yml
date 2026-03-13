@@ -25,44 +25,32 @@ jobs:
           fi
 
           swift --version
+          XCODE_VERSION="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
+          echo "xcode_version=$XCODE_VERSION" >> "$GITHUB_OUTPUT"
 
           SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version || echo 0)"
           echo "sdk_version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
-
-          if python3 - "$SDK_VERSION" <<'PY'
-import sys
-version = sys.argv[1].split(".")
-major = int(version[0]) if version and version[0].isdigit() else 0
-sys.exit(0 if major >= 26 else 1)
-PY
-          then
-            echo "has_required_sdk=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_required_sdk=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
           path: .build
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-${{ hashFiles('Package.resolved') }}
           restore-keys: |
+            ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-
             ${{ runner.os }}-spm-
 
-      - name: Report skipped build matrix
-        if: steps.toolchain.outputs.has_required_sdk != 'true'
-        run: |
-          echo "::warning::macOS SDK ${{ steps.toolchain.outputs.sdk_version }} is below the required macOS 26 SDK; build/test/smoke steps are skipped on this runner"
-
       - name: Build
-        if: steps.toolchain.outputs.has_required_sdk == 'true'
         run: |
           swift build
 
+      - name: Run SwiftLint
+        run: |
+          brew install swiftlint
+          swiftlint lint --strict
+
       - name: Run tests
-        if: steps.toolchain.outputs.has_required_sdk == 'true'
         run: swift test
 
       - name: Run smoke test
-        if: steps.toolchain.outputs.has_required_sdk == 'true'
         run: bash scripts/smoke-cli.sh
