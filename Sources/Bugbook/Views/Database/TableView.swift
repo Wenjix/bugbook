@@ -44,9 +44,10 @@ struct TableView: View {
 
     private let titleColumnKey = "__title__"
     private let topAnchorKey = "__table_top__"
-    private let rowHandleWidth: CGFloat = 20
-    private let checkboxWidth: CGFloat = 18
-    private let rowControlsSpacing: CGFloat = 6
+    private let rowHandleWidth: CGFloat = DatabaseZoomMetrics.size(20)
+    private let checkboxWidth: CGFloat = DatabaseZoomMetrics.size(18)
+    private let rowControlsSpacing: CGFloat = DatabaseZoomMetrics.size(6)
+    private var scaledRowControlsInset: CGFloat { DatabaseZoomMetrics.size(Self.rowControlsInset) }
 
     private var visibleProperties: [PropertyDefinition] {
         let hidden = Set(viewConfig.hiddenColumns ?? [])
@@ -54,7 +55,7 @@ struct TableView: View {
     }
 
     private var titleColumnWidth: CGFloat {
-        dragWidths[titleColumnKey] ?? viewConfig.columnWidths?[titleColumnKey] ?? 320
+        dragWidths[titleColumnKey] ?? viewConfig.columnWidths?[titleColumnKey] ?? DatabaseZoomMetrics.size(320)
     }
 
     private var wrapCellText: Bool {
@@ -113,7 +114,7 @@ struct TableView: View {
         HStack(spacing: 0) {
             HStack(spacing: 16) {
                 Text("\(selectedRowIds.count) selected")
-                    .font(.callout)
+                    .font(DatabaseZoomMetrics.font(15))
                     .fontWeight(.medium)
                     .foregroundStyle(Color.accentColor)
 
@@ -124,18 +125,18 @@ struct TableView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "trash")
-                            .font(.system(size: 11))
+                            .font(DatabaseZoomMetrics.font(11))
                         Text("Delete")
-                            .font(.callout)
+                            .font(DatabaseZoomMetrics.font(15))
                     }
                     .foregroundStyle(.red)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(10))
+                    .padding(.vertical, DatabaseZoomMetrics.size(4))
                     .background(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(6))
                             .fill(Color.red.opacity(0.06))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 6)
+                                RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(6))
                                     .stroke(Color.red.opacity(0.15), lineWidth: 1)
                             )
                     )
@@ -148,14 +149,14 @@ struct TableView: View {
                     selectedRowIds.removeAll()
                 } label: {
                     Text("Deselect all")
-                        .font(.callout)
+                        .font(DatabaseZoomMetrics.font(15))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, DatabaseZoomMetrics.size(8))
         .background(Color.accentColor.opacity(0.03))
     }
 
@@ -164,15 +165,15 @@ struct TableView: View {
     private var headerRow: some View {
         HStack(spacing: 0) {
             Color.clear
-                .frame(width: Self.rowControlsInset)
+                .frame(width: scaledRowControlsInset)
 
             // Title column header
             Text(schema.titleProperty?.name ?? "Name")
-                .font(.callout)
+                .font(DatabaseZoomMetrics.font(15))
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 8)
+                .padding(.leading, DatabaseZoomMetrics.size(8))
                 .frame(width: titleColumnWidth)
                 .overlay(alignment: .trailing) {
                     resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 320)
@@ -207,27 +208,27 @@ struct TableView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
-                        .font(.system(size: 11))
+                        .font(DatabaseZoomMetrics.font(11))
                     Text("Add property")
-                        .font(.callout)
+                        .font(DatabaseZoomMetrics.font(15))
                 }
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                .padding(.vertical, DatabaseZoomMetrics.size(4))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DatabaseZoomMetrics.size(8))
+        .padding(.vertical, DatabaseZoomMetrics.size(10))
     }
 
     // MARK: - Resize Handle (overlaid on column trailing edge)
 
     private func resizeHandle(key: String, baseWidth: Double) -> some View {
         let isActive = hoveredResizeKey == key || draggingResizeKey == key
-        let hitWidth: CGFloat = 16
+        let hitWidth = DatabaseZoomMetrics.size(16)
         return Color.clear
             .frame(width: hitWidth)
             .overlay {
@@ -243,7 +244,7 @@ struct TableView: View {
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
                         draggingResizeKey = key
-                        dragWidths[key] = max(80, CGFloat(baseWidth) + value.translation.width)
+                        dragWidths[key] = max(DatabaseZoomMetrics.size(80), CGFloat(baseWidth) + value.translation.width)
                     }
                     .onEnded { _ in
                         if let finalWidth = dragWidths[key] {
@@ -262,12 +263,12 @@ struct TableView: View {
         HoverRow { isHovered in
             HStack(alignment: .center, spacing: 0) {
                 rowControls(for: row.wrappedValue, isHovered: isHovered)
-                    .frame(width: Self.rowControlsInset, alignment: .trailing)
+                    .frame(width: scaledRowControlsInset, alignment: .trailing)
 
                 HStack(alignment: .top, spacing: 0) {
                     titleCell(row, isHovered: isHovered)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                        .padding(.vertical, DatabaseZoomMetrics.size(14))
                         .frame(width: titleColumnWidth, alignment: .leading)
                         .contentShape(Rectangle())
                         .databasePointerCursor()
@@ -285,16 +286,16 @@ struct TableView: View {
                             onListDatabases: prop.type == .relation ? { onListDatabases?() ?? [] } : nil,
                             onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil
                         )
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                        .padding(.vertical, DatabaseZoomMetrics.size(14))
                         .frame(width: columnWidth(for: prop), alignment: .leading)
                         .contentShape(Rectangle())
                         .databasePointerCursor()
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, DatabaseZoomMetrics.size(8))
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(4))
                         .fill(isHovered ? Color.primary.opacity(0.04) : Color.clear)
                 )
                 .overlay { columnDividers().allowsHitTesting(false) }
@@ -326,7 +327,7 @@ struct TableView: View {
     private func columnDividers() -> some View {
         if showVerticalLines {
             HStack(spacing: 0) {
-                Color.clear.frame(width: 8 + titleColumnWidth)
+                Color.clear.frame(width: DatabaseZoomMetrics.size(8) + titleColumnWidth)
                 Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
                 ForEach(visibleProperties) { prop in
                     Color.clear.frame(width: columnWidth(for: prop))
@@ -340,7 +341,7 @@ struct TableView: View {
     // MARK: - Title Cell
 
     private func titleCell(_ row: Binding<DatabaseRow>, isHovered: Bool) -> some View {
-        let openPillSize = CGSize(width: 74, height: 24)
+        let openPillSize = CGSize(width: DatabaseZoomMetrics.size(74), height: DatabaseZoomMetrics.size(24))
         let titleBinding = titleBinding(row: row)
 
         return titleTextField(titleBinding)
@@ -353,18 +354,18 @@ struct TableView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "sidebar.right")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(DatabaseZoomMetrics.font(9, weight: .semibold))
                             Text("OPEN")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(DatabaseZoomMetrics.font(10, weight: .semibold))
                                 .tracking(0.3)
                         }
                         .foregroundStyle(.secondary)
                         .frame(width: openPillSize.width, height: openPillSize.height)
                         .background(
-                            RoundedRectangle(cornerRadius: 7)
+                            RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(7))
                                 .fill(Color.fallbackBgSecondary)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 7)
+                                    RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(7))
                                         .stroke(Color.fallbackBorderColor.opacity(0.9), lineWidth: 1)
                                 )
                         )
@@ -372,7 +373,7 @@ struct TableView: View {
                     .buttonStyle(.plain)
                     .fixedSize()
                     .help("Open in side peek")
-                    .padding(.trailing, 4)
+                    .padding(.trailing, DatabaseZoomMetrics.size(4))
                 }
             }
     }
@@ -383,11 +384,11 @@ struct TableView: View {
         Button { onNewRow?() } label: {
             HStack(spacing: 0) {
                 Color.clear
-                    .frame(width: Self.rowControlsInset)
+                    .frame(width: scaledRowControlsInset)
                     .overlay(alignment: .trailing) {
                         if isFirst {
                             Image(systemName: "plus")
-                                .font(.system(size: 11))
+                                .font(DatabaseZoomMetrics.font(11))
                                 .foregroundStyle(Color.primary.opacity(0.25))
                         }
                     }
@@ -395,11 +396,11 @@ struct TableView: View {
                 HStack(spacing: 0) {
                     TextField(isFirst ? "New page" : "", text: .constant(""))
                         .textFieldStyle(.plain)
-                        .font(.system(size: EditorTypography.bodyFontSize))
+                        .font(DatabaseZoomMetrics.font(17))
                         .foregroundStyle(Color.primary.opacity(0.25))
                         .disabled(true)
                         .allowsHitTesting(false)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, DatabaseZoomMetrics.size(8))
                         .frame(width: titleColumnWidth, alignment: .leading)
 
                     ForEach(visibleProperties) { prop in
@@ -407,12 +408,12 @@ struct TableView: View {
                             .textFieldStyle(.plain)
                             .disabled(true)
                             .allowsHitTesting(false)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, DatabaseZoomMetrics.size(8))
                             .frame(width: columnWidth(for: prop), alignment: .leading)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 14)
+                .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                .padding(.vertical, DatabaseZoomMetrics.size(14))
             }
             .contentShape(Rectangle())
             .overlay { columnDividers().allowsHitTesting(false) }
@@ -423,7 +424,7 @@ struct TableView: View {
     // MARK: - Helpers
 
     private func columnWidth(for prop: PropertyDefinition) -> CGFloat {
-        dragWidths[prop.id] ?? viewConfig.columnWidths?[prop.id] ?? 180
+        dragWidths[prop.id] ?? viewConfig.columnWidths?[prop.id] ?? DatabaseZoomMetrics.size(180)
     }
 
     private func propertyBinding(row: Binding<DatabaseRow>, propertyId: String) -> Binding<PropertyValue> {
@@ -503,13 +504,13 @@ struct TableView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.down")
-                            .font(.system(size: 11))
+                            .font(DatabaseZoomMetrics.font(11))
                         Text("Load more (\(totalCount - visibleCount) remaining)")
-                            .font(.callout)
+                            .font(DatabaseZoomMetrics.font(15))
                     }
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, DatabaseZoomMetrics.size(10))
                 }
                 .buttonStyle(.plain)
             }
@@ -541,7 +542,7 @@ struct TableView: View {
 
     private var tableDivider: some View {
         Divider()
-            .padding(.leading, 8)
+            .padding(.leading, DatabaseZoomMetrics.size(8))
     }
 
     private func rowControls(for row: DatabaseRow, isHovered: Bool) -> some View {
@@ -565,7 +566,7 @@ struct TableView: View {
                 toggleSelection(for: rowId)
             } label: {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 13))
+                    .font(DatabaseZoomMetrics.font(13))
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
@@ -621,7 +622,7 @@ struct TableView: View {
         if wrapCellText {
             TextField("New Page", text: text, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: EditorTypography.bodyFontSize))
+                .font(DatabaseZoomMetrics.font(17))
                 .foregroundStyle(.primary)
                 .lineLimit(1...4)
                 .multilineTextAlignment(.leading)
@@ -630,7 +631,7 @@ struct TableView: View {
         } else {
             TextField("New Page", text: text)
                 .textFieldStyle(.plain)
-                .font(.system(size: EditorTypography.bodyFontSize))
+                .font(DatabaseZoomMetrics.font(17))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -650,12 +651,12 @@ struct TableView: View {
 
     private func dragPreview(for row: DatabaseRow) -> some View {
         Text(row.title(schema: schema).isEmpty ? "Untitled" : row.title(schema: schema))
-            .font(.callout)
+            .font(DatabaseZoomMetrics.font(15))
             .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(6))
             .background(.ultraThinMaterial)
-            .clipShape(.rect(cornerRadius: 6))
+            .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(6)))
             .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
     }
 
@@ -787,17 +788,17 @@ private struct ColumnHeaderCell: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: prop.type.systemImageName)
-                    .font(.caption2)
+                    .font(DatabaseZoomMetrics.font(11))
                     .foregroundStyle(.secondary)
                 Text(prop.name)
-                    .font(.callout)
+                    .font(DatabaseZoomMetrics.font(15))
                     .fontWeight(.medium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(6))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
             .contentShape(Rectangle())
@@ -815,7 +816,7 @@ private struct ColumnHeaderCell: View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Property name", text: $editingName)
                 .textFieldStyle(.roundedBorder)
-                .font(.callout)
+                .font(DatabaseZoomMetrics.font(15))
                 .focusEffectDisabled()
                 .onSubmit {
                     let trimmed = editingName.trimmingCharacters(in: .whitespaces)
@@ -827,7 +828,7 @@ private struct ColumnHeaderCell: View {
 
             HStack {
                 Text("Type")
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Menu {
@@ -844,9 +845,9 @@ private struct ColumnHeaderCell: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: prop.type.systemImageName)
-                            .font(.caption)
+                            .font(DatabaseZoomMetrics.font(12))
                         Text(prop.type.rawValue.capitalized)
-                            .font(.callout)
+                            .font(DatabaseZoomMetrics.font(15))
                     }
                     .foregroundStyle(.primary)
                 }
@@ -863,9 +864,9 @@ private struct ColumnHeaderCell: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "eye.slash")
-                            .font(.caption)
+                            .font(DatabaseZoomMetrics.font(12))
                         Text("Hide property")
-                            .font(.callout)
+                            .font(DatabaseZoomMetrics.font(15))
                     }
                     .foregroundStyle(.primary)
                 }
@@ -878,16 +879,16 @@ private struct ColumnHeaderCell: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "trash")
-                        .font(.caption)
+                        .font(DatabaseZoomMetrics.font(12))
                     Text("Delete property")
-                        .font(.callout)
+                        .font(DatabaseZoomMetrics.font(15))
                 }
                 .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
         }
-        .padding(12)
-        .frame(width: 220)
+        .padding(DatabaseZoomMetrics.size(12))
+        .frame(width: DatabaseZoomMetrics.size(220))
         .popoverSurface()
     }
 

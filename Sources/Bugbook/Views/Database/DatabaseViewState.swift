@@ -509,6 +509,19 @@ final class DatabaseViewState {
         }
     }
 
+    func clearSorts() {
+        guard var s = schema, var view = activeView, !view.sorts.isEmpty else { return }
+        view.sorts.removeAll()
+        if let viewIndex = s.views.firstIndex(where: { $0.id == view.id }) {
+            s.views[viewIndex] = view
+        }
+        schema = s
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
     // MARK: - Title
 
     func scheduleTitleSave() {

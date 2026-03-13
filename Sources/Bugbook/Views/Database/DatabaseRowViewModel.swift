@@ -12,6 +12,7 @@ final class DatabaseRowViewModel {
     var error: String?
 
     private let dbService = DatabaseService()
+    @ObservationIgnored private let draftStore = EditorDraftStore()
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var isLoadInFlight = false
@@ -34,6 +35,7 @@ final class DatabaseRowViewModel {
             MainActor.assumeIsolated {
                 guard let self, deletedPath == self.dbPath else { return }
                 self.deletedRowIds.insert(rowId)
+                self.draftStore.clearRowBodyDraft(dbPath: deletedPath, rowId: rowId)
                 if self.row?.id == rowId {
                     self.saveTask?.cancel()
                     self.saveTask = nil
@@ -84,6 +86,14 @@ final class DatabaseRowViewModel {
                 }
                 // Load body on demand (skipped during bulk load for performance)
                 loadedRow.body = service.loadRowBody(rowId: rowId, at: path)
+                if let restoredBody = draftStore.restoreRowBodyDraftIfNewer(
+                    dbPath: path,
+                    rowId: rowId,
+                    rowFilePath: rowFilePath(rowId: rowId)
+                ) {
+                    loadedRow.body = restoredBody
+                    didEdit = true
+                }
                 schema = loadedSchema
                 row = loadedRow
             case .failure(let err):
@@ -101,16 +111,27 @@ final class DatabaseRowViewModel {
         guard !deletedRowIds.contains(row.id) else { return }
         self.row = row
         didEdit = true
+        draftStore.saveRowBodyDraft(
+            content: row.body,
+            dbPath: dbPath,
+            rowId: row.id,
+            rowFilePath: rowFilePath(rowId: row.id)
+        )
         saveTask?.cancel()
         saveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled, !deletedRowIds.contains(row.id) else { return }
-            try? dbService.saveRow(row, schema: schema, at: dbPath)
-            NotificationCenter.default.post(
-                name: .databaseDidChange,
-                object: nil,
-                userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.origin: origin]
-            )
+            do {
+                try dbService.saveRow(row, schema: schema, at: dbPath)
+                draftStore.clearRowBodyDraft(dbPath: dbPath, rowId: row.id)
+                NotificationCenter.default.post(
+                    name: .databaseDidChange,
+                    object: nil,
+                    userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.origin: origin]
+                )
+            } catch {
+                return
+            }
         }
     }
 
@@ -122,7 +143,12 @@ final class DatabaseRowViewModel {
         pendingRowIdForReload = nil
         if let currentRow = row, let currentSchema = schema,
            !deletedRowIds.contains(currentRow.id) {
-            try? dbService.saveRow(currentRow, schema: currentSchema, at: dbPath)
+            do {
+                try dbService.saveRow(currentRow, schema: currentSchema, at: dbPath)
+                draftStore.clearRowBodyDraft(dbPath: dbPath, rowId: currentRow.id)
+            } catch {
+                return
+            }
         }
     }
 
@@ -268,6 +294,7 @@ final class DatabaseRowViewModel {
         saveTask?.cancel()
         saveTask = nil
         deletedRowIds.insert(rowId)
+        draftStore.clearRowBodyDraft(dbPath: dbPath, rowId: rowId)
         try? dbService.deleteRow(rowId, in: dbPath)
         // Rebuild the index so the deleted row is no longer referenced
         if let schema = schema {

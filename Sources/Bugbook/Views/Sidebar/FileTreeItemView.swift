@@ -23,7 +23,7 @@ struct FileTreeItemView: View {
         VStack(spacing: 0) {
             // Row
             Button(action: { handleTap() }) {
-                HStack(spacing: 6) {
+                HStack(spacing: ShellZoomMetrics.size(6)) {
                     // Icon slot: ZStack keeps layout stable during hover transitions
                     ZStack {
                         iconView
@@ -32,35 +32,35 @@ struct FileTreeItemView: View {
                         if isExpandable {
                             Button(action: toggleExpanded) {
                                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: 11))
+                                    .font(ShellZoomMetrics.font(Typography.caption2))
                                     .foregroundStyle(.secondary)
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .opacity(isHovering ? 1 : 0)
                         }
                     }
-                    .frame(width: 16, height: 16)
+                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
 
                     if isRenaming {
                         TextField("", text: $renameName, onCommit: { commitRename() })
                             .textFieldStyle(.plain)
-                            .font(.system(size: 14))
+                            .font(ShellZoomMetrics.font(Typography.body))
                             .onExitCommand { isRenaming = false }
                     } else {
                         Text(displayName)
-                            .font(.system(size: 14))
+                            .font(ShellZoomMetrics.font(Typography.body))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
 
                     Spacer()
                 }
-                .padding(.vertical, 4)
-                .padding(.horizontal, 12)
+                .padding(.vertical, ShellZoomMetrics.size(4))
+                .padding(.horizontal, ShellZoomMetrics.size(12))
                 .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
-                .clipShape(.rect(cornerRadius: 4))
+                .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.xs)))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -85,7 +85,7 @@ struct FileTreeItemView: View {
                     onSelectFile: onSelectFile,
                     onRefreshTree: onRefreshTree
                 )
-                .padding(.leading, 12)
+                .padding(.leading, ShellZoomMetrics.size(12))
             }
         }
         .onAppear { loadExpandedState() }
@@ -107,28 +107,29 @@ struct FileTreeItemView: View {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 16, height: 16)
-                        .clipShape(.rect(cornerRadius: 3))
+                        .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
                 } else {
                     defaultIcon
                 }
             } else if icon.hasPrefix("sf:") {
                 // SF Symbol (sf:symbolName)
                 Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 13))
+                    .font(ShellZoomMetrics.font(Typography.bodySmall))
                     .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 16)
+                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 15))
-                    .frame(width: 16, height: 16)
+                Text(icon)
+                    .font(ShellZoomMetrics.font(15))
+                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
             } else if FileManager.default.fileExists(atPath: icon) {
                 // Raw file path (legacy)
                 if let nsImage = NSImage(contentsOfFile: icon) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 16, height: 16)
-                        .clipShape(.rect(cornerRadius: 3))
+                        .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
                 } else {
                     defaultIcon
                 }
@@ -144,24 +145,24 @@ struct FileTreeItemView: View {
     private var defaultIcon: some View {
         if entry.isCanvas {
             Image(systemName: "rectangle.on.rectangle.angled")
-                .font(.system(size: 13))
+                .font(ShellZoomMetrics.font(Typography.bodySmall))
                 .foregroundStyle(.secondary)
-                .frame(width: 16, height: 16)
+                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
         } else if entry.isDatabase {
             Image(systemName: "tablecells")
-                .font(.system(size: 13))
+                .font(ShellZoomMetrics.font(Typography.bodySmall))
                 .foregroundStyle(.secondary)
-                .frame(width: 16, height: 16)
+                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
         } else if entry.isDirectory {
             Image(systemName: "folder")
-                .font(.system(size: 13))
+                .font(ShellZoomMetrics.font(Typography.bodySmall))
                 .foregroundStyle(.secondary)
-                .frame(width: 16, height: 16)
+                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
         } else {
             Image(systemName: "doc.text")
-                .font(.system(size: 13))
+                .font(ShellZoomMetrics.font(Typography.bodySmall))
                 .foregroundStyle(.secondary)
-                .frame(width: 16, height: 16)
+                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
         }
     }
 
@@ -256,8 +257,8 @@ struct FileTreeItemView: View {
                 showContextMenu = false; showDeleteConfirmation = true
             }
         }
-        .frame(width: 200)
-        .padding(.vertical, 4)
+        .frame(width: ShellZoomMetrics.size(200))
+        .padding(.vertical, ShellZoomMetrics.size(4))
         .popoverSurface()
     }
 
@@ -266,24 +267,24 @@ struct FileTreeItemView: View {
         isDestructive: Bool = false, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: ShellZoomMetrics.size(8)) {
                 Image(systemName: icon)
-                    .font(.system(size: 13))
+                    .font(ShellZoomMetrics.font(Typography.bodySmall))
                     .foregroundStyle(isDestructive ? .red.opacity(0.8) : .secondary)
-                    .frame(width: 16, height: 16)
+                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
                 Text(label)
-                    .font(.system(size: 13))
+                    .font(ShellZoomMetrics.font(Typography.bodySmall))
                     .foregroundStyle(isDestructive ? .red.opacity(0.8) : .primary)
                 Spacer()
             }
-            .padding(.horizontal, 10)
-            .frame(height: 28)
+            .padding(.horizontal, ShellZoomMetrics.size(10))
+            .frame(height: ShellZoomMetrics.size(28))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
                     .fill(hoveredMenuItem == id ? Color.primary.opacity(0.06) : Color.clear)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, ShellZoomMetrics.size(4))
             )
         }
         .buttonStyle(.plain)
@@ -292,8 +293,8 @@ struct FileTreeItemView: View {
 
     private var ctxDivider: some View {
         Divider()
-            .padding(.vertical, 4)
-            .padding(.horizontal, 10)
+            .padding(.vertical, ShellZoomMetrics.size(4))
+            .padding(.horizontal, ShellZoomMetrics.size(10))
     }
 
     // MARK: - Actions

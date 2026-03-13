@@ -13,22 +13,22 @@ struct TabBarView: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
             // Back / Forward buttons
-            HStack(spacing: 2) {
+            HStack(spacing: ShellZoomMetrics.size(2)) {
                 navButton(icon: "chevron.left", help: "Back", isEnabled: canGoBack) { onBack?() }
                 navButton(icon: "chevron.right", help: "Forward", isEnabled: canGoForward) { onForward?() }
             }
-            .padding(.leading, appState.sidebarOpen ? 8 : 112)
-            .padding(.bottom, 3)
+            .padding(.leading, appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(112))
+            .padding(.bottom, ShellZoomMetrics.size(3))
 
             ScrollView(.horizontal) {
-                HStack(alignment: .bottom, spacing: -8) {
-                    ForEach(appState.openTabs.enumerated(), id: \.element.id) { index, tab in
+                HStack(alignment: .bottom, spacing: -ShellZoomMetrics.size(8)) {
+                    ForEach(Array(appState.openTabs.enumerated()), id: \.element.id) { index, tab in
                         HStack(spacing: 0) {
                             if dragOverIndex == index {
                                 Rectangle()
                                     .fill(Color.accentColor)
-                                    .frame(width: 2, height: 24)
-                                    .padding(.vertical, 4)
+                                    .frame(width: 2, height: ShellZoomMetrics.size(24))
+                                    .padding(.vertical, ShellZoomMetrics.size(4))
                             }
 
                             TabItemView(
@@ -55,18 +55,18 @@ struct TabBarView: View {
                     if dragOverIndex == appState.openTabs.count {
                         Rectangle()
                             .fill(Color.accentColor)
-                            .frame(width: 2, height: 24)
-                            .padding(.vertical, 4)
+                            .frame(width: 2, height: ShellZoomMetrics.size(24))
+                            .padding(.vertical, ShellZoomMetrics.size(4))
                     }
 
                     Button("New Tab", systemImage: "plus", action: { appState.newEmptyTab() })
                         .labelStyle(.iconOnly)
-                        .font(.system(size: 13))
+                        .font(ShellZoomMetrics.font(Typography.bodySmall))
                         .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
+                        .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
                         .buttonStyle(.plain)
-                    .padding(.leading, 8)
-                    .padding(.bottom, 2)
+                    .padding(.leading, ShellZoomMetrics.size(8))
+                    .padding(.bottom, ShellZoomMetrics.size(2))
                     .onDrop(of: [.text], delegate: TabDropDelegate(
                         targetIndex: appState.openTabs.count,
                         appState: appState,
@@ -74,13 +74,13 @@ struct TabBarView: View {
                         draggingTabId: $draggingTabId
                     ))
                 }
-                .padding(.leading, 2)
+                .padding(.leading, ShellZoomMetrics.size(2))
             }
             .scrollIndicators(.hidden)
             Spacer()
         }
-        .padding(.top, 6)
-        .frame(height: 36)
+        .padding(.top, ShellZoomMetrics.size(6))
+        .frame(height: ShellZoomMetrics.size(36))
         .background(
             ZStack(alignment: .bottom) {
                 Color.fallbackTabBarBg
@@ -94,9 +94,9 @@ struct TabBarView: View {
     private func navButton(icon: String, help: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
+                .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
                 .foregroundStyle(isEnabled ? Color.secondary : Color.secondary.opacity(0.35))
-                .frame(width: 24, height: 24)
+                .frame(width: ShellZoomMetrics.size(24), height: ShellZoomMetrics.size(24))
         }
         .buttonStyle(.borderless)
         .help(help)
@@ -151,53 +151,59 @@ struct TabItemView: View {
 
     @State private var isHovered = false
     @State private var isCloseHovered = false
-    private let wingRadius: CGFloat = 5
+    private var wingRadius: CGFloat { ShellZoomMetrics.size(5) }
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 6) {
+            HStack(spacing: ShellZoomMetrics.size(6)) {
                 tabIcon
 
                 Text(tabName)
-                    .font(.system(size: 13))
+                    .font(ShellZoomMetrics.font(Typography.bodySmall))
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
 
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(ShellZoomMetrics.font(9, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
+                        .frame(width: ShellZoomMetrics.size(20), height: ShellZoomMetrics.size(20))
                         .background(isCloseHovered ? Color.primary.opacity(0.1) : .clear)
-                        .clipShape(.rect(cornerRadius: 4))
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.xs)))
                 }
                 .buttonStyle(.plain)
                 .onHover { isCloseHovered = $0 }
                 .opacity(isHovered ? 1 : 0)
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 8)
-            .frame(width: 190, alignment: .leading)
-            .frame(height: 30)
+            .padding(.leading, ShellZoomMetrics.size(14))
+            .padding(.trailing, ShellZoomMetrics.size(8))
+            .frame(width: ShellZoomMetrics.size(190), alignment: .leading)
+            .frame(height: ShellZoomMetrics.size(30))
             .background(
                 Group {
                     if isActive {
                         ZStack(alignment: .bottom) {
-                            ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
+                            ConnectedTabShape(
+                                cornerRadius: ShellZoomMetrics.size(Radius.sm),
+                                wingRadius: wingRadius
+                            )
                                 .fill(Color.fallbackEditorBg)
-                            ConnectedTabShape(cornerRadius: 6, wingRadius: wingRadius)
+                            ConnectedTabShape(
+                                cornerRadius: ShellZoomMetrics.size(Radius.sm),
+                                wingRadius: wingRadius
+                            )
                                 .stroke(Color.fallbackChromeBorder, lineWidth: 1)
                         }
                     } else if isHovered {
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
                             .fill(Color.primary.opacity(0.05))
                     } else {
                         Color.clear
                     }
                 }
             )
-            .padding(.horizontal, 4)
+            .padding(.horizontal, ShellZoomMetrics.size(4))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -207,11 +213,11 @@ struct TabItemView: View {
     @ViewBuilder
     private var tabIcon: some View {
         if tab.path == "__settings__" {
-            Image(systemName: "gearshape").font(.system(size: 12))
+            Image(systemName: "gearshape").font(ShellZoomMetrics.font(Typography.caption))
         } else if let icon = tab.icon, !icon.isEmpty {
             if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 12))
+                    .font(ShellZoomMetrics.font(Typography.caption))
                     .foregroundStyle(.secondary)
             } else if icon.hasPrefix("custom:") {
                 let path = String(icon.dropFirst(7))
@@ -219,11 +225,11 @@ struct TabItemView: View {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 14, height: 14)
-                        .clipShape(.rect(cornerRadius: 3))
+                        .frame(width: ShellZoomMetrics.size(14), height: ShellZoomMetrics.size(14))
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
                 }
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 14))
+                Text(icon).font(ShellZoomMetrics.font(14))
             }
         }
     }

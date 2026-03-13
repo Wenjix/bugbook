@@ -8,38 +8,43 @@ struct BreadcrumbView: View {
     var body: some View {
         HStack(spacing: 0) {
             ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(items.enumerated(), id: \.element.id) { index, item in
+                HStack(spacing: ShellZoomMetrics.size(6)) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         if index > 0 {
                             Text("/")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
                                 .foregroundStyle(.secondary.opacity(0.8))
-                                .padding(.horizontal, 1)
+                                .padding(.horizontal, ShellZoomMetrics.size(1))
                         }
                         Button(action: { onNavigate(item) }) {
-                            HStack(spacing: 4) {
+                            HStack(spacing: ShellZoomMetrics.size(4)) {
                                 breadcrumbIcon(item.icon)
                                 Text(item.name)
-                                    .font(.system(size: 13, weight: index == items.count - 1 ? .medium : .regular))
+                                    .font(
+                                        ShellZoomMetrics.font(
+                                            Typography.bodySmall,
+                                            weight: index == items.count - 1 ? .medium : .regular
+                                        )
+                                    )
                                     .foregroundStyle(index == items.count - 1 ? .primary : .secondary)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, ShellZoomMetrics.size(6))
+                            .padding(.vertical, ShellZoomMetrics.size(4))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .disabled(index == items.count - 1)
                     }
                 }
-                .padding(.trailing, 8)
+                .padding(.trailing, ShellZoomMetrics.size(8))
             }
             .scrollIndicators(.hidden)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, ShellZoomMetrics.size(10))
+        .padding(.vertical, ShellZoomMetrics.size(6))
         .background(Color.fallbackEditorBg)
     }
 
@@ -52,21 +57,21 @@ struct BreadcrumbView: View {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 14, height: 14)
-                        .clipShape(.rect(cornerRadius: 3))
+                        .frame(width: ShellZoomMetrics.size(14), height: ShellZoomMetrics.size(14))
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
                 }
             } else if icon.hasPrefix("sf:") {
                 Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 12))
+                    .font(ShellZoomMetrics.font(Typography.caption))
             } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 12))
+                Text(icon).font(ShellZoomMetrics.font(Typography.caption))
             } else if FileManager.default.fileExists(atPath: icon) {
                 if let nsImage = NSImage(contentsOfFile: icon) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 14, height: 14)
-                        .clipShape(.rect(cornerRadius: 3))
+                        .frame(width: ShellZoomMetrics.size(14), height: ShellZoomMetrics.size(14))
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
                 }
             }
         }
@@ -89,15 +94,15 @@ struct BacklinksMenuButton: View {
             }
         } label: {
             Image(systemName: "link")
-                .font(.system(size: 13, weight: .medium))
+                .font(ShellZoomMetrics.font(Typography.bodySmall, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .frame(width: 32, height: 32)
+        .frame(width: ShellZoomMetrics.size(32), height: ShellZoomMetrics.size(32))
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
                 .fill(isHovered ? Color.primary.opacity(0.1) : Color.clear)
         )
         .contentShape(Rectangle())

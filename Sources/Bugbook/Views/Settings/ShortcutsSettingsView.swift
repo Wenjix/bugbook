@@ -7,6 +7,9 @@ struct ShortcutsSettingsView: View {
                 shortcutRow("New Note", "Cmd + N")
                 shortcutRow("Slash Command", "/")
                 shortcutRow("Select All (block → page)", "Cmd + A")
+                shortcutRow("Zoom in", "Cmd + Plus")
+                shortcutRow("Zoom out", "Cmd + Minus")
+                shortcutRow("Reset zoom", "Cmd + 0")
             }
 
             SettingsSection("Block Type") {

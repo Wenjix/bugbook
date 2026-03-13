@@ -23,17 +23,17 @@ struct ListView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
-                        .font(.caption)
+                        .font(DatabaseZoomMetrics.font(12))
                     Text("New")
-                        .font(.callout)
+                        .font(DatabaseZoomMetrics.font(15))
                 }
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
+                .padding(.vertical, DatabaseZoomMetrics.size(6))
             }
             .buttonStyle(.plain)
         }
-        .padding(12)
+        .padding(DatabaseZoomMetrics.size(12))
     }
 
     private func listRow(_ row: DatabaseRow) -> some View {
@@ -42,14 +42,14 @@ struct ListView: View {
             onOpenRow(row)
         } label: {
             Text(title.isEmpty ? "Untitled" : title)
-                .font(.system(size: 16))
+                .font(DatabaseZoomMetrics.font(16))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 8)
+                .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                .padding(.vertical, DatabaseZoomMetrics.size(8))
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(4))
                         .fill(hoveredRowId == row.id ? Color.primary.opacity(0.04) : Color.clear)
                 )
         }

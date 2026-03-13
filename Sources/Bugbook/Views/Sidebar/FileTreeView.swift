@@ -19,8 +19,8 @@ struct FileTreeView: View {
     @State private var cachedEntries: [FileEntry] = []
 
     var body: some View {
-        VStack(spacing: 1) {
-            ForEach(cachedEntries.enumerated(), id: \.element.id) { index, entry in
+        VStack(spacing: ShellZoomMetrics.size(1)) {
+            ForEach(Array(cachedEntries.enumerated()), id: \.element.id) { index, entry in
                 FileTreeItemView(
                     entry: entry,
                     activeFilePath: activeFilePath,
@@ -35,11 +35,11 @@ struct FileTreeView: View {
                         Rectangle()
                             .fill(Color.accentColor)
                             .frame(height: 2)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
                 }
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
                         .fill(dropMode == .onto(index) ? Color.accentColor.opacity(0.15) : Color.clear)
                         .allowsHitTesting(false)
                 )
@@ -123,7 +123,7 @@ struct FileTreeDropDelegate: DropDelegate {
         }
         // Vertical position within the row: top 25% = above, middle 50% = into, bottom 25% = above next
         let y = info.location.y
-        let rowHeight: CGFloat = 28
+        let rowHeight = ShellZoomMetrics.size(28)
         let fraction = y / rowHeight
         if fraction < 0.25 {
             dropMode = .above(targetIndex)

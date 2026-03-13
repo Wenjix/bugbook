@@ -48,6 +48,10 @@ struct RowPageView: View {
         return min(max(100, estimatedWidth), 180)
     }
 
+    private var titleFont: Font {
+        .system(size: EditorTypography.scaled(34), weight: .bold)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if showBreadcrumb {
@@ -88,8 +92,7 @@ struct RowPageView: View {
                         TextField("New Page", text: $editingTitle, axis: .vertical)
                         .lineLimit(1...5)
                         .onSubmit { persistTitle() }
-                        .font(.title)
-                        .fontWeight(.bold)
+                        .font(titleFont)
                         .textFieldStyle(.plain)
                         .focused($isTitleFocused)
                         .onChange(of: editingTitle) { _, _ in

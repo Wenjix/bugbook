@@ -4,6 +4,8 @@ import os
 import Sentry
 
 struct ContentView: View {
+    private let editorDraftStore = EditorDraftStore()
+
     @State private var appState = AppState()
     @State private var fileSystem = FileSystemService()
     @State private var aiService = AiService()
@@ -21,6 +23,10 @@ struct ContentView: View {
     @State private var aiInitTask: Task<Void, Never>?
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
+    @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
+    @State private var editorZoomHudVisible = false
+    @State private var editorZoomHudHovered = false
+    @State private var editorZoomHudTask: Task<Void, Never>?
 
     // Database row peek / modal
     private struct RowTarget {
@@ -55,6 +61,7 @@ struct ContentView: View {
             commandPaletteOverlay
             movePageOverlay
             themeToastOverlay
+            editorZoomOverlay
         }
     }
 
@@ -73,9 +80,19 @@ struct ContentView: View {
             .task {
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
+                editorZoomScale = clampedEditorZoomScale(editorZoomScale)
             }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
+            }
+            .onChange(of: editorZoomScale) { oldValue, newValue in
+                let clamped = clampedEditorZoomScale(newValue)
+                if clamped != newValue {
+                    editorZoomScale = clamped
+                    return
+                }
+                guard oldValue != clamped else { return }
+                showEditorZoomHud()
             }
             .onChange(of: appState.settings.qmdSearchMode) { _, mode in
                 QmdService.prewarmDaemonIfNeeded(mode: mode)
@@ -107,6 +124,7 @@ struct ContentView: View {
                 flushDirtyTabs()
                 aiInitTask?.cancel()
                 aiInitTask = nil
+                editorZoomHudTask?.cancel()
                 workspaceWatcher?.stop()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
@@ -114,6 +132,7 @@ struct ContentView: View {
                     // Cancel pending saves before closing tabs to prevent recreating the deleted file
                     saveTask?.cancel()
                     saveTask = nil
+                    editorDraftStore.clearPageDraft(path: path)
                     let closingIds = appState.openTabs.filter { $0.path == path }.map(\.id)
                     appState.closeTabsForPath(path)
                     for id in closingIds { cleanupTabDocuments(id) }
@@ -135,6 +154,14 @@ struct ContentView: View {
     }
 
     private func applyCommandNotifications<V: View>(to view: V) -> some View {
+        applyZoomNotifications(
+            to: applySecondaryCommandNotifications(
+                to: applyPrimaryCommandNotifications(to: view)
+            )
+        )
+    }
+
+    private func applyPrimaryCommandNotifications<V: View>(to view: V) -> some View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .newNote)) { _ in
                 createNewFile()
@@ -166,6 +193,10 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 openSettingsTab()
             }
+    }
+
+    private func applySecondaryCommandNotifications<V: View>(to view: V) -> some View {
+        view
             .onReceive(NotificationCenter.default.publisher(for: .toggleTheme)) { _ in
                 toggleTheme()
             }
@@ -186,6 +217,19 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateForward)) { _ in
                 navigateForwardInActiveTab()
+            }
+    }
+
+    private func applyZoomNotifications<V: View>(to view: V) -> some View {
+        view
+            .onReceive(NotificationCenter.default.publisher(for: .editorZoomIn)) { _ in
+                adjustEditorZoom(by: 0.1)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .editorZoomOut)) { _ in
+                adjustEditorZoom(by: -0.1)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .editorZoomReset)) { _ in
+                resetEditorZoom()
             }
     }
 
@@ -241,8 +285,8 @@ struct ContentView: View {
                     }
                     Spacer()
                 }
-                .padding(.leading, 84)
-                .padding(.top, 10)
+                .padding(.leading, ShellZoomMetrics.size(84))
+                .padding(.top, ShellZoomMetrics.size(10))
                 Spacer()
             }
             .opacity(focusModeActive ? 0.0 : 1.0)
@@ -307,9 +351,9 @@ struct ContentView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
+                .font(ShellZoomMetrics.font(Typography.body, weight: .medium))
                 .foregroundStyle(isEnabled ? Color.secondary : Color.secondary.opacity(0.45))
-                .frame(width: 24, height: 24)
+                .frame(width: ShellZoomMetrics.size(24), height: ShellZoomMetrics.size(24))
         }
         .buttonStyle(.borderless)
         .help(help)
@@ -541,7 +585,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(
             UnevenRoundedRectangle(
-                topLeadingRadius: appState.sidebarOpen ? 14 : 0,
+                topLeadingRadius: appState.sidebarOpen ? ShellZoomMetrics.size(14) : 0,
                 bottomLeadingRadius: 0,
                 bottomTrailingRadius: 0,
                 topTrailingRadius: 0
@@ -583,13 +627,13 @@ struct ContentView: View {
                             showPageOptionsMenu.toggle()
                         } label: {
                             Image(systemName: "ellipsis")
-                                .font(.system(size: 13))
+                                .font(ShellZoomMetrics.font(Typography.bodySmall))
                                 .foregroundStyle(.primary)
-                                .frame(width: 32, height: 32)
+                                .frame(width: ShellZoomMetrics.size(32), height: ShellZoomMetrics.size(32))
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .padding(.trailing, 4)
+                        .padding(.trailing, ShellZoomMetrics.size(4))
                         .floatingPopover(isPresented: $showPageOptionsMenu) {
                             if tab.isDatabaseRow {
                                 databaseRowOptionsMenu(for: tab)
@@ -599,7 +643,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.leading, appState.sidebarOpen ? 0 : 78)
+                .padding(.leading, appState.sidebarOpen ? 0 : ShellZoomMetrics.size(78))
                 .opacity(focusModeActive ? 0.0 : 1.0)
             }
 
@@ -1141,10 +1185,12 @@ struct ContentView: View {
         formattingPanel?.hidePanel()
         focusModeSuppress = true
         do {
-            let content = try fileSystem.loadFile(at: entry.path)
+            let diskContent = try fileSystem.loadFile(at: entry.path)
+            let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: entry.path)
+            let content = restoredDraft ?? diskContent
             if let index = appState.openTabs.firstIndex(where: { $0.path == entry.path }) {
                 appState.openTabs[index].content = content
-                appState.openTabs[index].isDirty = false
+                appState.openTabs[index].isDirty = restoredDraft != nil
                 let doc = BlockDocument(markdown: content)
                 doc.filePath = entry.path
                 wireUpDocumentCallbacks(doc)
@@ -1165,6 +1211,9 @@ struct ContentView: View {
                 blockDocuments[appState.openTabs[index].id] = doc
                 // Sync icon from parsed document
                 appState.openTabs[index].icon = doc.icon
+                if let rawTitle = doc.titleBlock?.text, !rawTitle.isEmpty {
+                    appState.openTabs[index].displayName = AttributedStringConverter.plainText(from: rawTitle)
+                }
             }
         } catch {
             Log.editor.error("Failed to load file: \(error.localizedDescription)")
@@ -1316,6 +1365,148 @@ struct ContentView: View {
         }
     }
 
+    private var editorZoomRange: ClosedRange<Double> {
+        Double(EditorTypography.minZoomScale)...Double(EditorTypography.maxZoomScale)
+    }
+
+    private var editorZoomPercentageLabel: String {
+        "\(Int((editorZoomScale * 100).rounded()))%"
+    }
+
+    private var editorZoomMinimumLabel: String {
+        "\(Int((editorZoomRange.lowerBound * 100).rounded()))%"
+    }
+
+    private var editorZoomMaximumLabel: String {
+        "\(Int((editorZoomRange.upperBound * 100).rounded()))%"
+    }
+
+    private func clampedEditorZoomScale(_ scale: Double) -> Double {
+        min(max(scale, editorZoomRange.lowerBound), editorZoomRange.upperBound)
+    }
+
+    private func adjustEditorZoom(by delta: Double) {
+        let updatedScale = clampedEditorZoomScale(editorZoomScale + delta)
+        if updatedScale == editorZoomScale {
+            showEditorZoomHud()
+            return
+        }
+        editorZoomScale = updatedScale
+    }
+
+    private func resetEditorZoom() {
+        let defaultScale = Double(EditorTypography.defaultZoomScale)
+        if editorZoomScale == defaultScale {
+            showEditorZoomHud()
+            return
+        }
+        editorZoomScale = defaultScale
+    }
+
+    private func showEditorZoomHud() {
+        editorZoomHudTask?.cancel()
+        withAnimation(.easeOut(duration: 0.16)) {
+            editorZoomHudVisible = true
+        }
+        scheduleEditorZoomHudHide()
+    }
+
+    private func scheduleEditorZoomHudHide() {
+        editorZoomHudTask?.cancel()
+        editorZoomHudTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled, !editorZoomHudHovered else { return }
+            withAnimation(.easeIn(duration: 0.18)) {
+                editorZoomHudVisible = false
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editorZoomOverlay: some View {
+        if editorZoomHudVisible {
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Interface Zoom")
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                            Text(editorZoomPercentageLabel)
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Slider(
+                            value: $editorZoomScale,
+                            in: editorZoomRange,
+                            step: 0.05
+                        ) {
+                            Text("Interface Zoom")
+                        } minimumValueLabel: {
+                            Text(editorZoomMinimumLabel)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        } maximumValueLabel: {
+                            Text(editorZoomMaximumLabel)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            Button {
+                                adjustEditorZoom(by: -0.1)
+                            } label: {
+                                Label("Zoom Out", systemImage: "minus.magnifyingglass")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                resetEditorZoom()
+                            } label: {
+                                Label("Reset", systemImage: "arrow.counterclockwise")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                adjustEditorZoom(by: 0.1)
+                            } label: {
+                                Label("Zoom In", systemImage: "plus.magnifyingglass")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 12, weight: .medium))
+                    }
+                    .padding(14)
+                    .frame(width: 300)
+                    .background(.ultraThinMaterial)
+                    .clipShape(.rect(cornerRadius: 14))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 0.6)
+                            .allowsHitTesting(false)
+                    }
+                    .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 24)
+                    .onHover { hovering in
+                        editorZoomHudHovered = hovering
+                        if hovering {
+                            editorZoomHudTask?.cancel()
+                        } else {
+                            scheduleEditorZoomHudHide()
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
     private func createPageFromTemplate(_ template: FileEntry) {
         guard let workspace = appState.workspacePath else { return }
         let templateName = template.name.hasSuffix(".md")
@@ -1463,6 +1654,7 @@ struct ContentView: View {
     private func scheduleSave() {
         guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
         let tabId = tab.id
+        persistPageDraft(for: tabId, path: tab.path)
 
         saveTask?.cancel()
         saveTask = Task { @MainActor in
@@ -1470,6 +1662,11 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
             saveDocument(tabId: tabId)
         }
+    }
+
+    private func persistPageDraft(for tabId: UUID, path: String) {
+        guard let document = blockDocuments[tabId] else { return }
+        editorDraftStore.savePageDraft(content: document.markdown, path: path)
     }
 
     private func updatePageLinks(oldName: String, newName: String, docs: [UUID: BlockDocument]) {
@@ -1540,12 +1737,19 @@ struct ContentView: View {
             appState.openTabs[index].isDirty = false
             return
         }
+        var didPersistDocument = false
+        var savedPath = oldPath
         if let document = blockDocuments[tabId] {
             let content = document.markdown
             appState.openTabs[index].content = content
-            try? fileSystem.saveFile(at: oldPath, content: content)
+            do {
+                try fileSystem.saveFile(at: oldPath, content: content)
+                didPersistDocument = true
+            } catch {
+                Log.editor.error("Failed to save file: \(error.localizedDescription)")
+            }
 
-            if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
+            if didPersistDocument, let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
                 let title = AttributedStringConverter.plainText(from: rawTitle)
                 let currentName = (oldPath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
                 if title != currentName {
@@ -1553,18 +1757,29 @@ struct ContentView: View {
                     let sanitized = title.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
                     let newPath = (dir as NSString).appendingPathComponent("\(sanitized).md")
                     if !FileManager.default.fileExists(atPath: newPath) {
-                        try? fileSystem.renameFile(from: oldPath, to: newPath)
-                        appState.openTabs[index].path = newPath
-                        appState.updateNavigationPath(for: tabId, from: oldPath, to: newPath)
-                        updatePageLinks(oldName: currentName, newName: sanitized, docs: blockDocuments)
-                        refreshFileTree()
+                        do {
+                            try fileSystem.renameFile(from: oldPath, to: newPath)
+                            savedPath = newPath
+                            appState.openTabs[index].path = newPath
+                            appState.updateNavigationPath(for: tabId, from: oldPath, to: newPath)
+                            updatePageLinks(oldName: currentName, newName: sanitized, docs: blockDocuments)
+                            refreshFileTree()
+                        } catch {
+                            Log.fileSystem.error("Failed to rename file: \(error.localizedDescription)")
+                        }
                     }
                 }
             }
         }
 
+        guard didPersistDocument else { return }
+
+        editorDraftStore.clearPageDraft(path: oldPath)
+        if savedPath != oldPath {
+            editorDraftStore.clearPageDraft(path: savedPath)
+        }
+
         if let workspace = appState.workspacePath {
-            let savedPath = appState.openTabs[index].path
             backlinkService.updateFile(at: savedPath, in: workspace)
         }
         appState.openTabs[index].isDirty = false

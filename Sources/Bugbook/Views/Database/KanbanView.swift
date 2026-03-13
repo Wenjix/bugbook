@@ -61,6 +61,10 @@ struct KanbanView: View {
         return cols
     }
 
+    private var columnWidth: CGFloat { DatabaseZoomMetrics.size(250) }
+    private var addOptionColumnWidth: CGFloat { DatabaseZoomMetrics.size(200) }
+    private var cardCornerRadius: CGFloat { DatabaseZoomMetrics.size(6) }
+
     private func rowsForColumn(_ columnId: String) -> [DatabaseRow] {
         guard let prop = groupProperty else { return rows }
         return rows.filter { row in
@@ -78,7 +82,7 @@ struct KanbanView: View {
             if selectProperties.count > 1 {
                 HStack(spacing: 8) {
                     Text("Group by:")
-                        .font(.caption)
+                        .font(DatabaseZoomMetrics.font(12))
                         .foregroundStyle(.secondary)
                     Menu {
                         ForEach(selectProperties) { prop in
@@ -96,9 +100,9 @@ struct KanbanView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(groupProperty?.name ?? "Select property")
-                                .font(.caption)
+                                .font(DatabaseZoomMetrics.font(12))
                             Image(systemName: "chevron.down")
-                                .font(.caption2)
+                                .font(DatabaseZoomMetrics.font(11))
                         }
                     }
                     .menuStyle(.borderlessButton)
@@ -106,13 +110,13 @@ struct KanbanView: View {
 
                     Spacer()
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                .padding(.vertical, DatabaseZoomMetrics.size(6))
             }
 
             GeometryReader { geo in
                 ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: 12) {
+                    LazyHStack(alignment: .top, spacing: DatabaseZoomMetrics.size(12)) {
                         ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
                             kanbanColumn(column, index: index, availableHeight: geo.size.height - 24)
                         }
@@ -122,7 +126,7 @@ struct KanbanView: View {
                             addOptionColumn
                         }
                     }
-                    .padding(12)
+                    .padding(DatabaseZoomMetrics.size(12))
                     .coordinateSpace(name: Self.coordinateSpaceName)
                     .onPreferenceChange(KanbanCardFramePreferenceKey.self) { cardFrames = $0 }
                     .overlay {
@@ -145,14 +149,14 @@ struct KanbanView: View {
 
     private func dragPreview(_ title: String) -> some View {
         Text(title.isEmpty ? "Untitled" : title)
-            .font(.system(size: EditorTypography.bodyFontSize))
+            .font(DatabaseZoomMetrics.font(17))
             .fontWeight(.medium)
             .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(width: 220)
+            .padding(.horizontal, DatabaseZoomMetrics.size(12))
+            .padding(.vertical, DatabaseZoomMetrics.size(8))
+            .frame(width: DatabaseZoomMetrics.size(220))
             .background(.ultraThinMaterial)
-            .clipShape(.rect(cornerRadius: 6))
+            .clipShape(.rect(cornerRadius: cardCornerRadius))
             .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
 
@@ -166,21 +170,21 @@ struct KanbanView: View {
                         createNewOption()
                     })
                     .textFieldStyle(.roundedBorder)
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
 
                     HStack(spacing: 6) {
                         Button("Add") { createNewOption() }
-                            .font(.caption)
+                            .font(DatabaseZoomMetrics.font(12))
                             .disabled(newOptionName.trimmingCharacters(in: .whitespaces).isEmpty)
 
                         Button("Cancel") {
                             newOptionName = ""
                             addingOptionForColumn = false
                         }
-                        .font(.caption)
+                        .font(DatabaseZoomMetrics.font(12))
                     }
                 }
-                .padding(8)
+                .padding(DatabaseZoomMetrics.size(8))
             } else {
                 Button {
                     addingOptionForColumn = true
@@ -189,17 +193,17 @@ struct KanbanView: View {
                         Image(systemName: "plus")
                         Text("Add Status")
                     }
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
                     .foregroundStyle(.secondary)
-                    .padding(8)
+                    .padding(DatabaseZoomMetrics.size(8))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .frame(width: 200)
-        .padding(.vertical, 8)
+        .frame(width: addOptionColumnWidth)
+        .padding(.vertical, DatabaseZoomMetrics.size(8))
         .background(Color.fallbackSurfaceSubtle)
-        .clipShape(.rect(cornerRadius: 8))
+        .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(8)))
     }
 
     private func createNewOption() {
@@ -217,36 +221,35 @@ struct KanbanView: View {
 
     private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int, availableHeight: CGFloat) -> some View {
         let isTargeted = dragTargetColumn == column.id
-        let columnWidth: CGFloat = 250
         let columnColor = colorForName(column.color)
         return VStack(alignment: .leading, spacing: 0) {
             // Column header with colored label
             HStack {
                 Text(column.name)
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
                     .fontWeight(.semibold)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                     .background(columnColor.opacity(0.2))
                     .foregroundStyle(columnColor)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
 
                 Spacer()
 
                 Text("\(rowsForColumn(column.id).count)")
-                    .font(.caption2)
+                    .font(DatabaseZoomMetrics.font(11))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.vertical, DatabaseZoomMetrics.size(2))
                     .background(Color.fallbackBadgeBg)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(8))
 
             // Cards — scroll vertically within column
             ScrollView(.vertical) {
-                LazyVStack(spacing: 6) {
+                LazyVStack(spacing: DatabaseZoomMetrics.size(6)) {
                     let columnRows = rowsForColumn(column.id)
 
                     ForEach(columnRows) { row in
@@ -272,29 +275,29 @@ struct KanbanView: View {
                             Image(systemName: "plus")
                             Text("New page")
                         }
-                        .font(.caption)
+                        .font(DatabaseZoomMetrics.font(12))
                         .foregroundStyle(columnColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, DatabaseZoomMetrics.size(10))
+                        .padding(.vertical, DatabaseZoomMetrics.size(8))
                         .background(columnColor.opacity(0.08))
-                        .clipShape(.rect(cornerRadius: 6))
+                        .clipShape(.rect(cornerRadius: cardCornerRadius))
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
                 }
-                .padding(.bottom, 8)
+                .padding(.bottom, DatabaseZoomMetrics.size(8))
             }
             .scrollIndicators(.automatic)
         }
         .frame(width: columnWidth)
         .frame(maxHeight: availableHeight)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(8))
                 .fill(isTargeted ? columnColor.opacity(0.12) : columnColor.opacity(0.04))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(8))
                 .stroke(isTargeted ? columnColor.opacity(0.4) : columnColor.opacity(0.1), lineWidth: 1)
         )
     }
@@ -337,14 +340,14 @@ struct KanbanView: View {
 
     private func kanbanCard(_ row: DatabaseRow, title: String, columnColor: Color) -> some View {
         Text(title.isEmpty ? "Untitled" : title)
-            .font(.system(size: EditorTypography.bodyFontSize))
+            .font(DatabaseZoomMetrics.font(17))
             .fontWeight(.medium)
             .lineLimit(2)
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
+            .padding(DatabaseZoomMetrics.size(10))
             .background(columnColor.opacity(0.06))
-            .clipShape(.rect(cornerRadius: 6))
+            .clipShape(.rect(cornerRadius: cardCornerRadius))
             .contentShape(Rectangle())
             .onTapGesture { onOpenRow(row) }
             .contextMenu {
@@ -359,7 +362,7 @@ struct KanbanView: View {
                     NSCursor.pop()
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, DatabaseZoomMetrics.size(6))
             .overlay(alignment: .topLeading) {
                 if showsInsertionIndicator(for: row.id, placement: .before) {
                     kanbanInsertionIndicator
@@ -386,7 +389,7 @@ struct KanbanView: View {
         Rectangle()
             .fill(Color.accentColor.opacity(0.9))
             .frame(height: 2)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, DatabaseZoomMetrics.size(6))
     }
 
     private func showsInsertionIndicator(for rowId: String, placement: KanbanReorderPlacement) -> Bool {

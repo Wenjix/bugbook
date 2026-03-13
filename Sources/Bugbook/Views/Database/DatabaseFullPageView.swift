@@ -55,7 +55,7 @@ struct DatabaseFullPageView: View {
     }
 
     private var tableLeadingInset: CGFloat {
-        (state.activeView?.type ?? .table) == .table ? TableView.rowControlsInset : 0
+        (state.activeView?.type ?? .table) == .table ? DatabaseZoomMetrics.size(TableView.rowControlsInset) : 0
     }
 
     var body: some View {
@@ -145,7 +145,7 @@ struct DatabaseFullPageView: View {
                 .lineLimit(1...10)
                 .onSubmit { state.persistTitle() }
                 .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
-                .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
+                .font(DatabaseZoomMetrics.font(17, weight: .semibold))
                 .foregroundStyle(.primary)
                 .textFieldStyle(.plain)
                 .databasePointerCursor()
@@ -155,7 +155,7 @@ struct DatabaseFullPageView: View {
             Button {} label: {
                 Label("Search", systemImage: "magnifyingglass")
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 13))
+                    .font(DatabaseZoomMetrics.font(13))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -163,7 +163,7 @@ struct DatabaseFullPageView: View {
             Button { showSettings.toggle() } label: {
                 Label("Filter", systemImage: "slider.horizontal.3")
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 13))
+                    .font(DatabaseZoomMetrics.font(13))
                     .foregroundStyle(showSettings ? .primary : .secondary)
             }
             .buttonStyle(.plain)
@@ -171,10 +171,10 @@ struct DatabaseFullPageView: View {
                 settingsPopover(schema: schema)
             }
         }
-        .padding(.leading, 12 + tableLeadingInset)
-        .padding(.trailing, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(.leading, DatabaseZoomMetrics.size(12) + tableLeadingInset)
+        .padding(.trailing, DatabaseZoomMetrics.size(12))
+        .padding(.top, DatabaseZoomMetrics.size(8))
+        .padding(.bottom, DatabaseZoomMetrics.size(4))
     }
 
     // MARK: - View Tabs
@@ -190,11 +190,11 @@ struct DatabaseFullPageView: View {
                         Image(systemName: iconForViewType(view.type))
                         Text(view.name)
                     }
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .font(DatabaseZoomMetrics.font(12))
+                    .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                    .padding(.vertical, DatabaseZoomMetrics.size(4))
                     .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
                 }
                 .buttonStyle(.plain)
             }
@@ -207,9 +207,9 @@ struct DatabaseFullPageView: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 11))
+                    .font(DatabaseZoomMetrics.font(11))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
+                    .frame(width: DatabaseZoomMetrics.size(20), height: DatabaseZoomMetrics.size(20))
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
@@ -218,9 +218,9 @@ struct DatabaseFullPageView: View {
 
             Spacer()
         }
-        .padding(.leading, 12 + tableLeadingInset)
-        .padding(.trailing, 12)
-        .padding(.vertical, 4)
+        .padding(.leading, DatabaseZoomMetrics.size(12) + tableLeadingInset)
+        .padding(.trailing, DatabaseZoomMetrics.size(12))
+        .padding(.vertical, DatabaseZoomMetrics.size(4))
     }
 
     // MARK: - Settings Popover
@@ -242,20 +242,20 @@ struct DatabaseFullPageView: View {
                         } label: {
                             VStack(spacing: 4) {
                                 Image(systemName: iconForViewType(type))
-                                    .font(.system(size: 16))
+                                    .font(DatabaseZoomMetrics.font(16))
                                 Text(type.rawValue.capitalized)
-                                    .font(.caption2)
+                                    .font(DatabaseZoomMetrics.font(11))
                             }
-                            .frame(width: 58, height: 48)
+                            .frame(width: DatabaseZoomMetrics.size(58), height: DatabaseZoomMetrics.size(48))
                             .background(state.activeView?.type == type ? Color.primary.opacity(0.12) : Color.primary.opacity(0.04))
-                            .clipShape(.rect(cornerRadius: 6))
+                            .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(6)))
                             .foregroundStyle(state.activeView?.type == type ? .primary : .secondary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                .padding(.bottom, DatabaseZoomMetrics.size(12))
 
                 Divider()
 
@@ -274,15 +274,15 @@ struct DatabaseFullPageView: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.caption)
-                        Text("Add filter").font(.caption)
+                        Image(systemName: "plus").font(DatabaseZoomMetrics.font(12))
+                        Text("Add filter").font(DatabaseZoomMetrics.font(12))
                     }
                     .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                .padding(.bottom, DatabaseZoomMetrics.size(12))
 
                 Divider()
 
@@ -301,15 +301,15 @@ struct DatabaseFullPageView: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.caption)
-                        Text("Add sort").font(.caption)
+                        Image(systemName: "plus").font(DatabaseZoomMetrics.font(12))
+                        Text("Add sort").font(DatabaseZoomMetrics.font(12))
                     }
                     .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                .padding(.bottom, DatabaseZoomMetrics.size(12))
 
                 Divider()
 
@@ -319,66 +319,66 @@ struct DatabaseFullPageView: View {
                     let isHidden = (state.activeView?.hiddenColumns ?? []).contains(prop.id)
                     Button { state.toggleColumnVisibility(prop.id) } label: {
                         HStack {
-                            Text(prop.name).font(.callout)
+                            Text(prop.name).font(DatabaseZoomMetrics.font(15))
                             Spacer()
                             Image(systemName: isHidden ? "eye.slash" : "eye")
-                                .font(.caption)
+                                .font(DatabaseZoomMetrics.font(12))
                                 .foregroundStyle(.secondary)
                         }
                         .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                 }
 
                 if state.activeView?.type == .table {
                     Divider().padding(.top, 4)
                     Button { showVerticalLines.toggle() } label: {
                         HStack {
-                            Text("Grid lines").font(.callout)
+                            Text("Grid lines").font(DatabaseZoomMetrics.font(15))
                             Spacer()
                             if showVerticalLines {
-                                Image(systemName: "checkmark").font(.caption).foregroundStyle(.secondary)
+                                Image(systemName: "checkmark").font(DatabaseZoomMetrics.font(12)).foregroundStyle(.secondary)
                             }
                         }
                         .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
 
                     Button { state.toggleWrapCellText() } label: {
                         HStack {
-                            Text("Wrap cell text").font(.callout)
+                            Text("Wrap cell text").font(DatabaseZoomMetrics.font(15))
                             Spacer()
                             if state.activeView?.wrapCellText == true {
-                                Image(systemName: "checkmark").font(.caption).foregroundStyle(.secondary)
+                                Image(systemName: "checkmark").font(DatabaseZoomMetrics.font(12)).foregroundStyle(.secondary)
                             }
                         }
                         .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                 }
 
                 Spacer(minLength: 12)
             }
         }
-        .frame(width: 280)
-        .frame(maxHeight: 420)
+        .frame(width: DatabaseZoomMetrics.size(280))
+        .frame(maxHeight: DatabaseZoomMetrics.size(420))
         .popoverSurface()
     }
 
     private func popoverSectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.caption)
+            .font(DatabaseZoomMetrics.font(12))
             .fontWeight(.semibold)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
+            .padding(.horizontal, DatabaseZoomMetrics.size(12))
+            .padding(.top, DatabaseZoomMetrics.size(12))
+            .padding(.bottom, DatabaseZoomMetrics.size(6))
     }
 
     private func filterRow(_ filter: FilterConfig, schema: DatabaseSchema) -> some View {
@@ -393,12 +393,12 @@ struct DatabaseFullPageView: View {
                 }
             } label: {
                 Text(prop?.name ?? "Property")
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
                     .fontWeight(.medium)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                     .background(Color.fallbackSurfaceSubtle)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -410,11 +410,11 @@ struct DatabaseFullPageView: View {
                 }
             } label: {
                 Text(labelForOp(filter.op))
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .font(DatabaseZoomMetrics.font(12))
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                     .background(Color.fallbackSurfaceSubtle)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -429,7 +429,7 @@ struct DatabaseFullPageView: View {
             Button { state.removeFilter(filter.id) } label: {
                 Label("Remove Filter", systemImage: "xmark.circle.fill")
                     .labelStyle(.iconOnly)
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -447,11 +447,11 @@ struct DatabaseFullPageView: View {
             } label: {
                 let displayVal = prop.options?.first(where: { $0.id == filter.value })?.name ?? (filter.value.isEmpty ? "Pick value..." : filter.value)
                 Text(displayVal)
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .font(DatabaseZoomMetrics.font(12))
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                     .background(Color.fallbackSurfaceSubtle)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -461,11 +461,11 @@ struct DatabaseFullPageView: View {
                 Button("Unchecked") { state.updateFilter(filter.id, property: nil, op: nil, value: "false") }
             } label: {
                 Text(filter.value == "true" ? "Checked" : filter.value == "false" ? "Unchecked" : "Pick...")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .font(DatabaseZoomMetrics.font(12))
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                     .background(Color.fallbackSurfaceSubtle)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -477,8 +477,8 @@ struct DatabaseFullPageView: View {
             )
             TextField("Value", text: binding)
                 .textFieldStyle(.roundedBorder)
-                .font(.caption)
-                .frame(width: 120)
+                .font(DatabaseZoomMetrics.font(12))
+                .frame(width: DatabaseZoomMetrics.size(120))
         }
     }
 
@@ -486,7 +486,7 @@ struct DatabaseFullPageView: View {
         let prop = schema.properties.first(where: { $0.id == sort.property })
         return HStack(spacing: 6) {
             Image(systemName: "arrow.up.arrow.down")
-                .font(.caption2)
+                .font(DatabaseZoomMetrics.font(11))
                 .foregroundStyle(.secondary)
 
             // Property picker
@@ -496,12 +496,12 @@ struct DatabaseFullPageView: View {
                 }
             } label: {
                 Text(prop?.name ?? "Property")
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
                     .fontWeight(.medium)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.vertical, DatabaseZoomMetrics.size(3))
                     .background(Color.fallbackSurfaceSubtle)
-                    .clipShape(.rect(cornerRadius: 4))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -514,11 +514,11 @@ struct DatabaseFullPageView: View {
                     Image(systemName: sort.ascending ? "arrow.up" : "arrow.down")
                     Text(sort.ascending ? "Ascending" : "Descending")
                 }
-                .font(.caption)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+                .font(DatabaseZoomMetrics.font(12))
+                .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                .padding(.vertical, DatabaseZoomMetrics.size(3))
                 .background(Color.fallbackSurfaceSubtle)
-                .clipShape(.rect(cornerRadius: 4))
+                .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
             }
             .buttonStyle(.plain)
 
@@ -527,7 +527,7 @@ struct DatabaseFullPageView: View {
             Button { state.removeSort(sort.id) } label: {
                 Label("Remove Sort", systemImage: "xmark.circle.fill")
                     .labelStyle(.iconOnly)
-                    .font(.caption)
+                    .font(DatabaseZoomMetrics.font(12))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)

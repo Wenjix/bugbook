@@ -5,8 +5,8 @@ import UniformTypeIdentifiers
 enum EditorTypography {
     static let zoomScaleKey = "editorZoomScale"
     static let minZoomScale: CGFloat = 0.8
-    static let maxZoomScale: CGFloat = 1.6
-    static let defaultZoomScale: CGFloat = 1
+    static let maxZoomScale: CGFloat = 2.4
+    static let defaultZoomScale: CGFloat = 1.1
 
     static var zoomScale: CGFloat {
         let stored = UserDefaults.standard.double(forKey: zoomScaleKey)

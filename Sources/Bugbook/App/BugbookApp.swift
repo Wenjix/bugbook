@@ -95,6 +95,23 @@ struct BugbookApp: App {
                     NotificationCenter.default.post(name: .toggleTheme, object: nil)
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Zoom In") {
+                    NotificationCenter.default.post(name: .editorZoomIn, object: nil)
+                }
+                .keyboardShortcut("=", modifiers: [.command, .shift])
+
+                Button("Zoom Out") {
+                    NotificationCenter.default.post(name: .editorZoomOut, object: nil)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Actual Size") {
+                    NotificationCenter.default.post(name: .editorZoomReset, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: .command)
             }
 
             // Block type shortcuts: Cmd+Option+0-9
@@ -225,6 +242,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.post(name: .blockTypeShortcut, object: action)
             return nil
         }
+
+        // Cmd+= / Cmd+Plus, Cmd+Minus, and Cmd+0 should work even when the
+        // first responder is an NSTextView inside the editor.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let isCommandOnly = flags.contains(.command)
+                && !flags.contains(.option)
+                && !flags.contains(.control)
+
+            guard isCommandOnly else { return event }
+
+            switch event.keyCode {
+            case 24:
+                NotificationCenter.default.post(name: .editorZoomIn, object: nil)
+                return nil
+            case 27 where !flags.contains(.shift):
+                NotificationCenter.default.post(name: .editorZoomOut, object: nil)
+                return nil
+            case 29 where !flags.contains(.shift):
+                NotificationCenter.default.post(name: .editorZoomReset, object: nil)
+                return nil
+            default:
+                return event
+            }
+        }
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -263,6 +305,9 @@ extension Notification.Name {
     static let openDailyNote = Notification.Name("openDailyNote")
     static let openGraphView = Notification.Name("openGraphView")
     static let newCanvas = Notification.Name("newCanvas")
+    static let editorZoomIn = Notification.Name("editorZoomIn")
+    static let editorZoomOut = Notification.Name("editorZoomOut")
+    static let editorZoomReset = Notification.Name("editorZoomReset")
     static let fileDeleted = Notification.Name("fileDeleted")
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")
