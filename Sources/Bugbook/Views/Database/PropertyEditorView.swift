@@ -1257,27 +1257,40 @@ private struct MiniCalendarCell: Identifiable {
 private struct RelationFlowLayout: Layout {
     var spacing: CGFloat = 4
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    struct Cache {
+        var sizes: [CGSize] = []
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        Cache(sizes: subviews.map { $0.sizeThatFits(.unspecified) })
+    }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache.sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         let maxW = proposal.width ?? .infinity
-        let rows = computeRows(maxWidth: maxW, subviews: subviews)
+        let rows = computeRows(maxWidth: maxW, sizes: cache.sizes)
         guard !rows.isEmpty else { return .zero }
         let height = rows.reduce(CGFloat(0)) { $0 + $1.height } + CGFloat(rows.count - 1) * spacing
         return CGSize(width: proposal.width ?? 0, height: height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
         let maxW = bounds.width
-        let rows = computeRows(maxWidth: maxW, subviews: subviews)
+        let rows = computeRows(maxWidth: maxW, sizes: cache.sizes)
         var y = bounds.minY
         var subviewIndex = 0
         for row in rows {
             var x = bounds.minX
             for _ in 0..<row.count {
-                let natural = subviews[subviewIndex].sizeThatFits(.unspecified)
-                let clamped = min(natural.width, maxW - (x - bounds.minX))
+                guard subviewIndex < cache.sizes.count else { break }
+                let size = cache.sizes[subviewIndex]
+                let clamped = min(size.width, maxW - (x - bounds.minX))
                 subviews[subviewIndex].place(
                     at: CGPoint(x: x, y: y),
-                    proposal: ProposedViewSize(width: max(clamped, 0), height: natural.height)
+                    proposal: ProposedViewSize(width: max(clamped, 0), height: size.height)
                 )
                 x += clamped + spacing
                 subviewIndex += 1
@@ -1286,13 +1299,12 @@ private struct RelationFlowLayout: Layout {
         }
     }
 
-    private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [(count: Int, height: CGFloat)] {
+    private func computeRows(maxWidth: CGFloat, sizes: [CGSize]) -> [(count: Int, height: CGFloat)] {
         var rows: [(count: Int, height: CGFloat)] = []
         var currentWidth: CGFloat = 0
         var currentHeight: CGFloat = 0
         var currentCount = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+        for size in sizes {
             let w = min(size.width, maxWidth)
             if currentCount > 0 && currentWidth + spacing + w > maxWidth {
                 rows.append((count: currentCount, height: currentHeight))

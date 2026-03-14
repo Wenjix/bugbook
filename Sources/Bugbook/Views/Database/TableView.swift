@@ -34,6 +34,7 @@ struct TableView: View {
     @State private var hoveredResizeKey: String?
     @State private var draggingResizeKey: String?
     @State private var dragStartWidths: [String: CGFloat] = [:]
+    @State private var dragStartX: [String: CGFloat] = [:]
     @State private var selectedRowIds: Set<String> = []
     @State private var lastSelectedRowId: String? = nil
     @State private var didInitialScroll = false
@@ -77,21 +78,20 @@ struct TableView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 0) {
-                // Header
-                headerRow
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            headerRow
+            tableDivider
+
+            // Selection toolbar
+            if !selectedRowIds.isEmpty {
+                selectionBar
                 tableDivider
-
-                // Selection toolbar
-                if !selectedRowIds.isEmpty {
-                    selectionBar
-                    tableDivider
-                }
-
-                rowsRegion
             }
 
+            rowsRegion
+        }
+        .overlay {
             if let draggingRow {
                 dragPreview(for: draggingRow)
                     .position(dragLocation)
@@ -106,7 +106,10 @@ struct TableView: View {
         .fixedSize(horizontal: !usesInnerScroll, vertical: !usesInnerScroll)
         .databasePointerCursor()
         .coordinateSpace(name: Self.reorderCoordinateSpace)
-        .onPreferenceChange(TableRowFramePreferenceKey.self) { rowFrames = $0 }
+        .onPreferenceChange(TableRowFramePreferenceKey.self) { newFrames in
+            // Only update during active row drag to avoid re-render loop on scroll
+            if draggingRowId != nil { rowFrames = newFrames }
+        }
     }
 
     // MARK: - Selection Bar
@@ -227,7 +230,7 @@ struct TableView: View {
 
     private func resizeHandle(key: String, baseWidth: Double) -> some View {
         let isActive = hoveredResizeKey == key || draggingResizeKey == key
-        let hitWidth = DatabaseZoomMetrics.size(16)
+        let hitWidth = DatabaseZoomMetrics.size(24)
         return Color.clear
             .frame(width: hitWidth)
             .overlay {
@@ -237,23 +240,35 @@ struct TableView: View {
                     .padding(.vertical, -8)
             }
             .contentShape(Rectangle())
-            .cursor(.resizeLeftRight)
-            .onHover { hoveredResizeKey = $0 ? key : nil }
+            .onHover { inside in
+                if draggingResizeKey == nil {
+                    hoveredResizeKey = inside ? key : nil
+                    if inside { NSCursor.resizeLeftRight.push() }
+                    else { NSCursor.pop() }
+                }
+            }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         if draggingResizeKey != key {
                             draggingResizeKey = key
                             dragStartWidths[key] = dragWidths[key] ?? CGFloat(baseWidth)
+                            dragStartX[key] = value.startLocation.x
+                            NSCursor.resizeLeftRight.push()
                         }
                         let startWidth = dragStartWidths[key] ?? CGFloat(baseWidth)
-                        dragWidths[key] = max(DatabaseZoomMetrics.size(80), startWidth + value.translation.width)
+                        let startX = dragStartX[key] ?? value.startLocation.x
+                        let delta = value.location.x - startX
+                        dragWidths[key] = max(DatabaseZoomMetrics.size(80), startWidth + delta)
                     }
                     .onEnded { _ in
                         if let finalWidth = dragWidths[key] {
                             onResizeColumn?(key, finalWidth)
                         }
+                        dragStartWidths.removeValue(forKey: key)
+                        dragStartX.removeValue(forKey: key)
                         draggingResizeKey = nil
+                        NSCursor.pop()
                     }
             )
             .offset(x: hitWidth / 2)

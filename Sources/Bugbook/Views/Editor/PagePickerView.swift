@@ -1,24 +1,13 @@
 import SwiftUI
 
 /// Page picker popup for the "Link to Page" slash command.
+/// Keyboard input is intercepted by BlockTextView and routed to document.pagePickerSearch.
 struct PagePickerView: View {
     var document: BlockDocument
-    @State private var searchText = ""
-    @State private var selectedIndex = 0
-
-    private var flatPages: [FileEntry] {
-        flattenEntries(document.availablePages)
-            .filter { !$0.isDirectory && ($0.name.hasSuffix(".md") || $0.isDatabase) }
-    }
-
-    private var filtered: [FileEntry] {
-        if searchText.isEmpty { return flatPages }
-        return flatPages.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText)
-        }
-    }
 
     var body: some View {
+        let entries = document.filteredPagePickerEntries
+        let visible = Array(entries.prefix(8))
         VStack(alignment: .leading, spacing: 0) {
             Text("Link to page")
                 .font(.caption)
@@ -27,20 +16,21 @@ struct PagePickerView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 4)
 
-            TextField("Search pages...", text: $searchText)
-                .textFieldStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .onChange(of: searchText) { _, _ in
-                    selectedIndex = 0
+            // Display search text (input comes from text view, not this field)
+            HStack(spacing: 0) {
+                Text(document.pagePickerSearch.isEmpty ? "Search pages..." : document.pagePickerSearch)
+                    .foregroundStyle(document.pagePickerSearch.isEmpty ? .secondary : .primary)
+                if !document.pagePickerSearch.isEmpty {
+                    Rectangle().fill(Color.accentColor).frame(width: 1, height: 14)
                 }
-                .onSubmit {
-                    selectCurrent()
-                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
 
             Divider()
 
-            if filtered.isEmpty {
+            if entries.isEmpty {
                 Text("No pages found")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -49,9 +39,10 @@ struct PagePickerView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(filtered.prefix(8).enumerated()), id: \.element.id) { index, entry in
+                        ForEach(Array(visible.enumerated()), id: \.element.id) { index, entry in
                             Button {
-                                selectEntry(entry)
+                                let name = entry.name.replacingOccurrences(of: ".md", with: "")
+                                document.insertPageLink(name: name)
                             } label: {
                                 HStack(spacing: 8) {
                                     pageIcon(entry)
@@ -63,7 +54,7 @@ struct PagePickerView: View {
                                 .padding(.vertical, 6)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(
-                                    index == selectedIndex
+                                    index == document.pagePickerSelectedIndex
                                         ? Color.accentColor.opacity(0.1)
                                         : Color.clear
                                 )
@@ -77,18 +68,6 @@ struct PagePickerView: View {
         }
         .frame(width: 240)
         .popoverSurface()
-    }
-
-    private func selectCurrent() {
-        let items = filtered
-        guard !items.isEmpty else { return }
-        let idx = min(selectedIndex, items.count - 1)
-        selectEntry(items[idx])
-    }
-
-    private func selectEntry(_ entry: FileEntry) {
-        let name = entry.name.replacingOccurrences(of: ".md", with: "")
-        document.insertPageLink(name: name)
     }
 
     @ViewBuilder
@@ -122,16 +101,5 @@ struct PagePickerView: View {
         Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
-    }
-
-    private func flattenEntries(_ entries: [FileEntry]) -> [FileEntry] {
-        var result: [FileEntry] = []
-        for entry in entries {
-            result.append(entry)
-            if let children = entry.children {
-                result.append(contentsOf: flattenEntries(children))
-            }
-        }
-        return result
     }
 }

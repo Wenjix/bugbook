@@ -660,6 +660,14 @@ struct BlockTextView: NSViewRepresentable {
             shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
+            // Redirect typing to page picker search when active
+            if !suppressChanges,
+               parent.document.pagePickerBlockId == parent.blockId,
+               let text = replacementString, !text.isEmpty {
+                parent.document.pagePickerSearch += text
+                parent.document.pagePickerSelectedIndex = 0
+                return false
+            }
             lastReplacementString = replacementString
             return true
         }
@@ -976,6 +984,40 @@ struct BlockTextView: NSViewRepresentable {
                 }
                 if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
                     parent.document.dismissSlashMenu()
+                    return true
+                }
+            }
+
+            // Page picker intercepts (when active)
+            if parent.document.pagePickerBlockId == parent.blockId {
+                if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                    if parent.document.pagePickerSelectedIndex > 0 {
+                        parent.document.pagePickerSelectedIndex -= 1
+                    }
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                    let count = min(parent.document.filteredPagePickerEntries.count, 8)
+                    if parent.document.pagePickerSelectedIndex < count - 1 {
+                        parent.document.pagePickerSelectedIndex += 1
+                    }
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                    parent.document.executePagePicker()
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                    parent.document.dismissPagePicker()
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+                    if !parent.document.pagePickerSearch.isEmpty {
+                        parent.document.pagePickerSearch.removeLast()
+                        parent.document.pagePickerSelectedIndex = 0
+                    } else {
+                        parent.document.dismissPagePicker()
+                    }
                     return true
                 }
             }

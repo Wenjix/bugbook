@@ -38,6 +38,8 @@ class BlockDocument {
     var fullWidth: Bool = false
     var showPagePicker: Bool = false
     var pagePickerBlockId: UUID?
+    var pagePickerSearch: String = ""
+    var pagePickerSelectedIndex: Int = 0
     var showTemplatePicker: Bool = false
     var selectedBlockIds: Set<UUID> = []
     var moveBlockId: UUID?
@@ -799,6 +801,8 @@ class BlockDocument {
 
         case .linkToPage:
             pagePickerBlockId = blockId
+            pagePickerSearch = ""
+            pagePickerSelectedIndex = 0
             showPagePicker = true
             dismissSlashMenu()
             return
@@ -852,9 +856,46 @@ class BlockDocument {
         dismissPagePicker()
     }
 
+    @ObservationIgnored private var _pagePickerCache: (search: String, entries: [FileEntry])?
+
+    var filteredPagePickerEntries: [FileEntry] {
+        if let cache = _pagePickerCache, cache.search == pagePickerSearch {
+            return cache.entries
+        }
+        let flat = flattenEntries(availablePages)
+            .filter { !$0.isDirectory && ($0.name.hasSuffix(".md") || $0.isDatabase) }
+        let result = pagePickerSearch.isEmpty
+            ? flat
+            : flat.filter { $0.name.localizedCaseInsensitiveContains(pagePickerSearch) }
+        _pagePickerCache = (search: pagePickerSearch, entries: result)
+        return result
+    }
+
+    func executePagePicker() {
+        let items = filteredPagePickerEntries
+        guard !items.isEmpty else { return }
+        let idx = min(pagePickerSelectedIndex, items.count - 1)
+        let name = items[idx].name.replacingOccurrences(of: ".md", with: "")
+        insertPageLink(name: name)
+    }
+
+    private func flattenEntries(_ entries: [FileEntry]) -> [FileEntry] {
+        var result: [FileEntry] = []
+        for entry in entries {
+            result.append(entry)
+            if let children = entry.children {
+                result.append(contentsOf: flattenEntries(children))
+            }
+        }
+        return result
+    }
+
     func dismissPagePicker() {
         showPagePicker = false
         pagePickerBlockId = nil
+        pagePickerSearch = ""
+        pagePickerSelectedIndex = 0
+        _pagePickerCache = nil
     }
 
     func dismissSlashMenu() {
