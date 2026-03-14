@@ -4,10 +4,11 @@ import SwiftUI
 /// Keyboard input is intercepted by BlockTextView and routed to document.pagePickerSearch.
 struct PagePickerView: View {
     var document: BlockDocument
+    @State private var debouncedEntries: [FileEntry] = []
+    @State private var debounceTask: Task<Void, Never>?
 
     var body: some View {
-        let entries = document.filteredPagePickerEntries
-        let visible = Array(entries.prefix(8))
+        let visible = Array(debouncedEntries.prefix(8))
         VStack(alignment: .leading, spacing: 0) {
             Text("Link to page")
                 .font(.caption)
@@ -30,7 +31,7 @@ struct PagePickerView: View {
 
             Divider()
 
-            if entries.isEmpty {
+            if debouncedEntries.isEmpty {
                 Text("No pages found")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -68,6 +69,21 @@ struct PagePickerView: View {
         }
         .frame(width: 240)
         .popoverSurface()
+        .onAppear {
+            debouncedEntries = document.filteredPagePickerEntries
+        }
+        .onChange(of: document.pagePickerSearch) { _, _ in
+            debounceTask?.cancel()
+            debounceTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 120_000_000) // 120ms debounce
+                guard !Task.isCancelled else { return }
+                debouncedEntries = document.filteredPagePickerEntries
+            }
+        }
+        .onDisappear {
+            debounceTask?.cancel()
+            debounceTask = nil
+        }
     }
 
     @ViewBuilder

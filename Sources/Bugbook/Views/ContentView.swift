@@ -16,9 +16,8 @@ struct ContentView: View {
     @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
     @State private var canvasSaveTask: Task<Void, Never>?
-    @State private var focusModeActive = false
-    @State private var focusModeTask: Task<Void, Never>?
-    @State private var focusModeSuppress = false
+    @State private var sidebarPeek = SidebarPeekState()
+    @State private var editorUI = EditorUIState()
     @State private var themeToast: ThemeMode?
     @State private var themeToastTask: Task<Void, Never>?
     @State private var formattingPanel: FormattingToolbarPanel?
@@ -26,17 +25,7 @@ struct ContentView: View {
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
     @State private var lastTrashPurgeWorkspace: String?
-    @State private var sidebarPeekVisible = false
-    @State private var sidebarToggleHovering = false
-    @State private var sidebarEdgeHovering = false
-    @State private var sidebarOverlayHovering = false
-    @State private var sidebarPeekTrashPopoverPresented = false
-    @State private var sidebarPeekDismissTask: Task<Void, Never>?
-    @State private var sidebarPeekDwellTask: Task<Void, Never>?
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
-    @State private var editorZoomHudVisible = false
-    @State private var editorZoomHudHovered = false
-    @State private var editorZoomHudTask: Task<Void, Never>?
 
     // Database row peek / modal
     private struct RowTarget {
@@ -94,6 +83,7 @@ struct ContentView: View {
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
                 editorZoomScale = clampedEditorZoomScale(editorZoomScale)
+                editorUI.focusModeEnabled = appState.settings.focusModeOnType
             }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
@@ -105,23 +95,23 @@ struct ContentView: View {
                     return
                 }
                 guard oldValue != clamped else { return }
-                showEditorZoomHud()
+                editorUI.showZoomHud()
             }
             .onChange(of: appState.settings.qmdSearchMode) { _, mode in
                 QmdService.prewarmDaemonIfNeeded(mode: mode)
             }
             .onChange(of: appState.sidebarOpen) { _, _ in
-                syncSidebarPeekVisibility()
+                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
             }
             .onChange(of: appState.showSettings) { _, showingSettings in
                 if showingSettings {
-                    dismissSidebarPeek(immediately: true)
+                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
                     sidebarWasOpenBeforeSettings = appState.sidebarOpen
                     appState.sidebarOpen = true
                 } else {
                     appState.sidebarOpen = sidebarWasOpenBeforeSettings
                 }
-                syncSidebarPeekVisibility()
+                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
             }
             .onChange(of: appState.fileTree) { _, newTree in
                 syncAvailablePages(newTree)
@@ -132,11 +122,14 @@ struct ContentView: View {
                     ensureAiInitializedIfNeeded()
                 }
             }
-            .onChange(of: focusModeActive) { _, _ in
-                syncSidebarPeekVisibility()
+            .onChange(of: editorUI.focusModeActive) { _, _ in
+                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
             }
-            .onChange(of: sidebarPeekTrashPopoverPresented) { _, _ in
-                syncSidebarPeekVisibility()
+            .onChange(of: sidebarPeek.trashPopoverPresented) { _, _ in
+                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
+            }
+            .onChange(of: appState.settings.focusModeOnType) { _, enabled in
+                editorUI.focusModeEnabled = enabled
             }
             .onChange(of: appState.activeTab?.id) { _, _ in
                 hideFormattingPanel()
@@ -160,9 +153,8 @@ struct ContentView: View {
                 flushDirtyTabs()
                 aiInitTask?.cancel()
                 aiInitTask = nil
-                editorZoomHudTask?.cancel()
-                sidebarPeekDismissTask?.cancel()
-                sidebarPeekDismissTask = nil
+                editorUI.cleanUp()
+                sidebarPeek.cleanUp()
                 workspaceWatcher?.stop()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
@@ -326,7 +318,7 @@ struct ContentView: View {
                     .frame(width: 4)
                     .contentShape(Rectangle())
                     .onHover { hovering in
-                        setSidebarEdgeHovering(hovering)
+                        sidebarPeek.setEdgeHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
                     }
                 Spacer(minLength: 0)
             }
@@ -345,7 +337,7 @@ struct ContentView: View {
                     .padding(ShellZoomMetrics.size(4))
                     .contentShape(Rectangle())
                     .onHover { hovering in
-                        setSidebarToggleHovering(hovering)
+                        sidebarPeek.setToggleHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
                     }
                     .padding(.leading, ShellZoomMetrics.size(80))
                     Spacer()
@@ -353,7 +345,7 @@ struct ContentView: View {
                 .padding(.top, ShellZoomMetrics.size(4))
                 Spacer()
             }
-            .opacity(focusModeActive ? 0.0 : 1.0)
+            .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
         }
     }
 
@@ -365,7 +357,7 @@ struct ContentView: View {
                 fileSystem: fileSystem,
                 onSelectFile: { entry in
                     handleSidebarFileSelect(entry)
-                    dismissSidebarPeek(immediately: true)
+                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
                 },
                 onToggleSidebar: {
                     openSidebarPinned()
@@ -375,9 +367,12 @@ struct ContentView: View {
                 },
                 layoutMode: .compact,
                 onActionInvoked: {
-                    dismissSidebarPeek(immediately: true)
+                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
                 },
-                trashPopoverOverride: $sidebarPeekTrashPopoverPresented
+                trashPopoverOverride: Binding(
+                    get: { sidebarPeek.trashPopoverPresented },
+                    set: { sidebarPeek.trashPopoverPresented = $0 }
+                )
             )
             .frame(width: ShellZoomMetrics.size(208))
             .frame(maxHeight: ShellZoomMetrics.size(430), alignment: .topLeading)
@@ -389,17 +384,19 @@ struct ContentView: View {
             }
             .shadow(color: Color.black.opacity(0.10), radius: 10, x: 4, y: 4)
             .contentShape(Rectangle())
-            .offset(x: sidebarPeekVisible ? 0 : sidebarPeekHiddenOffset)
-            .opacity(sidebarPeekVisible ? 1 : 0)
-            .allowsHitTesting(sidebarPeekVisible)
+            .offset(x: sidebarPeek.isVisible ? 0 : sidebarPeekHiddenOffset)
+            .opacity(sidebarPeek.isVisible ? 1 : 0)
+            .allowsHitTesting(sidebarPeek.isVisible)
             .onHover { hovering in
                 // Only track overlay hover when peek is actually visible —
                 // .onHover fires even with allowsHitTesting(false)
-                guard sidebarPeekVisible else {
-                    if sidebarOverlayHovering { setSidebarOverlayHovering(false) }
+                guard sidebarPeek.isVisible else {
+                    if sidebarPeek.overlayHovering {
+                        sidebarPeek.setOverlayHovering(false, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
+                    }
                     return
                 }
-                setSidebarOverlayHovering(hovering)
+                sidebarPeek.setOverlayHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
             }
             .padding(.top, ShellZoomMetrics.size(72))
             .padding(.leading, ShellZoomMetrics.size(8))
@@ -476,54 +473,15 @@ struct ContentView: View {
     }
 
     private var sidebarPeekEligible: Bool {
-        !appState.sidebarOpen && !appState.showSettings && !focusModeActive && !sidebarHiddenByPeek
+        !appState.sidebarOpen && !appState.showSettings && !editorUI.focusModeActive && !sidebarHiddenByPeek
     }
 
     private var sidebarPeekHiddenOffset: CGFloat {
         reduceMotion ? 0 : -ShellZoomMetrics.size(18)
     }
 
-    private var sidebarPeekAnimation: Animation {
-        .easeInOut(duration: reduceMotion ? 0.1 : 0.18)
-    }
-
-    private var sidebarPeekInteractionActive: Bool {
-        sidebarToggleHovering || sidebarEdgeHovering || sidebarOverlayHovering || sidebarPeekTrashPopoverPresented
-    }
-
-    private func cancelSidebarPeekDismissTask() {
-        sidebarPeekDismissTask?.cancel()
-        guard sidebarPeekDismissTask != nil else { return }
-        sidebarPeekDismissTask = nil
-    }
-
-    private func resetSidebarPeekHoverState() {
-        guard sidebarToggleHovering || sidebarEdgeHovering || sidebarOverlayHovering else { return }
-        sidebarToggleHovering = false
-        sidebarEdgeHovering = false
-        sidebarOverlayHovering = false
-    }
-
-    private func setSidebarToggleHovering(_ hovering: Bool) {
-        guard sidebarToggleHovering != hovering else { return }
-        sidebarToggleHovering = hovering
-        syncSidebarPeekVisibility()
-    }
-
-    private func setSidebarEdgeHovering(_ hovering: Bool) {
-        guard sidebarEdgeHovering != hovering else { return }
-        sidebarEdgeHovering = hovering
-        syncSidebarPeekVisibility()
-    }
-
-    private func setSidebarOverlayHovering(_ hovering: Bool) {
-        guard sidebarOverlayHovering != hovering else { return }
-        sidebarOverlayHovering = hovering
-        syncSidebarPeekVisibility()
-    }
-
     private func openSidebarPinned() {
-        dismissSidebarPeek(immediately: true)
+        sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
         appState.sidebarOpen = true
     }
 
@@ -531,79 +489,10 @@ struct ContentView: View {
         guard !appState.showSettings else { return }
         if appState.sidebarOpen {
             appState.sidebarOpen = false
-            dismissSidebarPeek(immediately: true)
+            sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
         } else {
             openSidebarPinned()
         }
-    }
-
-    private func dismissSidebarPeek(immediately: Bool = false) {
-        cancelSidebarPeekDismissTask()
-        sidebarPeekTrashPopoverPresented = false
-        resetSidebarPeekHoverState()
-        guard sidebarPeekVisible else { return }
-        if immediately {
-            sidebarPeekVisible = false
-        } else {
-            withAnimation(sidebarPeekAnimation) {
-                sidebarPeekVisible = false
-            }
-        }
-    }
-
-    private func syncSidebarPeekVisibility() {
-        cancelSidebarPeekDismissTask()
-
-        guard sidebarPeekEligible else {
-            cancelSidebarPeekDwellTask()
-            dismissSidebarPeek(immediately: true)
-            return
-        }
-
-        if sidebarPeekInteractionActive {
-            if sidebarPeekVisible {
-                // Already visible — cancel any pending dismiss
-                return
-            }
-            // Toggle icon or overlay hover: show immediately
-            if sidebarToggleHovering || sidebarOverlayHovering {
-                cancelSidebarPeekDwellTask()
-                withAnimation(sidebarPeekAnimation) {
-                    sidebarPeekVisible = true
-                }
-                return
-            }
-            // Edge hover: require dwell time before showing
-            if sidebarEdgeHovering && sidebarPeekDwellTask == nil {
-                sidebarPeekDwellTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                    guard !Task.isCancelled else { return }
-                    guard sidebarPeekEligible, sidebarEdgeHovering else { return }
-                    withAnimation(sidebarPeekAnimation) {
-                        sidebarPeekVisible = true
-                    }
-                }
-            }
-            return
-        }
-
-        // No interaction — schedule dismiss
-        cancelSidebarPeekDwellTask()
-        guard sidebarPeekVisible else { return }
-        sidebarPeekDismissTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            guard !Task.isCancelled else { return }
-            guard sidebarPeekEligible,
-                  !sidebarPeekInteractionActive else { return }
-            withAnimation(sidebarPeekAnimation) {
-                sidebarPeekVisible = false
-            }
-        }
-    }
-
-    private func cancelSidebarPeekDwellTask() {
-        sidebarPeekDwellTask?.cancel()
-        sidebarPeekDwellTask = nil
     }
 
     // MARK: - Move Page Overlay
@@ -856,7 +745,7 @@ struct ContentView: View {
             onBack: { navigateBackInActiveTab() },
             onForward: { navigateForwardInActiveTab() }
         )
-            .opacity(focusModeActive ? 0.0 : 1.0)
+            .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
 
         VStack(spacing: 0) {
             if let tab = appState.activeTab, !tab.isEmptyTab {
@@ -890,7 +779,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                .opacity(focusModeActive ? 0.0 : 1.0)
+                .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
 
             activeTabContent
@@ -1523,7 +1412,7 @@ struct ContentView: View {
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
-        focusModeSuppress = true
+        editorUI.focusModeSuppress = true
         do {
             let diskContent = try fileSystem.loadFile(at: entry.path)
             let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: entry.path)
@@ -1560,7 +1449,7 @@ struct ContentView: View {
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
-            focusModeSuppress = false
+            editorUI.focusModeSuppress = false
         }
     }
 
@@ -1728,7 +1617,7 @@ struct ContentView: View {
     private func adjustEditorZoom(by delta: Double) {
         let updatedScale = clampedEditorZoomScale(editorZoomScale + delta)
         if updatedScale == editorZoomScale {
-            showEditorZoomHud()
+            editorUI.showZoomHud()
             return
         }
         editorZoomScale = updatedScale
@@ -1737,34 +1626,15 @@ struct ContentView: View {
     private func resetEditorZoom() {
         let defaultScale = Double(EditorTypography.defaultZoomScale)
         if editorZoomScale == defaultScale {
-            showEditorZoomHud()
+            editorUI.showZoomHud()
             return
         }
         editorZoomScale = defaultScale
     }
 
-    private func showEditorZoomHud() {
-        editorZoomHudTask?.cancel()
-        withAnimation(.easeOut(duration: 0.16)) {
-            editorZoomHudVisible = true
-        }
-        scheduleEditorZoomHudHide()
-    }
-
-    private func scheduleEditorZoomHudHide() {
-        editorZoomHudTask?.cancel()
-        editorZoomHudTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled, !editorZoomHudHovered else { return }
-            withAnimation(.easeIn(duration: 0.18)) {
-                editorZoomHudVisible = false
-            }
-        }
-    }
-
     @ViewBuilder
     private var editorZoomOverlay: some View {
-        if editorZoomHudVisible {
+        if editorUI.zoomHudVisible {
             VStack {
                 Spacer()
                 HStack {
@@ -1833,11 +1703,11 @@ struct ContentView: View {
                     .padding(.trailing, 24)
                     .padding(.bottom, 24)
                     .onHover { hovering in
-                        editorZoomHudHovered = hovering
+                        editorUI.zoomHudHovered = hovering
                         if hovering {
-                            editorZoomHudTask?.cancel()
+                            // Cancel auto-hide while hovering
                         } else {
-                            scheduleEditorZoomHudHide()
+                            editorUI.scheduleZoomHudHide()
                         }
                     }
                 }
@@ -2029,21 +1899,7 @@ struct ContentView: View {
     }
 
     private func triggerFocusMode() {
-        guard appState.settings.focusModeOnType else { return }
-        guard !focusModeSuppress else { return }
-        if !focusModeActive {
-            withAnimation(.easeInOut(duration: 0.6)) {
-                focusModeActive = true
-            }
-        }
-        focusModeTask?.cancel()
-        focusModeTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.6)) {
-                focusModeActive = false
-            }
-        }
+        editorUI.triggerFocusMode()
     }
 
     private func markActiveEditorTabDirty() {

@@ -8,11 +8,15 @@ final class DatabaseViewState {
     let dbService = DatabaseService()
     let notificationOrigin = UUID().uuidString
 
-    var schema: DatabaseSchema?
-    var rows: [DatabaseRow] = []
-    var activeViewId: String = ""
+    var schema: DatabaseSchema? { didSet { _cacheVersion &+= 1 } }
+    var rows: [DatabaseRow] = [] { didSet { _cacheVersion &+= 1 } }
+    var activeViewId: String = "" { didSet { _cacheVersion &+= 1 } }
     var error: String?
     var editingTitle: String = ""
+
+    @ObservationIgnored private var _cacheVersion: UInt64 = 0
+    @ObservationIgnored private var _cachedAtVersion: UInt64 = UInt64.max
+    @ObservationIgnored private var _cachedFilteredRows: [DatabaseRow] = []
 
     @ObservationIgnored private var titleSaveTask: Task<Void, Never>?
     @ObservationIgnored private var rowSaveTask: Task<Void, Never>?
@@ -33,12 +37,24 @@ final class DatabaseViewState {
     // MARK: - Filtered/Sorted Rows
 
     func filteredAndSortedRows(extraFilter: ((DatabaseRow) -> Bool)? = nil) -> [DatabaseRow] {
+        guard activeView != nil else { return rows }
+
+        let base = computeBaseFilteredRows()
+
+        if let extraFilter {
+            return base.filter(extraFilter)
+        }
+        return base
+    }
+
+    /// Returns filtered+sorted rows using a cache that invalidates when rows, schema, or activeViewId change.
+    private func computeBaseFilteredRows() -> [DatabaseRow] {
+        if _cachedAtVersion == _cacheVersion {
+            return _cachedFilteredRows
+        }
+
         guard let view = activeView else { return rows }
         var result = applyManualRowOrder(view.manualRowOrder, to: rows)
-
-        if let extraFilter = extraFilter {
-            result = result.filter(extraFilter)
-        }
 
         for filter in view.filters {
             result = result.filter { row in
@@ -56,6 +72,8 @@ final class DatabaseViewState {
             }
         }
 
+        _cachedFilteredRows = result
+        _cachedAtVersion = _cacheVersion
         return result
     }
 

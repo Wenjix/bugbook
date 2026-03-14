@@ -74,14 +74,22 @@ struct CalendarView: View {
         return cells
     }
 
-    private func rowsForDate(_ dateStr: String) -> [DatabaseRow] {
-        guard let prop = dateProperty else { return [] }
-        return rows.filter { row in
-            if let val = row.properties[prop.id], case .date(let raw) = val {
-                return DatabaseDateValue.decode(from: raw)?.contains(dayString: dateStr, calendar: calendar) ?? (raw == dateStr)
+    private var rowsByDate: [String: [DatabaseRow]] {
+        guard let prop = dateProperty else { return [:] }
+        let dayCells = daysInMonth
+        let currentMonthDates = Set(dayCells.compactMap { $0.isCurrentMonth ? $0.dateString : nil })
+        var map: [String: [DatabaseRow]] = [:]
+        for row in rows {
+            guard let val = row.properties[prop.id], case .date(let raw) = val else { continue }
+            if let parsed = DatabaseDateValue.decode(from: raw) {
+                for dateStr in currentMonthDates where parsed.contains(dayString: dateStr, calendar: calendar) {
+                    map[dateStr, default: []].append(row)
+                }
+            } else if currentMonthDates.contains(raw) {
+                map[raw, default: []].append(row)
             }
-            return false
         }
+        return map
     }
 
     var body: some View {
@@ -175,10 +183,11 @@ struct CalendarView: View {
             GeometryReader { geo in
                 let numberOfRows = max(1, Int(ceil(Double(daysInMonth.count) / 7.0)))
                 let cellHeight = max(110, (geo.size.height - CGFloat(numberOfRows - 1)) / CGFloat(numberOfRows))
+                let dateRowMap = rowsByDate
                 ZStack(alignment: .topLeading) {
                     LazyVGrid(columns: gridColumns, spacing: 1) {
                         ForEach(daysInMonth) { cell in
-                            dayCell(cell, height: cellHeight)
+                            dayCell(cell, height: cellHeight, dateRowMap: dateRowMap)
                         }
                     }
 
@@ -196,7 +205,7 @@ struct CalendarView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func dayCell(_ cell: DayCell, height: CGFloat) -> some View {
+    private func dayCell(_ cell: DayCell, height: CGFloat, dateRowMap: [String: [DatabaseRow]]) -> some View {
         HoverDayCell { isHovered in
             VStack(alignment: .leading, spacing: 2) {
                 if cell.isCurrentMonth {
@@ -231,7 +240,7 @@ struct CalendarView: View {
                         .help("Create row")
                     }
 
-                    let dayRows = rowsForDate(cell.dateString)
+                    let dayRows = dateRowMap[cell.dateString] ?? []
                     ForEach(dayRows.prefix(maxVisibleEvents)) { row in
                         eventPill(row)
                     }

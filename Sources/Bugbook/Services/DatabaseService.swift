@@ -3,27 +3,14 @@ import BugbookCore
 
 class DatabaseService {
     private let fileManager = FileManager.default
+    private let rowStore = RowStore()
+    private let indexManager = IndexManager()
 
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
-
-    private static let dateOnlyFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone(identifier: "UTC")
-        return f
-    }()
-
-    // MARK: - ID Generation
-
-    private static let alphanumericChars = Array("abcdefghijklmnopqrstuvwxyz0123456789")
-
-    private func randomAlphanumeric(_ length: Int) -> String {
-        String((0..<length).map { _ in Self.alphanumericChars.randomElement()! })
-    }
 
     // MARK: - Load Database
 
@@ -48,92 +35,20 @@ class DatabaseService {
     // MARK: - Save Row
 
     func saveRow(_ row: DatabaseRow, schema: DatabaseSchema, at dbPath: String) throws {
-        let title = row.title(schema: schema)
-        let suffix = extractIdSuffix(from: row.id)
-        let filename = rowFilename(title: title, suffix: suffix)
-        let filePath = (dbPath as NSString).appendingPathComponent(filename)
-
-        // Single directory listing for both body preservation and stale file cleanup.
-        let dirContents = try? fileManager.contentsOfDirectory(atPath: dbPath)
-
-        // If the row has no in-memory body, preserve the existing body on disk
-        // (rows loaded without body for table/kanban performance).
-        var effectiveBody = row.body
-        if effectiveBody.isEmpty, let dirContents {
-            for name in dirContents where name.hasSuffix(".md") && name.contains("(\(suffix))") {
-                let existingPath = (dbPath as NSString).appendingPathComponent(name)
-                if let existing = try? String(contentsOfFile: existingPath, encoding: .utf8) {
-                    effectiveBody = extractBody(from: existing)
-                    break
-                }
-            }
-        }
-
-        // Remove old file if title changed (different filename)
-        if let dirContents {
-            for name in dirContents where name.contains("(\(suffix))") && name != filename {
-                let oldPath = (dbPath as NSString).appendingPathComponent(name)
-                try? fileManager.removeItem(atPath: oldPath)
-            }
-        }
-
-        var frontmatter = "---\n"
-        frontmatter += "id: \(row.id)\n"
-        frontmatter += "created_at: \(iso8601String(from: row.createdAt))\n"
-        frontmatter += "updated_at: \(iso8601String(from: row.updatedAt))\n"
-
-        if !row.properties.isEmpty {
-            frontmatter += "properties:\n"
-            for prop in schema.properties {
-                if let value = row.properties[prop.id] {
-                    let serialized = serializePropertyValue(value)
-                    if !serialized.isEmpty {
-                        frontmatter += "  \(prop.id): \(serialized)\n"
-                    }
-                }
-            }
-        }
-
-        frontmatter += "---\n"
-
-        let bodyContent: String
-        if effectiveBody.isEmpty {
-            bodyContent = "\n"
-        } else {
-            bodyContent = "\n\(effectiveBody)"
-        }
-
-        let fileContent = frontmatter + bodyContent
-        try fileContent.write(toFile: filePath, atomically: true, encoding: .utf8)
+        try rowStore.saveRow(row, schema: schema, dbPath: dbPath)
     }
 
     // MARK: - Load Row Body (on demand)
 
     func loadRowBody(rowId: String, at dbPath: String) -> String {
-        let suffix = extractIdSuffix(from: rowId)
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return "" }
-        for name in contents where name.hasSuffix(".md") && name.contains("(\(suffix))") {
-            let filePath = (dbPath as NSString).appendingPathComponent(name)
-            if let content = try? String(contentsOfFile: filePath, encoding: .utf8) {
-                return extractBody(from: content)
-            }
-        }
-        return ""
-    }
-
-    private func extractBody(from content: String) -> String {
-        guard content.hasPrefix("---") else { return content }
-        let afterFirst = content.index(content.startIndex, offsetBy: 3)
-        guard let endRange = content.range(of: "\n---", range: afterFirst..<content.endIndex) else { return "" }
-        return String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
+        rowStore.loadRowBody(rowId: rowId, dbPath: dbPath)
     }
 
     // MARK: - Create Row
 
     func createRow(in dbPath: String, schema: DatabaseSchema) throws -> DatabaseRow {
         let now = Date()
-        let suffix = randomAlphanumeric(6)
-        let rowId = "row_\(suffix)"
+        let rowId = RowStore.generateRowId()
 
         var properties: [String: PropertyValue] = [:]
         // Set default title
@@ -148,22 +63,16 @@ class DatabaseService {
             createdAt: now,
             updatedAt: now
         )
-        try saveRow(row, schema: schema, at: dbPath)
-        try updateIndex(rows: try loadRows(in: dbPath, schema: schema), schema: schema, at: dbPath)
+        try rowStore.saveRow(row, schema: schema, dbPath: dbPath)
+        let allRows = rowStore.loadAllRows(in: dbPath, schema: schema, skipBody: true)
+        try updateIndex(rows: allRows, schema: schema, at: dbPath)
         return row
     }
 
     // MARK: - Delete Row
 
     func deleteRow(_ rowId: String, in dbPath: String) throws {
-        let suffix = extractIdSuffix(from: rowId)
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return }
-        for name in contents {
-            if name.contains("(\(suffix))") && name.hasSuffix(".md") {
-                let filePath = (dbPath as NSString).appendingPathComponent(name)
-                try fileManager.removeItem(atPath: filePath)
-            }
-        }
+        try rowStore.deleteRow(rowId: rowId, dbPath: dbPath)
     }
 
     // MARK: - Schema Operations
@@ -191,7 +100,7 @@ class DatabaseService {
         // Row properties are keyed by ID, not name — no row migration needed.
         // But re-save rows so filenames update if the title property was renamed.
         for i in rows.indices {
-            try saveRow(rows[i], schema: schema, at: dbPath)
+            try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
         }
     }
 
@@ -218,7 +127,7 @@ class DatabaseService {
         for i in rows.indices {
             if let val = rows[i].properties[propertyId] {
                 rows[i].properties[propertyId] = convertValue(val, from: oldType, to: newType)
-                try saveRow(rows[i], schema: schema, at: dbPath)
+                try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
             }
         }
     }
@@ -257,13 +166,13 @@ class DatabaseService {
             switch val {
             case .select(let id) where id == optionId:
                 rows[i].properties[propertyId] = .empty
-                try saveRow(rows[i], schema: schema, at: dbPath)
+                try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
             case .multiSelect(var ids):
                 let before = ids.count
                 ids.removeAll { $0 == optionId }
                 if ids.count != before {
                     rows[i].properties[propertyId] = ids.isEmpty ? .empty : .multiSelect(ids)
-                    try saveRow(rows[i], schema: schema, at: dbPath)
+                    try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
                 }
             default:
                 break
@@ -337,85 +246,11 @@ class DatabaseService {
     // MARK: - Update Index
 
     func updateIndex(rows: [DatabaseRow], schema: DatabaseSchema, at dbPath: String) throws {
-        let indexPath = (dbPath as NSString).appendingPathComponent("_index.json")
-
-        // Build rows map
-        var rowsMap: [String: Any] = [:]
-        for row in rows {
-            let title = row.title(schema: schema)
-            let suffix = extractIdSuffix(from: row.id)
-
-            // Build serializable properties
-            var props: [String: Any] = [:]
-            for prop in schema.properties {
-                if let val = row.properties[prop.id] {
-                    props[prop.id] = serializePropertyValueForIndex(val)
-                }
-            }
-
-            let filename = rowFilename(title: title, suffix: suffix).replacingOccurrences(of: ".md", with: "")
-            let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
-            let mtime: Int
-            if let attrs = try? fileManager.attributesOfItem(atPath: filePath),
-               let modDate = attrs[.modificationDate] as? Date {
-                mtime = Int(modDate.timeIntervalSince1970 * 1000)
-            } else {
-                mtime = Int(row.updatedAt.timeIntervalSince1970 * 1000)
-            }
-
-            rowsMap[row.id] = [
-                "properties": props,
-                "created_at": iso8601String(from: row.createdAt),
-                "updated_at": iso8601String(from: row.updatedAt),
-                "filename": filename,
-                "mtime": mtime
-            ] as [String: Any]
-        }
-
-        // Build reverse indexes for indexed property types
-        let indexedTypes: Set<PropertyType> = [.select, .multiSelect, .relation, .checkbox]
-        var indexes: [String: [String: [String]]] = [:]
-        for prop in schema.properties where indexedTypes.contains(prop.type) {
-            var propIndex: [String: [String]] = [:]
-            for row in rows {
-                guard let val = row.properties[prop.id] else { continue }
-                switch val {
-                case .select(let optId):
-                    propIndex[optId, default: []].append(row.id)
-                case .multiSelect(let optIds):
-                    for optId in optIds {
-                        propIndex[optId, default: []].append(row.id)
-                    }
-                case .relation(let rowId):
-                    propIndex[rowId, default: []].append(row.id)
-                case .relationMany(let rowIds):
-                    for rid in rowIds {
-                        propIndex[rid, default: []].append(row.id)
-                    }
-                case .checkbox(let b):
-                    let key = b ? "true" : "false"
-                    propIndex[key, default: []].append(row.id)
-                default:
-                    break
-                }
-            }
-            if !propIndex.isEmpty {
-                indexes[prop.id] = propIndex
-            }
-        }
-
-        let indexObj: [String: Any] = [
-            "version": 1,
-            "updated_at": iso8601String(from: Date()),
-            "rows": rowsMap,
-            "indexes": indexes
-        ]
-
-        let data = try JSONSerialization.data(withJSONObject: indexObj, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: URL(fileURLWithPath: indexPath), options: .atomic)
+        let index = indexManager.rebuild(dbPath: dbPath, schema: schema, rows: rows)
+        try indexManager.saveIndex(index, at: dbPath)
     }
 
-    // MARK: - Private: Load Rows
+    // MARK: - Private: Load Rows (with legacy repair)
 
     private func loadRows(in dbPath: String, schema: DatabaseSchema) throws -> [DatabaseRow] {
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return [] }
@@ -428,31 +263,40 @@ class DatabaseService {
             guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
             let filePath = (dbPath as NSString).appendingPathComponent(name)
             guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
-            guard let parsed = parseRow(from: content, schema: schema, skipBody: true) else { continue }
+            guard let result = RowSerializer.parseDetailed(content: content, schema: schema, skipBody: true) else { continue }
 
-            let rowId = parsed.row.id
+            let repairedProperties = repairLegacyProperties(in: result.row.properties, rawProperties: result.rawProperties, schema: schema)
+            let row = DatabaseRow(
+                id: result.row.id,
+                properties: repairedProperties.properties,
+                body: result.row.body,
+                createdAt: result.row.createdAt,
+                updatedAt: result.row.updatedAt
+            )
+
+            let rowId = row.id
             if let existing = bestByID[rowId] {
                 // Keep the one whose filename matches the canonical suffix pattern.
-                let suffix = extractIdSuffix(from: rowId)
+                let suffix = RowStore.extractIdSuffix(from: rowId)
                 let existingIsCanonical = existing.filename.contains("(\(suffix))")
                 let newIsCanonical = name.contains("(\(suffix))")
 
                 if newIsCanonical && !existingIsCanonical {
                     duplicateFiles.append(existing.filename)
-                    bestByID[rowId] = (parsed.row, name, parsed.repaired)
+                    bestByID[rowId] = (row, name, repairedProperties.repaired)
                 } else if !newIsCanonical && existingIsCanonical {
                     duplicateFiles.append(name)
                 } else {
                     // Both canonical or both non-canonical — keep newer
-                    if parsed.row.updatedAt > existing.row.updatedAt {
+                    if row.updatedAt > existing.row.updatedAt {
                         duplicateFiles.append(existing.filename)
-                        bestByID[rowId] = (parsed.row, name, parsed.repaired)
+                        bestByID[rowId] = (row, name, repairedProperties.repaired)
                     } else {
                         duplicateFiles.append(name)
                     }
                 }
             } else {
-                bestByID[rowId] = (parsed.row, name, parsed.repaired)
+                bestByID[rowId] = (row, name, repairedProperties.repaired)
             }
         }
 
@@ -469,7 +313,7 @@ class DatabaseService {
         // If we repaired legacy properties during load, persist the mapped values.
         if !repairedRows.isEmpty {
             for row in repairedRows {
-                try? saveRow(row, schema: schema, at: dbPath)
+                try? rowStore.saveRow(row, schema: schema, dbPath: dbPath)
             }
             try? updateIndex(rows: sortedRows, schema: schema, at: dbPath)
         }
@@ -477,83 +321,7 @@ class DatabaseService {
         return sortedRows
     }
 
-    // MARK: - Private: Parse Row
-
-    private struct ParsedRow {
-        let row: DatabaseRow
-        let repaired: Bool
-    }
-
-    private func parseRow(from content: String, schema: DatabaseSchema, skipBody: Bool = false) -> ParsedRow? {
-        guard content.hasPrefix("---") else { return nil }
-        let afterFirstMarker = content.index(content.startIndex, offsetBy: 3)
-        guard let endRange = content.range(of: "\n---", range: afterFirstMarker..<content.endIndex) else { return nil }
-
-        let yamlBlock = String(content[afterFirstMarker..<endRange.lowerBound])
-        let body = skipBody ? "" : String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
-
-        var id = ""
-        var createdAt = Date()
-        var updatedAt = Date()
-        var properties: [String: PropertyValue] = [:]
-        var rawProperties: [String: String] = [:]
-        var inProperties = false
-
-        let isoFormatter = Self.isoFormatter
-        let dateOnlyFormatter = Self.dateOnlyFormatter
-
-        for line in yamlBlock.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { continue }
-
-            if inProperties {
-                if line.hasPrefix("  ") {
-                    let propLine = String(line.dropFirst(2))
-                    if let colonIdx = propLine.firstIndex(of: ":") {
-                        let key = String(propLine[propLine.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
-                        let rawValue = String(propLine[propLine.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
-                        rawProperties[key] = rawValue
-                        // Look up by property ID
-                        if let propDef = schema.properties.first(where: { $0.id == key }) {
-                            properties[key] = parsePropertyValue(rawValue, type: propDef.type)
-                        }
-                    }
-                } else {
-                    inProperties = false
-                }
-            }
-
-            if !inProperties {
-                if trimmed == "properties:" {
-                    inProperties = true
-                } else if trimmed.hasPrefix("id:") {
-                    id = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                } else if trimmed.hasPrefix("created_at:") {
-                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    createdAt = isoFormatter.date(from: val) ?? dateOnlyFormatter.date(from: val) ?? Date()
-                } else if trimmed.hasPrefix("updated_at:") {
-                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    updatedAt = isoFormatter.date(from: val) ?? dateOnlyFormatter.date(from: val) ?? Date()
-                }
-            }
-        }
-
-        guard !id.isEmpty else { return nil }
-        let repairedProperties = repairLegacyProperties(in: properties, rawProperties: rawProperties, schema: schema)
-
-        return ParsedRow(
-            row: DatabaseRow(
-                id: id,
-                properties: repairedProperties.properties,
-                body: body,
-                createdAt: createdAt,
-                updatedAt: updatedAt
-            ),
-            repaired: repairedProperties.repaired
-        )
-    }
-
-    // MARK: - Private Helpers
+    // MARK: - Legacy Property Repair
 
     private func repairLegacyProperties(
         in properties: [String: PropertyValue],
@@ -763,6 +531,7 @@ class DatabaseService {
         return lower.range(of: "^[a-z0-9_-]{12,}$", options: .regularExpression) != nil
     }
 
+    /// Parse a raw property value string into a PropertyValue (used only for legacy repair).
     private func parsePropertyValue(_ raw: String, type: PropertyType) -> PropertyValue {
         let value = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
         if value.isEmpty { return .empty }
@@ -801,61 +570,6 @@ class DatabaseService {
             }
             return .relation(value)
         }
-    }
-
-    private func serializePropertyValue(_ value: PropertyValue) -> String {
-        switch value {
-        case .text(let s): return "\"\(s)\""
-        case .number(let n):
-            if n == n.rounded() && n < 1e15 {
-                return String(Int(n))
-            }
-            return String(n)
-        case .select(let s): return s
-        case .multiSelect(let arr): return "[\(arr.joined(separator: ", "))]"
-        case .date(let s): return s
-        case .checkbox(let b): return b ? "true" : "false"
-        case .url(let s): return "\"\(s)\""
-        case .email(let s): return "\"\(s)\""
-        case .relation(let s): return s
-        case .relationMany(let arr): return "[\(arr.joined(separator: ", "))]"
-        case .empty: return ""
-        }
-    }
-
-    private func serializePropertyValueForIndex(_ value: PropertyValue) -> Any {
-        switch value {
-        case .text(let s): return s
-        case .number(let n): return n
-        case .select(let s): return s
-        case .multiSelect(let arr): return arr
-        case .date(let s): return DatabaseDateValue.decode(from: s)?.sortKey ?? s
-        case .checkbox(let b): return b
-        case .url(let s): return s
-        case .email(let s): return s
-        case .relation(let s): return s
-        case .relationMany(let arr): return arr
-        case .empty: return NSNull()
-        }
-    }
-
-    private func rowFilename(title: String, suffix: String) -> String {
-        let sanitized = title
-            .replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-            .prefix(80)
-        return "\(sanitized) (\(suffix)).md"
-    }
-
-    private func extractIdSuffix(from rowId: String) -> String {
-        // row_a1b2c3 -> a1b2c3
-        if rowId.hasPrefix("row_") {
-            return String(rowId.dropFirst(4))
-        }
-        return rowId
-    }
-
-    private func iso8601String(from date: Date) -> String {
-        Self.isoFormatter.string(from: date)
     }
 }
 

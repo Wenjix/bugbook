@@ -35,18 +35,30 @@ public struct RowSerializer {
 
     // MARK: - Parse
 
-    public static func parse(content: String, schema: DatabaseSchema) -> DatabaseRow? {
+    /// Result of a detailed parse that includes raw property strings for legacy repair.
+    public struct ParseResult {
+        public let row: DatabaseRow
+        public let rawProperties: [String: String]
+    }
+
+    public static func parse(content: String, schema: DatabaseSchema, skipBody: Bool = false) -> DatabaseRow? {
+        parseDetailed(content: content, schema: schema, skipBody: skipBody)?.row
+    }
+
+    /// Parse returning both the row and the raw (unparsed) property strings.
+    public static func parseDetailed(content: String, schema: DatabaseSchema, skipBody: Bool = false) -> ParseResult? {
         guard content.hasPrefix("---") else { return nil }
         let afterMarker = content.index(content.startIndex, offsetBy: 3)
         guard let endRange = content.range(of: "\n---", range: afterMarker..<content.endIndex) else { return nil }
 
         let yamlBlock = String(content[afterMarker..<endRange.lowerBound])
-        let body = String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
+        let body = skipBody ? "" : String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
 
         var id = ""
         var createdAt = Date()
         var updatedAt = Date()
         var properties: [String: PropertyValue] = [:]
+        var rawProperties: [String: String] = [:]
         var inProperties = false
 
         let isoFormatter = ISO8601DateFormatter()
@@ -65,6 +77,7 @@ public struct RowSerializer {
                     if let colonIdx = propLine.firstIndex(of: ":") {
                         let key = String(propLine[propLine.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
                         let rawValue = String(propLine[propLine.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                        rawProperties[key] = rawValue
                         if let propDef = schema.properties.first(where: { $0.id == key }) {
                             properties[key] = parseValue(rawValue, type: propDef.type)
                         }
@@ -91,7 +104,10 @@ public struct RowSerializer {
 
         guard !id.isEmpty else { return nil }
 
-        return DatabaseRow(id: id, properties: properties, body: body, createdAt: createdAt, updatedAt: updatedAt)
+        return ParseResult(
+            row: DatabaseRow(id: id, properties: properties, body: body, createdAt: createdAt, updatedAt: updatedAt),
+            rawProperties: rawProperties
+        )
     }
 
     // MARK: - Private

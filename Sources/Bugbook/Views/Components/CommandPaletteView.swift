@@ -72,6 +72,7 @@ struct CommandPaletteView: View {
     @State private var contentIndex: [IndexedContentLine] = []
     @State private var contentIndexWorkspace: String?
     @State private var contentIndexTask: Task<[IndexedContentLine], Never>?
+    @State private var cachedFlatEntries: [FileEntry] = []
     @State private var qmdBinaryPath: String?   // nil = pending, "" = not found, else path
     @FocusState private var isSearchFieldFocused: Bool
     @Binding var isPresented: Bool
@@ -155,6 +156,7 @@ struct CommandPaletteView: View {
             if appState.commandPaletteMode == .commands {
                 searchText = ">"
             }
+            cachedFlatEntries = flattenFileTree(appState.fileTree)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
@@ -175,11 +177,15 @@ struct CommandPaletteView: View {
             contentIndexTask?.cancel()
             contentIndexTask = nil
         }
+        .onChange(of: appState.fileTree) { _, newTree in
+            cachedFlatEntries = flattenFileTree(newTree)
+        }
         .onChange(of: appState.workspacePath) { _, _ in
             contentIndex = []
             contentIndexWorkspace = nil
             contentIndexTask?.cancel()
             contentIndexTask = nil
+            cachedFlatEntries = flattenFileTree(appState.fileTree)
             scheduleContentSearch(query: effectiveQuery(from: searchText))
             Task { @MainActor in
                 await warmContentIndexIfNeeded()
@@ -422,7 +428,7 @@ struct CommandPaletteView: View {
     // MARK: - File Filtering
 
     private var filteredEntries: [FileEntry] {
-        let allFiles = flattenFileTree(appState.fileTree)
+        let allFiles = cachedFlatEntries
         let query = effectiveQuery(from: searchText)
         if query.isEmpty { return allFiles }
         return allFiles.filter { $0.name.localizedStandardContains(query) }
