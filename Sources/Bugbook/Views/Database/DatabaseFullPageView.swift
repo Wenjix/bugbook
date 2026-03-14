@@ -54,10 +54,6 @@ struct DatabaseFullPageView: View {
         state.schema?.properties.filter { $0.type != .title } ?? []
     }
 
-    private var tableLeadingInset: CGFloat {
-        (state.activeView?.type ?? .table) == .table ? DatabaseZoomMetrics.size(TableView.rowControlsInset) : 0
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             if let error = state.error {
@@ -171,7 +167,7 @@ struct DatabaseFullPageView: View {
                 settingsPopover(schema: schema)
             }
         }
-        .padding(.leading, DatabaseZoomMetrics.size(12) + tableLeadingInset)
+        .padding(.leading, DatabaseZoomMetrics.size(4))
         .padding(.trailing, DatabaseZoomMetrics.size(12))
         .padding(.top, DatabaseZoomMetrics.size(8))
         .padding(.bottom, DatabaseZoomMetrics.size(4))
@@ -218,7 +214,7 @@ struct DatabaseFullPageView: View {
 
             Spacer()
         }
-        .padding(.leading, DatabaseZoomMetrics.size(12) + tableLeadingInset)
+        .padding(.leading, DatabaseZoomMetrics.size(4))
         .padding(.trailing, DatabaseZoomMetrics.size(12))
         .padding(.vertical, DatabaseZoomMetrics.size(4))
     }

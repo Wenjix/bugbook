@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Describes how the current drag is targeting a sidebar row.
 enum DropMode: Equatable {
@@ -9,25 +10,21 @@ enum DropMode: Equatable {
 /// Reference-type wrapper so all drop delegates share a single stable instance,
 /// preventing stale-binding issues when SwiftUI re-creates delegate structs.
 final class DropIndicatorState: ObservableObject {
-    @Published var mode: DropMode? {
-        didSet { scheduleAutoCleanup() }
-    }
+    @Published var mode: DropMode?
 
-    private var cleanupWorkItem: DispatchWorkItem?
+    private var cancellable: AnyCancellable?
 
-    /// During an active drag, `dropUpdated` sets `mode` continuously (~20 Hz),
-    /// resetting this timer each time. When the drag ends and no delegate
-    /// callback fires (`dropExited` is unreliable in SwiftUI), the timer
-    /// expires and clears the lingering indicator.
-    private func scheduleAutoCleanup() {
-        cleanupWorkItem?.cancel()
-        cleanupWorkItem = nil
-        guard mode != nil else { return }
-        let item = DispatchWorkItem { [weak self] in
-            self?.mode = nil
-        }
-        cleanupWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+    init() {
+        // During an active drag, dropUpdated sets mode continuously (~20 Hz).
+        // Debounce waits for 0.5s of silence — when the drag ends and no
+        // delegate callback fires (dropExited is unreliable in SwiftUI),
+        // the debounced nil-clear fires automatically.
+        cancellable = $mode
+            .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
+            .sink { [weak self] newMode in
+                guard let self, newMode != nil else { return }
+                self.mode = nil
+            }
     }
 }
 

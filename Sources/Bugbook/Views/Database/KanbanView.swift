@@ -21,6 +21,7 @@ struct KanbanView: View {
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
     @State private var showColumnPopover: String? = nil
+    @State private var showCardPopover: String? = nil
     @State private var editingColumnName: String = ""
 
     // Custom drag state
@@ -292,7 +293,7 @@ struct KanbanView: View {
     }
 
     private func columnPopoverContent(for column: (id: String, name: String, color: String)) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             TextField("Option name", text: $editingColumnName)
                 .textFieldStyle(.roundedBorder)
                 .font(DatabaseZoomMetrics.font(15))
@@ -300,37 +301,77 @@ struct KanbanView: View {
                 .onSubmit {
                     commitColumnRename(for: column)
                 }
+                .padding(.horizontal, DatabaseZoomMetrics.size(10))
+                .padding(.top, DatabaseZoomMetrics.size(8))
+                .padding(.bottom, DatabaseZoomMetrics.size(4))
 
-            Button {
+            popoverButton(icon: "eye.slash", label: "Hide option") {
                 hideColumn(column.id)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "eye.slash")
-                        .font(DatabaseZoomMetrics.font(12))
-                    Text("Hide option")
-                        .font(DatabaseZoomMetrics.font(15))
-                }
-                .foregroundStyle(.primary)
             }
-            .buttonStyle(.plain)
 
-            Divider()
+            popoverDivider
 
-            Button(role: .destructive) {
+            popoverButton(icon: "trash", label: "Delete option", isDestructive: true) {
                 deleteColumn(column.id)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "trash")
-                        .font(DatabaseZoomMetrics.font(12))
-                    Text("Delete option")
-                        .font(DatabaseZoomMetrics.font(15))
-                }
-                .foregroundStyle(.red)
             }
-            .buttonStyle(.plain)
         }
-        .padding(DatabaseZoomMetrics.size(12))
         .frame(width: DatabaseZoomMetrics.size(220))
+        .padding(.vertical, DatabaseZoomMetrics.size(4))
+        .popoverSurface()
+    }
+
+    // MARK: - Popover Helpers
+
+    private func popoverButton(
+        icon: String, label: String,
+        isDestructive: Bool = false, action: @escaping () -> Void
+    ) -> some View {
+        KanbanPopoverButton(icon: icon, label: label, isDestructive: isDestructive, action: action)
+    }
+
+    private var popoverDivider: some View {
+        Divider()
+            .padding(.vertical, DatabaseZoomMetrics.size(4))
+            .padding(.horizontal, DatabaseZoomMetrics.size(10))
+    }
+
+    private func cardPopoverBinding(for rowId: String) -> Binding<Bool> {
+        Binding(
+            get: { showCardPopover == rowId },
+            set: { isPresented in
+                if !isPresented && showCardPopover == rowId {
+                    showCardPopover = nil
+                }
+            }
+        )
+    }
+
+    private func openCard(_ row: DatabaseRow) {
+        showCardPopover = nil
+        onOpenRow(row)
+    }
+
+    private func deleteCard(_ row: DatabaseRow) {
+        showCardPopover = nil
+        DispatchQueue.main.async {
+            onDelete?(row)
+        }
+    }
+
+    private func cardPopoverContent(for row: DatabaseRow) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            popoverButton(icon: "arrow.up.right", label: "Open") {
+                openCard(row)
+            }
+
+            popoverDivider
+
+            popoverButton(icon: "trash", label: "Delete", isDestructive: true) {
+                deleteCard(row)
+            }
+        }
+        .frame(width: DatabaseZoomMetrics.size(200))
+        .padding(.vertical, DatabaseZoomMetrics.size(4))
         .popoverSurface()
     }
 
@@ -467,10 +508,11 @@ struct KanbanView: View {
             .clipShape(.rect(cornerRadius: cardCornerRadius))
             .contentShape(Rectangle())
             .onTapGesture { onOpenRow(row) }
-            .contextMenu {
-                Button(role: .destructive, action: { onDelete?(row) }) {
-                    Label("Delete", systemImage: "trash")
-                }
+            .onNSRightClick {
+                showCardPopover = row.id
+            }
+            .floatingPopover(isPresented: cardPopoverBinding(for: row.id), arrowEdge: .bottom) {
+                cardPopoverContent(for: row)
             }
             .onHover { hovering in
                 if hovering {
@@ -618,6 +660,43 @@ private struct KanbanReorderTarget {
     let columnId: String
     let rowId: String?
     let placement: KanbanReorderPlacement
+}
+
+/// Self-contained popover menu button with local hover state,
+/// avoiding full KanbanView re-renders on hover events.
+private struct KanbanPopoverButton: View {
+    let icon: String
+    let label: String
+    var isDestructive: Bool = false
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: DatabaseZoomMetrics.size(8)) {
+                Image(systemName: icon)
+                    .font(DatabaseZoomMetrics.font(12))
+                    .foregroundStyle(isDestructive ? .red.opacity(0.8) : .secondary)
+                    .frame(width: DatabaseZoomMetrics.size(16), height: DatabaseZoomMetrics.size(16))
+                Text(label)
+                    .font(DatabaseZoomMetrics.font(15))
+                    .foregroundStyle(isDestructive ? .red.opacity(0.8) : .primary)
+                Spacer()
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(10))
+            .frame(height: DatabaseZoomMetrics.size(28))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(4))
+                    .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(4))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
 }
 
 private struct KanbanCardFramePreferenceKey: PreferenceKey {

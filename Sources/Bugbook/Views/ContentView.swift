@@ -890,13 +890,13 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.leading, appState.sidebarOpen ? 0 : ShellZoomMetrics.size(78))
                 .opacity(focusModeActive ? 0.0 : 1.0)
             }
 
             activeTabContent
                 .environment(\.workspacePath, appState.workspacePath)
         }
+        .padding(.leading, appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78))
         .overlay(alignment: .trailing) {
             if let peek = peekTarget {
                 HStack(spacing: 0) {

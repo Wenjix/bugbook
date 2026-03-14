@@ -33,10 +33,6 @@ struct DatabaseInlineEmbedView: View {
         state.filteredAndSortedRows(extraFilter: searchFilter)
     }
 
-    private var tableLeadingInset: CGFloat {
-        (state.activeView?.type ?? .table) == .table ? TableView.rowControlsInset : 0
-    }
-
     private var searchFilter: ((DatabaseRow) -> Bool)? {
         guard !searchText.isEmpty, let schema = state.schema else { return nil }
         let titlePropId = schema.properties.first(where: { $0.type == .title })?.id ?? ""
@@ -152,9 +148,7 @@ struct DatabaseInlineEmbedView: View {
             .menuIndicator(.hidden)
             .fixedSize()
 
-            Spacer()
-
-            // Hover-only: open full page
+            // Open full page — next to title controls, visible on hover
             if isHoveringHeader {
                 Button { onOpenDatabase?() } label: {
                     Image(systemName: "arrow.up.right")
@@ -163,6 +157,8 @@ struct DatabaseInlineEmbedView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            Spacer()
 
             // Search — icon collapses to inline field when active
             if showSearch {
@@ -215,7 +211,7 @@ struct DatabaseInlineEmbedView: View {
                 settingsPopover(schema: schema)
             }
         }
-        .padding(.leading, 12 + tableLeadingInset)
+        .padding(.leading, 12)
         .padding(.trailing, 12)
         .padding(.top, 8)
         .padding(.bottom, 4)
@@ -256,7 +252,7 @@ struct DatabaseInlineEmbedView: View {
             }
             Spacer()
         }
-        .padding(.leading, 12 + tableLeadingInset)
+        .padding(.leading, 12)
         .padding(.trailing, 12)
         .padding(.vertical, 4)
     }
