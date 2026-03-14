@@ -713,7 +713,11 @@ struct ContentView: View {
 
             if appState.aiSidePanelOpen && appState.currentView == .editor {
                 Divider()
-                AiSidePanelView(appState: appState, aiService: aiService)
+                AiSidePanelView(
+                    appState: appState,
+                    aiService: aiService,
+                    activeDocument: appState.activeTab.flatMap { blockDocuments[$0.id] }
+                )
                     .transition(.move(edge: .trailing))
             }
         }
@@ -984,6 +988,22 @@ struct ContentView: View {
                 .onChange(of: document.selectionRect) { _, rect in
                     updateFormattingPanel(rect: rect)
                 }
+                .onChange(of: document.selectedBlockIds) { _, ids in
+                    if ids.isEmpty {
+                        if document.multiBlockTextSelection == nil {
+                            hideFormattingPanel()
+                        }
+                    } else {
+                        showBlockSelectionToolbar()
+                    }
+                }
+                .onChange(of: document.multiBlockTextSelection) { _, mbs in
+                    if mbs != nil {
+                        showBlockSelectionToolbar()
+                    } else if document.selectedBlockIds.isEmpty {
+                        hideFormattingPanel()
+                    }
+                }
             }
         } else {
             Color.fallbackEditorBg
@@ -1057,6 +1077,14 @@ struct ContentView: View {
         doc.onOpenDatabaseTab = { dbPath in
             openDatabase(at: dbPath)
         }
+        doc.onSubmitAiPrompt = { [weak appState, weak doc] prompt in
+            guard let appState, let doc else { return }
+            doc.dismissAiPrompt()
+            appState.openAiPanel(prompt: prompt)
+        }
+        doc.onCancelAiPrompt = { [weak doc] in
+            doc?.dismissAiPrompt()
+        }
     }
 
     // MARK: - Theme
@@ -1096,13 +1124,56 @@ struct ContentView: View {
             onItalic: { activeBlockTextView()?.formatItalicAction?() },
             onCode: { activeBlockTextView()?.formatCodeAction?() },
             onStrikethrough: { activeBlockTextView()?.formatStrikethroughAction?() },
-            onLink: { activeBlockTextView()?.formatLinkAction?() }
+            onLink: { activeBlockTextView()?.formatLinkAction?() },
+            onAskAI: { [weak appState] in
+                guard let appState,
+                      let tab = appState.activeTab,
+                      let doc = blockDocuments[tab.id],
+                      let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
+                hideFormattingPanel()
+                appState.aiSelectionContext = selectedMarkdown
+                appState.openAiPanel()
+            }
         )
         panel.show(above: rect)
     }
 
     private func activeBlockTextView() -> BlockNSTextView? {
         NSApp.keyWindow?.firstResponder as? BlockNSTextView
+    }
+
+    private func showBlockSelectionToolbar() {
+        guard let tab = appState.activeTab,
+              let doc = blockDocuments[tab.id],
+              let blockRect = doc.lastSelectedBlockRect else {
+            hideFormattingPanel()
+            return
+        }
+        let panel: FormattingToolbarPanel
+        if let existing = formattingPanel {
+            panel = existing
+        } else {
+            panel = FormattingToolbarPanel()
+            formattingPanel = panel
+        }
+        // For block selection, only show the Ask AI action
+        panel.updateActions(
+            onBold: {},
+            onItalic: {},
+            onCode: {},
+            onStrikethrough: {},
+            onLink: {},
+            onAskAI: { [weak appState] in
+                guard let appState,
+                      let tab = appState.activeTab,
+                      let doc = blockDocuments[tab.id],
+                      let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
+                hideFormattingPanel()
+                appState.aiSelectionContext = selectedMarkdown
+                appState.openAiPanel()
+            }
+        )
+        panel.show(above: blockRect)
     }
 
     private func hideFormattingPanel() {

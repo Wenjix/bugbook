@@ -668,6 +668,18 @@ struct BlockTextView: NSViewRepresentable {
                 parent.document.pagePickerSelectedIndex = 0
                 return false
             }
+
+            // Space on empty paragraph → show AI prompt
+            if !suppressChanges,
+               let text = replacementString, text == " ",
+               textView.string.isEmpty,
+               let block = parent.document.block(for: parent.blockId),
+               block.type == .paragraph,
+               parent.document.titleBlock?.id != parent.blockId {
+                parent.document.showAiPrompt(blockId: parent.blockId)
+                return false
+            }
+
             lastReplacementString = replacementString
             return true
         }

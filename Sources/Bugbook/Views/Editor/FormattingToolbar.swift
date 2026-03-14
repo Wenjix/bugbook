@@ -9,6 +9,7 @@ struct FormattingToolbar: View {
     let onCode: () -> Void
     let onStrikethrough: () -> Void
     let onLink: () -> Void
+    var onAskAI: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 2) {
@@ -18,6 +19,10 @@ struct FormattingToolbar: View {
             toolbarButton("S", font: .system(size: 14), strikethrough: true, action: onStrikethrough)
             Divider().frame(height: 20)
             toolbarButton("link", systemImage: "link", action: onLink)
+            if let onAskAI {
+                Divider().frame(height: 20)
+                toolbarButton("ai", systemImage: "ladybug", action: onAskAI)
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)

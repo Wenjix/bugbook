@@ -16,6 +16,7 @@ struct BlockCellView: View {
     @State private var showSlashMenu = false
     @State private var showBlockMenu = false
     @State private var showPagePicker = false
+    @State private var showAiPrompt = false
 
     var body: some View {
         // Database embed blocks need their own interactive controls to work, so we
@@ -26,7 +27,8 @@ struct BlockCellView: View {
                 block: block,
                 showSlashMenu: $showSlashMenu,
                 showBlockMenu: $showBlockMenu,
-                showPagePicker: $showPagePicker
+                showPagePicker: $showPagePicker,
+                showAiPrompt: $showAiPrompt
             ))
     }
 
@@ -245,8 +247,22 @@ private struct PopoverSyncModifier: ViewModifier {
     @Binding var showSlashMenu: Bool
     @Binding var showBlockMenu: Bool
     @Binding var showPagePicker: Bool
+    @Binding var showAiPrompt: Bool
 
     func body(content: Content) -> some View {
+        popoverLayer(content)
+            .modifier(PopoverChangeTracker(
+                document: document,
+                block: block,
+                showSlashMenu: $showSlashMenu,
+                showBlockMenu: $showBlockMenu,
+                showPagePicker: $showPagePicker,
+                showAiPrompt: $showAiPrompt
+            ))
+    }
+
+    @ViewBuilder
+    private func popoverLayer(_ content: Content) -> some View {
         content
             .floatingPopover(isPresented: $showSlashMenu, arrowEdge: .bottom) {
                 SlashCommandMenu(document: document)
@@ -260,10 +276,27 @@ private struct PopoverSyncModifier: ViewModifier {
             .floatingPopover(isPresented: $showPagePicker, arrowEdge: .bottom) {
                 PagePickerView(document: document)
             }
+            .floatingPopover(isPresented: $showAiPrompt, arrowEdge: .bottom) {
+                AiPromptView(document: document)
+            }
+    }
+}
+
+private struct PopoverChangeTracker: ViewModifier {
+    var document: BlockDocument
+    let block: Block
+    @Binding var showSlashMenu: Bool
+    @Binding var showBlockMenu: Bool
+    @Binding var showPagePicker: Bool
+    @Binding var showAiPrompt: Bool
+
+    func body(content: Content) -> some View {
+        content
             .onAppear {
                 showSlashMenu = (document.slashMenuBlockId == block.id)
                 showBlockMenu = (document.blockMenuBlockId == block.id)
                 showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
+                showAiPrompt = (document.aiPromptBlockId == block.id)
             }
             .onChange(of: document.slashMenuBlockId) { _, newVal in
                 let shouldShow = (newVal == block.id)
@@ -296,6 +329,134 @@ private struct PopoverSyncModifier: ViewModifier {
                     document.dismissPagePicker()
                 }
             }
+            .onChange(of: document.aiPromptBlockId) { _, newVal in
+                let shouldShow = (newVal == block.id)
+                if showAiPrompt != shouldShow { showAiPrompt = shouldShow }
+            }
+            .onChange(of: showAiPrompt) { _, show in
+                if !show && document.aiPromptBlockId == block.id {
+                    // Don't dismiss while generating — keep the popover alive
+                    if document.isAiGenerating {
+                        showAiPrompt = true
+                    } else {
+                        document.dismissAiPrompt()
+                    }
+                }
+            }
+    }
+}
+
+/// Inline AI prompt popover for generating content at the cursor position.
+private struct AiPromptView: View {
+    var document: BlockDocument
+    @State private var promptText: String = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Input area with icon
+            HStack(alignment: .top, spacing: 10) {
+                Image("BugbookAI")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 20, height: 20)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(.top, 4)
+
+                TextField("Tell AI what to write...", text: $promptText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 15))
+                    .lineLimit(1...10)
+                    .frame(minHeight: 24)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .focused($isFocused)
+                    .disabled(document.isAiGenerating)
+                    .onSubmit {
+                        document.aiPromptText = promptText
+                        document.submitAiPrompt()
+                    }
+                    .onChange(of: promptText) { _, newVal in
+                        document.aiPromptText = newVal
+                    }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+
+            // Footer
+            if document.isAiGenerating {
+                aiGeneratingFooter
+            } else {
+                aiPromptHints
+            }
+        }
+        .frame(width: 380)
+        .popoverSurface()
+        .onAppear {
+            isFocused = true
+        }
+        .onKeyPress(.escape) {
+            if document.isAiGenerating {
+                document.cancelAiGeneration()
+            } else {
+                document.dismissAiPrompt()
+            }
+            return .handled
+        }
+    }
+
+    private var aiGeneratingFooter: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Generating...")
+                .font(.system(size: Typography.caption))
+                .foregroundStyle(Color.fallbackTextSecondary)
+            Spacer()
+            Button {
+                document.cancelAiGeneration()
+            } label: {
+                Text("Cancel")
+                    .font(.system(size: Typography.caption, weight: .medium))
+                    .foregroundStyle(Color.fallbackTextSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(Opacity.light))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+            }
+            .buttonStyle(.borderless)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Brand.subtle)
+    }
+
+    private var aiPromptHints: some View {
+        HStack(spacing: 3) {
+            kbdKey("Return")
+            Text("generate")
+                .font(.system(size: Typography.caption2))
+                .foregroundStyle(Color.fallbackTextSecondary)
+            Spacer()
+            kbdKey("Esc")
+            Text("cancel")
+                .font(.system(size: Typography.caption2))
+                .foregroundStyle(Color.fallbackTextSecondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(Opacity.subtle))
+    }
+
+    private func kbdKey(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 10, weight: .medium, design: .rounded))
+            .foregroundStyle(Color.fallbackTextSecondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Color.primary.opacity(Opacity.light))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
     }
 }
 

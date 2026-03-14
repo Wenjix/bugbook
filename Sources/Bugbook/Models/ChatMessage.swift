@@ -5,10 +5,12 @@ struct ChatMessage: Identifiable {
     let role: Role
     let content: String
     let timestamp: Date
+    var isReverted: Bool = false
 
     enum Role {
         case user
         case assistant
         case error
+        case applied
     }
 }

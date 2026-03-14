@@ -31,6 +31,7 @@ struct BlockEditorView: View {
     @State private var marqueeSelectionRect: CGRect?
     @State private var marqueeDragState: MarqueeDragState?
     @State private var blockMoveDragState: BlockMoveDragState?
+    @State private var autoScrollTimer: Timer?
 
     var body: some View {
         // Skip the title block (first heading-1) — it's rendered separately above
@@ -61,6 +62,7 @@ struct BlockEditorView: View {
         .dropDestination(for: URL.self) { urls, _ in
             handleImageFileDrop(urls)
         } isTargeted: { _ in }
+        .onDisappear { stopAutoScroll() }
         .onChange(of: document.contentVersion) { _, _ in
             onTextChange?()
         }
@@ -242,22 +244,30 @@ struct BlockEditorView: View {
         guard editorFrameInWindow != .zero,
               blockMoveDragState == nil else { return }
         if marqueeDragState == nil {
-            // Block frames are stored in window coordinates for hit-testing.
-            // Refresh them on demand instead of on every scroll event.
             document.requestBlockFrameRefresh()
+            let sv = editorWindow.flatMap { findScrollView(in: $0.contentView) }
+            let initialY = sv?.contentView.bounds.origin.y ?? 0
             marqueeDragState = MarqueeDragState(
                 startLocalPoint: value.startLocation,
-                canStart: shouldStartMarqueeSelection(at: windowPoint(for: value.startLocation))
+                canStart: shouldStartMarqueeSelection(at: windowPoint(for: value.startLocation)),
+                initialScrollY: initialY,
+                scrollView: sv
             )
         }
 
         guard var dragState = marqueeDragState, dragState.canStart else { return }
 
+        // Adjust start point by scroll delta so selection grows with scrolling
+        let currentScrollY = dragState.scrollView?.contentView.bounds.origin.y ?? dragState.initialScrollY
+        let scrollDelta = currentScrollY - dragState.initialScrollY
+        let adjustedStartY = dragState.startLocalPoint.y - scrollDelta
+
         let dragRect = CGRect(
-            x: min(dragState.startLocalPoint.x, value.location.x),
-            y: min(dragState.startLocalPoint.y, value.location.y),
+            x: min(adjustedStartY < value.location.y ? dragState.startLocalPoint.x : value.location.x,
+                   adjustedStartY < value.location.y ? value.location.x : dragState.startLocalPoint.x),
+            y: min(adjustedStartY, value.location.y),
             width: abs(value.location.x - dragState.startLocalPoint.x),
-            height: abs(value.location.y - dragState.startLocalPoint.y)
+            height: abs(value.location.y - adjustedStartY)
         ).standardized
 
         if !dragState.isActive {
@@ -269,13 +279,23 @@ struct BlockEditorView: View {
 
         marqueeDragState = dragState
         marqueeSelectionRect = dragRect
+
+        // Refresh block frames when scroll has changed (blocks have moved)
+        if abs(scrollDelta) > 1 {
+            document.requestBlockFrameRefresh()
+        }
+
         document.updateMarqueeBlockSelection(
             in: windowRect(for: dragRect),
             within: editorFrameInWindow
         )
+
+        // Auto-scroll near edges
+        updateAutoScroll(dragLocalY: value.location.y)
     }
 
     private func endSurfaceSelectionDrag() {
+        stopAutoScroll()
         defer {
             marqueeSelectionRect = nil
             marqueeDragState = nil
@@ -285,6 +305,46 @@ struct BlockEditorView: View {
             document.endMarqueeBlockSelection()
         }
     }
+
+    private func updateAutoScroll(dragLocalY: CGFloat) {
+        guard let sv = marqueeDragState?.scrollView else { return }
+        let edgeZone: CGFloat = 40
+        let visibleHeight = sv.contentView.bounds.height
+
+        // Convert local Y to scroll view visible area Y
+        let scrollViewY = dragLocalY
+
+        if scrollViewY < edgeZone {
+            let proximity = max(0, edgeZone - scrollViewY) / edgeZone
+            startAutoScroll(speed: -(proximity * 12 + 2))
+        } else if scrollViewY > visibleHeight - edgeZone {
+            let proximity = max(0, scrollViewY - (visibleHeight - edgeZone)) / edgeZone
+            startAutoScroll(speed: proximity * 12 + 2)
+        } else {
+            stopAutoScroll()
+        }
+    }
+
+    private func startAutoScroll(speed: CGFloat) {
+        // Only start if not already running
+        guard autoScrollTimer == nil else { return }
+        autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [self] _ in
+            guard let sv = marqueeDragState?.scrollView,
+                  let docView = sv.documentView else { return }
+            let clipView = sv.contentView
+            var origin = clipView.bounds.origin
+            origin.y += speed
+            origin.y = max(0, min(origin.y, docView.frame.height - clipView.bounds.height))
+            clipView.setBoundsOrigin(origin)
+            sv.reflectScrolledClipView(clipView)
+        }
+    }
+
+    private func stopAutoScroll() {
+        autoScrollTimer?.invalidate()
+        autoScrollTimer = nil
+    }
+
 
     private func windowPoint(for localPoint: CGPoint) -> CGPoint {
         CGPoint(
@@ -466,6 +526,17 @@ private struct MarqueeDragState {
     let startLocalPoint: CGPoint
     let canStart: Bool
     var isActive = false
+    var initialScrollY: CGFloat = 0
+    var scrollView: NSScrollView?
+}
+
+private func findScrollView(in view: NSView?) -> NSScrollView? {
+    guard let view else { return nil }
+    if let sv = view as? NSScrollView { return sv }
+    for sub in view.subviews {
+        if let found = findScrollView(in: sub) { return found }
+    }
+    return nil
 }
 
 private struct BlockMoveDragState {

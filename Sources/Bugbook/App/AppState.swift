@@ -29,6 +29,7 @@ enum ViewMode {
     var selectedSettingsTab: String = "general"
     var aiSidePanelOpen: Bool = false
     var aiInitialPrompt: String?
+    var aiSelectionContext: String?
     var currentView: ViewMode = .editor
     var movePagePath: String?  // non-nil triggers move page picker
 

@@ -41,6 +41,9 @@ class BlockDocument {
     var pagePickerSearch: String = ""
     var pagePickerSelectedIndex: Int = 0
     var showTemplatePicker: Bool = false
+    var aiPromptBlockId: UUID?
+    var aiPromptText: String = ""
+    var isAiGenerating: Bool = false
     var selectedBlockIds: Set<UUID> = []
     var moveBlockId: UUID?
     var selectionRect: CGRect?
@@ -61,6 +64,8 @@ class BlockDocument {
     @ObservationIgnored var onDeleteSubPage: ((String) -> Void)?
     @ObservationIgnored var onNavigateToPage: ((String) -> Void)?
     @ObservationIgnored var onOpenDatabaseTab: ((String) -> Void)?
+    @ObservationIgnored var onSubmitAiPrompt: ((String) -> Void)?
+    @ObservationIgnored var onCancelAiPrompt: (() -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
@@ -741,6 +746,7 @@ class BlockDocument {
         case createPage
         case template
         case imagePicker
+        case askAI
     }
 
     struct SlashCommand {
@@ -766,6 +772,7 @@ class BlockDocument {
         SlashCommand(name: "Image", icon: "photo", action: .imagePicker),
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
+        SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -815,6 +822,11 @@ class BlockDocument {
         case .imagePicker:
             dismissSlashMenu()
             pickAndInsertImage(blockId: blockId)
+            return
+
+        case .askAI:
+            showAiPrompt(blockId: blockId)
+            dismissSlashMenu()
             return
 
         case let .blockType(type, headingLevel):
@@ -902,6 +914,118 @@ class BlockDocument {
         slashMenuBlockId = nil
         slashMenuFilter = ""
         slashMenuSelectedIndex = 0
+    }
+
+    // MARK: - Inline AI Prompt
+
+    func showAiPrompt(blockId: UUID) {
+        aiPromptBlockId = blockId
+        aiPromptText = ""
+        isAiGenerating = false
+    }
+
+    func dismissAiPrompt() {
+        aiPromptBlockId = nil
+        aiPromptText = ""
+        isAiGenerating = false
+    }
+
+    func submitAiPrompt() {
+        let prompt = aiPromptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !isAiGenerating else { return }
+        isAiGenerating = true
+        onSubmitAiPrompt?(prompt)
+    }
+
+    func cancelAiGeneration() {
+        onCancelAiPrompt?()
+        isAiGenerating = false
+    }
+
+    /// Resolves the current selection into an ordered list of block indices.
+    /// Priority: block selection > multi-block text selection > single-block selection.
+    private func selectedBlockIndices() -> [Int]? {
+        if !selectedBlockIds.isEmpty {
+            let indices = blocks.enumerated()
+                .filter { selectedBlockIds.contains($0.element.id) }
+                .map(\.offset)
+            return indices.isEmpty ? nil : indices
+        }
+        if let mbs = multiBlockTextSelection {
+            guard let anchorIdx = index(for: mbs.anchor.blockId),
+                  let focusIdx = index(for: mbs.focus.blockId) else { return nil }
+            return Array(min(anchorIdx, focusIdx)...max(anchorIdx, focusIdx))
+        }
+        if let blockId = selectionBlockId {
+            guard let idx = index(for: blockId) else { return nil }
+            return [idx]
+        }
+        return nil
+    }
+
+    /// Returns the markdown for currently selected blocks (block selection or multi-block text selection).
+    func selectedBlocksMarkdown() -> String? {
+        guard let indices = selectedBlockIndices() else { return nil }
+        let selectedBlocks = indices.map { blocks[$0] }
+        return MarkdownBlockParser.serialize(selectedBlocks)
+    }
+
+    /// Replaces the selected blocks with AI-generated content.
+    func replaceSelectedBlocks(markdown: String) {
+        guard let indices = selectedBlockIndices(), !indices.isEmpty else { return }
+
+        let newBlocks = MarkdownBlockParser.parse(markdown)
+        guard !newBlocks.isEmpty else { return }
+
+        saveUndo()
+
+        let ids = Set(indices.map { blocks[$0].id })
+
+        // Find the first selected block index
+        guard let firstIdx = blocks.firstIndex(where: { ids.contains($0.id) }) else { return }
+
+        // Remove all selected blocks
+        blocks.removeAll { ids.contains($0.id) }
+
+        // Insert new blocks at the position of the first removed block
+        let insertIdx = min(firstIdx, blocks.count)
+        for (i, block) in newBlocks.enumerated() {
+            blocks.insert(block, at: insertIdx + i)
+        }
+
+        clearBlockSelection()
+        clearMultiBlockTextSelection()
+        ensureTrailingParagraph()
+        focusedBlockId = newBlocks.first?.id
+    }
+
+    /// Returns the path selector range (first, last) for selected blocks.
+    func selectedBlockPathRange() -> (first: String, last: String)? {
+        guard let indices = selectedBlockIndices(),
+              let first = indices.first, let last = indices.last else { return nil }
+        return ("path:\(first)", "path:\(last)")
+    }
+
+    func applyAiResponse(markdown: String) {
+        let newBlocks = MarkdownBlockParser.parse(markdown)
+        guard !newBlocks.isEmpty else { return }
+        saveUndo()
+        blocks = newBlocks
+        ensureTrailingParagraph()
+        if let first = blocks.first {
+            focusedBlockId = first.id
+        }
+    }
+
+    func reloadFromDisk() {
+        guard let path = filePath,
+              let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        saveUndo()
+        let (_, body) = MarkdownBlockParser.parseMetadata(content)
+        blocks = MarkdownBlockParser.parse(body)
+        ensureTrailingParagraph()
+        clearBlockSelection()
+        clearMultiBlockTextSelection()
     }
 
     // MARK: - Image Insertion
@@ -1012,6 +1136,7 @@ class BlockDocument {
         selectedBlockIds = Set(range.map { ordered[$0] })
         selectionRect = nil
         selectionBlockId = nil
+        selectionVersion += 1
     }
 
     func beginBlockSelectionDrag(from anchorId: UUID) {
@@ -1053,9 +1178,31 @@ class BlockDocument {
         )
     }
 
+    /// Screen rect of the last selected block (for toolbar positioning near where user finished).
+    /// Works for both block selection (selectedBlockIds) and multi-block text selection.
+    var lastSelectedBlockRect: CGRect? {
+        // Block selection — last selected block in document order
+        if !selectedBlockIds.isEmpty {
+            for block in blocks.reversed() where selectedBlockIds.contains(block.id) {
+                if let frame = registeredBlockFrames[block.id] {
+                    return frame
+                }
+                break
+            }
+        }
+        // Multi-block text selection — use the focus (end) block
+        if let mbs = multiBlockTextSelection {
+            return registeredBlockFrames[mbs.focus.blockId]
+        }
+        return nil
+    }
+
     func endMarqueeBlockSelection() {
         blockSelectionAnchor = nil
         suppressNextEditorTapAfterBlockSelection = !selectedBlockIds.isEmpty
+        if !selectedBlockIds.isEmpty {
+            selectionVersion += 1
+        }
     }
 
     func consumePendingEditorTapAfterBlockSelection() -> Bool {

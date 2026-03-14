@@ -371,6 +371,24 @@ struct NotesChatView: View {
                     )
                 Spacer(minLength: 80)
             }
+
+        case .applied:
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Done — what do you think?")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.fallbackSurfaceSubtle)
+                )
+                Spacer(minLength: 80)
+            }
         }
     }
 

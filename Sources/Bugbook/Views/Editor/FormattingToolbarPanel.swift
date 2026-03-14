@@ -9,7 +9,7 @@ class FormattingToolbarPanel: NSPanel {
 
     init() {
         let noopToolbar = FormattingToolbar(
-            onBold: {}, onItalic: {}, onCode: {}, onStrikethrough: {}, onLink: {}
+            onBold: {}, onItalic: {}, onCode: {}, onStrikethrough: {}, onLink: {}, onAskAI: nil
         )
         self.formattingToolbar = noopToolbar
         self.hostingView = NSHostingView(rootView: noopToolbar)
@@ -38,14 +38,16 @@ class FormattingToolbarPanel: NSPanel {
         onItalic: @escaping () -> Void,
         onCode: @escaping () -> Void,
         onStrikethrough: @escaping () -> Void,
-        onLink: @escaping () -> Void
+        onLink: @escaping () -> Void,
+        onAskAI: (() -> Void)? = nil
     ) {
         formattingToolbar = FormattingToolbar(
             onBold: onBold,
             onItalic: onItalic,
             onCode: onCode,
             onStrikethrough: onStrikethrough,
-            onLink: onLink
+            onLink: onLink,
+            onAskAI: onAskAI
         )
         hostingView.rootView = formattingToolbar
     }

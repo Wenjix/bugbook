@@ -29,6 +29,27 @@ class AiService {
     var error: String?
     @ObservationIgnored private var hasDetectedEngines = false
 
+    private static let systemInstruction = """
+You are a writing assistant inside a note-taking app called Bugbook. The user will give you content and a request. Return ONLY the modified content as markdown. Do NOT duplicate sections. Do NOT add explanations or code fences.
+
+Formatting rules:
+- Headings: # H1, ## H2, ### H3
+- Bullet lists: - item
+- Numbered lists: 1. item
+- To-do items: - [ ] task
+- Block quotes: > text
+- Code blocks: ```lang ... ```
+- Dividers: ---
+- Toggles (collapsible sections): Use this EXACT syntax:
+  <!-- toggle -->
+  Toggle Title
+  Child content here (any markdown)
+  <!-- /toggle -->
+- For collapsed toggles: <!-- toggle collapsed --> instead of <!-- toggle -->
+
+NEVER use HTML tags like <details>, <summary>, <strong>, etc. This app does NOT render HTML.
+"""
+
     // MARK: - Engine Detection
 
     func detectEngines() async {
@@ -66,7 +87,7 @@ class AiService {
             error = nil
             defer { isRunning = false }
             do {
-                return try await chatViaAPI(apiKey: apiKey, question: question)
+                return try await callAPI(apiKey: apiKey, userPrompt: question)
             } catch {
                 self.error = error.localizedDescription
                 throw error
@@ -109,7 +130,7 @@ class AiService {
         }
     }
 
-    private func chatViaAPI(apiKey: String, question: String) async throws -> String {
+    private func callAPI(apiKey: String, systemPrompt: String? = nil, userPrompt: String, maxTokens: Int = 1024) async throws -> String {
         let url = URL(string: "https://api.anthropic.com/v1/messages")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -117,11 +138,14 @@ class AiService {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 1024,
-            "messages": [["role": "user", "content": question]]
+            "max_tokens": maxTokens,
+            "messages": [["role": "user", "content": userPrompt]]
         ]
+        if let systemPrompt {
+            body["system"] = systemPrompt
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -137,6 +161,69 @@ class AiService {
             throw AiError.commandFailed("Unexpected API response format")
         }
         return text
+    }
+
+    // MARK: - Content Generation
+
+    func generateContent(engine: PreferredAIEngine, workspacePath: String, prompt: String, pageContext: String = "", apiKey: String = "") async throws -> String {
+        var fullPrompt = Self.systemInstruction + "\n\n"
+        if !pageContext.isEmpty {
+            fullPrompt += "Current page context:\n\(pageContext)\n\n"
+        }
+        fullPrompt += "User request: \(prompt)"
+
+        if engine == .claudeAPI {
+            guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
+            isRunning = true
+            error = nil
+            defer { isRunning = false }
+            do {
+                return try await callAPI(apiKey: apiKey, systemPrompt: Self.systemInstruction, userPrompt: pageContext.isEmpty ? prompt : "Current page context:\n\(pageContext)\n\nUser request: \(prompt)", maxTokens: 2048)
+            } catch {
+                self.error = error.localizedDescription
+                throw error
+            }
+        }
+
+        if !hasDetectedEngines {
+            await detectEngines()
+        }
+
+        let resolvedEngine = resolveEngine(engine)
+        guard let cli = resolvedEngine else {
+            throw AiError.noEngineAvailable
+        }
+
+        isRunning = true
+        error = nil
+        defer { isRunning = false }
+
+        let command: String
+        switch cli {
+        case .claude:
+            command = "claude -p \(shellSingleQuoted(fullPrompt))"
+        case .codex:
+            command = "codex \(shellSingleQuoted(fullPrompt))"
+        case .auto, .claudeAPI:
+            throw AiError.noEngineAvailable
+        }
+
+        do {
+            return try await runCommand(command, cwd: workspacePath)
+        } catch let err as AiError {
+            error = err.errorDescription
+            throw err
+        } catch {
+            self.error = error.localizedDescription
+            throw error
+        }
+    }
+
+    // MARK: - CLI Execution
+
+    /// Execute a bugbook CLI command and return the output.
+    func executeBugbookCommand(_ command: String) async throws -> String {
+        try await runCommand("bugbook \(command)")
     }
 
     // MARK: - Pre-warming
