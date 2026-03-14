@@ -8,7 +8,7 @@ struct PagePickerView: View {
 
     private var flatPages: [FileEntry] {
         flattenEntries(document.availablePages)
-            .filter { !$0.isDirectory && !$0.isDatabase && $0.name.hasSuffix(".md") }
+            .filter { !$0.isDirectory && ($0.name.hasSuffix(".md") || $0.isDatabase) }
     }
 
     private var filtered: [FileEntry] {
@@ -54,13 +54,7 @@ struct PagePickerView: View {
                                 selectEntry(entry)
                             } label: {
                                 HStack(spacing: 8) {
-                                    if let icon = entry.icon {
-                                        Text(icon).font(.system(size: 13))
-                                    } else {
-                                        Image(systemName: "doc.text")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                    }
+                                    pageIcon(entry)
                                     Text(entry.name.replacingOccurrences(of: ".md", with: ""))
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
@@ -95,6 +89,39 @@ struct PagePickerView: View {
     private func selectEntry(_ entry: FileEntry) {
         let name = entry.name.replacingOccurrences(of: ".md", with: "")
         document.insertPageLink(name: name)
+    }
+
+    @ViewBuilder
+    private func pageIcon(_ entry: FileEntry) -> some View {
+        if let icon = entry.icon, !icon.isEmpty {
+            if icon.hasPrefix("custom:") {
+                let path = String(icon.dropFirst(7))
+                if let nsImage = NSImage(contentsOfFile: path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                } else {
+                    defaultIcon(for: entry)
+                }
+            } else if icon.hasPrefix("sf:") {
+                Image(systemName: String(icon.dropFirst(3)))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 13))
+            } else {
+                defaultIcon(for: entry)
+            }
+        } else {
+            defaultIcon(for: entry)
+        }
+    }
+
+    private func defaultIcon(for entry: FileEntry) -> some View {
+        Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
     }
 
     private func flattenEntries(_ entries: [FileEntry]) -> [FileEntry] {

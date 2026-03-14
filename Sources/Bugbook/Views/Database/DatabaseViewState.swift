@@ -321,9 +321,12 @@ final class DatabaseViewState {
         guard var s = schema, var view = activeView else { return }
         if view.columnWidths == nil { view.columnWidths = [:] }
         view.columnWidths?[propertyId] = Double(width)
+        if let idx = s.views.firstIndex(where: { $0.id == view.id }) {
+            s.views[idx] = view
+        }
+        schema = s
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
-            schema = s
         }
     }
 

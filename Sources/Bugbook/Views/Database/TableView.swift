@@ -33,6 +33,7 @@ struct TableView: View {
     @State private var dragWidths: [String: CGFloat] = [:]
     @State private var hoveredResizeKey: String?
     @State private var draggingResizeKey: String?
+    @State private var dragStartWidths: [String: CGFloat] = [:]
     @State private var selectedRowIds: Set<String> = []
     @State private var lastSelectedRowId: String? = nil
     @State private var didInitialScroll = false
@@ -241,8 +242,12 @@ struct TableView: View {
             .gesture(
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
-                        draggingResizeKey = key
-                        dragWidths[key] = max(DatabaseZoomMetrics.size(80), CGFloat(baseWidth) + value.translation.width)
+                        if draggingResizeKey != key {
+                            draggingResizeKey = key
+                            dragStartWidths[key] = dragWidths[key] ?? CGFloat(baseWidth)
+                        }
+                        let startWidth = dragStartWidths[key] ?? CGFloat(baseWidth)
+                        dragWidths[key] = max(DatabaseZoomMetrics.size(80), startWidth + value.translation.width)
                     }
                     .onEnded { _ in
                         if let finalWidth = dragWidths[key] {

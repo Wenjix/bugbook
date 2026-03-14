@@ -29,6 +29,9 @@ struct PropertyEditorView: View {
     /// Callback to set the target database for a relation property.
     var onSetRelationTarget: ((String, String) -> Void)?  // (propertyId, targetDbPath)
 
+    /// Consistent cell font matching editor body text (17pt scaled).
+    private var cellFont: Font { DatabaseZoomMetrics.font(17) }
+
     var body: some View {
         mainEditor
             .databasePointerCursor()
@@ -138,6 +141,7 @@ struct PropertyEditorView: View {
             set: { value = .number(Double($0) ?? 0) }
         ))
         .textFieldStyle(.plain)
+        .font(cellFont)
         .foregroundStyle(.primary)
     }
 
@@ -163,7 +167,7 @@ struct PropertyEditorView: View {
             HStack(spacing: 0) {
                 if let opt = currentOption {
                     Text(opt.name)
-                        .font(.callout)
+                        .font(cellFont)
                         .lineLimit(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -173,7 +177,7 @@ struct PropertyEditorView: View {
                         .contextMenu { optionContextMenu(for: opt) }
                 } else if !compact {
                     Text("Empty")
-                        .font(.body)
+                        .font(cellFont)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -239,7 +243,7 @@ struct PropertyEditorView: View {
                         ForEach(selectedIds.prefix(3), id: \.self) { id in
                             if let option = options.first(where: { $0.id == id }) {
                                 Text(option.name)
-                                    .font(.caption)
+                                    .font(cellFont)
                                     .lineLimit(1)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -250,13 +254,13 @@ struct PropertyEditorView: View {
                         }
                         if selectedIds.count > 3 {
                             Text("+\(selectedIds.count - 3)")
-                                .font(.caption)
+                                .font(cellFont)
                                 .foregroundStyle(.tertiary)
                         }
                     }
                 } else if !compact {
                     Text("Empty")
-                        .font(.body)
+                        .font(cellFont)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -432,8 +436,6 @@ struct PropertyEditorView: View {
         let label = dateValue?.displayText(compact: compact) ?? ""
         let horizontalPadding: CGFloat = compact ? 8 : 10
         let verticalPadding: CGFloat = compact ? 4 : 6
-        let textFont: Font = compact ? .caption : .body
-
         return HStack(spacing: 0) {
             Button {
                 if currentDateValue == nil {
@@ -451,13 +453,13 @@ struct PropertyEditorView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(label)
-                            .font(textFont)
+                            .font(cellFont)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     } else if !compact {
                         Text("Empty")
-                            .font(textFont)
+                            .font(cellFont)
                             .foregroundStyle(.secondary)
                     } else {
                         Color.clear
@@ -559,18 +561,17 @@ struct PropertyEditorView: View {
     @ViewBuilder
     private func plainTextField(_ text: Binding<String>) -> some View {
         let placeholder = compact ? "" : "Empty"
-        let textFont: Font = compact ? .callout : .body
         if wrapText {
             TextField(placeholder, text: text, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(textFont)
+                .font(cellFont)
                 .lineLimit(1...4)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
         } else {
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(textFont)
+                .font(cellFont)
                 .lineLimit(1)
                 .foregroundStyle(.primary)
         }
@@ -614,14 +615,14 @@ struct PropertyEditorView: View {
                 if !hasRelationTarget {
                     Text(compact ? "" : "Select target database...")
                         .foregroundStyle(.secondary)
-                        .font(compact ? .caption : .body)
+                        .font(cellFont)
                 } else if !selectedCandidates.isEmpty {
                     ForEach(selectedCandidates) { candidate in
                         Button {
                             openRelatedRow(candidate.id)
                         } label: {
                             Text(candidate.title)
-                                .font(compact ? .callout : .body)
+                                .font(cellFont)
                                 .foregroundStyle(.primary)
                                 .underline()
                                 .lineLimit(1)

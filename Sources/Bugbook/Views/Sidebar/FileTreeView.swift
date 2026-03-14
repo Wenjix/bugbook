@@ -66,7 +66,8 @@ struct FileTreeView: View {
                         .allowsHitTesting(false)
                 )
                 .onDrag {
-                    NSItemProvider(object: entry.path as NSString)
+                    dropState.mode = nil
+                    return NSItemProvider(object: entry.path as NSString)
                 }
                 .onDrop(of: [.text], delegate: FileTreeDropDelegate(
                     targetIndex: index,
@@ -75,19 +76,33 @@ struct FileTreeView: View {
                     parentPath: effectiveParentPath,
                     fileSystem: fileSystem,
                     dropState: dropState,
+                    onDidReorder: { recomputeEntries() },
                     onRefreshTree: onRefreshTree
                 ))
             }
+
+            // Drop zone below the last item
+            Color.clear
+                .frame(height: ShellZoomMetrics.size(20))
+                .overlay(alignment: .top) {
+                    if dropState.mode == .above(cachedEntries.count) {
+                        Rectangle()
+                            .fill(Color.accentColor)
+                            .frame(height: 2)
+                            .padding(.horizontal, ShellZoomMetrics.size(8))
+                    }
+                }
+                .onDrop(of: [.text], delegate: FileTreeDropDelegate(
+                    targetIndex: cachedEntries.count,
+                    targetEntry: nil,
+                    entries: cachedEntries,
+                    parentPath: effectiveParentPath,
+                    fileSystem: fileSystem,
+                    dropState: dropState,
+                    onDidReorder: { recomputeEntries() },
+                    onRefreshTree: onRefreshTree
+                ))
         }
-        .onDrop(of: [.text], delegate: FileTreeDropDelegate(
-            targetIndex: cachedEntries.count,
-            targetEntry: nil,
-            entries: cachedEntries,
-            parentPath: effectiveParentPath,
-            fileSystem: fileSystem,
-            dropState: dropState,
-            onRefreshTree: onRefreshTree
-        ))
         .onAppear { recomputeEntries() }
         .onChange(of: entries) { _, _ in recomputeEntries() }
     }
@@ -114,6 +129,7 @@ struct FileTreeDropDelegate: DropDelegate {
     let parentPath: String
     let fileSystem: FileSystemService
     let dropState: DropIndicatorState
+    var onDidReorder: () -> Void
     let onRefreshTree: () -> Void
 
     /// Whether the target entry can accept children (pages can, databases/canvases cannot).
@@ -138,7 +154,11 @@ struct FileTreeDropDelegate: DropDelegate {
 
     private func updateDropMode(info: DropInfo) {
         guard targetAcceptsChildren else {
-            dropState.mode = .above(targetIndex)
+            // Split into top/bottom halves so items can be placed below canvas/database
+            let y = info.location.y
+            let rowHeight = ShellZoomMetrics.size(28)
+            let fraction = y / rowHeight
+            dropState.mode = fraction < 0.5 ? .above(targetIndex) : .above(targetIndex + 1)
             return
         }
         // Vertical position within the row: top 25% = above, middle 50% = into, bottom 25% = above next
@@ -194,7 +214,7 @@ struct FileTreeDropDelegate: DropDelegate {
                         userInfo: ["sourcePath": draggedPath, "destDir": destDir]
                     )
 
-                case .above(_):
+                case .above(let insertIndex):
                     let draggedName = (draggedPath as NSString).lastPathComponent
                     let draggedParent = (draggedPath as NSString).deletingLastPathComponent
                     let entryParents = Set(entries.map { ($0.path as NSString).deletingLastPathComponent })
@@ -202,11 +222,11 @@ struct FileTreeDropDelegate: DropDelegate {
 
                     fileSystem.reorderEntry(
                         named: draggedName,
-                        toIndex: targetIndex,
+                        toIndex: insertIndex,
                         inParent: parentPath,
                         siblings: entries
                     )
-                    onRefreshTree()
+                    onDidReorder()
 
                 case .none:
                     break
