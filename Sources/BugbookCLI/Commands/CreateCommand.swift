@@ -46,6 +46,14 @@ struct Create: ParsableCommand {
             }
         }
 
+        // Fall back to _template.md if no body provided
+        if bodyContent.isEmpty {
+            let templatePath = (dbPath as NSString).appendingPathComponent("_template.md")
+            if let template = try? String(contentsOfFile: templatePath, encoding: .utf8) {
+                bodyContent = template
+            }
+        }
+
         // Create the row
         let rowId = RowStore.generateRowId()
         let now = Date()

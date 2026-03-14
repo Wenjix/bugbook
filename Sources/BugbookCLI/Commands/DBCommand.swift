@@ -6,7 +6,7 @@ struct DB: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "db",
         abstract: "Database management commands",
-        subcommands: [List.self, Schema.self, CreateDB.self, Move.self, DBView.self]
+        subcommands: [List.self, Schema.self, CreateDB.self, Move.self, DBView.self, Template.self]
     )
 
     struct List: ParsableCommand {
@@ -92,6 +92,28 @@ struct DB: ParsableCommand {
             try store.saveSchema(dbSchema, at: path)
 
             try outputJSON(["path": path, "id": dbSchema.id, "name": dbSchema.name])
+        }
+    }
+
+    struct Template: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "template",
+            abstract: "Print the body template for a database"
+        )
+
+        @OptionGroup var options: Bugbook.Options
+
+        @Argument(help: "Database name or ID")
+        var db: String
+
+        func run() throws {
+            let (dbPath, _) = try resolveDatabase(db, workspace: options.resolvedWorkspace)
+            let templatePath = (dbPath as NSString).appendingPathComponent("_template.md")
+            if let content = try? String(contentsOfFile: templatePath, encoding: .utf8) {
+                FileHandle.standardOutput.write(Data(content.utf8))
+            } else {
+                throw CLIError.invalidInput("No template found for database")
+            }
         }
     }
 
