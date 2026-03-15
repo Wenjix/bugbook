@@ -63,7 +63,9 @@ struct InlineRowPeekPanel: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
-            if vm.schema != nil, vm.row != nil {
+            if let error = vm.error {
+                RowLoadErrorView(message: error) { vm.loadData(rowId: rowId) }
+            } else if vm.schema != nil, vm.row != nil {
                 vm.rowPageView(onBack: { onClose() }, fullWidth: true, workspacePath: workspacePath)
             } else {
                 Spacer()
@@ -82,7 +84,6 @@ struct InlineRowPeekPanel: View {
                 .allowsHitTesting(false)
         }
         .task { vm.loadData(rowId: rowId) }
-        .onChange(of: rowId) { _, _ in vm.loadData(rowId: rowId) }
         .onDisappear { vm.flushAndCancel() }
     }
 

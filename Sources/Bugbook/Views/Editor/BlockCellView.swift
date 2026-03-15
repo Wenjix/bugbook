@@ -49,7 +49,7 @@ struct BlockCellView: View {
             handleView
 
             interactiveBlockContent
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: isEmptyParagraph ? 28 : 0, alignment: .leading)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, block.type == .horizontalRule ? 1 : 2)
@@ -64,6 +64,10 @@ struct BlockCellView: View {
         .onHover { inside in
             isRowHovering = inside
         }
+    }
+
+    private var isEmptyParagraph: Bool {
+        block.type == .paragraph && block.text.isEmpty
     }
 
     private var blockUsesOwnInteractions: Bool {

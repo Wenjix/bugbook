@@ -21,19 +21,7 @@ struct DatabaseRowFullPageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let error = vm.error {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.secondary)
-                    Text("Failed to load row")
-                        .font(.headline)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("Retry") { vm.loadData(rowId: rowId) }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                RowLoadErrorView(message: error) { vm.loadData(rowId: rowId) }
             } else if vm.schema != nil, vm.row != nil {
                 vm.rowPageView(fullWidth: fullWidth, workspacePath: workspacePath)
             } else {
@@ -44,6 +32,11 @@ struct DatabaseRowFullPageView: View {
         .background(Color.fallbackEditorBg)
         .task { vm.loadData(rowId: rowId) }
         .onChange(of: rowId) { _, _ in vm.loadData(rowId: rowId) }
+        .onChange(of: dbPath) { _, newDbPath in
+            vm.flushAndCancel()
+            vm = DatabaseRowViewModel(dbPath: newDbPath, origin: "rowFullPage")
+            vm.loadData(rowId: rowId)
+        }
         .onDisappear { vm.flushAndCancel() }
         .onChange(of: vm.row) { _, newRow in
             if let newRow, let schema = vm.schema {

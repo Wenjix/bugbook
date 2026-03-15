@@ -843,6 +843,7 @@ struct ContentView: View {
                             openDatabaseRowPage(dbPath: peek.dbPath, rowId: peek.rowId, preferExistingTab: true)
                         }
                     )
+                    .id("\(peek.dbPath)|\(peek.rowId)")
                 }
                 .frame(width: peekWidth)
                 .background(Color.fallbackEditorBg)

@@ -87,7 +87,9 @@ struct BlockEditorView: View {
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
                 let nextBlock = index + 1 < document.blocks.count ? document.blocks[index + 1] : nil
                 let useTallDropZone = block.type == .databaseEmbed
+                    || block.type == .pageLink
                     || nextBlock?.type == .image
+                    || nextBlock?.type == .pageLink
                 // After an image block use a slimmer drop zone since ImageBlockView
                 // already provides a generous 44pt tap region internally.
                 let dropZoneAfterImage = block.type == .image

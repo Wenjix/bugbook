@@ -49,21 +49,7 @@ struct DatabaseRowModalView: View {
             .padding(.vertical, 12)
 
             if let error = vm.error {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.secondary)
-                    Text("Failed to load row")
-                        .font(.headline)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("Close") { onClose() }
-                        .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(24)
+                RowLoadErrorView(message: error, buttonLabel: "Close") { onClose() }
             } else if vm.schema != nil, vm.row != nil {
                 vm.rowPageView(onBack: { onClose() }, autoFocusTitle: autoFocusTitle, workspacePath: workspacePath)
             } else {
@@ -92,6 +78,11 @@ struct DatabaseRowModalView: View {
         .onExitCommand { onClose() }
         .task { vm.loadData(rowId: rowId) }
         .onChange(of: rowId) { _, _ in vm.loadData(rowId: rowId) }
+        .onChange(of: dbPath) { _, newDbPath in
+            vm.flushAndCancel()
+            vm = DatabaseRowViewModel(dbPath: newDbPath, origin: "rowModal")
+            vm.loadData(rowId: rowId)
+        }
         .onDisappear {
             vm.flushAndCancel()
             if vm.didEdit {

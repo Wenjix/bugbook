@@ -136,6 +136,30 @@ func requestDatabaseRowModal(dbPath: String, rowId: String, autoFocusTitle: Bool
     }
 }
 
+struct RowLoadErrorView: View {
+    let message: String
+    var buttonLabel: String = "Retry"
+    let onAction: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+            Text("Failed to load row")
+                .font(.headline)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button(buttonLabel, action: onAction)
+                .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+    }
+}
+
 func defaultDatabaseViewConfig() -> ViewConfig {
     ViewConfig(id: "default", name: "Table", type: .table, sorts: [], filters: [])
 }
