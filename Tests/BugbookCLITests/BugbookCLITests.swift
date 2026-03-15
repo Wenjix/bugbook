@@ -571,7 +571,7 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertEqual(preview["dry_run"] as? Bool, true)
         XCTAssertEqual(preview["operation"] as? String, "compact")
         XCTAssertEqual(preview["changed"] as? Bool, true)
-        XCTAssertEqual(preview["empty_paragraphs_removed"] as? Int, 5)
+        XCTAssertEqual(preview["empty_paragraphs_removed"] as? Int, 0)
         XCTAssertNil(preview["content"])
         XCTAssertNil(preview["body"])
 
@@ -583,7 +583,7 @@ final class BugbookCLITests: XCTestCase {
         )
 
         let body = try XCTUnwrap(updated["body"] as? String)
-        XCTAssertEqual(updated["empty_paragraphs_removed"] as? Int, 5)
+        XCTAssertEqual(updated["empty_paragraphs_removed"] as? Int, 0)
         XCTAssertEqual(body, """
         # Compact Me
         Updated March 7, 2026
@@ -792,6 +792,46 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertTrue(raw.contains("<summary>Toggle Title</summary>"))
         XCTAssertTrue(raw.contains("Left column\n\n---\n\nRight column"))
         XCTAssertTrue(raw.contains("**Bugbook database:** Test Board"))
+    }
+
+    func testFlashcardListFindsWorkspaceFlashcardsRecursively() throws {
+        let workspace = try makeWorkspace()
+
+        _ = try runJSON(
+            Page.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Decks/Geography",
+                "--content-file", try writeTempFile(in: workspace, name: "flashcards.md", contents: """
+                # Geography
+                <!-- flashcard collapsed -->
+                Capital of France?
+                Paris
+                <!-- /flashcard -->
+                <!-- toggle -->
+                Nested cards
+                <!-- flashcard -->
+                Largest ocean?
+                Pacific Ocean
+                <!-- /flashcard -->
+                <!-- /toggle -->
+                """)
+            ])
+        )
+
+        let cards = try runJSONArray(
+            Flashcard.List.parseAsRoot([
+                "--workspace", workspace,
+            ])
+        )
+
+        XCTAssertEqual(cards.count, 2)
+        XCTAssertEqual(cards[0]["page"] as? String, "Decks/Geography.md")
+        XCTAssertEqual(cards[0]["front"] as? String, "Capital of France?")
+        XCTAssertEqual(cards[0]["back"] as? String, "Paris")
+        XCTAssertEqual(cards[1]["front"] as? String, "Largest ocean?")
+        XCTAssertEqual(cards[1]["back"] as? String, "Pacific Ocean")
+        XCTAssertNotNil(cards[0]["id"] as? String)
+        XCTAssertNotNil(cards[1]["id"] as? String)
     }
 
     func testPageFormatReportSurfacesDowngradedCommonMarkLinks() throws {

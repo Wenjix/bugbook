@@ -251,7 +251,16 @@ func resolveWorkspacePagePath(_ query: String, workspace: String) throws -> Stri
     }
 
     if matches.isEmpty {
-        throw CLIError.invalidInput("Page not found: \(query)")
+        // Fall back to database row pages (structured content directories)
+        let rowMatches = try workspacePageMatches(for: query, workspace: normalizedWorkspace, includeStructuredContent: true)
+        if rowMatches.count == 1, let match = rowMatches.first {
+            return match.path
+        }
+        if rowMatches.isEmpty {
+            throw CLIError.invalidInput("Page not found: \(query)")
+        }
+        let rowOptions = rowMatches.map(\.relativePath).sorted().joined(separator: ", ")
+        throw CLIError.invalidInput("Page reference is ambiguous: \(query). Matches: \(rowOptions)")
     }
 
     let options = matches.map(\.relativePath).sorted().joined(separator: ", ")
@@ -542,14 +551,15 @@ func resolveWorkspacePageSection(
     return workspacePageSectionRecord(from: section, bodyLines: bodyLines, prefixLineCount: prefixLineCount)
 }
 
-private func workspacePageMatches(for query: String, workspace: String) throws -> [WorkspacePageLookupCandidate] {
-    let candidates = collectWorkspacePageLookupCandidates(in: workspace)
+private func workspacePageMatches(for query: String, workspace: String, includeStructuredContent: Bool = false) throws -> [WorkspacePageLookupCandidate] {
+    let candidates = collectWorkspacePageLookupCandidates(in: workspace, includeStructuredContent: includeStructuredContent)
     let needle = normalizePageLookup(query)
 
     let directMatches = candidates.filter { candidate in
         normalizePageLookup(candidate.relativePath) == needle
             || normalizePageLookup((candidate.relativePath as NSString).deletingPathExtension) == needle
             || normalizePageLookup(candidate.name) == needle
+            || normalizePageLookup(stripRowIDSuffix(candidate.name)) == needle
     }
 
     if !directMatches.isEmpty {
@@ -564,9 +574,9 @@ private func workspacePageMatches(for query: String, workspace: String) throws -
     }
 }
 
-private func collectWorkspacePageLookupCandidates(in workspace: String) -> [WorkspacePageLookupCandidate] {
+private func collectWorkspacePageLookupCandidates(in workspace: String, includeStructuredContent: Bool = false) -> [WorkspacePageLookupCandidate] {
     var candidates: [WorkspacePageLookupCandidate] = []
-    walkWorkspaceMarkdownFiles(in: workspace, includeStructuredContent: false) { filePath, relativePath in
+    walkWorkspaceMarkdownFiles(in: workspace, includeStructuredContent: includeStructuredContent) { filePath, relativePath in
         candidates.append(
             WorkspacePageLookupCandidate(
                 path: filePath,
@@ -1124,6 +1134,14 @@ func companionFolderPath(for pagePath: String) -> String {
 func pageDisplayName(fromPath path: String) -> String {
     let filename = (path as NSString).lastPathComponent
     return filename.hasSuffix(".md") ? String(filename.dropLast(3)) : filename
+}
+
+private func stripRowIDSuffix(_ name: String) -> String {
+    // Database row filenames have the format "Name (row_id)" — strip the trailing " (id)" for matching
+    guard let range = name.range(of: #" \([a-zA-Z0-9_]+\)$"#, options: .regularExpression) else {
+        return name
+    }
+    return String(name[name.startIndex..<range.lowerBound])
 }
 
 func normalizePageLookup(_ value: String) -> String {

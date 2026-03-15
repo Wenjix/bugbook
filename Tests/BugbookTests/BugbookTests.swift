@@ -365,6 +365,20 @@ final class BlockDocumentTests: XCTestCase {
         XCTAssertEqual(doc.blocks[1].type, .bulletListItem)
     }
 
+    func testChangeBlockTypeToFlashcardStartsCollapsed() {
+        let doc = BlockDocument(markdown: "# Title\nQuestion\n")
+        guard doc.blocks.count >= 2 else {
+            XCTFail("Expected at least 2 blocks")
+            return
+        }
+
+        let paragraphId = doc.blocks[1].id
+        doc.changeBlockType(id: paragraphId, to: .flashcard)
+
+        XCTAssertEqual(doc.blocks[1].type, .flashcard)
+        XCTAssertFalse(doc.blocks[1].isExpanded)
+    }
+
     func testToggleCheck() {
         let doc = BlockDocument(markdown: "# Title\n- [ ] Task\n")
         guard doc.blocks.count >= 2 else {
@@ -597,6 +611,38 @@ final class BlockDocumentTests: XCTestCase {
         XCTAssertEqual(reparsed.blocks.count, 1)
         XCTAssertEqual(reparsed.blocks[0].type, .paragraph)
         XCTAssertEqual(reparsed.blocks[0].text, "- not a list")
+    }
+
+    func testMarkdownRoundTripsFlashcardBlocks() {
+        let markdown = """
+        # Title
+        <!-- flashcard collapsed -->
+        Front of card
+        Back paragraph
+        - Back bullet
+        <!-- /flashcard -->
+        """
+
+        let doc = BlockDocument(markdown: markdown)
+        XCTAssertEqual(doc.blocks.count, 2)
+        XCTAssertEqual(doc.blocks[1].type, .flashcard)
+        XCTAssertEqual(doc.blocks[1].text, "Front of card")
+        XCTAssertFalse(doc.blocks[1].isExpanded)
+        XCTAssertEqual(doc.blocks[1].children.count, 2)
+        XCTAssertEqual(doc.blocks[1].children[0].text, "Back paragraph")
+        XCTAssertEqual(doc.blocks[1].children[1].type, .bulletListItem)
+
+        let output = doc.markdown
+        XCTAssertTrue(output.contains("<!-- flashcard collapsed -->"))
+        XCTAssertTrue(output.contains("<!-- /flashcard -->"))
+
+        let reparsed = BlockDocument(markdown: output)
+        XCTAssertEqual(reparsed.blocks[1].type, .flashcard)
+        XCTAssertEqual(reparsed.blocks[1].text, "Front of card")
+        XCTAssertFalse(reparsed.blocks[1].isExpanded)
+        XCTAssertEqual(reparsed.blocks[1].children.count, 2)
+        XCTAssertEqual(reparsed.blocks[1].children[0].text, "Back paragraph")
+        XCTAssertEqual(reparsed.blocks[1].children[1].type, .bulletListItem)
     }
 }
 
@@ -871,7 +917,7 @@ final class BlockModelTests: XCTestCase {
         let types: [BlockType] = [
             .paragraph, .heading, .bulletListItem, .numberedListItem,
             .taskItem, .codeBlock, .blockquote, .horizontalRule,
-            .image, .databaseEmbed, .pageLink, .column, .toggle
+            .image, .databaseEmbed, .pageLink, .column, .toggle, .flashcard
         ]
         // Verify all types can be used in Block init
         for type in types {

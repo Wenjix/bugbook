@@ -72,7 +72,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image, .pageLink:
+        case .databaseEmbed, .image, .pageLink, .flashcard:
             true
         default:
             false
@@ -92,7 +92,7 @@ struct BlockCellView: View {
 
     private var blockInteractionCursor: NSCursor {
         switch block.type {
-        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .codeBlock, .toggle:
+        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .codeBlock, .toggle, .flashcard:
             return .iBeam
         default:
             return .arrow
@@ -249,6 +249,9 @@ struct BlockCellView: View {
 
         case .toggle:
             ToggleBlockView(document: document, block: block, onTyping: onTyping)
+
+        case .flashcard:
+            FlashcardBlockView(document: document, block: block, onTyping: onTyping)
 
         case .column:
             ColumnBlockView(document: document, block: block, onTyping: onTyping)

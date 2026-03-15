@@ -148,11 +148,25 @@ struct Page: ParsableCommand {
         @Option(name: .long, help: "Initial content file path, or - for stdin")
         var contentFile: String?
 
+        @Option(name: .long, help: "Apply a built-in template: meeting-notes, project-brief, tracker")
+        var template: String?
+
         @Option(name: .long, help: "Response payload mode: full or summary")
         var output: MutationOutputMode = .full
 
         func run() throws {
-            let content = try contentFile.map(readTextInput)
+            if contentFile != nil && template != nil {
+                throw CLIError.invalidInput("--content-file and --template are mutually exclusive")
+            }
+
+            let content: String?
+            if let template {
+                let pageTitle = title ?? pageDisplayName(fromPath: page)
+                content = try pageTemplateContent(named: template, title: pageTitle)
+            } else {
+                content = try contentFile.map(readTextInput)
+            }
+
             let record = try createWorkspacePage(
                 rawPath: page,
                 workspace: options.resolvedWorkspace,
@@ -531,6 +545,67 @@ struct Page: ParsableCommand {
             )
             try outputJSON(output)
         }
+    }
+}
+
+private func pageTemplateContent(named template: String, title: String) throws -> String {
+    switch template {
+    case "meeting-notes":
+        return """
+        # \(title)
+
+        **Date:** \(ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withFullDate, .withDashSeparatorInDate]))
+        **Attendees:**
+
+        ## Agenda
+
+        -
+
+        ## Discussion
+
+        -
+
+        ## Action Items
+
+        - [ ]
+
+        ## Next Steps
+
+        -
+        """
+    case "project-brief":
+        return """
+        # \(title)
+
+        ## Overview
+
+
+
+        ## Goals
+
+        1.
+
+        ## Timeline
+
+
+
+        ## Resources
+
+        -
+
+        ## Open Questions
+
+        -
+        """
+    case "tracker":
+        return """
+        # \(title)
+
+
+
+        """
+    default:
+        throw CLIError.invalidInput("Unknown template: \(template). Available: meeting-notes, project-brief, tracker")
     }
 }
 

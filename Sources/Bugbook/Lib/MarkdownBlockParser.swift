@@ -270,6 +270,26 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Flashcard block
+            if trimmed == "<!-- flashcard -->" || trimmed == "<!-- flashcard collapsed -->" {
+                let collapsed = trimmed.contains("collapsed")
+                i += 1
+                let frontText = i < lines.count ? lines[i] : ""
+                i += 1
+                var backLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /flashcard -->" {
+                        i += 1
+                        break
+                    }
+                    backLines.append(lines[i])
+                    i += 1
+                }
+                let children = backLines.isEmpty ? [] : parse(backLines.joined(separator: "\n"))
+                blocks.append(makeBlock(type: .flashcard, text: frontText, children: children, isExpanded: !collapsed))
+                continue
+            }
+
             // Column block
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
@@ -337,7 +357,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle {
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .flashcard {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -401,6 +421,14 @@ enum MarkdownBlockParser {
                     lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
                 }
                 lines.append("<!-- /toggle -->")
+
+            case .flashcard:
+                lines.append(block.isExpanded ? "<!-- flashcard -->" : "<!-- flashcard collapsed -->")
+                lines.append(block.text)
+                if !block.children.isEmpty {
+                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
+                }
+                lines.append("<!-- /flashcard -->")
 
             case .column:
                 lines.append("<!-- columns -->")
@@ -476,6 +504,9 @@ enum MarkdownBlockParser {
         return trimmed == "<!-- toggle -->"
             || trimmed == "<!-- toggle collapsed -->"
             || trimmed == "<!-- /toggle -->"
+            || trimmed == "<!-- flashcard -->"
+            || trimmed == "<!-- flashcard collapsed -->"
+            || trimmed == "<!-- /flashcard -->"
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
