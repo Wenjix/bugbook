@@ -241,6 +241,13 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Page link comment — <!-- bugbook-page-link: Name -->
+            if let name = parsePageLinkComment(line) {
+                blocks.append(makeBlock(type: .pageLink, pageLinkName: name))
+                i += 1
+                continue
+            }
+
             // Toggle block
             if trimmed == "<!-- toggle -->" || trimmed == "<!-- toggle collapsed -->" {
                 let collapsed = trimmed.contains("collapsed")
@@ -463,7 +470,7 @@ enum MarkdownBlockParser {
         if parseTaskItem(line) != nil || parseBulletItem(line) != nil || parseNumberedItem(line) != nil {
             return true
         }
-        if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil {
+        if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
             return true
         }
         return trimmed == "<!-- toggle -->"
@@ -625,6 +632,22 @@ enum MarkdownBlockParser {
         guard trimmed.hasPrefix("[["), trimmed.hasSuffix("]]") else { return nil }
         let name = String(trimmed.dropFirst(2).dropLast(2))
         return name.isEmpty ? nil : name
+    }
+
+    private static func parsePageLinkComment(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->") else { return nil }
+        let prefixes = ["bugbook-page-link:", "page-link:"]
+        for prefix in prefixes {
+            if let marker = trimmed.range(of: prefix) {
+                let nameStart = marker.upperBound
+                let nameEnd = trimmed.index(trimmed.endIndex, offsetBy: -3)
+                guard nameStart < nameEnd else { return nil }
+                let name = String(trimmed[nameStart..<nameEnd]).trimmingCharacters(in: .whitespaces)
+                return name.isEmpty ? nil : name
+            }
+        }
+        return nil
     }
 
     private static func parseBlockIDComment(_ line: String) -> UUID? {

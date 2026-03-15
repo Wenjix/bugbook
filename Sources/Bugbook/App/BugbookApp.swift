@@ -91,6 +91,11 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
+                Button("Calendar") {
+                    NotificationCenter.default.post(name: .openCalendar, object: nil)
+                }
+                .keyboardShortcut("y", modifiers: [.command, .shift])
+
                 Button("Toggle Theme") {
                     NotificationCenter.default.post(name: .toggleTheme, object: nil)
                 }
@@ -308,6 +313,7 @@ extension Notification.Name {
     static let editorZoomIn = Notification.Name("editorZoomIn")
     static let editorZoomOut = Notification.Name("editorZoomOut")
     static let editorZoomReset = Notification.Name("editorZoomReset")
+    static let openCalendar = Notification.Name("openCalendar")
     static let fileDeleted = Notification.Name("fileDeleted")
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")

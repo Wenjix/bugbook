@@ -11,6 +11,9 @@ struct ContentView: View {
     @State private var appState = AppState()
     @State private var fileSystem = FileSystemService()
     @State private var aiService = AiService()
+    @State private var calendarService = CalendarService()
+    @State private var calendarVM = CalendarViewModel()
+    @State private var meetingNoteService = MeetingNoteService()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
@@ -29,7 +32,7 @@ struct ContentView: View {
 
     // Database row peek / modal
     private struct RowTarget {
-        let dbPath: String
+        var dbPath: String
         let rowId: String
         var autoFocusTitle: Bool = false
     }
@@ -169,6 +172,14 @@ struct ContentView: View {
                     removeDatabaseEmbedsFromOpenDocs(dbPath: path)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .fileMoved)) { notification in
+                guard let info = notification.userInfo,
+                      let oldPath = info["oldPath"] as? String,
+                      let newPath = info["newPath"] as? String else {
+                    return
+                }
+                handleFileMove(from: oldPath, to: newPath)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .movePage)) { notification in
                 if let path = notification.object as? String {
                     appState.movePagePath = path
@@ -233,6 +244,9 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .openGraphView)) { _ in
                 appState.openGraphView()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
+                appState.openCalendar()
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
@@ -534,6 +548,7 @@ struct ContentView: View {
         do {
             let newPath = try fileSystem.movePage(at: sourcePath, toDirectory: destDir)
             let oldPath = sourcePath
+            let movingDatabase = fileSystem.isDatabaseFolder(at: newPath)
 
             // Update any open tabs pointing to the old path
             for tab in appState.openTabs {
@@ -573,7 +588,7 @@ struct ContentView: View {
 
             // Insert a page link in the parent page's content
             let parentPagePath = destDir + ".md"
-            if FileManager.default.fileExists(atPath: parentPagePath) {
+            if !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
                 let pageName = (newPath as NSString).lastPathComponent
                     .replacingOccurrences(of: ".md", with: "")
                 let linkLine = "[[\(pageName)]]"
@@ -625,7 +640,7 @@ struct ContentView: View {
 
                         // Remove the page link from the parent page
                         let parentPagePath = destDir + ".md"
-                        if FileManager.default.fileExists(atPath: parentPagePath) {
+                        if !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
                             let pageName = (newPath as NSString).lastPathComponent
                                 .replacingOccurrences(of: ".md", with: "")
                             let linkLine = "[[\(pageName)]]"
@@ -708,7 +723,8 @@ struct ContentView: View {
                     editorModeContent
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea(.container, edges: .top)
             .background(Color.fallbackEditorBg)
 
             if appState.aiSidePanelOpen && appState.currentView == .editor {
@@ -721,7 +737,7 @@ struct ContentView: View {
                     .transition(.move(edge: .trailing))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipShape(
             UnevenRoundedRectangle(
                 topLeadingRadius: appState.sidebarOpen ? ShellZoomMetrics.size(14) : 0,
@@ -740,6 +756,12 @@ struct ContentView: View {
         }
     }
 
+    private var activeTabLeadingPadding: CGFloat {
+        let isCalendar = appState.activeTab?.isCalendar ?? false
+        if isCalendar { return 0 }
+        return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
+    }
+
     @ViewBuilder
     private var editorModeContent: some View {
         TabBarView(
@@ -752,7 +774,7 @@ struct ContentView: View {
             .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
 
         VStack(spacing: 0) {
-            if let tab = appState.activeTab, !tab.isEmptyTab {
+            if let tab = appState.activeTab, !tab.isEmptyTab, !tab.isCalendar {
                 HStack {
                     BreadcrumbView(
                         items: breadcrumbs(for: tab),
@@ -789,7 +811,8 @@ struct ContentView: View {
             activeTabContent
                 .environment(\.workspacePath, appState.workspacePath)
         }
-        .padding(.leading, appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78))
+        .padding(.leading, activeTabLeadingPadding)
+        .ignoresSafeArea(.container, edges: .top)
         .overlay(alignment: .trailing) {
             if let peek = peekTarget {
                 HStack(spacing: 0) {
@@ -882,6 +905,16 @@ struct ContentView: View {
                     fullWidth: databaseRowFullWidth[tab.id, default: false]
                 )
                 .id(tab.id)
+            } else if tab.isCalendar {
+                WorkspaceCalendarView(
+                    appState: appState,
+                    calendarService: calendarService,
+                    calendarVM: calendarVM,
+                    meetingNoteService: meetingNoteService,
+                    onNavigateToFile: { path in
+                        navigateToFilePath(path)
+                    }
+                )
             } else if tab.isDatabase {
                 DatabaseFullPageView(dbPath: tab.path, initialRowId: dbInitialRowId)
                     .id(tab.id)
@@ -1012,8 +1045,8 @@ struct ContentView: View {
 
     private func wireUpDocumentCallbacks(_ doc: BlockDocument) {
         doc.onCreateDatabase = { [weak appState] name in
-            guard let workspace = appState?.workspacePath else { return nil }
-            let path = try? fileSystem.createDatabase(in: workspace, name: name)
+            guard appState?.workspacePath != nil else { return nil }
+            let path = try? createDatabasePath(name: name, parentPagePath: doc.filePath)
             if path != nil { refreshFileTree() }
             return path
         }
@@ -1912,9 +1945,8 @@ struct ContentView: View {
     }
 
     private func createNewDatabase() {
-        guard let workspace = appState.workspacePath else { return }
         do {
-            let path = try fileSystem.createDatabase(in: workspace, name: "Untitled Database")
+            let path = try createDatabasePath(name: "Untitled Database")
             let displayName = (path as NSString).lastPathComponent
             let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .database)
             appState.openFile(entry)
@@ -1922,6 +1954,119 @@ struct ContentView: View {
         } catch {
             Log.database.error("Failed to create database: \(error.localizedDescription)")
         }
+    }
+
+    private func createDatabasePath(name: String, parentPagePath: String? = nil) throws -> String {
+        guard let workspace = appState.workspacePath else {
+            throw NSError(
+                domain: NSCocoaErrorDomain,
+                code: NSFileNoSuchFileError,
+                userInfo: [NSLocalizedDescriptionKey: "No workspace is open."]
+            )
+        }
+
+        if let pagePath = parentPagePath ?? activePagePathForDatabaseCreation(),
+           pagePath.hasSuffix(".md"),
+           !fileSystem.isDatabaseFolder(at: (pagePath as NSString).deletingLastPathComponent) {
+            return try fileSystem.createDatabase(underPage: pagePath, name: name)
+        }
+        return try fileSystem.createDatabase(in: workspace, name: name)
+    }
+
+    private func activePagePathForDatabaseCreation() -> String? {
+        guard let tab = appState.activeTab,
+              tab.kind == .page,
+              tab.path.hasSuffix(".md") else {
+            return nil
+        }
+        return tab.path
+    }
+
+    private func handleFileMove(from oldPath: String, to newPath: String) {
+        guard oldPath != newPath,
+              fileSystem.isDatabaseFolder(at: newPath) else {
+            return
+        }
+
+        updateOpenDatabaseTabs(from: oldPath, to: newPath)
+
+        let updatedOpenDocPaths = retargetDatabaseEmbedsInOpenDocs(from: oldPath, to: newPath)
+        if let workspace = appState.workspacePath {
+            fileSystem.retargetDatabaseEmbedsInWorkspace(
+                from: oldPath,
+                to: newPath,
+                workspace: workspace,
+                excluding: updatedOpenDocPaths
+            )
+        }
+
+        if peekTarget?.dbPath == oldPath {
+            peekTarget?.dbPath = newPath
+        }
+        if modalTarget?.dbPath == oldPath {
+            modalTarget?.dbPath = newPath
+        }
+    }
+
+    private func updateOpenDatabaseTabs(from oldPath: String, to newPath: String) {
+        for tab in appState.openTabs {
+            appState.updateNavigationPath(for: tab.id, from: oldPath, to: newPath)
+        }
+
+        for index in appState.openTabs.indices {
+            guard case let .databaseRow(dbPath, rowId) = appState.openTabs[index].kind,
+                  dbPath == oldPath else {
+                continue
+            }
+
+            let oldRowPath = DatabaseRowNavigationPath.make(dbPath: dbPath, rowId: rowId)
+            let newRowPath = DatabaseRowNavigationPath.make(dbPath: newPath, rowId: rowId)
+            appState.openTabs[index].kind = .databaseRow(dbPath: newPath, rowId: rowId)
+            appState.updateNavigationPath(for: appState.openTabs[index].id, from: oldRowPath, to: newRowPath)
+        }
+    }
+
+    private func retargetDatabaseEmbedsInOpenDocs(from oldPath: String, to newPath: String) -> Set<String> {
+        var updatedPaths: Set<String> = []
+
+        for (tabId, doc) in blockDocuments {
+            guard let filePath = doc.filePath,
+                  filePath.hasSuffix(".md") else {
+                continue
+            }
+
+            guard updateDatabasePaths(in: &doc.blocks, from: oldPath, to: newPath) else {
+                continue
+            }
+
+            updatedPaths.insert(filePath)
+            if let tabIndex = appState.openTabs.firstIndex(where: { $0.id == tabId }) {
+                appState.openTabs[tabIndex].content = doc.markdown
+                if !appState.openTabs[tabIndex].isDirty {
+                    try? fileSystem.saveFile(at: filePath, content: doc.markdown)
+                }
+            }
+        }
+
+        return updatedPaths
+    }
+
+    private func updateDatabasePaths(in blocks: inout [Block], from oldPath: String, to newPath: String) -> Bool {
+        var didUpdate = false
+
+        for index in blocks.indices {
+            if blocks[index].type == .databaseEmbed,
+               blocks[index].databasePath == oldPath {
+                blocks[index].databasePath = newPath
+                didUpdate = true
+            }
+
+            if updateDatabasePaths(in: &blocks[index].children, from: oldPath, to: newPath) {
+                didUpdate = true
+            }
+        }
+
+        return didUpdate
     }
 
     private func openWorkspace() async {

@@ -180,6 +180,10 @@ class FileSystemService {
         try fileManager.moveItem(atPath: oldPath, toPath: newPath)
         Log.fileSystem.info("Renamed: \((oldPath as NSString).lastPathComponent) → \((newPath as NSString).lastPathComponent)")
         SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "file.rename"))
+        NotificationCenter.default.post(name: .fileMoved, object: nil, userInfo: [
+            "oldPath": oldPath,
+            "newPath": newPath
+        ])
     }
 
     func deleteFile(at path: String) throws {
@@ -266,7 +270,7 @@ class FileSystemService {
         // Check companion folder conflict before moving anything
         let sourceCompanion = companionFolderPath(for: sourcePath)
         let destCompanion = companionFolderPath(for: destPath)
-        let hasCompanion = fileManager.fileExists(atPath: sourceCompanion)
+        let hasCompanion = sourcePath.hasSuffix(".md") && fileManager.fileExists(atPath: sourceCompanion)
         if hasCompanion && fileManager.fileExists(atPath: destCompanion) {
             throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteFileExistsError,
                           userInfo: [NSLocalizedDescriptionKey: "A folder named \"\((sourceCompanion as NSString).lastPathComponent)\" already exists in the destination."])
@@ -311,6 +315,14 @@ class FileSystemService {
         return filePath
     }
 
+    func createDatabase(underPage pagePath: String, name: String) throws -> String {
+        let companion = companionFolderPath(for: pagePath)
+        if !fileManager.fileExists(atPath: companion) {
+            try fileManager.createDirectory(atPath: companion, withIntermediateDirectories: true)
+        }
+        return try createDatabase(in: companion, name: name)
+    }
+
     func createDatabase(in directory: String, name: String) throws -> String {
         let sanitizedName = sanitizeDatabaseFolderName(name)
         let folderPath = uniqueDirectoryPath(in: directory, base: sanitizedName)
@@ -348,6 +360,37 @@ class FileSystemService {
         try indexData.write(to: URL(fileURLWithPath: indexPath), options: .atomic)
 
         return folderPath
+    }
+
+    func retargetDatabaseEmbedsInWorkspace(
+        from oldDatabasePath: String,
+        to newDatabasePath: String,
+        workspace: String,
+        excluding excludedPaths: Set<String> = []
+    ) {
+        let oldMarker = "<!-- database: \(oldDatabasePath) -->"
+        let newMarker = "<!-- database: \(newDatabasePath) -->"
+        guard oldMarker != newMarker else { return }
+
+        guard let enumerator = fileManager.enumerator(atPath: workspace) else { return }
+        while let relativePath = enumerator.nextObject() as? String {
+            if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) {
+                enumerator.skipDescendants()
+                continue
+            }
+
+            guard relativePath.hasSuffix(".md") else { continue }
+            let filePath = (workspace as NSString).appendingPathComponent(relativePath)
+            guard !excludedPaths.contains(filePath),
+                  let content = try? String(contentsOfFile: filePath, encoding: .utf8),
+                  content.contains(oldMarker) else {
+                continue
+            }
+
+            let nextContent = content.replacingOccurrences(of: oldMarker, with: newMarker)
+            guard nextContent != content else { continue }
+            try? nextContent.write(toFile: filePath, atomically: true, encoding: .utf8)
+        }
     }
 
     // MARK: - Daily Notes
@@ -774,7 +817,7 @@ class FileSystemService {
         siblings.contains("\(folderName).md")
     }
 
-    private func isDatabaseFolder(at path: String) -> Bool {
+    func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return fileManager.fileExists(atPath: schemaPath)
     }

@@ -16,6 +16,7 @@ struct OpenFile: Identifiable, Equatable {
     // Shims forwarding to kind for incremental migration
     var isDatabase: Bool { kind.isDatabase }
     var isCanvas: Bool { kind.isCanvas }
+    var isCalendar: Bool { kind.isCalendar }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }

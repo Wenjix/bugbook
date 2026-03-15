@@ -648,7 +648,6 @@ struct DatabaseInlineEmbedView: View {
                     scrollToRowId: newRowScrollId,
                     usesInnerScroll: false
                 )
-                .fixedSize(horizontal: true, vertical: true)
             }
             .scrollIndicators(.visible)
         case .kanban:

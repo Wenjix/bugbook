@@ -23,6 +23,7 @@ struct SidebarView: View {
         ("general", "General", "gearshape"),
         ("appearance", "Appearance", "paintbrush"),
         ("ai", "AI", "cpu"),
+        ("calendar", "Calendar", "calendar"),
         ("agents", "Agents", "person.2"),
         ("search", "Search", "magnifyingglass"),
         ("shortcuts", "Shortcuts", "keyboard"),
@@ -219,6 +220,25 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "graph" : nil }
+
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openCalendar, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Text("Calendar")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
+                    .background(hoveredButton == "calendar" ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "calendar" : nil }
             }
             .padding(.horizontal, sectionHorizontalPadding)
             }

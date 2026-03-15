@@ -12,6 +12,7 @@ enum ViewMode {
     case editor
     case chat
     case graphView
+    case calendar
 }
 
 @MainActor
@@ -334,6 +335,30 @@ enum ViewMode {
         showSettings = false
         aiSidePanelOpen = false
         currentView = .graphView
+    }
+
+    func openCalendar() {
+        showSettings = false
+        currentView = .editor
+
+        // Open calendar as a tab (reuse existing if open)
+        let calendarPath = "bugbook://calendar"
+        if let existingIndex = openTabs.firstIndex(where: { $0.isCalendar }) {
+            activeTabIndex = existingIndex
+            return
+        }
+        let tab = OpenFile(
+            id: UUID(),
+            path: calendarPath,
+            content: "",
+            isDirty: false,
+            isEmptyTab: false,
+            kind: .calendar,
+            displayName: "Calendar",
+            icon: "calendar.badge.clock"
+        )
+        openTabs.append(tab)
+        activeTabIndex = openTabs.count - 1
     }
 
     func toggleAiPanel(prompt: String? = nil) {

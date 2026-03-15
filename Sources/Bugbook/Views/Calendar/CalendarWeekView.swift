@@ -1,0 +1,351 @@
+import SwiftUI
+import BugbookCore
+
+struct CalendarWeekView: View {
+    let days: [Date]
+    let events: [CalendarEvent]
+    let databaseItems: [CalendarDatabaseItem]
+    let calendarVM: CalendarViewModel
+    var onEventTapped: (CalendarEvent) -> Void
+    var onDatabaseItemTapped: (CalendarDatabaseItem) -> Void
+
+    @State private var hoveredEventId: String?
+    @State private var hoveredDbItemId: String?
+
+    private let hourHeight: CGFloat = 48
+    private let timeGutterWidth: CGFloat = 58
+    private let calendar = Calendar.current
+
+    var body: some View {
+        VStack(spacing: 0) {
+            dayHeaderRow
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+
+            let allDayEvents = allDayEventsByDay
+            if allDayEvents.values.contains(where: { !$0.isEmpty }) {
+                allDayRow(allDayEvents)
+                Divider()
+            }
+
+            ScrollView(.vertical) {
+                ScrollViewReader { proxy in
+                    ZStack(alignment: .topLeading) {
+                        timeGridBackground
+                        dayColumnDividers
+                        eventOverlays
+                        currentTimeIndicator
+                    }
+                    .frame(height: CGFloat(calendarVM.visibleHours.count) * hourHeight)
+                    .onAppear {
+                        let targetHour = max(calendarVM.dayStartHour, Calendar.current.component(.hour, from: Date()) - 1)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            proxy.scrollTo(targetHour, anchor: .top)
+                        }
+                    }
+                }
+            }
+        }
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    // MARK: - Day Headers (Notion style: "Sun 15" inline)
+
+    private var dayHeaderRow: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: timeGutterWidth)
+
+            ForEach(days, id: \.self) { day in
+                Text("\(calendarVM.dayOfWeekString(day)) \(calendar.component(.day, from: day))")
+                    .font(.system(size: 10, weight: isToday(day) ? .semibold : .regular))
+                    .foregroundStyle(isToday(day) ? Color.accentColor : Color.secondary.opacity(0.6))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+        }
+    }
+
+    // MARK: - All-Day Row
+
+    private var allDayEventsByDay: [Date: [CalendarEvent]] {
+        var result: [Date: [CalendarEvent]] = [:]
+        for day in days {
+            let dayStart = calendar.startOfDay(for: day)
+            result[dayStart] = events.filter { event in
+                guard event.isAllDay else { return false }
+                let eventDayStart = calendar.startOfDay(for: event.startDate)
+                let eventDayEnd = calendar.startOfDay(for: event.endDate)
+                return dayStart >= eventDayStart && dayStart < eventDayEnd
+            }
+        }
+        return result
+    }
+
+    @ViewBuilder
+    private func allDayRow(_ eventsByDay: [Date: [CalendarEvent]]) -> some View {
+        HStack(spacing: 0) {
+            Text("All-day")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .frame(width: timeGutterWidth, alignment: .trailing)
+                .padding(.trailing, 4)
+
+            ForEach(days, id: \.self) { day in
+                let dayStart = calendar.startOfDay(for: day)
+                VStack(spacing: 2) {
+                    ForEach(eventsByDay[dayStart] ?? [], id: \.id) { event in
+                        allDayEventChip(event)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 2)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func allDayEventChip(_ event: CalendarEvent) -> some View {
+        let color = Color.accentColor
+        return Button(action: { onEventTapped(event) }) {
+            HStack(spacing: 4) {
+                Circle().fill(color).frame(width: 6, height: 6)
+                Text(event.title)
+                    .font(.system(size: Typography.caption2, weight: .medium))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(color.opacity(0.1))
+            .foregroundStyle(color)
+            .clipShape(.rect(cornerRadius: Radius.xs))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Time Grid
+
+    /// Hours too close to the current time get hidden (within ~20min)
+    private func shouldHideHourLabel(_ hour: Int) -> Bool {
+        guard days.contains(where: { isToday($0) }) else { return false }
+        let nowHour = Calendar.current.component(.hour, from: Date())
+        let nowMinute = Calendar.current.component(.minute, from: Date())
+        if hour == nowHour { return true }
+        // Hide next hour if current time is within 20min of it
+        if hour == nowHour + 1 && nowMinute >= 40 { return true }
+        // Hide previous hour if current time is within 20min of it
+        if hour == nowHour && nowMinute <= 20 { return true }
+        return false
+    }
+
+    private var timeGridBackground: some View {
+        VStack(spacing: 0) {
+            ForEach(calendarVM.visibleHours, id: \.self) { hour in
+                HStack(spacing: 0) {
+                    HStack {
+                        Spacer()
+                        if !shouldHideHourLabel(hour) {
+                            Text(calendarVM.hourLabel(hour))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.quaternary)
+                                .padding(.trailing, 4)
+                        }
+                    }
+                    .frame(width: timeGutterWidth, alignment: .topTrailing)
+                    .offset(y: -5)
+
+                    VStack(spacing: 0) {
+                        Divider().opacity(0.3)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .frame(height: hourHeight)
+                .id(hour)
+            }
+        }
+    }
+
+    // MARK: - Vertical Day Dividers
+
+    private var dayColumnDividers: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: timeGutterWidth)
+
+            ForEach(Array(days.enumerated()), id: \.offset) { index, _ in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.06))
+                        .frame(width: 1)
+                }
+                Spacer()
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // MARK: - Event Overlays
+
+    private var eventOverlays: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: timeGutterWidth)
+
+            ForEach(Array(days.enumerated()), id: \.offset) { index, day in
+                ZStack(alignment: .topLeading) {
+                    // Today column background
+                    if isToday(day) {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.02))
+                    }
+
+                    let dayEvents = calendarVM.events(for: day, from: events)
+                        .filter { !$0.isAllDay }
+                    ForEach(dayEvents, id: \.id) { event in
+                        timedEventBlock(event)
+                    }
+
+                    let dbItems = calendarVM.databaseItems(for: day, from: databaseItems)
+                    ForEach(dbItems, id: \.id) { item in
+                        databaseItemBlock(item)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 1)
+            }
+        }
+    }
+
+    private func timedEventBlock(_ event: CalendarEvent) -> some View {
+        let y = calendarVM.yPosition(for: event.startDate, hourHeight: hourHeight)
+        let h = calendarVM.eventHeight(start: event.startDate, end: event.endDate, hourHeight: hourHeight)
+        let isHovered = hoveredEventId == event.id
+        let eventColor = Color.accentColor
+
+        return Button(action: { onEventTapped(event) }) {
+            VStack(alignment: .leading, spacing: 1) {
+                // Short events: "Title 9 AM" inline. Tall events: title + time range
+                if h <= hourHeight * 0.5 {
+                    HStack(spacing: 0) {
+                        Text(event.title)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                        Text(" \(calendarVM.timeString(for: event.startDate))")
+                            .font(.system(size: 10))
+                            .opacity(0.8)
+                    }
+                } else {
+                    Text(event.title)
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(h > hourHeight ? 3 : 1)
+                    Text("\(calendarVM.timeString(for: event.startDate))–\(calendarVM.timeString(for: event.endDate))")
+                        .font(.system(size: 10))
+                        .opacity(0.8)
+                }
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 4)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: h, alignment: .top)
+            .foregroundStyle(eventColor)
+            .background(eventColor.opacity(isHovered ? 0.14 : 0.08))
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(eventColor)
+                    .frame(width: 2)
+            }
+            .clipShape(.rect(cornerRadius: Radius.xs))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in hoveredEventId = hovering ? event.id : nil }
+        .offset(y: y)
+    }
+
+    private func databaseItemBlock(_ item: CalendarDatabaseItem) -> some View {
+        let y = calendarVM.yPosition(for: item.date, hourHeight: hourHeight)
+        let color = TagColor.color(for: item.color)
+        let isHovered = hoveredDbItemId == item.id
+
+        return Button(action: { onDatabaseItemTapped(item) }) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 5, height: 5)
+                Text(item.title)
+                    .font(.system(size: Typography.caption2))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(color.opacity(isHovered ? 0.14 : 0.06))
+            .clipShape(.rect(cornerRadius: Radius.xs))
+            .foregroundStyle(color)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in hoveredDbItemId = hovering ? item.id : nil }
+        .offset(y: y)
+    }
+
+    // MARK: - Current Time
+
+    @ViewBuilder
+    private var currentTimeIndicator: some View {
+        let now = Date()
+        if days.contains(where: { isToday($0) }) {
+            let y = calendarVM.yPosition(for: now, hourHeight: hourHeight)
+            let todayIndex = days.firstIndex(where: { isToday($0) }) ?? 0
+            let nowColor = StatusColor.error
+
+            // Time label in gutter (single line, e.g. "6:38 PM")
+            HStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Spacer()
+                    Text(calendarVM.timeString(for: now))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(nowColor)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.trailing, 4)
+                }
+                .frame(width: timeGutterWidth)
+                Spacer()
+            }
+            .offset(y: y - 6)
+            .allowsHitTesting(false)
+
+            // Thin red line from gutter across all columns, thicker on today
+            HStack(spacing: 0) {
+                // Dot at the gutter edge
+                Color.clear.frame(width: timeGutterWidth - 4)
+                Circle()
+                    .fill(nowColor)
+                    .frame(width: 8, height: 8)
+                    .offset(y: y - 4)
+
+                GeometryReader { geo in
+                    let colWidth = geo.size.width / CGFloat(days.count)
+
+                    // Thin line across all columns
+                    Rectangle()
+                        .fill(nowColor.opacity(0.3))
+                        .frame(width: geo.size.width, height: 1)
+                        .offset(y: y)
+
+                    // Thicker line on today's column only
+                    Rectangle()
+                        .fill(nowColor)
+                        .frame(width: colWidth, height: 2)
+                        .offset(x: CGFloat(todayIndex) * colWidth, y: y - 0.5)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func isToday(_ date: Date) -> Bool {
+        calendar.isDateInToday(date)
+    }
+}

@@ -631,7 +631,11 @@ struct DatabaseFullPageView: View {
                         showVerticalLines: showVerticalLines,
                         usesInnerScroll: false
                     )
-                    .frame(minWidth: geo.size.width, alignment: .leading)
+                    .frame(
+                        minWidth: geo.size.width,
+                        minHeight: geo.size.height,
+                        alignment: .topLeading
+                    )
                     .fixedSize(horizontal: true, vertical: true)
                 }
             }
