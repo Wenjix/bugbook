@@ -72,7 +72,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image, .pageLink, .flashcard:
+        case .databaseEmbed, .image, .pageLink:
             true
         default:
             false
