@@ -91,7 +91,6 @@ private enum ParsedPageBlockType: String {
     case pageLink = "page_link"
     case column
     case toggle
-    case flashcard
 }
 
 private struct ParsedPageBlock {
@@ -404,33 +403,6 @@ private enum PageBlockParser {
                 continue
             }
 
-            if trimmed == "<!-- flashcard -->" || trimmed == "<!-- flashcard collapsed -->" {
-                let collapsed = trimmed.contains("collapsed")
-                index += 1
-                let frontText = index < lines.count ? lines[index] : ""
-                index += 1
-
-                var backLines: [String] = []
-                while index < lines.count {
-                    if lines[index].trimmingCharacters(in: .whitespaces) == "<!-- /flashcard -->" {
-                        index += 1
-                        break
-                    }
-                    backLines.append(lines[index])
-                    index += 1
-                }
-
-                blocks.append(
-                    makeBlock(
-                        type: .flashcard,
-                        text: frontText,
-                        children: backLines.isEmpty ? [] : parseBlocks(backLines.joined(separator: "\n")),
-                        isExpanded: !collapsed
-                    )
-                )
-                continue
-            }
-
             if trimmed == "<!-- columns -->" {
                 var allChildren: [ParsedPageBlock] = []
                 var currentColumnIndex = 0
@@ -627,7 +599,7 @@ private enum PageBlockParser {
         }
 
         let hasColor = block.textColor != nil || block.backgroundColor != nil
-        if hasColor, style == .bugbook, block.type != .column, block.type != .toggle, block.type != .flashcard {
+        if hasColor, style == .bugbook, block.type != .column, block.type != .toggle {
             var parts: [String] = []
             if let textColor = block.textColor, !textColor.isEmpty {
                 parts.append("color:\(textColor)")
@@ -713,36 +685,6 @@ private enum PageBlockParser {
                     ))
                 }
                 lines.append("<!-- /toggle -->")
-            case .commonmark:
-                lines.append(block.isExpanded ? "<details open>" : "<details>")
-                lines.append("<summary>\(escapeHTML(block.text))</summary>")
-                if !block.children.isEmpty {
-                    lines.append("")
-                    lines.append(contentsOf: serializeLines(
-                        block.children,
-                        includeBlockIDComments: false,
-                        style: style
-                    ))
-                    if lines.last != "" {
-                        lines.append("")
-                    }
-                }
-                lines.append("</details>")
-            }
-
-        case .flashcard:
-            switch style {
-            case .bugbook:
-                lines.append(block.isExpanded ? "<!-- flashcard -->" : "<!-- flashcard collapsed -->")
-                lines.append(block.text)
-                if !block.children.isEmpty {
-                    lines.append(contentsOf: serializeLines(
-                        block.children,
-                        includeBlockIDComments: includeBlockIDComments,
-                        style: style
-                    ))
-                }
-                lines.append("<!-- /flashcard -->")
             case .commonmark:
                 lines.append(block.isExpanded ? "<details open>" : "<details>")
                 lines.append("<summary>\(escapeHTML(block.text))</summary>")
@@ -900,9 +842,6 @@ private enum PageBlockParser {
         return trimmed == "<!-- toggle -->"
             || trimmed == "<!-- toggle collapsed -->"
             || trimmed == "<!-- /toggle -->"
-            || trimmed == "<!-- flashcard -->"
-            || trimmed == "<!-- flashcard collapsed -->"
-            || trimmed == "<!-- /flashcard -->"
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
@@ -1879,7 +1818,7 @@ private func updateParsedPageBlockText(
 
 private func parsedPageBlockSupportsTextMutation(_ block: ParsedPageBlock) -> Bool {
     switch block.type {
-    case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .codeBlock, .blockquote, .toggle, .flashcard:
+    case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .codeBlock, .blockquote, .toggle:
         return true
     case .horizontalRule, .image, .databaseEmbed, .pageLink, .column:
         return false
@@ -2023,7 +1962,7 @@ private func parsedPageBlockJSON(
     if block.stableID {
         json["persisted_id"] = block.id
     }
-    if !block.text.isEmpty || block.type == .paragraph || block.type == .heading || block.type == .blockquote || block.type == .toggle || block.type == .flashcard {
+    if !block.text.isEmpty || block.type == .paragraph || block.type == .heading || block.type == .blockquote || block.type == .toggle {
         json["text"] = block.text
     }
     if block.headingLevel != 1 || block.type == .heading {
@@ -2062,7 +2001,7 @@ private func parsedPageBlockJSON(
     if includeColumnIndex {
         json["column_index"] = block.columnIndex
     }
-    if block.type == .toggle || block.type == .flashcard {
+    if block.type == .toggle {
         json["expanded"] = block.isExpanded
     }
     if !block.children.isEmpty {

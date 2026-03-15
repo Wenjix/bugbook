@@ -681,8 +681,6 @@ private extension Block {
             return "tablecells"
         case .toggle:
             return "chevron.right"
-        case .flashcard:
-            return "rectangle.on.rectangle"
         case .horizontalRule:
             return "minus"
         case .column:

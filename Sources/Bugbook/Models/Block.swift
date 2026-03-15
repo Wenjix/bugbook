@@ -14,7 +14,6 @@ enum BlockType: Equatable {
     case pageLink
     case column
     case toggle
-    case flashcard
 }
 
 struct Block: Identifiable, Equatable {

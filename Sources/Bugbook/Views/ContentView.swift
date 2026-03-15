@@ -64,6 +64,7 @@ struct ContentView: View {
             sidebarToggleOverlay
             sidebarPeekOverlay
             commandPaletteOverlay
+            flashcardReviewOverlay
             movePageOverlay
             themeToastOverlay
             editorZoomOverlay
@@ -247,6 +248,10 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
                 appState.openCalendar()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reviewFlashcards)) { _ in
+                appState.flashcardReviewScope = .currentPage
+                appState.flashcardReviewOpen = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
@@ -465,6 +470,30 @@ struct ContentView: View {
                 }
                 Spacer()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var flashcardReviewOverlay: some View {
+        if appState.flashcardReviewOpen {
+            FlashcardReviewView(
+                cards: collectFlashcards(),
+                onDismiss: { appState.flashcardReviewOpen = false }
+            )
+            .zIndex(100)
+        }
+    }
+
+    private func collectFlashcards() -> [FlashcardItem] {
+        switch appState.flashcardReviewScope {
+        case .currentPage:
+            guard let tab = appState.activeTab,
+                  let doc = blockDocuments[tab.id] else { return [] }
+            let name = tab.displayName ?? (tab.path as NSString).lastPathComponent
+            return FlashcardScanner.scan(document: doc, pageName: name)
+        case .allPages:
+            guard let workspace = appState.workspacePath else { return [] }
+            return FlashcardScanner.scanWorkspace(at: workspace).shuffled()
         }
     }
 

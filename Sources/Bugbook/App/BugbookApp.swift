@@ -101,6 +101,11 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
 
+                Button("Review Flashcards") {
+                    NotificationCenter.default.post(name: .reviewFlashcards, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+
                 Divider()
 
                 Button("Zoom In") {
@@ -318,4 +323,5 @@ extension Notification.Name {
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")
     static let movePageToDir = Notification.Name("movePageToDir")
+    static let reviewFlashcards = Notification.Name("reviewFlashcards")
 }

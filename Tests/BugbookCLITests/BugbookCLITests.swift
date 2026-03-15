@@ -794,46 +794,6 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertTrue(raw.contains("**Bugbook database:** Test Board"))
     }
 
-    func testFlashcardListFindsWorkspaceFlashcardsRecursively() throws {
-        let workspace = try makeWorkspace()
-
-        _ = try runJSON(
-            Page.Create.parseAsRoot([
-                "--workspace", workspace,
-                "Decks/Geography",
-                "--content-file", try writeTempFile(in: workspace, name: "flashcards.md", contents: """
-                # Geography
-                <!-- flashcard collapsed -->
-                Capital of France?
-                Paris
-                <!-- /flashcard -->
-                <!-- toggle -->
-                Nested cards
-                <!-- flashcard -->
-                Largest ocean?
-                Pacific Ocean
-                <!-- /flashcard -->
-                <!-- /toggle -->
-                """)
-            ])
-        )
-
-        let cards = try runJSONArray(
-            Flashcard.List.parseAsRoot([
-                "--workspace", workspace,
-            ])
-        )
-
-        XCTAssertEqual(cards.count, 2)
-        XCTAssertEqual(cards[0]["page"] as? String, "Decks/Geography.md")
-        XCTAssertEqual(cards[0]["front"] as? String, "Capital of France?")
-        XCTAssertEqual(cards[0]["back"] as? String, "Paris")
-        XCTAssertEqual(cards[1]["front"] as? String, "Largest ocean?")
-        XCTAssertEqual(cards[1]["back"] as? String, "Pacific Ocean")
-        XCTAssertNotNil(cards[0]["id"] as? String)
-        XCTAssertNotNil(cards[1]["id"] as? String)
-    }
-
     func testPageFormatReportSurfacesDowngradedCommonMarkLinks() throws {
         let workspace = try makeWorkspace()
 

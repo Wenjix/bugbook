@@ -103,7 +103,7 @@ class BlockDocument {
     func block(for id: UUID) -> Block? {
         for block in blocks {
             if block.id == id { return block }
-            if block.type == .column || block.type == .toggle || block.type == .flashcard {
+            if block.type == .column || block.type == .toggle {
                 if let child = block.children.first(where: { $0.id == id }) {
                     return child
                 }
@@ -121,7 +121,7 @@ class BlockDocument {
     func blockLocation(for id: UUID) -> (topLevel: Int, child: Int?)? {
         for (i, block) in blocks.enumerated() {
             if block.id == id { return (i, nil) }
-            if block.type == .column || block.type == .toggle || block.type == .flashcard {
+            if block.type == .column || block.type == .toggle {
                 if let childIdx = block.children.firstIndex(where: { $0.id == id }) {
                     return (i, childIdx)
                 }
@@ -306,7 +306,7 @@ class BlockDocument {
     func splitBlock(id: UUID, atOffset offset: Int) -> UUID {
         guard let loc = blockLocation(for: id) else { return UUID() }
 
-        // If inside a column, toggle, or flashcard, split creates a new block in the same parent
+        // If inside a column or toggle, split creates a new block in the same parent
         if let childIdx = loc.child {
             let parentBlock = blocks[loc.topLevel]
             let block = parentBlock.children[childIdx]
@@ -314,26 +314,6 @@ class BlockDocument {
             let splitAt = block.text.index(block.text.startIndex, offsetBy: clamped)
             let before = String(block.text[..<splitAt])
             let after = String(block.text[splitAt...])
-
-            // Enter in flashcard child → collapse the card and move to the next block
-            if parentBlock.type == .flashcard {
-                saveUndo()
-                // Remove empty back children so we don't leave blank blocks
-                if before.isEmpty && after.isEmpty {
-                    blocks[loc.topLevel].children.remove(at: childIdx)
-                }
-                blocks[loc.topLevel].isExpanded = false
-                let nextIdx = loc.topLevel + 1
-                if nextIdx < blocks.count {
-                    focusedBlockId = blocks[nextIdx].id
-                } else {
-                    let newBlock = Block(type: .paragraph)
-                    blocks.append(newBlock)
-                    focusedBlockId = newBlock.id
-                }
-                cursorPosition = 0
-                return focusedBlockId!
-            }
 
             // Empty child in toggle → exit the container
             if parentBlock.type == .toggle,
@@ -364,8 +344,8 @@ class BlockDocument {
         let before = String(block.text[..<splitAt])
         let after = String(block.text[splitAt...])
 
-        // Toggle title/front → Enter creates child inside the container
-        if block.type == .toggle || block.type == .flashcard {
+        // Toggle title → Enter creates child inside the container
+        if block.type == .toggle {
             saveUndo()
             blocks[idx].text = before
             blocks[idx].isExpanded = true
@@ -431,8 +411,8 @@ class BlockDocument {
                 focusedBlockId = prevId
                 cursorPosition = joinPoint
                 return joinPoint
-            } else if blocks[loc.topLevel].type == .toggle || blocks[loc.topLevel].type == .flashcard {
-                // First child in toggle/flashcard — merge into the parent text
+            } else if blocks[loc.topLevel].type == .toggle {
+                // First child in toggle — merge into the parent text
                 saveUndo()
                 let childText = blocks[loc.topLevel].children[childIdx].text
                 let joinPoint = blocks[loc.topLevel].text.count
@@ -590,9 +570,6 @@ class BlockDocument {
                 block.headingLevel = 1
             } else {
                 block.headingLevel = 0
-            }
-            if type == .flashcard {
-                block.isExpanded = false
             }
         }
     }
@@ -792,7 +769,6 @@ class BlockDocument {
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0)),
         SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0)),
         SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0)),
-        SlashCommand(name: "Flashcard", icon: "rectangle.on.rectangle", action: .blockType(.flashcard, headingLevel: 0)),
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
         SlashCommand(name: "Image", icon: "photo", action: .imagePicker),
@@ -1401,7 +1377,7 @@ class BlockDocument {
             ordered.append(block.id)
             if block.type == .column {
                 ordered.append(contentsOf: block.children.map(\.id))
-            } else if (block.type == .toggle || block.type == .flashcard), block.isExpanded {
+            } else if block.type == .toggle, block.isExpanded {
                 ordered.append(contentsOf: block.children.map(\.id))
             }
         }
