@@ -210,7 +210,9 @@ private struct CommonMarkPageLinkResolver {
 private enum PageBlockParser {
     static func parseDocument(_ markdown: String) -> ParsedPageDocument {
         let (metadata, content) = parseMetadata(markdown)
-        return ParsedPageDocument(metadata: metadata, blocks: parseBlocks(content))
+        var blocks = parseBlocks(content)
+        _ = compactEmptyParagraphBlocks(in: &blocks)
+        return ParsedPageDocument(metadata: metadata, blocks: blocks)
     }
 
     static func parseBlocks(_ markdown: String) -> [ParsedPageBlock] {
@@ -453,7 +455,6 @@ private enum PageBlockParser {
             return [ParsedPageBlock(id: newBlockID(), stableID: false, type: .paragraph)]
         }
 
-        _ = compactEmptyParagraphBlocks(in: &blocks)
         return blocks
     }
 

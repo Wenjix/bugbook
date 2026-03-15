@@ -224,41 +224,6 @@ enum FlashcardScanner {
         return items
     }
 
-    /// Extract flashcard items from a raw markdown string.
-    static func scan(markdown: String, pageName: String) -> [FlashcardItem] {
-        var items: [FlashcardItem] = []
-        for line in markdown.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Skip code fences
-            if trimmed.hasPrefix("```") { continue }
-            if let item = parseFlashcardLine(trimmed, pageName: pageName) {
-                items.append(item)
-            }
-        }
-        return items
-    }
-
-    /// Scan all markdown files in a workspace directory.
-    static func scanWorkspace(at path: String) -> [FlashcardItem] {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(atPath: path) else { return [] }
-        var items: [FlashcardItem] = []
-
-        while let relativePath = enumerator.nextObject() as? String {
-            guard relativePath.hasSuffix(".md"),
-                  !relativePath.hasPrefix("."),
-                  !relativePath.contains("/_"),
-                  !relativePath.contains("/.") else { continue }
-
-            let fullPath = (path as NSString).appendingPathComponent(relativePath)
-            guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
-
-            let pageName = ((relativePath as NSString).lastPathComponent as NSString).deletingPathExtension
-            items.append(contentsOf: scan(markdown: content, pageName: pageName))
-        }
-        return items
-    }
-
     private static func scanBlock(_ block: Block, pageName: String) -> [FlashcardItem] {
         var items: [FlashcardItem] = []
         // Skip code blocks

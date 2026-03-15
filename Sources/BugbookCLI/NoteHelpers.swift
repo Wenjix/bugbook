@@ -1136,12 +1136,14 @@ func pageDisplayName(fromPath path: String) -> String {
     return filename.hasSuffix(".md") ? String(filename.dropLast(3)) : filename
 }
 
+private let rowIDSuffixRegex = try! NSRegularExpression(pattern: #" \([a-z0-9]+\)$"#)
+
 private func stripRowIDSuffix(_ name: String) -> String {
-    // Database row filenames have the format "Name (row_id)" — strip the trailing " (id)" for matching
-    guard let range = name.range(of: #" \([a-zA-Z0-9_]+\)$"#, options: .regularExpression) else {
+    let range = NSRange(name.startIndex..., in: name)
+    guard let match = rowIDSuffixRegex.firstMatch(in: name, range: range) else {
         return name
     }
-    return String(name[name.startIndex..<range.lowerBound])
+    return String(name[name.startIndex..<name.index(name.startIndex, offsetBy: match.range.location)])
 }
 
 func normalizePageLookup(_ value: String) -> String {

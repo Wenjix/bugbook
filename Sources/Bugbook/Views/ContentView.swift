@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var meetingNoteService = MeetingNoteService()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
+    @State private var flashcardCards: [FlashcardItem] = []
     @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
     @State private var canvasSaveTask: Task<Void, Never>?
@@ -250,7 +251,7 @@ struct ContentView: View {
                 appState.openCalendar()
             }
             .onReceive(NotificationCenter.default.publisher(for: .reviewFlashcards)) { _ in
-                appState.flashcardReviewScope = .currentPage
+                flashcardCards = collectFlashcards()
                 appState.flashcardReviewOpen = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
@@ -477,7 +478,7 @@ struct ContentView: View {
     private var flashcardReviewOverlay: some View {
         if appState.flashcardReviewOpen {
             FlashcardReviewView(
-                cards: collectFlashcards(),
+                cards: flashcardCards,
                 onDismiss: { appState.flashcardReviewOpen = false }
             )
             .zIndex(100)
@@ -485,16 +486,10 @@ struct ContentView: View {
     }
 
     private func collectFlashcards() -> [FlashcardItem] {
-        switch appState.flashcardReviewScope {
-        case .currentPage:
-            guard let tab = appState.activeTab,
-                  let doc = blockDocuments[tab.id] else { return [] }
-            let name = tab.displayName ?? (tab.path as NSString).lastPathComponent
-            return FlashcardScanner.scan(document: doc, pageName: name)
-        case .allPages:
-            guard let workspace = appState.workspacePath else { return [] }
-            return FlashcardScanner.scanWorkspace(at: workspace).shuffled()
-        }
+        guard let tab = appState.activeTab,
+              let doc = blockDocuments[tab.id] else { return [] }
+        let name = tab.displayName ?? (tab.path as NSString).lastPathComponent
+        return FlashcardScanner.scan(document: doc, pageName: name)
     }
 
     @ViewBuilder
