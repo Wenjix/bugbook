@@ -315,8 +315,28 @@ class BlockDocument {
             let before = String(block.text[..<splitAt])
             let after = String(block.text[splitAt...])
 
-            // Empty child in toggle/flashcard → exit the container
-            if (parentBlock.type == .toggle || parentBlock.type == .flashcard),
+            // Enter in flashcard child → collapse the card and move to the next block
+            if parentBlock.type == .flashcard {
+                saveUndo()
+                // Remove empty back children so we don't leave blank blocks
+                if before.isEmpty && after.isEmpty {
+                    blocks[loc.topLevel].children.remove(at: childIdx)
+                }
+                blocks[loc.topLevel].isExpanded = false
+                let nextIdx = loc.topLevel + 1
+                if nextIdx < blocks.count {
+                    focusedBlockId = blocks[nextIdx].id
+                } else {
+                    let newBlock = Block(type: .paragraph)
+                    blocks.append(newBlock)
+                    focusedBlockId = newBlock.id
+                }
+                cursorPosition = 0
+                return focusedBlockId!
+            }
+
+            // Empty child in toggle → exit the container
+            if parentBlock.type == .toggle,
                before.isEmpty,
                after.isEmpty {
                 saveUndo()

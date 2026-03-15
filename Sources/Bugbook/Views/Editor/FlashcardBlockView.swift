@@ -15,6 +15,10 @@ struct FlashcardBlockView: View {
                     withAnimation(flipAnimation) {
                         if let idx = document.index(for: block.id) {
                             document.blocks[idx].isExpanded.toggle()
+                            // Clear focus so the back side doesn't auto-grab it
+                            if document.blocks[idx].isExpanded {
+                                document.focusedBlockId = nil
+                            }
                         }
                     }
                 }
