@@ -103,7 +103,7 @@ class BlockDocument {
     func block(for id: UUID) -> Block? {
         for block in blocks {
             if block.id == id { return block }
-            if block.type == .column || block.type == .toggle {
+            if block.type == .column || block.type == .toggle || block.type == .headingToggle {
                 if let child = block.children.first(where: { $0.id == id }) {
                     return child
                 }
@@ -121,7 +121,7 @@ class BlockDocument {
     func blockLocation(for id: UUID) -> (topLevel: Int, child: Int?)? {
         for (i, block) in blocks.enumerated() {
             if block.id == id { return (i, nil) }
-            if block.type == .column || block.type == .toggle {
+            if block.type == .column || block.type == .toggle || block.type == .headingToggle {
                 if let childIdx = block.children.firstIndex(where: { $0.id == id }) {
                     return (i, childIdx)
                 }
@@ -315,8 +315,8 @@ class BlockDocument {
             let before = String(block.text[..<splitAt])
             let after = String(block.text[splitAt...])
 
-            // Empty child in toggle → exit the container
-            if parentBlock.type == .toggle,
+            // Empty child in toggle/headingToggle → exit the container
+            if (parentBlock.type == .toggle || parentBlock.type == .headingToggle),
                before.isEmpty,
                after.isEmpty {
                 saveUndo()
@@ -344,8 +344,8 @@ class BlockDocument {
         let before = String(block.text[..<splitAt])
         let after = String(block.text[splitAt...])
 
-        // Toggle title → Enter creates child inside the container
-        if block.type == .toggle {
+        // Toggle/headingToggle title → Enter creates child inside the container
+        if block.type == .toggle || block.type == .headingToggle {
             saveUndo()
             blocks[idx].text = before
             blocks[idx].isExpanded = true
@@ -411,8 +411,8 @@ class BlockDocument {
                 focusedBlockId = prevId
                 cursorPosition = joinPoint
                 return joinPoint
-            } else if blocks[loc.topLevel].type == .toggle {
-                // First child in toggle — merge into the parent text
+            } else if blocks[loc.topLevel].type == .toggle || blocks[loc.topLevel].type == .headingToggle {
+                // First child in toggle/headingToggle — merge into the parent text
                 saveUndo()
                 let childText = blocks[loc.topLevel].children[childIdx].text
                 let joinPoint = blocks[loc.topLevel].text.count
@@ -566,8 +566,8 @@ class BlockDocument {
         }
         updateBlockProperty(id: id) { block in
             block.type = type
-            if type == .heading {
-                block.headingLevel = 1
+            if type == .heading || type == .headingToggle {
+                block.headingLevel = max(1, block.headingLevel == 0 ? 1 : block.headingLevel)
             } else {
                 block.headingLevel = 0
             }
@@ -576,7 +576,10 @@ class BlockDocument {
 
     func setHeadingLevel(id: UUID, level: Int) {
         updateBlockProperty(id: id) { block in
-            block.type = .heading
+            // Preserve headingToggle type when just changing level
+            if block.type != .headingToggle {
+                block.type = .heading
+            }
             block.headingLevel = level
         }
     }
@@ -769,6 +772,9 @@ class BlockDocument {
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0)),
         SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0)),
         SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0)),
+        SlashCommand(name: "Toggle Heading 1", icon: "chevron.right", action: .blockType(.headingToggle, headingLevel: 1)),
+        SlashCommand(name: "Toggle Heading 2", icon: "chevron.right", action: .blockType(.headingToggle, headingLevel: 2)),
+        SlashCommand(name: "Toggle Heading 3", icon: "chevron.right", action: .blockType(.headingToggle, headingLevel: 3)),
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
         SlashCommand(name: "Image", icon: "photo", action: .imagePicker),
@@ -847,7 +853,7 @@ class BlockDocument {
             }
 
             changeBlockType(id: blockId, to: type)
-            if type == .heading {
+            if type == .heading || type == .headingToggle {
                 setHeadingLevel(id: blockId, level: headingLevel)
             }
         }
@@ -1377,7 +1383,7 @@ class BlockDocument {
             ordered.append(block.id)
             if block.type == .column {
                 ordered.append(contentsOf: block.children.map(\.id))
-            } else if block.type == .toggle, block.isExpanded {
+            } else if (block.type == .toggle || block.type == .headingToggle), block.isExpanded {
                 ordered.append(contentsOf: block.children.map(\.id))
             }
         }

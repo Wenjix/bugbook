@@ -104,6 +104,18 @@ enum AttributedStringConverter {
                 continue
             }
 
+            // Flashcard separator: " == " → arrow indicator
+            if let end = parseFlashcardSeparator(markdown, from: i) {
+                var attrs = baseAttributes
+                attrs[.foregroundColor] = NSColor.secondaryLabelColor
+                attrs[Self.markdownSourceKey] = " == "
+                let arrowFont = NSFont.systemFont(ofSize: font.pointSize * 0.85, weight: .medium)
+                attrs[.font] = arrowFont
+                result.append(NSAttributedString(string: "  ⇌  ", attributes: attrs))
+                i = end
+                continue
+            }
+
             // Plain character
             result.append(NSAttributedString(string: String(markdown[i]), attributes: baseAttributes))
             i = markdown.index(after: i)
@@ -220,6 +232,20 @@ enum AttributedStringConverter {
         }
 
         return nil
+    }
+
+    /// Parse flashcard separator: " == " (with spaces on both sides)
+    private static func parseFlashcardSeparator(
+        _ str: String,
+        from start: String.Index
+    ) -> String.Index? {
+        let separator = " == "
+        guard str[start...].hasPrefix(separator) else { return nil }
+        // Ensure there's content before and after the separator
+        guard start > str.startIndex else { return nil }
+        let end = str.index(start, offsetBy: separator.count)
+        guard end < str.endIndex else { return nil }
+        return end
     }
 
     /// Parse markdown link: [text](url)

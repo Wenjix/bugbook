@@ -105,7 +105,16 @@ final class DatabaseViewState {
                 isLoadInFlight = false
             }
 
-            guard !Task.isCancelled else { return }
+            // If cancelled but schema was never set, retry once so the spinner
+            // doesn't persist forever (e.g., after a view hierarchy rebuild).
+            if Task.isCancelled {
+                if schema == nil {
+                    Task { @MainActor [weak self] in
+                        self?.loadData(onLoaded: onLoaded)
+                    }
+                }
+                return
+            }
 
             switch result {
             case .success(let (loadedSchema, loadedRows)):

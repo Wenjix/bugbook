@@ -679,7 +679,7 @@ private extension Block {
             return "photo"
         case .databaseEmbed:
             return "tablecells"
-        case .toggle:
+        case .toggle, .headingToggle:
             return "chevron.right"
         case .horizontalRule:
             return "minus"

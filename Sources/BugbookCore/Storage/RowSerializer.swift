@@ -61,6 +61,9 @@ public struct RowSerializer {
         var rawProperties: [String: String] = [:]
         var inProperties = false
 
+        // O(1) property lookup instead of linear scan per property
+        let propById = Dictionary(uniqueKeysWithValues: schema.properties.map { ($0.id, $0) })
+
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime]
         let dateOnly = DateFormatter()
@@ -78,7 +81,7 @@ public struct RowSerializer {
                         let key = String(propLine[propLine.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
                         let rawValue = String(propLine[propLine.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
                         rawProperties[key] = rawValue
-                        if let propDef = schema.properties.first(where: { $0.id == key }) {
+                        if let propDef = propById[key] {
                             properties[key] = parseValue(rawValue, type: propDef.type)
                         }
                     }

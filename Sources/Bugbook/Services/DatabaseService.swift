@@ -523,12 +523,15 @@ class DatabaseService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static let identifierRegex = try! NSRegularExpression(pattern: "^[a-z0-9_-]{12,}$")
+
     private func looksLikeIdentifier(_ value: String) -> Bool {
         let lower = value.lowercased()
         if lower.hasPrefix("opt_") || lower.hasPrefix("prop_") || lower.hasPrefix("row_") || lower.hasPrefix("db_") {
             return true
         }
-        return lower.range(of: "^[a-z0-9_-]{12,}$", options: .regularExpression) != nil
+        let range = NSRange(lower.startIndex..., in: lower)
+        return Self.identifierRegex.firstMatch(in: lower, range: range) != nil
     }
 
     /// Parse a raw property value string into a PropertyValue (used only for legacy repair).

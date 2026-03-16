@@ -15,7 +15,16 @@ struct FlashcardReviewView: View {
     @State private var revealed: Bool = false
     @State private var correctCount: Int = 0
     @State private var reviewedCount: Int = 0
+    @State private var reversed: Bool = false
     @FocusState private var isFocused: Bool
+
+    private var displayFront: String {
+        reversed ? card.back : card.front
+    }
+
+    private var displayBack: String {
+        reversed ? card.front : card.back
+    }
 
     var body: some View {
         if cards.isEmpty {
@@ -84,6 +93,26 @@ struct FlashcardReviewView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 Spacer()
+
+                Button {
+                    reversed.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: reversed ? "arrow.left" : "arrow.right")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text(reversed ? "Back → Front" : "Front → Back")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.primary.opacity(0.05))
+                    )
+                }
+                .buttonStyle(.plain)
+
                 Text("\(currentIndex + 1) / \(cards.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -96,7 +125,7 @@ struct FlashcardReviewView: View {
 
             // Card
             VStack(spacing: 24) {
-                Text(card.front)
+                Text(displayFront)
                     .font(.title2)
                     .fontWeight(.medium)
                     .multilineTextAlignment(.center)
@@ -107,7 +136,7 @@ struct FlashcardReviewView: View {
                         .frame(maxWidth: 200)
                         .padding(.vertical, 4)
 
-                    Text(card.back)
+                    Text(displayBack)
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

@@ -270,6 +270,26 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Heading toggle block
+            if let headingToggleLevel = parseHeadingToggleComment(trimmed) {
+                let collapsed = trimmed.contains("collapsed")
+                i += 1
+                let title = i < lines.count ? lines[i] : ""
+                i += 1
+                var childLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle-heading -->" {
+                        i += 1
+                        break
+                    }
+                    childLines.append(lines[i])
+                    i += 1
+                }
+                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                blocks.append(makeBlock(type: .headingToggle, text: title, headingLevel: headingToggleLevel, children: children, isExpanded: !collapsed))
+                continue
+            }
+
             // Column block
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
@@ -337,7 +357,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle {
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -401,6 +421,16 @@ enum MarkdownBlockParser {
                     lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
                 }
                 lines.append("<!-- /toggle -->")
+
+            case .headingToggle:
+                let level = max(1, min(3, block.headingLevel))
+                let collapsed = block.isExpanded ? "" : " collapsed"
+                lines.append("<!-- toggle-heading \(level)\(collapsed) -->")
+                lines.append(block.text)
+                if !block.children.isEmpty {
+                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
+                }
+                lines.append("<!-- /toggle-heading -->")
 
             case .column:
                 lines.append("<!-- columns -->")
@@ -473,12 +503,17 @@ enum MarkdownBlockParser {
         if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
             return true
         }
-        return trimmed == "<!-- toggle -->"
+        if trimmed == "<!-- toggle -->"
             || trimmed == "<!-- toggle collapsed -->"
             || trimmed == "<!-- /toggle -->"
+            || trimmed == "<!-- /toggle-heading -->"
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
-            || trimmed == "<!-- /columns -->"
+            || trimmed == "<!-- /columns -->" {
+            return true
+        }
+        if parseHeadingToggleComment(trimmed) != nil { return true }
+        return false
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {
@@ -648,6 +683,19 @@ enum MarkdownBlockParser {
             }
         }
         return nil
+    }
+
+    /// Parse `<!-- toggle-heading 2 -->` or `<!-- toggle-heading 2 collapsed -->`, returning the heading level.
+    private static func parseHeadingToggleComment(_ trimmed: String) -> Int? {
+        guard trimmed.hasPrefix("<!-- toggle-heading"), trimmed.hasSuffix("-->") else { return nil }
+        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        // inner is like "toggle-heading 2" or "toggle-heading 2 collapsed"
+        guard inner.hasPrefix("toggle-heading") else { return nil }
+        let rest = inner.dropFirst("toggle-heading".count).trimmingCharacters(in: .whitespaces)
+        // rest is like "2" or "2 collapsed"
+        let parts = rest.split(separator: " ", maxSplits: 1)
+        guard let levelStr = parts.first, let level = Int(levelStr), level >= 1, level <= 3 else { return nil }
+        return level
     }
 
     private static func parseBlockIDComment(_ line: String) -> UUID? {
