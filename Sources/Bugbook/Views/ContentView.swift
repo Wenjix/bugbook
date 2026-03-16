@@ -600,13 +600,34 @@ struct ContentView: View {
                 }
             }
 
-            // Update block document file paths
+            // Update block document file paths and database embed paths within open docs
             for (_, doc) in blockDocuments {
                 if doc.filePath == oldPath {
                     doc.filePath = newPath
                 } else if let fp = doc.filePath, fp.hasPrefix(oldCompanion + "/") {
                     let relative = String(fp.dropFirst(oldCompanion.count))
                     doc.filePath = newCompanion + relative
+                }
+
+                // Update databasePath values in blocks that reference databases under the old companion.
+                // Skip for database moves — those are handled by the .fileMoved notification.
+                if !movingDatabase, oldCompanion != newCompanion {
+                    updateDatabasePathPrefix(in: &doc.blocks, oldPrefix: oldCompanion, newPrefix: newCompanion)
+                }
+            }
+
+            // Retarget database embeds on disk for databases that moved inside the companion folder.
+            // Done off main thread — walks the entire workspace scanning .md files.
+            if !movingDatabase, oldCompanion != newCompanion,
+               let workspace = appState.workspacePath {
+                let capturedOld = oldCompanion
+                let capturedNew = newCompanion
+                DispatchQueue.global(qos: .utility).async { [self] in
+                    retargetCompanionDatabaseEmbeds(
+                        oldCompanion: capturedOld,
+                        newCompanion: capturedNew,
+                        workspace: workspace
+                    )
                 }
             }
 
@@ -629,6 +650,19 @@ struct ContentView: View {
                             parentDoc.blocks = MarkdownBlockParser.parse(parentContent)
                         }
                     }
+                }
+            }
+
+            // Remove page link block from the source document when extracting to sidebar.
+            // The moved page's name should match a [[PageName]] block in the active doc.
+            let movedPageName = (newPath as NSString).lastPathComponent
+                .replacingOccurrences(of: ".md", with: "")
+            if let activeTab = appState.activeTab,
+               let sourceDoc = blockDocuments[activeTab.id] {
+                if let blockIdx = sourceDoc.blocks.firstIndex(where: {
+                    $0.type == .pageLink && $0.pageLinkName == movedPageName
+                }) {
+                    sourceDoc.blocks.remove(at: blockIdx)
                 }
             }
 
@@ -660,6 +694,21 @@ struct ContentView: View {
                                 let relative = String(fp.dropFirst(newCompanion.count))
                                 doc.filePath = restoredCompanion + relative
                             }
+
+                            // Reverse database embed paths in blocks (skip for database moves)
+                            if !movingDatabase, newCompanion != restoredCompanion {
+                                self.updateDatabasePathPrefix(in: &doc.blocks, oldPrefix: newCompanion, newPrefix: restoredCompanion)
+                            }
+                        }
+
+                        // Retarget database embeds on disk for companion folder databases (undo)
+                        if !movingDatabase, newCompanion != restoredCompanion,
+                           let workspace = self.appState.workspacePath {
+                            self.retargetCompanionDatabaseEmbeds(
+                                oldCompanion: newCompanion,
+                                newCompanion: restoredCompanion,
+                                workspace: workspace
+                            )
                         }
 
                         // Remove the page link from the parent page
@@ -836,7 +885,6 @@ struct ContentView: View {
                 .environment(\.workspacePath, appState.workspacePath)
         }
         .padding(.leading, activeTabLeadingPadding)
-        .ignoresSafeArea(.container, edges: .top)
         .overlay(alignment: .trailing) {
             if let peek = peekTarget {
                 HStack(spacing: 0) {
@@ -2092,6 +2140,44 @@ struct ContentView: View {
         }
 
         return didUpdate
+    }
+
+    /// Recursively update databasePath values whose paths start with `oldPrefix`.
+    private func updateDatabasePathPrefix(in blocks: inout [Block], oldPrefix: String, newPrefix: String) {
+        for index in blocks.indices {
+            if blocks[index].type == .databaseEmbed,
+               blocks[index].databasePath.hasPrefix(oldPrefix + "/") || blocks[index].databasePath == oldPrefix {
+                let suffix = String(blocks[index].databasePath.dropFirst(oldPrefix.count))
+                blocks[index].databasePath = newPrefix + suffix
+            }
+            updateDatabasePathPrefix(in: &blocks[index].children, oldPrefix: oldPrefix, newPrefix: newPrefix)
+        }
+    }
+
+    /// After a page move, retarget database embeds on disk for any databases
+    /// that moved inside the companion folder.
+    private func retargetCompanionDatabaseEmbeds(
+        oldCompanion: String,
+        newCompanion: String,
+        workspace: String
+    ) {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: newCompanion) else { return }
+
+        // Find database folders inside the (now-moved) companion folder
+        guard let entries = try? fm.contentsOfDirectory(atPath: newCompanion) else { return }
+        for entry in entries {
+            let newDbPath = (newCompanion as NSString).appendingPathComponent(entry)
+            guard fileSystem.isDatabaseFolder(at: newDbPath) else { continue }
+            let oldDbPath = (oldCompanion as NSString).appendingPathComponent(entry)
+            guard oldDbPath != newDbPath else { continue }
+
+            fileSystem.retargetDatabaseEmbedsInWorkspace(
+                from: oldDbPath,
+                to: newDbPath,
+                workspace: workspace
+            )
+        }
     }
 
     private func openWorkspace() async {

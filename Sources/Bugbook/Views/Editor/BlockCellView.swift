@@ -120,7 +120,34 @@ struct BlockCellView: View {
                 }
             )
 
-        if let onHandleDragStart, let onHandleDragChange, let onHandleDragEnd {
+        // For page links and database embeds, the handle uses .onDrag with
+        // an NSItemProvider containing the file path — same mechanism the sidebar's
+        // own file tree uses, so drop indicators and positioning work correctly.
+        let sidebarDragPath: String? = {
+            switch block.type {
+            case .pageLink:
+                return findPageEntry(named: block.pageLinkName)?.path
+            case .databaseEmbed:
+                return resolvedDatabasePath
+            default:
+                return nil
+            }
+        }()
+
+        if let sidebarDragPath {
+            baseHandle.onDrag {
+                NSItemProvider(object: sidebarDragPath as NSString)
+            } preview: {
+                // Drag preview showing the page/database name
+                let label = block.type == .pageLink ? block.pageLinkName : (sidebarDragPath as NSString).lastPathComponent
+                Text(label)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+        } else if let onHandleDragStart, let onHandleDragChange, let onHandleDragEnd {
             baseHandle.gesture(
                 DragGesture(minimumDistance: 2, coordinateSpace: .named(blockEditorCoordinateSpace))
                     .onChanged { value in

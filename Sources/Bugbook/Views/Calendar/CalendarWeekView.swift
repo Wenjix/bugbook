@@ -46,7 +46,6 @@ struct CalendarWeekView: View {
                 }
             }
         }
-        .ignoresSafeArea(.container, edges: .top)
     }
 
     // MARK: - Day Headers (Notion style: "Sun 15" inline)
@@ -125,16 +124,15 @@ struct CalendarWeekView: View {
 
     // MARK: - Time Grid
 
-    /// Hours too close to the current time get hidden (within ~20min)
+    /// Hours too close to the current time indicator get hidden to avoid overlap.
     private func shouldHideHourLabel(_ hour: Int) -> Bool {
         guard days.contains(where: { isToday($0) }) else { return false }
         let nowHour = Calendar.current.component(.hour, from: Date())
         let nowMinute = Calendar.current.component(.minute, from: Date())
-        if hour == nowHour { return true }
+        // Hide current hour when indicator is far from the top of the cell
+        if hour == nowHour && nowMinute > 20 { return true }
         // Hide next hour if current time is within 20min of it
         if hour == nowHour + 1 && nowMinute >= 40 { return true }
-        // Hide previous hour if current time is within 20min of it
-        if hour == nowHour && nowMinute <= 20 { return true }
         return false
     }
 
@@ -205,6 +203,7 @@ struct CalendarWeekView: View {
                     }
 
                     let dbItems = calendarVM.databaseItems(for: day, from: databaseItems)
+                        .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                     ForEach(dbItems, id: \.id) { item in
                         databaseItemBlock(item)
                     }
@@ -294,7 +293,6 @@ struct CalendarWeekView: View {
         let now = Date()
         if days.contains(where: { isToday($0) }) {
             let y = calendarVM.yPosition(for: now, hourHeight: hourHeight)
-            let todayIndex = days.firstIndex(where: { isToday($0) }) ?? 0
             let nowColor = StatusColor.error
 
             // Time label in gutter (single line, e.g. "6:38 PM")
@@ -315,28 +313,16 @@ struct CalendarWeekView: View {
             .allowsHitTesting(false)
 
             // Thin red line from gutter across all columns, thicker on today
-            HStack(spacing: 0) {
-                // Dot at the gutter edge
-                Color.clear.frame(width: timeGutterWidth - 4)
-                Circle()
-                    .fill(nowColor)
-                    .frame(width: 8, height: 8)
-                    .offset(y: y - 4)
+            HStack(alignment: .top, spacing: 0) {
+                Color.clear.frame(width: timeGutterWidth)
 
-                GeometryReader { geo in
-                    let colWidth = geo.size.width / CGFloat(days.count)
-
-                    // Thin line across all columns
+                // Per-column lines using same layout as event overlays
+                ForEach(Array(days.enumerated()), id: \.offset) { index, day in
                     Rectangle()
-                        .fill(nowColor.opacity(0.3))
-                        .frame(width: geo.size.width, height: 1)
-                        .offset(y: y)
-
-                    // Thicker line on today's column only
-                    Rectangle()
-                        .fill(nowColor)
-                        .frame(width: colWidth, height: 2)
-                        .offset(x: CGFloat(todayIndex) * colWidth, y: y - 0.5)
+                        .fill(isToday(day) ? nowColor : nowColor.opacity(0.3))
+                        .frame(height: isToday(day) ? 2 : 1)
+                        .frame(maxWidth: .infinity)
+                        .offset(y: isToday(day) ? y - 0.5 : y)
                 }
             }
             .allowsHitTesting(false)

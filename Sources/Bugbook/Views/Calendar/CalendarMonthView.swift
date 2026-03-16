@@ -59,6 +59,7 @@ struct CalendarMonthView: View {
         let isCurrentMonth = calendar.component(.month, from: day) == calendar.component(.month, from: selectedDate)
         let dayEvents = calendarVM.events(for: day, from: events)
         let dayDbItems = calendarVM.databaseItems(for: day, from: databaseItems)
+            .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
         return VStack(alignment: .leading, spacing: 2) {
             // Day number

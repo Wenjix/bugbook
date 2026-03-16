@@ -217,16 +217,33 @@ struct FileTreeDropDelegate: DropDelegate {
                 case .above(let insertIndex):
                     let draggedName = (draggedPath as NSString).lastPathComponent
                     let draggedParent = (draggedPath as NSString).deletingLastPathComponent
-                    let entryParents = Set(entries.map { ($0.path as NSString).deletingLastPathComponent })
-                    guard entryParents.contains(draggedParent) || entries.contains(where: { $0.path == draggedPath }) else { return }
+                    let isAlreadySibling = draggedParent == parentPath || entries.contains(where: { $0.path == draggedPath })
 
-                    fileSystem.reorderEntry(
-                        named: draggedName,
-                        toIndex: insertIndex,
-                        inParent: parentPath,
-                        siblings: entries
-                    )
-                    onDidReorder()
+                    if isAlreadySibling {
+                        // Reorder within the same directory
+                        fileSystem.reorderEntry(
+                            named: draggedName,
+                            toIndex: insertIndex,
+                            inParent: parentPath,
+                            siblings: entries
+                        )
+                        onDidReorder()
+                    } else {
+                        // Move from another location into this directory
+                        // Insert into custom order at the drop position so it
+                        // appears where the user dropped it, not alphabetically.
+                        var names = entries.map(\.name)
+                        let insertAt = min(insertIndex, names.count)
+                        names.insert(draggedName, at: insertAt)
+                        fileSystem.saveCustomOrder(names, for: parentPath)
+
+                        NotificationCenter.default.post(
+                            name: .movePageToDir,
+                            object: nil,
+                            userInfo: ["sourcePath": draggedPath, "destDir": parentPath]
+                        )
+                        onRefreshTree()
+                    }
 
                 case .none:
                     break

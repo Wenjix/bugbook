@@ -564,28 +564,26 @@ class FileSystemService {
 
     /// Sort entries using custom order if available, falling back to directories-first then alphabetical.
     /// This is called from computed properties during rendering — it must be side-effect-free.
-    /// Only applies custom order when it covers ALL current entries to prevent partial/stale orders
-    /// from causing items to jump around.
+    /// Preserves custom order for known entries and appends new/unrecognized entries at the end
+    /// rather than discarding the entire custom order on any mismatch.
     func sortedEntries(_ entries: [FileEntry], parentPath: String) -> [FileEntry] {
         guard let order = customOrder(for: parentPath), !order.isEmpty else {
             return defaultSortedEntries(entries)
         }
 
-        let entryNames = Set(entries.map(\.name))
-
-        // Only use custom order if it covers every current entry.
-        // A partial/stale order causes unrecognized items to jump to the bottom.
-        let coversAll = entryNames.allSatisfy { order.contains($0) }
-        guard coversAll else {
-            return defaultSortedEntries(entries)
-        }
-
         let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
-        return entries.sorted { a, b in
-            let idxA = orderMap[a.name] ?? Int.max
-            let idxB = orderMap[b.name] ?? Int.max
-            return idxA < idxB
+        var known: [FileEntry] = []
+        var unknown: [FileEntry] = []
+        for entry in entries {
+            if orderMap[entry.name] != nil {
+                known.append(entry)
+            } else {
+                unknown.append(entry)
+            }
         }
+
+        known.sort { (orderMap[$0.name] ?? Int.max) < (orderMap[$1.name] ?? Int.max) }
+        return known + defaultSortedEntries(unknown)
     }
 
     /// Default sort: directories first, then alphabetical.

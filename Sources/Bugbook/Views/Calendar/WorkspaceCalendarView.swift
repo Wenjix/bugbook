@@ -15,7 +15,6 @@ struct WorkspaceCalendarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .ignoresSafeArea(.container, edges: .top)
         .background(Color.fallbackEditorBg)
         .animation(.easeInOut(duration: 0.15), value: calendarVM.viewMode)
         .onAppear {
