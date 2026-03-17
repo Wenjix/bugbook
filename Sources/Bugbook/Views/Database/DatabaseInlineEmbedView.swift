@@ -620,6 +620,10 @@ struct DatabaseInlineEmbedView: View {
 
         switch state.activeView?.type ?? .table {
         case .table:
+            // For large databases, use an inner scroll context so LazyVStack
+            // can be truly lazy instead of forcing all rows to lay out for the
+            // parent page's ScrollView. Small databases keep the flat layout.
+            let useInnerScroll = filtered.count > 20
             ScrollView(.horizontal) {
                 TableView(
                     schema: schema,
@@ -646,10 +650,11 @@ struct DatabaseInlineEmbedView: View {
                     onClearSorts: { state.clearSorts() },
                     onNewRow: { addNewRow() },
                     scrollToRowId: newRowScrollId,
-                    usesInnerScroll: false
+                    usesInnerScroll: useInnerScroll
                 )
             }
             .scrollIndicators(.visible)
+            .frame(height: useInnerScroll ? 400 : nil)
         case .kanban:
             KanbanView(
                 schema: schema,
