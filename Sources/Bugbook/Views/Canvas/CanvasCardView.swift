@@ -8,7 +8,6 @@ struct CanvasCardView: View {
 
     @State private var isDragging = false
     @State private var isResizing = false
-    @State private var dragStart: CGPoint = .zero
     @State private var resizeStart: CGSize = .zero
 
     private var isSelected: Bool { document.selectedNodeIds.contains(node.id) }
@@ -266,14 +265,21 @@ struct CanvasCardView: View {
             .onChanged { value in
                 if !isDragging {
                     isDragging = true
-                    dragStart = CGPoint(x: node.x, y: node.y)
+                    // Ensure this node is selected (handles dragging an unselected node)
+                    if !document.selectedNodeIds.contains(node.id) {
+                        document.selectedNodeId = node.id
+                    }
+                    document.storeDragStartPositions()
                 }
-                let newX = dragStart.x + value.translation.width / zoom
-                let newY = dragStart.y + value.translation.height / zoom
-                document.moveNode(id: node.id, to: CGPoint(x: newX, y: newY))
+                let delta = CGSize(
+                    width: value.translation.width / zoom,
+                    height: value.translation.height / zoom
+                )
+                document.moveSelectedNodes(delta: delta)
             }
             .onEnded { _ in
                 isDragging = false
+                document.clearDragStartPositions()
             }
     }
 }
