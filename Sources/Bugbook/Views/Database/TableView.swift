@@ -268,6 +268,7 @@ struct TableView: View {
                         dragStartWidths.removeValue(forKey: key)
                         dragStartX.removeValue(forKey: key)
                         draggingResizeKey = nil
+                        hoveredResizeKey = nil
                         NSCursor.pop()
                     }
             )
