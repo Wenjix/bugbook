@@ -78,6 +78,7 @@ class CanvasDocument {
     var selectedNodeIds: Set<String> = []
     var selectedEdgeId: String?
     var editingNodeId: String?
+    private(set) var dragStartPositions: [String: CGPoint] = [:]
 
     /// Convenience: returns the single selected node ID (nil if 0 or 2+ selected)
     var selectedNodeId: String? {
@@ -323,6 +324,29 @@ class CanvasDocument {
         nodes[idx].x = position.x
         nodes[idx].y = position.y
         isDirty = true
+    }
+
+    func moveSelectedNodes(delta: CGSize) {
+        for id in selectedNodeIds {
+            guard let start = dragStartPositions[id],
+                  let idx = nodes.firstIndex(where: { $0.id == id }) else { continue }
+            nodes[idx].x = start.x + delta.width
+            nodes[idx].y = start.y + delta.height
+        }
+        isDirty = true
+    }
+
+    func storeDragStartPositions() {
+        dragStartPositions = [:]
+        for id in selectedNodeIds {
+            if let node = nodes.first(where: { $0.id == id }) {
+                dragStartPositions[id] = CGPoint(x: node.x, y: node.y)
+            }
+        }
+    }
+
+    func clearDragStartPositions() {
+        dragStartPositions = [:]
     }
 
     func resizeNode(id: String, width: CGFloat, height: CGFloat) {
