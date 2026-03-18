@@ -105,16 +105,7 @@ final class DatabaseViewState {
                 isLoadInFlight = false
             }
 
-            // If cancelled but schema was never set, retry once so the spinner
-            // doesn't persist forever (e.g., after a view hierarchy rebuild).
-            if Task.isCancelled {
-                if schema == nil {
-                    Task { @MainActor [weak self] in
-                        self?.loadData(onLoaded: onLoaded)
-                    }
-                }
-                return
-            }
+            guard !Task.isCancelled else { return }
 
             switch result {
             case .success(let (loadedSchema, loadedRows)):
@@ -460,13 +451,15 @@ final class DatabaseViewState {
         return "\(baseName) \(counter)"
     }
 
-    func moveView(fromId: String, toId: String) {
-        guard var s = schema,
-              let fromIndex = s.views.firstIndex(where: { $0.id == fromId }),
-              let toIndex = s.views.firstIndex(where: { $0.id == toId }),
-              fromIndex != toIndex else { return }
-        let view = s.views.remove(at: fromIndex)
-        s.views.insert(view, at: toIndex)
+    func reorderViews(sourceId: String, beforeId: String?) {
+        guard var s = schema else { return }
+        guard let sourceIdx = s.views.firstIndex(where: { $0.id == sourceId }) else { return }
+        let view = s.views.remove(at: sourceIdx)
+        if let beforeId, let targetIdx = s.views.firstIndex(where: { $0.id == beforeId }) {
+            s.views.insert(view, at: targetIdx)
+        } else {
+            s.views.append(view)
+        }
         schema = s
         Task {
             try? dbService.saveSchema(s, at: dbPath)
