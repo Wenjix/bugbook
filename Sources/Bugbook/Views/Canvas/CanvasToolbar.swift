@@ -38,6 +38,39 @@ struct CanvasToolbar: View {
             .background(Color.primary.opacity(0.06))
             .clipShape(.rect(cornerRadius: 6))
 
+            Divider().frame(height: 20)
+
+            // Shape tools
+            Button(action: addRectangle) {
+                Label("Rect", systemImage: "rectangle")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.06))
+            .clipShape(.rect(cornerRadius: 6))
+
+            Button(action: addEllipse) {
+                Label("Ellipse", systemImage: "circle")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.06))
+            .clipShape(.rect(cornerRadius: 6))
+
+            Button(action: addDiamond) {
+                Label("Diamond", systemImage: "diamond")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.06))
+            .clipShape(.rect(cornerRadius: 6))
+
             if !document.selectedNodeIds.isEmpty || document.selectedEdgeId != nil {
                 Divider().frame(height: 20)
                 Button(action: deleteSelected) {
@@ -87,6 +120,18 @@ struct CanvasToolbar: View {
 
     private func addTextNode() {
         document.addTextNode(at: visibleCenter)
+    }
+
+    private func addRectangle() {
+        document.addShapeNode(at: visibleCenter, type: .rectangle)
+    }
+
+    private func addEllipse() {
+        document.addShapeNode(at: visibleCenter, type: .ellipse)
+    }
+
+    private func addDiamond() {
+        document.addShapeNode(at: visibleCenter, type: .diamond)
     }
 
     private func deleteSelected() {

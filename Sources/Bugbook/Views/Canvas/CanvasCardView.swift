@@ -10,21 +10,29 @@ struct CanvasCardView: View {
     @State private var isResizing = false
     @State private var dragStart: CGPoint = .zero
     @State private var resizeStart: CGSize = .zero
+    @State private var isEditingLabel = false
+    @State private var editingLabelText = ""
+    @State private var pagePreview: PagePreview?
 
     private var isSelected: Bool { document.selectedNodeIds.contains(node.id) }
     private var isEditing: Bool { document.editingNodeId == node.id }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            cardContent
-                .frame(width: node.width, height: node.height)
-                .background(cardBackground)
-                .clipShape(.rect(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: isSelected ? 2 : 1)
-                )
-                .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+            if node.type.isShape {
+                shapeContent
+                    .frame(width: node.width, height: node.height)
+            } else {
+                cardContent
+                    .frame(width: node.width, height: node.height)
+                    .background(cardBackground)
+                    .clipShape(.rect(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: isSelected ? 2 : 1)
+                    )
+                    .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+            }
 
             // Resize handle (single-select only)
             if isSelected && document.selectedNodeIds.count == 1 {
@@ -56,6 +64,9 @@ struct CanvasCardView: View {
                     if let path = document.resolveFilePath(for: node) {
                         onNavigateToFile?(path)
                     }
+                case .rectangle, .roundedRect, .ellipse, .diamond:
+                    isEditingLabel = true
+                    editingLabelText = node.file ?? ""
                 case .image:
                     break
                 }
@@ -75,6 +86,8 @@ struct CanvasCardView: View {
             fileCardContent
         case .image:
             imageCardContent
+        case .rectangle, .roundedRect, .ellipse, .diamond:
+            EmptyView() // shapes rendered by shapeContent
         }
     }
 
@@ -112,27 +125,108 @@ struct CanvasCardView: View {
 
     @ViewBuilder
     private var fileCardContent: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 20))
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header: icon + title + navigation arrow
+            HStack(spacing: 8) {
+                pageIconView(pagePreview?.icon)
+                    .frame(width: 20, height: 20)
                 Text(document.fileNodeDisplayName(for: node))
                     .font(.system(size: 14, weight: .medium))
                     .lineLimit(1)
-                if let file = node.file {
-                    Text(file)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary.opacity(0.5))
             }
-            Spacer()
-            Image(systemName: "arrow.right")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary.opacity(0.5))
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            // Content preview (first 2-3 lines)
+            if let preview = pagePreview, !preview.contentLines.isEmpty {
+                Divider()
+                    .padding(.horizontal, 12)
+                Text(preview.contentLines.joined(separator: "\n"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+            }
+
+            Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(.bottom, 8)
+        .onAppear { loadPagePreview() }
+    }
+
+    @ViewBuilder
+    private func pageIconView(_ icon: String?) -> some View {
+        if let icon = icon, !icon.isEmpty {
+            if icon.hasPrefix("custom:") {
+                let path = String(icon.dropFirst(7))
+                if let nsImage = NSImage(contentsOfFile: path) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                }
+            } else if icon.hasPrefix("sf:") {
+                Image(systemName: String(icon.dropFirst(3)))
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 16))
+            } else {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Image(systemName: "doc.text")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func loadPagePreview() {
+        guard node.type == .file, let resolvedPath = document.resolveFilePath(for: node) else { return }
+        // For .md files, read the file and parse metadata + first few content lines
+        let filePath: String
+        if FileManager.default.fileExists(atPath: resolvedPath) {
+            filePath = resolvedPath
+        } else if !resolvedPath.hasSuffix(".md"),
+                  FileManager.default.fileExists(atPath: resolvedPath + ".md") {
+            filePath = resolvedPath + ".md"
+        } else {
+            return
+        }
+        guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { return }
+        let (metadata, body) = MarkdownBlockParser.parseMetadata(content)
+        // Grab the first 3 non-empty, non-metadata, non-heading content lines
+        let lines = body.components(separatedBy: "\n")
+        var previewLines: [String] = []
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            if trimmed.hasPrefix("<!--") { continue }
+            // Strip heading markers for preview
+            if trimmed.hasPrefix("#") {
+                continue
+            }
+            // Strip markdown formatting for cleaner preview
+            var clean = trimmed
+            // Remove leading list markers
+            if let bullet = clean.firstIndex(of: "-"), clean[clean.startIndex...bullet].allSatisfy({ $0 == " " || $0 == "-" }) {
+                clean = String(clean[clean.index(after: bullet)...]).trimmingCharacters(in: .whitespaces)
+            }
+            previewLines.append(clean)
+            if previewLines.count >= 3 { break }
+        }
+        pagePreview = PagePreview(icon: metadata.icon, contentLines: previewLines)
     }
 
     @ViewBuilder
@@ -154,6 +248,59 @@ struct CanvasCardView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    // MARK: - Shape Content
+
+    @ViewBuilder
+    private var shapeContent: some View {
+        let fillColor = canvasColor(node.color ?? "blue").opacity(0.15)
+        let strokeColor = isSelected ? Color.accentColor : canvasColor(node.borderColor ?? node.color ?? "blue")
+
+        ZStack {
+            shapeFillAndStroke(fill: fillColor, stroke: strokeColor)
+
+            // Label
+            if isEditingLabel {
+                TextField("Label", text: $editingLabelText, onCommit: {
+                    document.updateShapeLabel(id: node.id, label: editingLabelText)
+                    isEditingLabel = false
+                })
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .multilineTextAlignment(.center)
+                .padding(16)
+                .onExitCommand { isEditingLabel = false }
+            } else if let label = node.file, !label.isEmpty {
+                Text(label)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(16)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func shapeFillAndStroke(fill: Color, stroke: Color) -> some View {
+        let lineWidth: CGFloat = isSelected ? 2.5 : 1.5
+        switch node.type {
+        case .rectangle:
+            Rectangle().fill(fill)
+            Rectangle().stroke(stroke, lineWidth: lineWidth)
+        case .roundedRect:
+            RoundedRectangle(cornerRadius: 12).fill(fill)
+            RoundedRectangle(cornerRadius: 12).stroke(stroke, lineWidth: lineWidth)
+        case .ellipse:
+            Ellipse().fill(fill)
+            Ellipse().stroke(stroke, lineWidth: lineWidth)
+        case .diamond:
+            DiamondShape().fill(fill)
+            DiamondShape().stroke(stroke, lineWidth: lineWidth)
+        default:
+            EmptyView()
         }
     }
 
@@ -278,6 +425,13 @@ struct CanvasCardView: View {
     }
 }
 
+// MARK: - Page Preview
+
+private struct PagePreview {
+    let icon: String?
+    let contentLines: [String]
+}
+
 // MARK: - TextEditor Wrapper
 
 private struct TextEditorWrapper: View {
@@ -296,5 +450,19 @@ private struct TextEditorWrapper: View {
                 onCommit()
                 return .handled
             }
+    }
+}
+
+// MARK: - Diamond Shape
+
+struct DiamondShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.closeSubpath()
+        return path
     }
 }

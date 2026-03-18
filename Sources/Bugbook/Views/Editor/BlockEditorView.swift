@@ -90,6 +90,7 @@ struct BlockEditorView: View {
                 let nextBlock = index + 1 < document.blocks.count ? document.blocks[index + 1] : nil
                 let useTallDropZone = block.type == .databaseEmbed
                     || block.type == .pageLink
+                    || block.type == .canvas
                     || nextBlock?.type == .image
                     || nextBlock?.type == .pageLink
                 // After an image block use a slimmer drop zone since ImageBlockView
@@ -111,7 +112,7 @@ struct BlockEditorView: View {
                         // Right-side drop zone for column creation.
                         // Skip for database embeds — the 40px hittable overlay intercepts
                         // clicks on controls (settings, search, etc.) at the right edge.
-                        if block.type != .databaseEmbed {
+                        if block.type != .databaseEmbed, block.type != .canvas {
                             ColumnDropZoneView(
                                 isActive: columnDropTargetId == block.id,
                                 onDrop: { droppedIds in
@@ -148,7 +149,7 @@ struct BlockEditorView: View {
                         } else if index + 1 < document.blocks.count {
                             let next = document.blocks[index + 1]
                             // If next block is non-editable (image, etc.), insert a paragraph between
-                            if next.type == .image || next.type == .databaseEmbed {
+                            if next.type == .image || next.type == .databaseEmbed || next.type == .canvas {
                                 document.focusOrInsertParagraphAfter(blockId: block.id)
                             } else {
                                 document.focusedBlockId = next.id
@@ -174,7 +175,8 @@ struct BlockEditorView: View {
                 document.clearMultiBlockTextSelection()
                 if let lastBlock = document.blocks.last,
                    lastBlock.text.isEmpty,
-                   lastBlock.type != .databaseEmbed {
+                   lastBlock.type != .databaseEmbed,
+                   lastBlock.type != .canvas {
                     document.focusedBlockId = lastBlock.id
                     document.cursorPosition = 0
                 } else {
@@ -405,7 +407,7 @@ struct BlockEditorView: View {
         }
 
         switch hitBlock.type {
-        case .image, .databaseEmbed:
+        case .image, .databaseEmbed, .canvas:
             return false
         default:
             return true
@@ -489,7 +491,7 @@ struct BlockEditorView: View {
         let startIndex = document.titleBlock != nil ? 1 : 0
         let visibleBlocks = Array(document.blocks.enumerated().dropFirst(startIndex))
             .map(\.element)
-            .filter { !excludedIds.contains($0.id) && $0.type != .databaseEmbed }
+            .filter { !excludedIds.contains($0.id) && $0.type != .databaseEmbed && $0.type != .canvas }
 
         for block in visibleBlocks {
             guard let frame = document.registeredBlockFrames[block.id] else { continue }
@@ -664,6 +666,8 @@ private extension Block {
             return "Image"
         case .databaseEmbed:
             return "Database"
+        case .canvas:
+            return "Canvas"
         case .horizontalRule:
             return "Divider"
         case .column:
@@ -694,6 +698,8 @@ private extension Block {
             return "tablecells"
         case .toggle:
             return "chevron.right"
+        case .canvas:
+            return "rectangle.on.rectangle.angled"
         case .horizontalRule:
             return "minus"
         case .column:

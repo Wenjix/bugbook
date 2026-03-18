@@ -18,14 +18,26 @@ struct CanvasNodeMeta: Codable, Identifiable {
     var y: CGFloat
     var width: CGFloat
     var height: CGFloat
-    var file: String?      // relative path for file nodes
-    var color: String?
+    var file: String?      // relative path for file nodes, label text for shape nodes
+    var color: String?     // fill color for shapes, background tint for cards
+    var borderColor: String?
 }
 
 enum CanvasNodeType: String, Codable {
     case text
     case file
     case image
+    case rectangle
+    case roundedRect
+    case ellipse
+    case diamond
+
+    var isShape: Bool {
+        switch self {
+        case .rectangle, .roundedRect, .ellipse, .diamond: return true
+        default: return false
+        }
+    }
 }
 
 struct CanvasEdgeMeta: Codable, Identifiable {
@@ -259,6 +271,30 @@ class CanvasDocument {
         )
         nodes.append(node)
         selectedNodeId = id
+        isDirty = true
+    }
+
+    func addShapeNode(at position: CGPoint, type: CanvasNodeType) {
+        saveUndo()
+        let id = generateId(prefix: "node")
+        let node = CanvasNodeMeta(
+            id: id,
+            type: type,
+            x: position.x,
+            y: position.y,
+            width: 160,
+            height: type == .diamond ? 160 : 100,
+            color: "blue",
+            borderColor: "blue"
+        )
+        nodes.append(node)
+        selectedNodeId = id
+        isDirty = true
+    }
+
+    func updateShapeLabel(id: String, label: String) {
+        guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
+        nodes[idx].file = label.isEmpty ? nil : label
         isDirty = true
     }
 

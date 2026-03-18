@@ -775,6 +775,7 @@ class BlockDocument {
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
+        SlashCommand(name: "Canvas", icon: "rectangle.on.rectangle.angled", action: .blockType(.canvas, headingLevel: 0)),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -1079,7 +1080,6 @@ class BlockDocument {
         focusedBlockId = imageBlock.id
     }
 
-    /// Inserts a new page link block at the given index.
     func insertPageLinkBlock(at index: Int, name: String) {
         saveUndo()
         let block = Block(type: .pageLink, pageLinkName: name)
