@@ -451,6 +451,21 @@ final class DatabaseViewState {
         return "\(baseName) \(counter)"
     }
 
+    func reorderViews(sourceId: String, beforeId: String?) {
+        guard var s = schema else { return }
+        guard let sourceIdx = s.views.firstIndex(where: { $0.id == sourceId }) else { return }
+        let view = s.views.remove(at: sourceIdx)
+        if let beforeId, let targetIdx = s.views.firstIndex(where: { $0.id == beforeId }) {
+            s.views.insert(view, at: targetIdx)
+        } else {
+            s.views.append(view)
+        }
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+        }
+    }
+
     func deleteView(_ view: ViewConfig) {
         guard var s = schema, s.views.count > 1 else { return }
         s.views.removeAll { $0.id == view.id }

@@ -164,6 +164,42 @@ func defaultDatabaseViewConfig() -> ViewConfig {
     ViewConfig(id: "default", name: "Table", type: .table, sorts: [], filters: [])
 }
 
+// MARK: - View Tab Drop Delegate
+
+struct ViewTabDropDelegate: DropDelegate {
+    let targetId: String
+    let state: DatabaseViewState
+    @Binding var draggedId: String?
+    @Binding var dropTargetId: String?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedId, draggedId != targetId else { return }
+        dropTargetId = targetId
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTargetId == targetId {
+            dropTargetId = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let draggedId, draggedId != targetId else { return false }
+        state.reorderViews(sourceId: draggedId, beforeId: targetId)
+        self.draggedId = nil
+        dropTargetId = nil
+        return true
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedId != nil && draggedId != targetId
+    }
+}
+
 func uniqueDatePropertyName(in schema: DatabaseSchema) -> String {
     let existingNames = Set(schema.properties.map(\.name))
     if !existingNames.contains("Date") {

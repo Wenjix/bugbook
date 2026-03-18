@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BugbookCore
 
 extension Notification.Name {
@@ -39,6 +40,8 @@ struct DatabaseFullPageView: View {
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
     @State private var initialPeekHandled = false
+    @State private var draggedViewTabId: String?
+    @State private var viewTabDropTargetId: String?
 
     init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
@@ -178,21 +181,7 @@ struct DatabaseFullPageView: View {
     private func viewTabs(schema: DatabaseSchema) -> some View {
         HStack(spacing: 4) {
             ForEach(schema.views) { view in
-                Button {
-                    state.activeViewId = view.id
-                    state.persistActiveView(view.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: iconForViewType(view.type))
-                        Text(view.name)
-                    }
-                    .font(DatabaseZoomMetrics.font(12))
-                    .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                    .padding(.vertical, DatabaseZoomMetrics.size(4))
-                    .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
-                }
-                .buttonStyle(.plain)
+                viewTabButton(view: view)
             }
 
             Menu {
@@ -217,6 +206,42 @@ struct DatabaseFullPageView: View {
         .padding(.leading, DatabaseZoomMetrics.size(4))
         .padding(.trailing, DatabaseZoomMetrics.size(12))
         .padding(.vertical, DatabaseZoomMetrics.size(4))
+    }
+
+    private func viewTabButton(view: ViewConfig) -> some View {
+        Button {
+            draggedViewTabId = nil
+            viewTabDropTargetId = nil
+            state.activeViewId = view.id
+            state.persistActiveView(view.id)
+        } label: {
+            HStack(spacing: 4) {
+                if viewTabDropTargetId == view.id {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 2, height: DatabaseZoomMetrics.size(14))
+                }
+                Image(systemName: iconForViewType(view.type))
+                Text(view.name)
+            }
+            .font(DatabaseZoomMetrics.font(12))
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(4))
+            .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
+            .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+            .opacity(draggedViewTabId == view.id ? 0.4 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onDrag {
+            draggedViewTabId = view.id
+            return NSItemProvider(object: view.id as NSString)
+        }
+        .onDrop(of: [.text], delegate: ViewTabDropDelegate(
+            targetId: view.id,
+            state: state,
+            draggedId: $draggedViewTabId,
+            dropTargetId: $viewTabDropTargetId
+        ))
     }
 
     // MARK: - Settings Popover
