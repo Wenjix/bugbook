@@ -13,6 +13,7 @@ class FileSystemService {
     private let fileManager = FileManager.default
     private let recentWorkspacesKey = "recentWorkspaces"
     private let maxRecentWorkspaces = 20
+    private let maxTreeDepth = 10
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
 
@@ -62,7 +63,7 @@ class FileSystemService {
             }
         }
 
-        guard depth < 10 else { return [] }
+        guard depth < maxTreeDepth else { return [] }
 
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
             return []
