@@ -160,9 +160,9 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
+            // Always rebuild the content index when Cmd+K opens so edits
+            // to file contents (and new/removed files) are picked up.
+            invalidateContentIndex()
             // Detect qmd once; in-memory index remains the fallback
             Task {
                 let path = await Task.detached(priority: .utility) {
@@ -179,24 +179,14 @@ struct CommandPaletteView: View {
         }
         .onChange(of: appState.fileTree) { _, newTree in
             cachedFlatEntries = flattenFileTree(newTree)
-            contentIndex = []
-            contentIndexWorkspace = nil
-            contentIndexTask?.cancel()
-            contentIndexTask = nil
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
+            // Mark content index stale; it will be rebuilt next time
+            // the palette opens (onAppear) or a content search runs.
+            clearContentIndex()
         }
         .onChange(of: appState.workspacePath) { _, _ in
-            contentIndex = []
-            contentIndexWorkspace = nil
-            contentIndexTask?.cancel()
-            contentIndexTask = nil
             cachedFlatEntries = flattenFileTree(appState.fileTree)
+            invalidateContentIndex()
             scheduleContentSearch(query: effectiveQuery(from: searchText))
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
         }
     }
 
@@ -455,6 +445,22 @@ struct CommandPaletteView: View {
     }
 
     // MARK: - Content Search
+
+    /// Clear the cached content index so the next search rebuilds it.
+    private func clearContentIndex() {
+        contentIndex = []
+        contentIndexWorkspace = nil
+        contentIndexTask?.cancel()
+        contentIndexTask = nil
+    }
+
+    /// Clear the cached content index and kick off a fresh build.
+    private func invalidateContentIndex() {
+        clearContentIndex()
+        Task { @MainActor in
+            await warmContentIndexIfNeeded()
+        }
+    }
 
     private func scheduleContentSearch(query: String) {
         contentSearchTask?.cancel()
