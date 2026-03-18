@@ -32,6 +32,7 @@ struct BlockEditorView: View {
     @State private var marqueeDragState: MarqueeDragState?
     @State private var blockMoveDragState: BlockMoveDragState?
     @State private var autoScrollTimer: Timer?
+    @State private var autoScrollSpeed: CGFloat = 0
 
     var body: some View {
         // Skip the title block (first heading-1) — it's rendered separately above
@@ -84,6 +85,8 @@ struct BlockEditorView: View {
                 handleImageDrop(urls, at: startIndex)
             } onPageLinkDrop: { pageName in
                 document.insertPageLinkBlock(at: startIndex, name: pageName)
+            } onPagePathDrop: { path in
+                handlePagePathDrop(path, at: startIndex)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -136,6 +139,8 @@ struct BlockEditorView: View {
                     handleImageDrop(urls, at: index + 1)
                 } onPageLinkDrop: { pageName in
                     document.insertPageLinkBlock(at: index + 1, name: pageName)
+                } onPagePathDrop: { path in
+                    handlePagePathDrop(path, at: index + 1)
                 }
                 .overlay {
                     Button {
@@ -236,6 +241,16 @@ struct BlockEditorView: View {
                 document.insertImageBlock(at: index + offset, imagePath: path)
             }
         }
+        return true
+    }
+
+    /// Handles a sidebar page path drop: creates a page link block and triggers the file move.
+    private func handlePagePathDrop(_ path: String, at index: Int) -> Bool {
+        let pageName = BlockDocument.pageNameFromPath(path)
+        guard !pageName.isEmpty else { return false }
+        document.insertPageLinkBlock(at: index, name: pageName)
+        document.onSidebarPageDrop?(path)
+        activeDropIndex = nil
         return true
     }
 
@@ -343,14 +358,14 @@ struct BlockEditorView: View {
     }
 
     private func startAutoScroll(speed: CGFloat) {
-        // Only start if not already running
+        autoScrollSpeed = speed
         guard autoScrollTimer == nil else { return }
         autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [self] _ in
             guard let sv = marqueeDragState?.scrollView,
                   let docView = sv.documentView else { return }
             let clipView = sv.contentView
             var origin = clipView.bounds.origin
-            origin.y += speed
+            origin.y += autoScrollSpeed
             origin.y = max(0, min(origin.y, docView.frame.height - clipView.bounds.height))
             clipView.setBoundsOrigin(origin)
             sv.reflectScrolledClipView(clipView)
@@ -793,7 +808,8 @@ final class EditorFrameReporterView: NSView {
 
 /// Thin drop zone between blocks that shows a blue line when a drag hovers over it.
 /// Height is constant to prevent layout shifts that cause flickering.
-/// Accepts both block UUID drops (reorder) and image URL drops (insert image).
+/// Accepts block UUID drops (reorder), image URL drops (insert image), and
+/// sidebar page path drops (create page link + move file).
 struct DropZoneView: View {
     let isActive: Bool
     var height: CGFloat = 4
@@ -801,6 +817,7 @@ struct DropZoneView: View {
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
     var onPageLinkDrop: ((String) -> Void)?
+    var onPagePathDrop: ((String) -> Bool)?
 
     @State private var imageDropTargeted = false
 
@@ -818,10 +835,13 @@ struct DropZoneView: View {
             .contentShape(Rectangle())
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
-                // Check for page path drop (sidebar page drag)
-                let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.hasPrefix("/"), trimmed.hasSuffix(".md") {
-                    let filename = (trimmed as NSString).lastPathComponent
+                // Check if this is a sidebar page file path
+                if BlockDocument.isSidebarPagePath(payload) {
+                    if let handler = onPagePathDrop {
+                        return handler(payload)
+                    }
+                    // Fallback: create a page link without moving the file
+                    let filename = (payload as NSString).lastPathComponent
                     let pageName = String(filename.dropLast(3))
                     onPageLinkDrop?(pageName)
                     return onPageLinkDrop != nil

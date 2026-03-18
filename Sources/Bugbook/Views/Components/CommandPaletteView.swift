@@ -179,6 +179,13 @@ struct CommandPaletteView: View {
         }
         .onChange(of: appState.fileTree) { _, newTree in
             cachedFlatEntries = flattenFileTree(newTree)
+            contentIndex = []
+            contentIndexWorkspace = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
+            Task { @MainActor in
+                await warmContentIndexIfNeeded()
+            }
         }
         .onChange(of: appState.workspacePath) { _, _ in
             contentIndex = []
@@ -676,23 +683,53 @@ struct CommandPaletteView: View {
                 let fileName = (cleanPath as NSString).lastPathComponent
                 let lineNumber = r["line"] as? Int ?? 0
 
-                // Extract first meaningful line from snippet, strip "42: " prefix if present
-                var lineText = (r["snippet"] as? String ?? "")
+                // Use qmd title when available (cleaner than filename)
+                let displayName: String
+                if let title = r["title"] as? String, !title.isEmpty {
+                    displayName = title
+                } else {
+                    displayName = fileName
+                }
+
+                // Extract first meaningful content line from snippet.
+                // qmd snippets start with a diff header like "@@ -104,4 @@" followed
+                // by the actual document text. Skip those headers, YAML frontmatter,
+                // and HTML comments to surface the real content.
+                let snippetLines = (r["snippet"] as? String ?? "")
                     .components(separatedBy: "\n")
-                    .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
-                if let colon = lineText.firstIndex(of: ":") {
-                    let prefix = String(lineText[lineText.startIndex..<colon])
-                    if prefix.trimmingCharacters(in: .whitespaces).allSatisfy(\.isNumber) {
-                        lineText = String(lineText[lineText.index(after: colon)...])
-                            .trimmingCharacters(in: .whitespaces)
+                var lineText = ""
+                var inFrontmatter = false
+                for raw in snippetLines {
+                    // Strip optional "42: " line-number prefix
+                    var candidate = raw
+                    if let colon = candidate.firstIndex(of: ":") {
+                        let numPrefix = String(candidate[candidate.startIndex..<colon])
+                        if numPrefix.trimmingCharacters(in: .whitespaces).allSatisfy(\.isNumber) {
+                            candidate = String(candidate[candidate.index(after: colon)...])
+                        }
                     }
+                    let trimmed = candidate.trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty { continue }
+                    if trimmed.hasPrefix("@@") { continue }          // diff header
+                    if trimmed == "---" {                              // YAML frontmatter delimiter
+                        inFrontmatter = !inFrontmatter
+                        continue
+                    }
+                    if inFrontmatter { continue }                     // skip frontmatter fields
+                    if trimmed.hasPrefix("<!--") { continue }        // HTML comment / cover
+                    if trimmed.hasPrefix("#") {                       // heading — use as text
+                        lineText = String(trimmed.drop(while: { $0 == "#" || $0 == " " }))
+                        break
+                    }
+                    lineText = trimmed
+                    break
                 }
 
                 return ContentMatch(
                     filePath: fullPath,
-                    fileName: fileName,
+                    fileName: displayName,
                     lineNumber: lineNumber,
-                    lineText: lineText.isEmpty ? relPath : lineText
+                    lineText: lineText.isEmpty ? displayName : lineText
                 )
             }
         }.value

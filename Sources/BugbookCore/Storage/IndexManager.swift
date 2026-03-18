@@ -3,6 +3,12 @@ import Foundation
 public class IndexManager {
     private let fm = FileManager.default
 
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     public init() {}
 
     // MARK: - Load
@@ -107,12 +113,9 @@ public class IndexManager {
             }
         }
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-
         return [
             "version": 1,
-            "updated_at": formatter.string(from: Date()),
+            "updated_at": Self.isoFormatter.string(from: Date()),
             "rows": rowsMap,
             "indexes": indexes
         ]
@@ -129,8 +132,6 @@ public class IndexManager {
     // MARK: - Private
 
     private func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        Self.isoFormatter.string(from: date)
     }
 }

@@ -20,6 +20,8 @@ enum Log {
     static let agent = Logger(subsystem: subsystem, category: "Agent")
     /// Canvas operations
     static let canvas = Logger(subsystem: subsystem, category: "Canvas")
+    /// Audio capture and transcription
+    static let transcription = Logger(subsystem: subsystem, category: "Transcription")
     /// General app lifecycle
     static let app = Logger(subsystem: subsystem, category: "App")
 

@@ -46,13 +46,22 @@ func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
     case "not_contains": return !stringVal.localizedCaseInsensitiveContains(filter.value)
     case "is_empty": return stringVal.isEmpty
     case "is_not_empty": return !stringVal.isEmpty
-    case "greater_than": return stringVal > filter.value
-    case "less_than": return stringVal < filter.value
+    case "greater_than":
+        if let lhs = Double(stringVal), let rhs = Double(filter.value) { return lhs > rhs }
+        return stringVal > filter.value
+    case "less_than":
+        if let lhs = Double(stringVal), let rhs = Double(filter.value) { return lhs < rhs }
+        return stringVal < filter.value
     default: return true
     }
 }
 
 func compareValues(_ a: PropertyValue, _ b: PropertyValue) -> ComparisonResult {
+    if case .number(let aNum) = a, case .number(let bNum) = b {
+        if aNum < bNum { return .orderedAscending }
+        if aNum > bNum { return .orderedDescending }
+        return .orderedSame
+    }
     if case .date(let aRaw) = a, case .date(let bRaw) = b {
         let aKey = DatabaseDateValue.decode(from: aRaw)?.sortKey ?? aRaw
         let bKey = DatabaseDateValue.decode(from: bRaw)?.sortKey ?? bRaw

@@ -50,10 +50,19 @@ class FileSystemService {
     // MARK: - File Tree Building
 
     func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
+        let start = depth == 0 ? CFAbsoluteTimeGetCurrent() : 0
         let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
-        defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
+        defer {
+            if let state { Log.signpost.endInterval("buildFileTree", state) }
+            if depth == 0 {
+                let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+                if elapsed > 200 {
+                    Log.fileSystem.warning("buildFileTree took \(Int(elapsed))ms at \((path as NSString).lastPathComponent)")
+                }
+            }
+        }
 
-        guard depth < 5 else { return [] }
+        guard depth < 10 else { return [] }
 
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
             return []
@@ -323,7 +332,7 @@ class FileSystemService {
         return try createDatabase(in: companion, name: name)
     }
 
-    func createDatabase(in directory: String, name: String) throws -> String {
+    func createDatabase(in directory: String, name: String, properties: [PropertyDefinition]? = nil, views: [ViewConfig]? = nil) throws -> String {
         let sanitizedName = sanitizeDatabaseFolderName(name)
         let folderPath = uniqueDirectoryPath(in: directory, base: sanitizedName)
         try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
@@ -336,13 +345,13 @@ class FileSystemService {
             id: dbId,
             name: schemaName,
             version: 1,
-            properties: [
+            properties: properties ?? [
                 PropertyDefinition(id: "prop_title", name: "Name", type: .title),
             ],
-            views: [
+            views: views ?? [
                 ViewConfig(id: defaultViewId, name: "Table", type: .table, sorts: [], filters: [])
             ],
-            defaultView: defaultViewId,
+            defaultView: views?.first?.id ?? defaultViewId,
             createdAt: now
         )
 
@@ -875,8 +884,12 @@ class FileSystemService {
     }
 
     private func parseIconFromFile(at path: String) -> String? {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        return parseIcon(from: content)
+        // Read only the first 512 bytes — icon comments are always near the top.
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { handle.closeFile() }
+        let data = handle.readData(ofLength: 512)
+        guard let head = String(data: data, encoding: .utf8) else { return nil }
+        return parseIcon(from: head)
     }
 
     private func loadRecentWorkspaces() {

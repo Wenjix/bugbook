@@ -460,6 +460,19 @@ final class DatabaseViewState {
         return "\(baseName) \(counter)"
     }
 
+    func moveView(fromId: String, toId: String) {
+        guard var s = schema,
+              let fromIndex = s.views.firstIndex(where: { $0.id == fromId }),
+              let toIndex = s.views.firstIndex(where: { $0.id == toId }),
+              fromIndex != toIndex else { return }
+        let view = s.views.remove(at: fromIndex)
+        s.views.insert(view, at: toIndex)
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+        }
+    }
+
     func deleteView(_ view: ViewConfig) {
         guard var s = schema, s.views.count > 1 else { return }
         s.views.removeAll { $0.id == view.id }

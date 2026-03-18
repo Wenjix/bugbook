@@ -60,6 +60,7 @@ class BlockDocument {
     }
 
     @ObservationIgnored var onCreateDatabase: ((String) -> String?)?
+    @ObservationIgnored var onCreateMeetingDatabase: (() -> String?)?
     @ObservationIgnored var onCreateSubPage: ((String) -> String?)?
     @ObservationIgnored var onDeleteSubPage: ((String) -> Void)?
     @ObservationIgnored var onNavigateToPage: ((String) -> Void)?
@@ -67,6 +68,9 @@ class BlockDocument {
     @ObservationIgnored var onSubmitAiPrompt: ((String) -> Void)?
     @ObservationIgnored var onCancelAiPrompt: (() -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
+    /// Called when a page is dragged from the sidebar and dropped into the editor.
+    /// Parameters: source file path, insertion index where the page link was created.
+    @ObservationIgnored var onSidebarPageDrop: ((String) -> Void)?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
     @ObservationIgnored var workspacePath: String?
@@ -749,6 +753,7 @@ class BlockDocument {
         case template
         case imagePicker
         case askAI
+        case meetingNotes
     }
 
     struct SlashCommand {
@@ -776,6 +781,7 @@ class BlockDocument {
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
         SlashCommand(name: "Canvas", icon: "rectangle.on.rectangle.angled", action: .blockType(.canvas, headingLevel: 0)),
+        SlashCommand(name: "Meeting Notes", icon: "person.2.wave.2", action: .meetingNotes),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -829,6 +835,17 @@ class BlockDocument {
 
         case .askAI:
             showAiPrompt(blockId: blockId)
+            dismissSlashMenu()
+            return
+
+        case .meetingNotes:
+            if let createDb = onCreateMeetingDatabase,
+               let dbPath = createDb() {
+                updateBlockProperty(id: blockId) { block in
+                    block.type = .databaseEmbed
+                    block.databasePath = dbPath
+                }
+            }
             dismissSlashMenu()
             return
 
@@ -1082,9 +1099,22 @@ class BlockDocument {
 
     func insertPageLinkBlock(at index: Int, name: String) {
         saveUndo()
-        let block = Block(type: .pageLink, pageLinkName: name)
-        let clampedIndex = min(index, blocks.count)
-        blocks.insert(block, at: clampedIndex)
+        var block = Block(type: .pageLink)
+        block.pageLinkName = name
+        let clamped = min(index, blocks.count)
+        blocks.insert(block, at: clamped)
+        focusedBlockId = block.id
+    }
+
+    /// Returns true if the payload string looks like a sidebar page file path.
+    static func isSidebarPagePath(_ payload: String) -> Bool {
+        payload.hasPrefix("/") && payload.hasSuffix(".md")
+    }
+
+    /// Extracts the page display name from a sidebar file path.
+    static func pageNameFromPath(_ path: String) -> String {
+        let filename = (path as NSString).lastPathComponent
+        return filename.hasSuffix(".md") ? String(filename.dropLast(3)) : filename
     }
 
     /// Saves raw image data to the workspace `_assets/` directory and returns the absolute path.

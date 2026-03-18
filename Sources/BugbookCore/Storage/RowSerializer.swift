@@ -2,6 +2,21 @@ import Foundation
 
 public struct RowSerializer {
 
+    // MARK: - Cached Formatters
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let dateOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
     // MARK: - Serialize
 
     public static func serialize(row: DatabaseRow, schema: DatabaseSchema) -> String {
@@ -64,11 +79,7 @@ public struct RowSerializer {
         // O(1) property lookup instead of linear scan per property
         let propById = Dictionary(uniqueKeysWithValues: schema.properties.map { ($0.id, $0) })
 
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        let dateOnly = DateFormatter()
-        dateOnly.dateFormat = "yyyy-MM-dd"
-        dateOnly.timeZone = TimeZone(identifier: "UTC")
+        // Use cached static formatters for performance
 
         for line in yamlBlock.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -97,10 +108,10 @@ public struct RowSerializer {
                     id = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
                 } else if trimmed.hasPrefix("created_at:") {
                     let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    createdAt = isoFormatter.date(from: val) ?? dateOnly.date(from: val) ?? Date()
+                    createdAt = Self.isoFormatter.date(from: val) ?? Self.dateOnlyFormatter.date(from: val) ?? Date()
                 } else if trimmed.hasPrefix("updated_at:") {
                     let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    updatedAt = isoFormatter.date(from: val) ?? dateOnly.date(from: val) ?? Date()
+                    updatedAt = Self.isoFormatter.date(from: val) ?? Self.dateOnlyFormatter.date(from: val) ?? Date()
                 }
             }
         }
@@ -202,8 +213,6 @@ public struct RowSerializer {
     }
 
     private static func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        isoFormatter.string(from: date)
     }
 }

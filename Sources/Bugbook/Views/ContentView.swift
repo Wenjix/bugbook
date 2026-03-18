@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import os
 import Sentry
+import BugbookCore
 
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1076,6 +1077,12 @@ struct ContentView: View {
             if path != nil { refreshFileTree() }
             return path
         }
+        doc.onCreateMeetingDatabase = { [weak appState] in
+            guard let workspace = appState?.workspacePath else { return nil }
+            let path = findOrCreateMeetingsDatabase(in: workspace)
+            if path != nil { refreshFileTree() }
+            return path
+        }
         doc.onCreateSubPage = { [weak appState] name in
             guard let tab = appState?.activeTab else { return nil }
             let path = try? fileSystem.createSubPage(under: tab.path, name: name)
@@ -1095,6 +1102,17 @@ struct ContentView: View {
             // Immediately save the parent page so the deleted block doesn't reappear on reload
             performSave(tabId: tab.id)
             refreshFileTree()
+        }
+        doc.onSidebarPageDrop = { [weak appState] sourcePath in
+            guard let appState,
+                  let tab = appState.activeTab else { return }
+            let tabPath = tab.path
+            let destDir = tabPath.hasSuffix(".md") ? String(tabPath.dropLast(3)) : tabPath
+            guard sourcePath != tabPath else { return }
+            // Save the parent document so the newly inserted [[Page]] link is on disk
+            // before performMovePage checks for duplicates.
+            performSave(tabId: tab.id)
+            performMovePage(from: sourcePath, toDirectory: destDir)
         }
         doc.availablePages = appState.fileTree
         doc.workspacePath = appState.workspacePath
@@ -1995,6 +2013,40 @@ struct ContentView: View {
             return try fileSystem.createDatabase(underPage: pagePath, name: name)
         }
         return try fileSystem.createDatabase(in: workspace, name: name)
+    }
+
+    private func findOrCreateMeetingsDatabase(in workspace: String) -> String? {
+        // Look for an existing "Meetings" database at the workspace root
+        if let contents = try? FileManager.default.contentsOfDirectory(atPath: workspace) {
+            for name in contents where !name.hasPrefix(".") {
+                let fullPath = (workspace as NSString).appendingPathComponent(name)
+                guard fileSystem.isDatabaseFolder(at: fullPath) else { continue }
+                let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
+                guard let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+                      let schema = try? JSONDecoder().decode(DatabaseSchema.self, from: data),
+                      schema.name.lowercased().contains("meeting") else { continue }
+                return fullPath
+            }
+        }
+
+        // Create a new Meetings database with the right schema
+        let properties: [PropertyDefinition] = [
+            PropertyDefinition(id: "prop_title", name: "Title", type: .title),
+            PropertyDefinition(id: "prop_date", name: "Date", type: .date),
+            PropertyDefinition(id: "prop_attendees", name: "Attendees", type: .text),
+            PropertyDefinition(id: "prop_status", name: "Status", type: .select, config: PropertyConfig(options: [
+                SelectOption(id: "opt_scheduled", name: "Scheduled", color: "gray"),
+                SelectOption(id: "opt_recorded", name: "Recorded", color: "blue"),
+                SelectOption(id: "opt_summarized", name: "Summarized", color: "green"),
+            ])),
+            PropertyDefinition(id: "prop_action_items", name: "Action Items", type: .text),
+        ]
+        let views: [ViewConfig] = [
+            ViewConfig(id: "view_table", name: "All Meetings", type: .table, sorts: [
+                SortConfig(property: "prop_date", direction: "desc")
+            ]),
+        ]
+        return try? fileSystem.createDatabase(in: workspace, name: "Meetings", properties: properties, views: views)
     }
 
     private func activePagePathForDatabaseCreation() -> String? {

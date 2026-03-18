@@ -36,6 +36,7 @@ public class RowStore {
     }
 
     public func loadAllRows(in dbPath: String, schema: DatabaseSchema, skipBody: Bool = false) -> [DatabaseRow] {
+        let start = CFAbsoluteTimeGetCurrent()
         guard let contents = try? fm.contentsOfDirectory(atPath: dbPath) else { return [] }
 
         // Track best row per ID to detect and clean up duplicates.
@@ -78,7 +79,12 @@ public class RowStore {
             try? fm.removeItem(atPath: filePath)
         }
 
-        return bestByID.values.map(\.row).sorted { $0.createdAt < $1.createdAt }
+        let rows = bestByID.values.map(\.row).sorted { $0.createdAt < $1.createdAt }
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 100 {
+            print("[RowStore] loadAllRows: \(rows.count) rows in \(Int(elapsed))ms")
+        }
+        return rows
     }
 
     /// Load just the body content for a row by ID.

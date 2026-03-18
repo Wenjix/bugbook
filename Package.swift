@@ -31,6 +31,7 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "8.40.0"),
         .package(url: "https://github.com/jpsim/Yams", from: "6.0.1"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.7.9"),
     ],
     targets: [
         // Shared library — models, storage, engines
@@ -55,6 +56,7 @@ let package = Package(
                 "BugbookCore",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/Bugbook"
         ),
@@ -77,7 +79,8 @@ let package = Package(
                 "Bugbook",
                 "BugbookCore",
             ],
-            path: "Tests/BugbookTests"
+            path: "Tests/BugbookTests",
+            exclude: ["perf_baseline.tsv"]
         ),
         .testTarget(
             name: "BugbookCLITests",

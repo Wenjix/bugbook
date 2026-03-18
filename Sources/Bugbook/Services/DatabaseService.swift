@@ -1,5 +1,6 @@
 import Foundation
 import BugbookCore
+import os
 
 class DatabaseService {
     private let fileManager = FileManager.default
@@ -15,10 +16,15 @@ class DatabaseService {
     // MARK: - Load Database
 
     func loadDatabase(at path: String) throws -> (DatabaseSchema, [DatabaseRow]) {
+        let start = CFAbsoluteTimeGetCurrent()
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let data = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
         let schema = try JSONDecoder().decode(DatabaseSchema.self, from: data)
         let rows = try loadRows(in: path, schema: schema)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 100 {
+            Log.database.warning("loadDatabase took \(Int(elapsed))ms for \(rows.count) rows at \((path as NSString).lastPathComponent)")
+        }
         return (schema, rows)
     }
 
@@ -246,13 +252,19 @@ class DatabaseService {
     // MARK: - Update Index
 
     func updateIndex(rows: [DatabaseRow], schema: DatabaseSchema, at dbPath: String) throws {
+        let start = CFAbsoluteTimeGetCurrent()
         let index = indexManager.rebuild(dbPath: dbPath, schema: schema, rows: rows)
         try indexManager.saveIndex(index, at: dbPath)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 100 {
+            Log.database.warning("updateIndex took \(Int(elapsed))ms for \(rows.count) rows")
+        }
     }
 
     // MARK: - Private: Load Rows (with legacy repair)
 
     private func loadRows(in dbPath: String, schema: DatabaseSchema) throws -> [DatabaseRow] {
+        let start = CFAbsoluteTimeGetCurrent()
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return [] }
 
         // Track best row per ID and filenames to detect duplicates.
@@ -318,6 +330,10 @@ class DatabaseService {
             try? updateIndex(rows: sortedRows, schema: schema, at: dbPath)
         }
 
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 100 {
+            Log.database.warning("loadRows parsed \(sortedRows.count) rows in \(Int(elapsed))ms at \((dbPath as NSString).lastPathComponent)")
+        }
         return sortedRows
     }
 

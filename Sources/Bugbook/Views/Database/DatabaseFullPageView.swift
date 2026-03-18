@@ -39,6 +39,8 @@ struct DatabaseFullPageView: View {
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
     @State private var initialPeekHandled = false
+    @State private var draggingViewTabId: String?
+    @State private var dropTargetViewId: String?
 
     init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
@@ -176,23 +178,9 @@ struct DatabaseFullPageView: View {
     // MARK: - View Tabs
 
     private func viewTabs(schema: DatabaseSchema) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(schema.views) { view in
-                Button {
-                    state.activeViewId = view.id
-                    state.persistActiveView(view.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: iconForViewType(view.type))
-                        Text(view.name)
-                    }
-                    .font(DatabaseZoomMetrics.font(12))
-                    .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                    .padding(.vertical, DatabaseZoomMetrics.size(4))
-                    .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
-                }
-                .buttonStyle(.plain)
+                viewTab(view: view)
             }
 
             Menu {
@@ -217,6 +205,67 @@ struct DatabaseFullPageView: View {
         .padding(.leading, DatabaseZoomMetrics.size(4))
         .padding(.trailing, DatabaseZoomMetrics.size(12))
         .padding(.vertical, DatabaseZoomMetrics.size(4))
+    }
+
+    private func viewTab(view: ViewConfig) -> some View {
+        let isDropTarget = dropTargetViewId == view.id && draggingViewTabId != view.id
+
+        return HStack(spacing: 0) {
+            // Drop insertion indicator (leading edge)
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.accentColor)
+                .frame(width: 2, height: DatabaseZoomMetrics.size(16))
+                .opacity(isDropTarget ? 1 : 0)
+                .padding(.trailing, isDropTarget ? 2 : 0)
+
+            Button {
+                state.activeViewId = view.id
+                state.persistActiveView(view.id)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: iconForViewType(view.type))
+                    Text(view.name)
+                }
+                .font(DatabaseZoomMetrics.font(12))
+                .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                .padding(.vertical, DatabaseZoomMetrics.size(4))
+                .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
+                .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+                .opacity(draggingViewTabId == view.id ? 0.4 : 1)
+            }
+            .buttonStyle(.plain)
+        }
+        .draggable(view.id) {
+            // Drag preview
+            HStack(spacing: 4) {
+                Image(systemName: iconForViewType(view.type))
+                Text(view.name)
+            }
+            .font(DatabaseZoomMetrics.font(12))
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(4))
+            .background(Color.primary.opacity(0.1))
+            .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+            .onAppear { draggingViewTabId = view.id }
+            .onDisappear {
+                draggingViewTabId = nil
+                dropTargetViewId = nil
+            }
+        }
+        .dropDestination(for: String.self) { items, _ in
+            guard let draggedId = items.first,
+                  draggedId != view.id else { return false }
+            state.moveView(fromId: draggedId, toId: view.id)
+            draggingViewTabId = nil
+            dropTargetViewId = nil
+            return true
+        } isTargeted: { targeted in
+            if targeted {
+                dropTargetViewId = view.id
+            } else if dropTargetViewId == view.id {
+                dropTargetViewId = nil
+            }
+        }
     }
 
     // MARK: - Settings Popover
