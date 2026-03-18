@@ -32,11 +32,11 @@ struct AppSettings: Codable {
     var defaultNewTabPage: String
 
     // Google Calendar
-    var googleCalendarClientId: String
-    var googleCalendarClientSecret: String
     var googleCalendarRefreshToken: String
     var googleCalendarAccessToken: String
     var googleCalendarTokenExpiry: Double
+    var googleCalendarConnectedEmail: String
+    var googleCalendarBannerDismissed: Bool
 
     static let `default` = AppSettings(
         theme: .system,
@@ -48,11 +48,11 @@ struct AppSettings: Codable {
         qmdSearchMode: .bm25,
         anthropicApiKey: "",
         defaultNewTabPage: "",
-        googleCalendarClientId: "",
-        googleCalendarClientSecret: "",
         googleCalendarRefreshToken: "",
         googleCalendarAccessToken: "",
-        googleCalendarTokenExpiry: 0
+        googleCalendarTokenExpiry: 0,
+        googleCalendarConnectedEmail: "",
+        googleCalendarBannerDismissed: false
     )
 
     // Backward-compatible decoding — new fields default gracefully
@@ -67,11 +67,11 @@ struct AppSettings: Codable {
         qmdSearchMode = try container.decodeIfPresent(QmdSearchMode.self, forKey: .qmdSearchMode) ?? .bm25
         anthropicApiKey = try container.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
         defaultNewTabPage = try container.decodeIfPresent(String.self, forKey: .defaultNewTabPage) ?? ""
-        googleCalendarClientId = try container.decodeIfPresent(String.self, forKey: .googleCalendarClientId) ?? ""
-        googleCalendarClientSecret = try container.decodeIfPresent(String.self, forKey: .googleCalendarClientSecret) ?? ""
         googleCalendarRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarRefreshToken) ?? ""
         googleCalendarAccessToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarAccessToken) ?? ""
         googleCalendarTokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleCalendarTokenExpiry) ?? 0
+        googleCalendarConnectedEmail = try container.decodeIfPresent(String.self, forKey: .googleCalendarConnectedEmail) ?? ""
+        googleCalendarBannerDismissed = try container.decodeIfPresent(Bool.self, forKey: .googleCalendarBannerDismissed) ?? false
     }
 
     init(
@@ -84,11 +84,11 @@ struct AppSettings: Codable {
         qmdSearchMode: QmdSearchMode,
         anthropicApiKey: String,
         defaultNewTabPage: String,
-        googleCalendarClientId: String = "",
-        googleCalendarClientSecret: String = "",
         googleCalendarRefreshToken: String = "",
         googleCalendarAccessToken: String = "",
-        googleCalendarTokenExpiry: Double = 0
+        googleCalendarTokenExpiry: Double = 0,
+        googleCalendarConnectedEmail: String = "",
+        googleCalendarBannerDismissed: Bool = false
     ) {
         self.theme = theme
         self.focusModeOnType = focusModeOnType
@@ -99,10 +99,10 @@ struct AppSettings: Codable {
         self.qmdSearchMode = qmdSearchMode
         self.anthropicApiKey = anthropicApiKey
         self.defaultNewTabPage = defaultNewTabPage
-        self.googleCalendarClientId = googleCalendarClientId
-        self.googleCalendarClientSecret = googleCalendarClientSecret
         self.googleCalendarRefreshToken = googleCalendarRefreshToken
         self.googleCalendarAccessToken = googleCalendarAccessToken
         self.googleCalendarTokenExpiry = googleCalendarTokenExpiry
+        self.googleCalendarConnectedEmail = googleCalendarConnectedEmail
+        self.googleCalendarBannerDismissed = googleCalendarBannerDismissed
     }
 }

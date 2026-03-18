@@ -22,6 +22,7 @@ final class CalendarViewModel {
     var selectedDate: Date = Date()
     var selectedEvent: CalendarEvent?
     var showSourcePicker = false
+    var showRecordMeetingPopover = false
 
     // Computed from CalendarService data
     @ObservationIgnored private let calendar = Calendar.current

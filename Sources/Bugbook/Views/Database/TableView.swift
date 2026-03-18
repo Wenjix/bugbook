@@ -319,21 +319,25 @@ struct TableView: View {
                 .overlay { columnDividers().allowsHitTesting(false) }
             }
             .overlay(alignment: .topLeading) {
-                if showsInsertionIndicator(for: row.wrappedValue.id, placement: .before) {
+                if draggingRowId != nil,
+                   showsInsertionIndicator(for: row.wrappedValue.id, placement: .before) {
                     insertionIndicator
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if showsInsertionIndicator(for: row.wrappedValue.id, placement: .after) {
+                if draggingRowId != nil,
+                   showsInsertionIndicator(for: row.wrappedValue.id, placement: .after) {
                     insertionIndicator
                 }
             }
             .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: TableRowFramePreferenceKey.self,
-                        value: [row.wrappedValue.id: proxy.frame(in: .named(Self.reorderCoordinateSpace))]
-                    )
+                if draggingRowId != nil {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: TableRowFramePreferenceKey.self,
+                            value: [row.wrappedValue.id: proxy.frame(in: .named(Self.reorderCoordinateSpace))]
+                        )
+                    }
                 }
             }
         }
@@ -341,17 +345,30 @@ struct TableView: View {
 
     // MARK: - Column Dividers (row-level overlay)
 
+    /// Pre-compute divider x-offsets so each row draws a single Canvas instead of N+1 view pairs.
+    private var columnDividerOffsets: [CGFloat] {
+        guard showVerticalLines else { return [] }
+        var offsets: [CGFloat] = []
+        var x = DatabaseZoomMetrics.size(4) + titleColumnWidth
+        offsets.append(x)
+        for prop in visibleProperties {
+            x += columnWidth(for: prop)
+            offsets.append(x)
+        }
+        return offsets
+    }
+
     @ViewBuilder
     private func columnDividers() -> some View {
         if showVerticalLines {
-            HStack(spacing: 0) {
-                Color.clear.frame(width: DatabaseZoomMetrics.size(4) + titleColumnWidth)
-                Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
-                ForEach(visibleProperties) { prop in
-                    Color.clear.frame(width: columnWidth(for: prop))
-                    Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
+            let offsets = columnDividerOffsets
+            Canvas { context, size in
+                for x in offsets {
+                    context.fill(
+                        Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
+                        with: .color(.gray.opacity(0.15))
+                    )
                 }
-                Spacer(minLength: 0)
             }
         }
     }
@@ -412,22 +429,21 @@ struct TableView: View {
                     }
 
                 HStack(spacing: 0) {
-                    TextField(isFirst ? "New page" : "", text: .constant(""))
-                        .textFieldStyle(.plain)
-                        .font(DatabaseZoomMetrics.font(17))
-                        .foregroundStyle(Color.primary.opacity(0.25))
-                        .disabled(true)
-                        .allowsHitTesting(false)
-                        .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                        .frame(width: titleColumnWidth, alignment: .leading)
+                    HStack(spacing: 0) {
+                        if isFirst {
+                            Text("New page")
+                                .font(DatabaseZoomMetrics.font(17))
+                                .foregroundStyle(Color.primary.opacity(0.25))
+                                .allowsHitTesting(false)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                    .frame(width: titleColumnWidth, alignment: .leading)
 
                     ForEach(visibleProperties) { prop in
-                        TextField("", text: .constant(""))
-                            .textFieldStyle(.plain)
-                            .disabled(true)
-                            .allowsHitTesting(false)
-                            .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                            .frame(width: columnWidth(for: prop), alignment: .leading)
+                        Color.clear
+                            .frame(width: columnWidth(for: prop))
                     }
                 }
                 .padding(.horizontal, DatabaseZoomMetrics.size(4))

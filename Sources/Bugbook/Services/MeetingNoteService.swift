@@ -1,10 +1,18 @@
 import Foundation
 import BugbookCore
 
+// MARK: - Transcription Result
+
+struct TranscriptionResult {
+    let fullText: String
+    let timestampedText: String
+}
+
 @MainActor
 @Observable
 class MeetingNoteService {
     var isCreating = false
+    var isProcessingTranscript = false
     var error: String?
 
     @ObservationIgnored private let fm = FileManager.default
@@ -54,6 +62,85 @@ class MeetingNoteService {
             await Task.detached { [fm] in
                 self.ensurePersonPagesSync(for: event.attendees, workspace: workspace, fm: fm)
             }.value
+
+            return pagePath
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+
+    // MARK: - Create Meeting Note with Transcript
+
+    /// Creates a meeting note page enriched with a transcript, AI-generated summary, and action items.
+    /// If a calendar event is provided, links the note to it. Returns the file path to navigate to.
+    func createMeetingNoteWithTranscript(
+        transcription: TranscriptionResult,
+        event: CalendarEvent?,
+        workspace: String,
+        aiService: AiService,
+        apiKey: String
+    ) async -> String? {
+        // If there's an event with an existing linked page, return it
+        if let event, let existing = event.linkedPagePath,
+           fm.fileExists(atPath: existing) {
+            return existing
+        }
+
+        isCreating = true
+        isProcessingTranscript = true
+        defer {
+            isCreating = false
+            isProcessingTranscript = false
+        }
+
+        // Generate AI summary from transcript
+        let summary: AiService.TranscriptSummary
+        if !apiKey.isEmpty {
+            do {
+                summary = try await aiService.summarizeTranscript(transcription.fullText, apiKey: apiKey)
+            } catch {
+                self.error = "AI summary failed: \(error.localizedDescription)"
+                summary = AiService.TranscriptSummary(summary: "_(AI summary unavailable)_", actionItems: "- [ ] ")
+            }
+        } else {
+            summary = AiService.TranscriptSummary(summary: "_(No API key configured — add one in Settings to enable AI summaries)_", actionItems: "- [ ] ")
+        }
+
+        // Determine title and date
+        let title = event?.title ?? "Meeting Notes"
+        let meetingDate = event?.startDate ?? Date()
+
+        // Build content
+        let content = buildTranscriptNoteContent(
+            title: title,
+            date: meetingDate,
+            endDate: event?.endDate,
+            summary: summary.summary,
+            actionItems: summary.actionItems,
+            timestampedTranscript: transcription.timestampedText,
+            event: event
+        )
+
+        let filename = sanitizeFilename(title)
+        let dateStr = formatDateForFilename(meetingDate)
+        let pageName = "\(dateStr) — \(filename)"
+        let pagePath = (workspace as NSString).appendingPathComponent("\(pageName).md")
+
+        // Write the page
+        do {
+            try await Task.detached {
+                try content.write(toFile: pagePath, atomically: true, encoding: .utf8)
+            }.value
+
+            // Link to calendar event if present
+            if let event {
+                try? eventStore.linkEventToPage(eventId: event.id, pagePath: pagePath, in: workspace)
+
+                await Task.detached { [fm] in
+                    self.ensurePersonPagesSync(for: event.attendees, workspace: workspace, fm: fm)
+                }.value
+            }
 
             return pagePath
         } catch {
@@ -124,6 +211,76 @@ class MeetingNoteService {
 
         // Event description if present
         if let notes = event.notes, !notes.isEmpty {
+            lines.append("## Event Description")
+            lines.append("")
+            lines.append(notes)
+            lines.append("")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func buildTranscriptNoteContent(
+        title: String,
+        date: Date,
+        endDate: Date?,
+        summary: String,
+        actionItems: String,
+        timestampedTranscript: String,
+        event: CalendarEvent?
+    ) -> String {
+        var lines: [String] = []
+
+        // Title
+        lines.append("# \(title)")
+        lines.append("")
+
+        // Metadata line
+        var meta = "**Date:** \(Self.longDateFormatter.string(from: date))"
+        if let endDate {
+            let minutes = Int(endDate.timeIntervalSince(date) / 60)
+            if minutes > 0 {
+                let duration = minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min"
+                meta += " | **Duration:** \(duration)"
+            }
+        }
+        lines.append(meta)
+        lines.append("")
+
+        // Attendees (if from a calendar event)
+        if let event, !event.attendees.isEmpty {
+            lines.append("## Attendees")
+            lines.append("")
+            for attendee in event.attendees {
+                let name = attendee.displayName ?? attendee.email
+                let wikilink = "[[\(sanitizeWikilinkName(name))]]"
+                let statusIcon = attendeeStatusIcon(attendee.responseStatus)
+                lines.append("- \(statusIcon) \(wikilink)")
+            }
+            lines.append("")
+        }
+
+        // Summary
+        lines.append("## Summary")
+        lines.append("")
+        lines.append(summary)
+        lines.append("")
+
+        // Action Items
+        lines.append("## Action Items")
+        lines.append("")
+        lines.append(actionItems)
+        lines.append("")
+
+        // Transcript in a collapsible toggle
+        lines.append("<!-- toggle collapsed -->")
+        lines.append("Full Transcript")
+        lines.append(timestampedTranscript)
+        lines.append("<!-- /toggle -->")
+        lines.append("")
+
+        // Event description if present
+        if let notes = event?.notes, !notes.isEmpty {
             lines.append("## Event Description")
             lines.append("")
             lines.append(notes)

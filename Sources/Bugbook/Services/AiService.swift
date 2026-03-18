@@ -163,6 +163,50 @@ NEVER use HTML tags like <details>, <summary>, <strong>, etc. This app does NOT 
         return text
     }
 
+    // MARK: - Transcript Summarization
+
+    struct TranscriptSummary {
+        let summary: String
+        let actionItems: String
+    }
+
+    func summarizeTranscript(_ transcript: String, apiKey: String) async throws -> TranscriptSummary {
+        guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
+
+        let systemPrompt = """
+        You are summarizing a meeting transcript. Return ONLY markdown with two sections, no extra commentary:
+
+        ## Summary
+        <2-5 bullet points covering key discussion points, decisions made, and outcomes>
+
+        ## Action Items
+        <checklist of action items extracted from the conversation. Format each as: - [ ] Item (assigned to Person). If no person is obvious, omit the parenthetical.>
+
+        If the transcript is too short or unclear to extract meaningful content, write a brief summary of what was discussed and leave action items empty.
+        """
+
+        let result = try await callAPI(
+            apiKey: apiKey,
+            systemPrompt: systemPrompt,
+            userPrompt: "Summarize this meeting transcript:\n\n\(transcript)",
+            maxTokens: 2048
+        )
+
+        // Split the AI response into summary and action items sections
+        let parts = result.components(separatedBy: "## Action Items")
+        let summaryPart = parts[0]
+            .replacingOccurrences(of: "## Summary", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let actionItemsPart = parts.count > 1
+            ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            : "- [ ] "
+
+        return TranscriptSummary(
+            summary: summaryPart.isEmpty ? "Meeting recorded." : summaryPart,
+            actionItems: actionItemsPart.isEmpty ? "- [ ] " : actionItemsPart
+        )
+    }
+
     // MARK: - Content Generation
 
     func generateContent(engine: PreferredAIEngine, workspacePath: String, prompt: String, pageContext: String = "", apiKey: String = "") async throws -> String {

@@ -154,6 +154,14 @@ struct BlockTextView: NSViewRepresentable {
             guard let coordinator = coordinator else { return false }
             return coordinator.handleImagePaste()
         }
+        textView.onPageLinkDrop = { [weak coordinator] pageName in
+            guard let coordinator = coordinator else { return }
+            let doc = coordinator.parent.document
+            let blockId = coordinator.parent.blockId
+            if let idx = doc.blocks.firstIndex(where: { $0.id == blockId }) {
+                doc.insertPageLinkBlock(at: idx + 1, name: pageName)
+            }
+        }
         textView.copySelectionAction = { [weak coordinator] in
             coordinator?.handleCopySelection() ?? false
         }
@@ -1203,6 +1211,7 @@ class BlockNSTextView: NSTextView {
     var onMultiBlockSelectionEnd: (() -> Void)?
     var onShiftClick: (() -> Void)?
     var onPasteImage: (() -> Bool)?
+    var onPageLinkDrop: ((String) -> Void)?
     var copySelectionAction: (() -> Bool)?
     var cutSelectionAction: (() -> Bool)?
     var onFrameWidthChanged: (() -> Void)?
@@ -1282,13 +1291,28 @@ class BlockNSTextView: NSTextView {
         }
     }
 
-    // Reject all external drops to prevent UUID string insertion from drag-and-drop
+    // Accept page path drops (sidebar page drags) but reject everything else
+    // to prevent UUID string insertion from block reorder drag-and-drop.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        return false
+        guard let pageName = pageNameFromDrag(sender) else { return false }
+        onPageLinkDrop?(pageName)
+        return true
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        return []
+        return pageNameFromDrag(sender) != nil ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return pageNameFromDrag(sender) != nil ? .copy : []
+    }
+
+    private func pageNameFromDrag(_ sender: NSDraggingInfo) -> String? {
+        guard let str = sender.draggingPasteboard.string(forType: .string) else { return nil }
+        let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"), trimmed.hasSuffix(".md") else { return nil }
+        let filename = (trimmed as NSString).lastPathComponent
+        return String(filename.dropLast(3))
     }
 
     override func paste(_ sender: Any?) {

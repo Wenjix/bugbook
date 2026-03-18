@@ -3,53 +3,62 @@ import BugbookCore
 
 struct CalendarSettingsView: View {
     @Bindable var appState: AppState
-    @State private var showClientSecret = false
     @State private var overlays: [CalendarOverlay] = []
+    @State private var isSigningIn = false
+    @State private var signInError: String?
 
     private let store = CalendarEventStore()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             SettingsSection("Google Calendar") {
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("Client ID", text: $appState.settings.googleCalendarClientId)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13, design: .monospaced))
+                if isConnected {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.system(size: 16))
 
-                    HStack(spacing: 8) {
-                        Group {
-                            if showClientSecret {
-                                TextField("Client Secret", text: $appState.settings.googleCalendarClientSecret)
-                            } else {
-                                SecureField("Client Secret", text: $appState.settings.googleCalendarClientSecret)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connected to Google Calendar")
+                                .font(.system(size: 13, weight: .medium))
+                            if !appState.settings.googleCalendarConnectedEmail.isEmpty {
+                                Text(appState.settings.googleCalendarConnectedEmail)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13, design: .monospaced))
 
-                        Button {
-                            showClientSecret.toggle()
-                        } label: {
-                            Image(systemName: showClientSecret ? "eye.slash" : "eye")
-                                .foregroundStyle(.secondary)
+                        Spacer()
+
+                        Button("Disconnect") {
+                            disconnect()
                         }
                         .buttonStyle(.borderless)
+                        .foregroundStyle(.red)
+                        .font(.system(size: 13))
                     }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button {
+                            Task { await signIn() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if isSigningIn {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "person.badge.key")
+                                }
+                                Text("Sign in with Google")
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isSigningIn)
 
-                    TextField("Refresh Token", text: $appState.settings.googleCalendarRefreshToken)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13, design: .monospaced))
-
-                    Text("Create OAuth credentials in the Google Cloud Console with the Calendar API scope. Use the OAuth Playground to get a refresh token.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if isConfigured {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Text("Credentials configured")
-                                .font(.system(size: 13))
+                        if let signInError {
+                            Text(signInError)
+                                .font(.caption)
+                                .foregroundStyle(.red)
                         }
                     }
                 }
@@ -87,9 +96,31 @@ struct CalendarSettingsView: View {
         }
     }
 
-    private var isConfigured: Bool {
-        !appState.settings.googleCalendarClientId.isEmpty &&
-        !appState.settings.googleCalendarClientSecret.isEmpty &&
+    private func signIn() async {
+        isSigningIn = true
+        signInError = nil
+        defer { isSigningIn = false }
+
+        do {
+            let result = try await GoogleOAuthFlow.signIn()
+            appState.settings.googleCalendarAccessToken = result.accessToken
+            appState.settings.googleCalendarRefreshToken = result.refreshToken
+            appState.settings.googleCalendarTokenExpiry = result.expiresAt.timeIntervalSince1970
+            appState.settings.googleCalendarConnectedEmail = result.email
+            appState.settings.googleCalendarBannerDismissed = false
+        } catch {
+            signInError = error.localizedDescription
+        }
+    }
+
+    private func disconnect() {
+        appState.settings.googleCalendarAccessToken = ""
+        appState.settings.googleCalendarRefreshToken = ""
+        appState.settings.googleCalendarTokenExpiry = 0
+        appState.settings.googleCalendarConnectedEmail = ""
+    }
+
+    private var isConnected: Bool {
         !appState.settings.googleCalendarRefreshToken.isEmpty
     }
 }

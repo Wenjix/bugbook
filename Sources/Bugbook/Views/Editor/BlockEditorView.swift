@@ -82,6 +82,8 @@ struct BlockEditorView: View {
                 activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
             } onImageDrop: { urls in
                 handleImageDrop(urls, at: startIndex)
+            } onPageLinkDrop: { pageName in
+                document.insertPageLinkBlock(at: startIndex, name: pageName)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -131,6 +133,8 @@ struct BlockEditorView: View {
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 } onImageDrop: { urls in
                     handleImageDrop(urls, at: index + 1)
+                } onPageLinkDrop: { pageName in
+                    document.insertPageLinkBlock(at: index + 1, name: pageName)
                 }
                 .overlay {
                     Button {
@@ -185,6 +189,15 @@ struct BlockEditorView: View {
             }
             .buttonStyle(.plain)
             .editorTextCursor()
+            .dropDestination(for: String.self) { items, _ in
+                guard let payload = items.first else { return false }
+                let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.hasPrefix("/"), trimmed.hasSuffix(".md") else { return false }
+                let filename = (trimmed as NSString).lastPathComponent
+                let pageName = String(filename.dropLast(3))
+                document.insertPageLinkBlock(at: document.blocks.count, name: pageName)
+                return true
+            } isTargeted: { _ in }
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 20)
@@ -679,7 +692,7 @@ private extension Block {
             return "photo"
         case .databaseEmbed:
             return "tablecells"
-        case .toggle, .headingToggle:
+        case .toggle:
             return "chevron.right"
         case .horizontalRule:
             return "minus"
@@ -781,6 +794,7 @@ struct DropZoneView: View {
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
+    var onPageLinkDrop: ((String) -> Void)?
 
     @State private var imageDropTargeted = false
 
@@ -798,6 +812,14 @@ struct DropZoneView: View {
             .contentShape(Rectangle())
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
+                // Check for page path drop (sidebar page drag)
+                let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.hasPrefix("/"), trimmed.hasSuffix(".md") {
+                    let filename = (trimmed as NSString).lastPathComponent
+                    let pageName = String(filename.dropLast(3))
+                    onPageLinkDrop?(pageName)
+                    return onPageLinkDrop != nil
+                }
                 let droppedIds = BlockDocument.draggedBlockIds(from: payload)
                 guard !droppedIds.isEmpty else { return false }
                 onDrop(droppedIds)
@@ -850,3 +872,4 @@ struct ColumnDropZoneView: View {
             }
     }
 }
+

@@ -32,29 +32,39 @@ struct PropertyEditorView: View {
     /// Consistent cell font matching editor body text (17pt scaled).
     private var cellFont: Font { DatabaseZoomMetrics.font(17) }
 
+    /// Whether this property type uses option editing popovers (select/multiSelect only).
+    private var usesOptionEditing: Bool {
+        definition.type == .select || definition.type == .multiSelect
+    }
+
     var body: some View {
-        mainEditor
-            .databasePointerCursor()
-            .floatingPopover(item: $editingOptionId) { optId in
-                editOptionPopover(optionId: optId)
-            }
-            .alert("Delete Option", isPresented: $showDeleteAlert) {
-                Button("Cancel", role: .cancel) { showDeleteConfirm = nil }
-                Button("Delete", role: .destructive) {
-                    if let optId = showDeleteConfirm {
-                        onDeleteOption?(definition.id, optId)
-                    }
-                    showDeleteConfirm = nil
+        if usesOptionEditing {
+            mainEditor
+                .databasePointerCursor()
+                .floatingPopover(item: $editingOptionId) { optId in
+                    editOptionPopover(optionId: optId)
                 }
-            } message: {
-                Text("This will remove the option from all rows that use it.")
-            }
-            .onChange(of: showDeleteConfirm) { _, val in
-                showDeleteAlert = (val != nil)
-            }
-            .onChange(of: showDeleteAlert) { _, show in
-                if !show { showDeleteConfirm = nil }
-            }
+                .alert("Delete Option", isPresented: $showDeleteAlert) {
+                    Button("Cancel", role: .cancel) { showDeleteConfirm = nil }
+                    Button("Delete", role: .destructive) {
+                        if let optId = showDeleteConfirm {
+                            onDeleteOption?(definition.id, optId)
+                        }
+                        showDeleteConfirm = nil
+                    }
+                } message: {
+                    Text("This will remove the option from all rows that use it.")
+                }
+                .onChange(of: showDeleteConfirm) { _, val in
+                    showDeleteAlert = (val != nil)
+                }
+                .onChange(of: showDeleteAlert) { _, show in
+                    if !show { showDeleteConfirm = nil }
+                }
+        } else {
+            mainEditor
+                .databasePointerCursor()
+        }
     }
 
     @ViewBuilder

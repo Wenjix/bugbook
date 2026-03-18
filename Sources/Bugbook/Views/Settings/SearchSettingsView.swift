@@ -10,6 +10,7 @@ struct SearchSettingsView: View {
 
             if case .installed = qmdService.status {
                 modeSection
+                indexSection
                 mcpSection
             }
         }
@@ -17,6 +18,7 @@ struct SearchSettingsView: View {
             await qmdService.detect()
             if let workspace = appState.workspacePath, qmdService.status.isInstalled {
                 await qmdService.ensureCollection(workspace: workspace)
+                await qmdService.fetchIndexStatus()
             }
         }
     }
@@ -29,7 +31,7 @@ struct SearchSettingsView: View {
             case .unknown:
                 statusRow {
                     ProgressView().scaleEffect(0.7)
-                    Text("Detecting…").foregroundStyle(.secondary)
+                    Text("Detecting...").foregroundStyle(.secondary)
                 }
 
             case .notInstalled:
@@ -38,7 +40,7 @@ struct SearchSettingsView: View {
             case .installing:
                 statusRow {
                     ProgressView().scaleEffect(0.7)
-                    Text("Installing qmd…").foregroundStyle(.secondary)
+                    Text("Installing qmd...").foregroundStyle(.secondary)
                 }
 
             case .installed(let version, _):
@@ -55,7 +57,7 @@ struct SearchSettingsView: View {
             HStack {
                 Image(systemName: "xmark.circle")
                     .foregroundStyle(.secondary)
-                Text("qmd — Not Installed")
+                Text("qmd -- Not Installed")
                     .font(.system(size: 14))
                 Spacer()
                 Button("Install") {
@@ -64,7 +66,7 @@ struct SearchSettingsView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
             }
-            Text("qmd adds BM25, semantic, and hybrid search to Bugbook. It also works with Claude Code and any other markdown directory — it's yours to keep.")
+            Text("qmd adds BM25, semantic, and hybrid search to Bugbook. v2 includes auto query expansion and reranking.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -88,7 +90,7 @@ struct SearchSettingsView: View {
             } else {
                 HStack(spacing: 4) {
                     ProgressView().scaleEffect(0.55)
-                    Text("Indexing…")
+                    Text("Indexing...")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -146,9 +148,18 @@ struct SearchSettingsView: View {
                     .font(.system(size: 14))
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(mode.label)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 6) {
+                        Text(mode.label)
+                            .font(.system(size: 14))
+                            .foregroundStyle(.primary)
+                        Text(mode.cliCommand)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.1))
+                            .clipShape(.rect(cornerRadius: 3))
+                    }
                     Text(mode.detail)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -159,6 +170,53 @@ struct SearchSettingsView: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Index Health
+
+    private var indexSection: some View {
+        SettingsSection("Index") {
+            if let status = qmdService.indexStatus {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 16) {
+                        indexStat(label: "Files", value: "\(status.totalFiles)")
+                        indexStat(label: "Vectors", value: "\(status.totalVectors)")
+                        if !status.indexSize.isEmpty {
+                            indexStat(label: "Size", value: status.indexSize)
+                        }
+                    }
+                    HStack {
+                        Spacer()
+                        Button("Re-index") {
+                            Task {
+                                if let workspace = appState.workspacePath {
+                                    await qmdService.ensureCollection(workspace: workspace)
+                                    await qmdService.fetchIndexStatus()
+                                }
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            } else {
+                HStack(spacing: 4) {
+                    ProgressView().scaleEffect(0.55)
+                    Text("Loading index status...")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func indexStat(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+        }
     }
 
     // MARK: - MCP tip

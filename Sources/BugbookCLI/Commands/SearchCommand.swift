@@ -117,7 +117,8 @@ private struct QmdBackend {
             try? task.run()
             task.waitUntilExit()
         }
-        run(["collection", "add", workspace, "--name", collectionName])
+        // v2: collection name derived from directory, no --name flag
+        run(["collection", "add", workspace])
         run(["update"])
     }
 
@@ -127,7 +128,8 @@ private struct QmdBackend {
         case "semantic":
             results = try runCLISearch(tool: "vsearch", query: query, limit: limit)
         case "hybrid":
-            results = try runHybridSearch(query: query, limit: limit)
+            // v2: `qmd query` handles hybrid search locally (expansion + reranking)
+            results = try runCLISearch(tool: "query", query: query, limit: limit)
         default: // bm25
             results = try runCLISearch(tool: "search", query: query, limit: limit)
         }
@@ -170,116 +172,7 @@ private struct QmdBackend {
         return parseQmdData(pipe.fileHandleForReading.readDataToEndOfFile())
     }
 
-    // MARK: Hybrid search via HTTP daemon
-
-    private func runHybridSearch(query: String, limit: Int) throws -> [[String: Any]] {
-        try ensureDaemon()
-        return try callMCPQuery(query: query, limit: limit)
-    }
-
-    private func ensureDaemon() throws {
-        if isDaemonHealthy() { return }
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: binary)
-        task.arguments = ["mcp", "--http", "--daemon"]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        try task.run()
-
-        fputs("Starting qmd daemon (loading models, up to 120s)…\n", stderr)
-        let deadline = Date().addingTimeInterval(120)
-        while Date() < deadline {
-            Thread.sleep(forTimeInterval: 2)
-            if isDaemonHealthy() { return }
-        }
-        throw CLIError.invalidInput("qmd daemon did not start within 120s")
-    }
-
-    private func isDaemonHealthy() -> Bool {
-        guard let url = URL(string: "http://localhost:8181/health") else { return false }
-        var req = URLRequest(url: url, timeoutInterval: 2)
-        req.httpMethod = "GET"
-        var healthy = false
-        let sema = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: req) { _, resp, _ in
-            if let http = resp as? HTTPURLResponse, http.statusCode == 200 { healthy = true }
-            sema.signal()
-        }.resume()
-        sema.wait()
-        return healthy
-    }
-
-    /// Call the MCP `query` tool with lex + vec + hyde sub-searches for full hybrid.
-    private func callMCPQuery(query: String, limit: Int) throws -> [[String: Any]] {
-        guard let url = URL(string: "http://localhost:8181/mcp") else {
-            throw CLIError.invalidInput("invalid qmd daemon URL")
-        }
-        var req = URLRequest(url: url, timeoutInterval: 120)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let body: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": [
-                "name": "query",
-                "arguments": [
-                    "searches": [
-                        ["type": "lex", "query": query],
-                        ["type": "vec", "query": query],
-                        ["type": "hyde", "query": query],
-                    ],
-                    "limit": limit,
-                    "collections": [collectionName],
-                ] as [String: Any],
-            ] as [String: Any],
-        ]
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        var responseData: Data?
-        var responseError: Error?
-        let sema = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: req) { data, _, error in
-            responseData = data; responseError = error
-            sema.signal()
-        }.resume()
-        sema.wait()
-
-        if let error = responseError { throw error }
-        guard let data = responseData else { return [] }
-        return parseMCPResponse(data)
-    }
-
     // MARK: Response parsing
-
-    private func parseMCPResponse(_ data: Data) -> [[String: Any]] {
-        guard
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let result = json["result"] as? [String: Any],
-            let content = result["content"] as? [[String: Any]]
-        else { return [] }
-
-        // Look for structuredContent first, then fall back to parsing the text blob
-        if let structured = result["structuredContent"] as? [String: Any],
-           let raw = structured["results"] as? [[String: Any]] {
-            return raw.compactMap { mapResult($0) }
-        }
-
-        // Find the JSON content block (type == "text" containing a JSON object)
-        for block in content {
-            guard block["type"] as? String == "text",
-                  let text = block["text"] as? String,
-                  let textData = text.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: textData) as? [String: Any],
-                  let raw = parsed["results"] as? [[String: Any]]
-            else { continue }
-            return raw.compactMap { mapResult($0) }
-        }
-        return []
-    }
 
     // qmd CLI outputs a JSON array; MCP response wraps in {"results": [...]}
     private func parseQmdData(_ data: Data) -> [[String: Any]] {
