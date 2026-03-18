@@ -272,16 +272,45 @@ struct DatabaseEmbedBlockView: View {
     let dbPath: String
     var onOpenDatabaseTab: ((String) -> Void)?
     var sidebarReferencePayload: SidebarReferenceDragPayload?
+    @State private var isHoveringEmbed = false
+
+    private var displayName: String {
+        let name = (dbPath as NSString).lastPathComponent
+        let ext = ".bugbookdb"
+        if name.hasSuffix(ext) {
+            return String(name.dropLast(ext.count))
+        }
+        return name
+    }
 
     var body: some View {
         let content = databaseEmbedView
             .blockDeletable(document: document, blockId: block.id)
 
         if let sidebarReferencePayload {
-            content.draggable(sidebarReferencePayload)
+            content
+                .overlay(alignment: .topLeading) {
+                    if isHoveringEmbed {
+                        sidebarDragHandle(payload: sidebarReferencePayload)
+                    }
+                }
+                .onHover { isHoveringEmbed = $0 }
         } else {
             content
         }
+    }
+
+    private func sidebarDragHandle(payload: SidebarReferenceDragPayload) -> some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 20, height: 20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .padding(6)
+            .draggable(payload) {
+                SidebarDragPreview(systemImage: "tablecells", title: displayName)
+            }
     }
 
     private var databaseEmbedView: some View {
