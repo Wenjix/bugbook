@@ -78,11 +78,16 @@ final class QmdService {
     }
 
     func ensureCollection(workspace: String) async {
+        let start = CFAbsoluteTimeGetCurrent()
         guard case .installed(_, let path) = status else { return }
         let name = collectionName(for: workspace)
         _ = try? await runBinary(path, args: ["collection", "add", workspace, "--name", name])
         _ = try? await runBinary(path, args: ["update"])
         collectionReady = true
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 500 {
+            print("[Perf] ensureCollection took \(Int(elapsed))ms")
+        }
     }
 
     /// Start the qmd HTTP daemon in the background if hybrid mode is selected and it isn't already running.

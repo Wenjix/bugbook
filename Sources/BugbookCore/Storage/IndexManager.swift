@@ -3,6 +3,12 @@ import Foundation
 public class IndexManager {
     private let fm = FileManager.default
 
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     public init() {}
 
     // MARK: - Load
@@ -45,6 +51,7 @@ public class IndexManager {
     // MARK: - Rebuild
 
     public func rebuild(dbPath: String, schema: DatabaseSchema, rows: [DatabaseRow]) -> [String: Any] {
+        let start = CFAbsoluteTimeGetCurrent()
         var rowsMap: [String: Any] = [:]
         for row in rows {
             let title = row.title(schema: schema)
@@ -107,15 +114,17 @@ public class IndexManager {
             }
         }
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-
-        return [
+        let result: [String: Any] = [
             "version": 1,
-            "updated_at": formatter.string(from: Date()),
+            "updated_at": Self.isoFormatter.string(from: Date()),
             "rows": rowsMap,
             "indexes": indexes
         ]
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 200 {
+            print("[Perf] IndexManager.rebuild: \(rows.count) rows in \(Int(elapsed))ms")
+        }
+        return result
     }
 
     // MARK: - Save
@@ -129,8 +138,6 @@ public class IndexManager {
     // MARK: - Private
 
     private func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        Self.isoFormatter.string(from: date)
     }
 }

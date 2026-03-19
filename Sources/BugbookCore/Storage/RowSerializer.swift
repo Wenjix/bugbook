@@ -45,6 +45,21 @@ public struct RowSerializer {
         parseDetailed(content: content, schema: schema, skipBody: skipBody)?.row
     }
 
+    // MARK: - Cached Formatters
+
+    private static let sharedISOFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let sharedDateOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
     /// Parse returning both the row and the raw (unparsed) property strings.
     public static func parseDetailed(content: String, schema: DatabaseSchema, skipBody: Bool = false) -> ParseResult? {
         guard content.hasPrefix("---") else { return nil }
@@ -60,12 +75,6 @@ public struct RowSerializer {
         var properties: [String: PropertyValue] = [:]
         var rawProperties: [String: String] = [:]
         var inProperties = false
-
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        let dateOnly = DateFormatter()
-        dateOnly.dateFormat = "yyyy-MM-dd"
-        dateOnly.timeZone = TimeZone(identifier: "UTC")
 
         for line in yamlBlock.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -94,10 +103,10 @@ public struct RowSerializer {
                     id = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
                 } else if trimmed.hasPrefix("created_at:") {
                     let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    createdAt = isoFormatter.date(from: val) ?? dateOnly.date(from: val) ?? Date()
+                    createdAt = fastParseISO8601(val) ?? sharedISOFormatter.date(from: val) ?? sharedDateOnlyFormatter.date(from: val) ?? Date()
                 } else if trimmed.hasPrefix("updated_at:") {
                     let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    updatedAt = isoFormatter.date(from: val) ?? dateOnly.date(from: val) ?? Date()
+                    updatedAt = fastParseISO8601(val) ?? sharedISOFormatter.date(from: val) ?? sharedDateOnlyFormatter.date(from: val) ?? Date()
                 }
             }
         }
@@ -199,8 +208,40 @@ public struct RowSerializer {
     }
 
     private static func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        sharedISOFormatter.string(from: date)
+    }
+
+    private static let utcGregorianCalendar: Calendar = {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal
+    }()
+
+    /// Fast manual ISO 8601 parser for the common format "2024-01-15T10:30:00Z".
+    /// Falls back to nil for uncommon formats so the caller can use DateFormatter.
+    private static func fastParseISO8601(_ string: String) -> Date? {
+        // Expected: "2024-01-15T10:30:00Z" (20 chars)
+        guard string.count == 20, string.hasSuffix("Z") else { return nil }
+        let chars = Array(string)
+        guard chars[4] == "-", chars[7] == "-", chars[10] == "T",
+              chars[13] == ":", chars[16] == ":" else { return nil }
+
+        guard let year = Int(string[string.startIndex..<string.index(string.startIndex, offsetBy: 4)]),
+              let month = Int(string[string.index(string.startIndex, offsetBy: 5)..<string.index(string.startIndex, offsetBy: 7)]),
+              let day = Int(string[string.index(string.startIndex, offsetBy: 8)..<string.index(string.startIndex, offsetBy: 10)]),
+              let hour = Int(string[string.index(string.startIndex, offsetBy: 11)..<string.index(string.startIndex, offsetBy: 13)]),
+              let minute = Int(string[string.index(string.startIndex, offsetBy: 14)..<string.index(string.startIndex, offsetBy: 16)]),
+              let second = Int(string[string.index(string.startIndex, offsetBy: 17)..<string.index(string.startIndex, offsetBy: 19)])
+        else { return nil }
+
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.second = second
+
+        return utcGregorianCalendar.date(from: components)
     }
 }

@@ -50,8 +50,17 @@ class FileSystemService {
     // MARK: - File Tree Building
 
     func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
+        let start = depth == 0 ? CFAbsoluteTimeGetCurrent() : 0
         let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
-        defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
+        defer {
+            if let state { Log.signpost.endInterval("buildFileTree", state) }
+            if depth == 0 {
+                let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+                if elapsed > 500 {
+                    print("[Perf] buildFileTree took \(Int(elapsed))ms")
+                }
+            }
+        }
 
         guard depth < 5 else { return [] }
 
@@ -76,10 +85,13 @@ class FileSystemService {
             guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                if isDatabaseFolder(at: fullPath) {
+                // Check schema first — skip canvas check for database folders.
+                let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
+                let hasSchema = fileManager.fileExists(atPath: schemaPath)
+
+                if hasSchema {
                     // Database folder - read display name from _schema.json
                     var dbName = name
-                    let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let schemaName = json["name"] as? String {
@@ -96,8 +108,8 @@ class FileSystemService {
                 } else if isCanvasFolder(at: fullPath) {
                     // Canvas folder - read display name from _canvas.json
                     var canvasName = name
-                    let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
+                    let canvasPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: canvasPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let n = json["name"] as? String {
                         canvasName = n
@@ -877,8 +889,12 @@ class FileSystemService {
     }
 
     private func parseIconFromFile(at path: String) -> String? {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        return parseIcon(from: content)
+        // Only read the first 512 bytes — icon metadata is always at the top of the file.
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { handle.closeFile() }
+        let data = handle.readData(ofLength: 512)
+        guard let header = String(data: data, encoding: .utf8) else { return nil }
+        return parseIcon(from: header)
     }
 
     private func loadRecentWorkspaces() {

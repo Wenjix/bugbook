@@ -15,10 +15,15 @@ class DatabaseService {
     // MARK: - Load Database
 
     func loadDatabase(at path: String) throws -> (DatabaseSchema, [DatabaseRow]) {
+        let start = CFAbsoluteTimeGetCurrent()
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let data = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
         let schema = try JSONDecoder().decode(DatabaseSchema.self, from: data)
         let rows = try loadRows(in: path, schema: schema)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 500 {
+            print("[Perf] loadDatabase took \(Int(elapsed))ms (\(rows.count) rows) at \((path as NSString).lastPathComponent)")
+        }
         return (schema, rows)
     }
 
@@ -95,12 +100,15 @@ class DatabaseService {
 
     func renameProperty(_ propertyId: String, to newName: String, in schema: inout DatabaseSchema, rows: inout [DatabaseRow], at dbPath: String) throws {
         guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        let isTitleProperty = schema.properties[idx].type == .title
         schema.properties[idx].name = newName
         try saveSchema(schema, at: dbPath)
         // Row properties are keyed by ID, not name — no row migration needed.
-        // But re-save rows so filenames update if the title property was renamed.
-        for i in rows.indices {
-            try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
+        // Only re-save rows if the title property was renamed (affects filenames).
+        if isTitleProperty {
+            for i in rows.indices {
+                try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
+            }
         }
     }
 
@@ -253,6 +261,7 @@ class DatabaseService {
     // MARK: - Private: Load Rows (with legacy repair)
 
     private func loadRows(in dbPath: String, schema: DatabaseSchema) throws -> [DatabaseRow] {
+        let start = CFAbsoluteTimeGetCurrent()
         guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return [] }
 
         // Track best row per ID and filenames to detect duplicates.
@@ -318,6 +327,10 @@ class DatabaseService {
             try? updateIndex(rows: sortedRows, schema: schema, at: dbPath)
         }
 
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 100 {
+            print("[Perf] loadRows parsed \(sortedRows.count) rows in \(Int(elapsed))ms")
+        }
         return sortedRows
     }
 
@@ -497,11 +510,13 @@ class DatabaseService {
         return nil
     }
 
+    private static let nonAlphanumericRegex = try! NSRegularExpression(pattern: "[^a-z0-9]+")
+
     private func normalizeStatusToken(_ value: String) -> String {
-        value
-            .lowercased()
-            .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = value.lowercased()
+        let range = NSRange(lower.startIndex..., in: lower)
+        let replaced = Self.nonAlphanumericRegex.stringByReplacingMatches(in: lower, range: range, withTemplate: " ")
+        return replaced.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func scalarText(from rawValue: String) -> String? {
@@ -523,12 +538,15 @@ class DatabaseService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static let identifierRegex = try! NSRegularExpression(pattern: "^[a-z0-9_-]{12,}$")
+
     private func looksLikeIdentifier(_ value: String) -> Bool {
         let lower = value.lowercased()
         if lower.hasPrefix("opt_") || lower.hasPrefix("prop_") || lower.hasPrefix("row_") || lower.hasPrefix("db_") {
             return true
         }
-        return lower.range(of: "^[a-z0-9_-]{12,}$", options: .regularExpression) != nil
+        let range = NSRange(lower.startIndex..., in: lower)
+        return Self.identifierRegex.firstMatch(in: lower, range: range) != nil
     }
 
     /// Parse a raw property value string into a PropertyValue (used only for legacy repair).
