@@ -32,6 +32,7 @@ struct BlockEditorView: View {
     @State private var marqueeDragState: MarqueeDragState?
     @State private var blockMoveDragState: BlockMoveDragState?
     @State private var autoScrollTimer: Timer?
+    @State private var autoScrollSpeed: CGFloat = 0
 
     var body: some View {
         // Skip the title block (first heading-1) — it's rendered separately above
@@ -328,14 +329,15 @@ struct BlockEditorView: View {
     }
 
     private func startAutoScroll(speed: CGFloat) {
-        // Only start if not already running
+        autoScrollSpeed = speed
+        // If timer is already running, speed update above is sufficient
         guard autoScrollTimer == nil else { return }
         autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [self] _ in
             guard let sv = marqueeDragState?.scrollView,
                   let docView = sv.documentView else { return }
             let clipView = sv.contentView
             var origin = clipView.bounds.origin
-            origin.y += speed
+            origin.y += autoScrollSpeed
             origin.y = max(0, min(origin.y, docView.frame.height - clipView.bounds.height))
             clipView.setBoundsOrigin(origin)
             sv.reflectScrolledClipView(clipView)
