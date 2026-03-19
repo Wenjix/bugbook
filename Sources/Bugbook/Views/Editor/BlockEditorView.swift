@@ -359,6 +359,7 @@ struct BlockEditorView: View {
 
     private func startAutoScroll(speed: CGFloat) {
         autoScrollSpeed = speed
+        // If timer is already running, speed update above is sufficient
         guard autoScrollTimer == nil else { return }
         autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [self] _ in
             guard let sv = marqueeDragState?.scrollView,
