@@ -71,6 +71,9 @@ class BlockDocument {
     /// Called when a page is dragged from the sidebar and dropped into the editor.
     /// Parameters: source file path, insertion index where the page link was created.
     @ObservationIgnored var onSidebarPageDrop: ((String) -> Void)?
+    @ObservationIgnored var onStartMeeting: ((UUID) -> Void)?
+    @ObservationIgnored var onStopMeeting: ((UUID) -> Void)?
+    @ObservationIgnored var transcriptionService: TranscriptionService?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
     @ObservationIgnored var workspacePath: String?
@@ -754,6 +757,7 @@ class BlockDocument {
         case imagePicker
         case askAI
         case meetingNotes
+        case meeting
     }
 
     struct SlashCommand {
@@ -782,6 +786,7 @@ class BlockDocument {
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
         SlashCommand(name: "Canvas", icon: "rectangle.on.rectangle.angled", action: .blockType(.canvas, headingLevel: 0)),
         SlashCommand(name: "Meeting Notes", icon: "person.2.wave.2", action: .meetingNotes),
+        SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -847,6 +852,20 @@ class BlockDocument {
                 }
             }
             dismissSlashMenu()
+            return
+
+        case .meeting:
+            saveUndo()
+            updateBlockProperty(id: blockId) { block in
+                block.type = .meeting
+                block.meetingState = .recording
+                block.meetingTranscript = ""
+                block.meetingSummary = ""
+                block.meetingActionItems = ""
+                block.meetingTitle = ""
+            }
+            dismissSlashMenu()
+            onStartMeeting?(blockId)
             return
 
         case let .blockType(type, headingLevel):

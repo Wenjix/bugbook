@@ -350,6 +350,52 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Meeting block
+            if trimmed == "<!-- meeting -->" {
+                i += 1
+                var title = ""
+                var transcript = ""
+                var summary = ""
+                var actionItems = ""
+                var section = ""
+                while i < lines.count {
+                    let mLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if mLine == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    if mLine.hasPrefix("<!-- meeting-title:") && mLine.hasSuffix("-->") {
+                        title = String(mLine.dropFirst(19).dropLast(3)).trimmingCharacters(in: .whitespaces)
+                    } else if mLine == "<!-- meeting-summary -->" {
+                        section = "summary"
+                    } else if mLine == "<!-- meeting-actions -->" {
+                        section = "actions"
+                    } else if mLine == "<!-- meeting-transcript -->" {
+                        section = "transcript"
+                    } else {
+                        switch section {
+                        case "summary":
+                            summary += (summary.isEmpty ? "" : "\n") + lines[i]
+                        case "actions":
+                            actionItems += (actionItems.isEmpty ? "" : "\n") + lines[i]
+                        case "transcript":
+                            transcript += (transcript.isEmpty ? "" : "\n") + lines[i]
+                        default:
+                            break
+                        }
+                    }
+                    i += 1
+                }
+                var meetingBlock = makeBlock(type: .meeting)
+                meetingBlock.meetingTitle = title
+                meetingBlock.meetingTranscript = transcript
+                meetingBlock.meetingSummary = summary
+                meetingBlock.meetingActionItems = actionItems
+                meetingBlock.meetingState = .complete
+                blocks.append(meetingBlock)
+                continue
+            }
+
             // Paragraph (including empty lines)
             blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             i += 1
@@ -469,6 +515,27 @@ enum MarkdownBlockParser {
                     }
                 }
                 lines.append("<!-- /columns -->")
+
+            case .meeting:
+                // Only serialize completed meetings; recording/processing blocks are transient
+                guard block.meetingState == .complete else { break }
+                lines.append("<!-- meeting -->")
+                if !block.meetingTitle.isEmpty {
+                    lines.append("<!-- meeting-title: \(block.meetingTitle) -->")
+                }
+                if !block.meetingSummary.isEmpty {
+                    lines.append("<!-- meeting-summary -->")
+                    lines.append(block.meetingSummary)
+                }
+                if !block.meetingActionItems.isEmpty {
+                    lines.append("<!-- meeting-actions -->")
+                    lines.append(block.meetingActionItems)
+                }
+                if !block.meetingTranscript.isEmpty {
+                    lines.append("<!-- meeting-transcript -->")
+                    lines.append(block.meetingTranscript)
+                }
+                lines.append("<!-- /meeting -->")
             }
         }
 
