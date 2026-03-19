@@ -15,10 +15,23 @@ public class RowStore {
     }
 
     public static func rowFilename(title: String, suffix: String) -> String {
-        let sanitized = title
-            .replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-            .prefix(80)
-        return "\(sanitized) (\(suffix)).md"
+        var sanitized = String()
+        sanitized.reserveCapacity(min(title.count, 80) + suffix.count + 6)
+        var count = 0
+        for c in title {
+            guard count < 80 else { break }
+            switch c {
+            case "/", "\\", "?", "%", "*", ":", "|", "\"", "<", ">":
+                sanitized.append("-")
+            default:
+                sanitized.append(c)
+            }
+            count += 1
+        }
+        sanitized.append(" (")
+        sanitized.append(suffix)
+        sanitized.append(").md")
+        return sanitized
     }
 
     public static func extractIdSuffix(from rowId: String) -> String {
@@ -39,12 +52,14 @@ public class RowStore {
         let start = CFAbsoluteTimeGetCurrent()
         guard let contents = try? fm.contentsOfDirectory(atPath: dbPath) else { return [] }
 
+        let mdFiles = contents.filter { $0.hasSuffix(".md") && !$0.hasPrefix("_") }
+
         // Track best row per ID to detect and clean up duplicates.
         var bestByID: [String: (row: DatabaseRow, filename: String)] = [:]
+        bestByID.reserveCapacity(mdFiles.count)
         var duplicateFiles: [String] = []
 
-        for name in contents {
-            guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
+        for name in mdFiles {
             let filePath = (dbPath as NSString).appendingPathComponent(name)
             guard let row = loadRow(at: filePath, schema: schema, skipBody: skipBody) else { continue }
 

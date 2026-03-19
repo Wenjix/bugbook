@@ -52,26 +52,31 @@ public class IndexManager {
 
     public func rebuild(dbPath: String, schema: DatabaseSchema, rows: [DatabaseRow]) -> [String: Any] {
         var rowsMap: [String: Any] = [:]
+        rowsMap.reserveCapacity(rows.count)
+
+        let titleProp = schema.titleProperty
+        let indexableProps = schema.properties
+
         for row in rows {
-            let title = row.title(schema: schema)
+            let title: String
+            if let tp = titleProp, let val = row.properties[tp.id], case .text(let s) = val, !s.isEmpty {
+                title = s
+            } else {
+                title = "New Page"
+            }
             let suffix = RowStore.extractIdSuffix(from: row.id)
 
             var props: [String: Any] = [:]
-            for prop in schema.properties {
+            props.reserveCapacity(indexableProps.count)
+            for prop in indexableProps {
                 if let val = row.properties[prop.id] {
                     props[prop.id] = RowSerializer.serializeValueForIndex(val)
                 }
             }
 
-            let filename = RowStore.rowFilename(title: title, suffix: suffix).replacingOccurrences(of: ".md", with: "")
-            let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
-            let mtime: Int
-            if let attrs = try? fm.attributesOfItem(atPath: filePath),
-               let modDate = attrs[.modificationDate] as? Date {
-                mtime = Int(modDate.timeIntervalSince1970 * 1000)
-            } else {
-                mtime = Int(row.updatedAt.timeIntervalSince1970 * 1000)
-            }
+            let fullFilename = RowStore.rowFilename(title: title, suffix: suffix)
+            let filename = String(fullFilename.dropLast(3)) // strip ".md"
+            let mtime = Int(row.updatedAt.timeIntervalSince1970 * 1000)
 
             rowsMap[row.id] = [
                 "properties": props,
