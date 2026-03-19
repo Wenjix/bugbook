@@ -67,6 +67,9 @@ class BlockDocument {
     @ObservationIgnored var onSubmitAiPrompt: ((String) -> Void)?
     @ObservationIgnored var onCancelAiPrompt: (() -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
+    /// Called when a page is dropped from the sidebar into the editor.
+    /// Parameters: (sourcePath, insertionIndex). Should move the file and refresh tree.
+    @ObservationIgnored var onDropPageFromSidebar: ((String, Int) -> Void)?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
     @ObservationIgnored var workspacePath: String?
@@ -868,6 +871,14 @@ class BlockDocument {
             block.text = ""
         }
         dismissPagePicker()
+    }
+
+    /// Insert a page link block at a specific index (used for sidebar drag-drop).
+    func insertPageLinkBlock(at index: Int, name: String) {
+        saveUndo()
+        let block = Block(type: .pageLink, pageLinkName: name)
+        let clampedIndex = min(index, blocks.count)
+        blocks.insert(block, at: clampedIndex)
     }
 
     @ObservationIgnored private var _pagePickerCache: (search: String, entries: [FileEntry])?

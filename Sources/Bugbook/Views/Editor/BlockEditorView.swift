@@ -62,6 +62,13 @@ struct BlockEditorView: View {
         .dropDestination(for: URL.self) { urls, _ in
             handleImageFileDrop(urls)
         } isTargeted: { _ in }
+        .dropDestination(for: String.self) { items, _ in
+            guard let payload = items.first else { return false }
+            // Only handle file paths from sidebar drag (not block UUIDs)
+            guard payload.hasPrefix("/") && payload.hasSuffix(".md") else { return false }
+            handlePageDrop(payload, at: insertionIndexAtFocus)
+            return true
+        } isTargeted: { _ in }
         .onDisappear { stopAutoScroll() }
         .onChange(of: document.contentVersion) { _, _ in
             onTextChange?()
@@ -82,6 +89,8 @@ struct BlockEditorView: View {
                 activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
             } onImageDrop: { urls in
                 handleImageDrop(urls, at: startIndex)
+            } onPageDrop: { path in
+                handlePageDrop(path, at: startIndex)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -131,6 +140,8 @@ struct BlockEditorView: View {
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 } onImageDrop: { urls in
                     handleImageDrop(urls, at: index + 1)
+                } onPageDrop: { path in
+                    handlePageDrop(path, at: index + 1)
                 }
                 .overlay {
                     Button {
@@ -224,14 +235,23 @@ struct BlockEditorView: View {
         return true
     }
 
-    /// Fallback for drops that land on blocks (not between them).
-    private func handleImageFileDrop(_ urls: [URL]) -> Bool {
-        var insertIndex = document.blocks.count
+    private func handlePageDrop(_ path: String, at index: Int) {
+        document.onDropPageFromSidebar?(path, index)
+        activeDropIndex = nil
+    }
+
+    /// Index after the focused block, or end of document.
+    private var insertionIndexAtFocus: Int {
         if let focusedId = document.focusedBlockId,
            let idx = document.blocks.firstIndex(where: { $0.id == focusedId }) {
-            insertIndex = idx + 1
+            return idx + 1
         }
-        return handleImageDrop(urls, at: insertIndex)
+        return document.blocks.count
+    }
+
+    /// Fallback for drops that land on blocks (not between them).
+    private func handleImageFileDrop(_ urls: [URL]) -> Bool {
+        handleImageDrop(urls, at: insertionIndexAtFocus)
     }
 
     private var marqueeSelectionGesture: some Gesture {
@@ -774,13 +794,15 @@ final class EditorFrameReporterView: NSView {
 
 /// Thin drop zone between blocks that shows a blue line when a drag hovers over it.
 /// Height is constant to prevent layout shifts that cause flickering.
-/// Accepts both block UUID drops (reorder) and image URL drops (insert image).
+/// Accepts block UUID drops (reorder), image URL drops (insert image),
+/// and sidebar page drops (insert page link + move file).
 struct DropZoneView: View {
     let isActive: Bool
     var height: CGFloat = 4
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
+    var onPageDrop: ((String) -> Void)?
 
     @State private var imageDropTargeted = false
 
@@ -799,9 +821,17 @@ struct DropZoneView: View {
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
                 let droppedIds = BlockDocument.draggedBlockIds(from: payload)
-                guard !droppedIds.isEmpty else { return false }
-                onDrop(droppedIds)
-                return true
+                if !droppedIds.isEmpty {
+                    onDrop(droppedIds)
+                    return true
+                }
+                // If not a block UUID, check if it's a file path from sidebar drag
+                if payload.hasPrefix("/") && payload.hasSuffix(".md"),
+                   let onPageDrop {
+                    onPageDrop(payload)
+                    return true
+                }
+                return false
             } isTargeted: { targeted in
                 onTargetChanged(targeted)
             }
