@@ -51,6 +51,7 @@ public class IndexManager {
     // MARK: - Rebuild
 
     public func rebuild(dbPath: String, schema: DatabaseSchema, rows: [DatabaseRow]) -> [String: Any] {
+        let start = CFAbsoluteTimeGetCurrent()
         var rowsMap: [String: Any] = [:]
         rowsMap.reserveCapacity(rows.count)
 
@@ -118,12 +119,17 @@ public class IndexManager {
             }
         }
 
-        return [
+        let result: [String: Any] = [
             "version": 1,
             "updated_at": Self.isoFormatter.string(from: Date()),
             "rows": rowsMap,
             "indexes": indexes
         ]
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 200 {
+            print("[Perf] IndexManager.rebuild: \(rows.count) rows in \(Int(elapsed))ms")
+        }
+        return result
     }
 
     // MARK: - Save
