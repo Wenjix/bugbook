@@ -67,6 +67,9 @@ class BlockDocument {
     @ObservationIgnored var onSubmitAiPrompt: ((String) -> Void)?
     @ObservationIgnored var onCancelAiPrompt: (() -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
+    @ObservationIgnored var onStartMeeting: ((UUID) -> Void)?
+    @ObservationIgnored var onStopMeeting: ((UUID) -> Void)?
+    @ObservationIgnored var transcriptionService: TranscriptionService?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
     @ObservationIgnored var workspacePath: String?
@@ -749,6 +752,7 @@ class BlockDocument {
         case template
         case imagePicker
         case askAI
+        case meeting
     }
 
     struct SlashCommand {
@@ -775,6 +779,7 @@ class BlockDocument {
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
+        SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -829,6 +834,20 @@ class BlockDocument {
         case .askAI:
             showAiPrompt(blockId: blockId)
             dismissSlashMenu()
+            return
+
+        case .meeting:
+            saveUndo()
+            updateBlockProperty(id: blockId) { block in
+                block.type = .meeting
+                block.meetingState = .recording
+                block.meetingTranscript = ""
+                block.meetingSummary = ""
+                block.meetingActionItems = ""
+                block.meetingTitle = ""
+            }
+            dismissSlashMenu()
+            onStartMeeting?(blockId)
             return
 
         case let .blockType(type, headingLevel):

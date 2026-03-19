@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var calendarService = CalendarService()
     @State private var calendarVM = CalendarViewModel()
     @State private var meetingNoteService = MeetingNoteService()
+    @State private var transcriptionService = TranscriptionService()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var flashcardCards: [FlashcardItem] = []
@@ -1142,6 +1143,102 @@ struct ContentView: View {
         }
         doc.onCancelAiPrompt = { [weak doc] in
             doc?.dismissAiPrompt()
+        }
+        doc.transcriptionService = transcriptionService
+        doc.onStartMeeting = { [weak doc] blockId in
+            transcriptionService.loadModels()
+            transcriptionService.startRecording()
+            // Update live transcript into the block as it streams
+            Task { @MainActor in
+                var lastTranscript = ""
+                while transcriptionService.isRecording {
+                    let current = transcriptionService.currentTranscript
+                    if current != lastTranscript {
+                        lastTranscript = current
+                        doc?.updateBlockProperty(id: blockId) { block in
+                            block.meetingTranscript = current
+                        }
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
+        }
+        doc.onStopMeeting = { [weak doc, weak appState] blockId in
+            transcriptionService.stopRecording()
+            guard let doc else { return }
+            let transcript = transcriptionService.currentTranscript
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .processing
+                block.meetingTranscript = transcript
+            }
+            Task { @MainActor in
+                await finalizeMeeting(doc: doc, blockId: blockId, transcript: transcript, appState: appState)
+            }
+        }
+    }
+
+    // MARK: - Meeting Finalization
+
+    private static let meetingTitleDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "MMM d, yyyy"
+        return df
+    }()
+
+    private func finalizeMeeting(doc: BlockDocument, blockId: UUID, transcript: String, appState: AppState?) async {
+        let title = "Meeting \(Self.meetingTitleDateFormatter.string(from: Date()))"
+
+        guard !transcript.isEmpty else {
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .complete
+                block.meetingTitle = title
+                block.meetingSummary = "No audio was captured."
+                block.meetingActionItems = ""
+            }
+            return
+        }
+
+        // Use AiService to summarize
+        let prompt = """
+        Summarize this meeting transcript. Return ONLY two sections separated by a blank line:
+        1. A concise summary (2-4 sentences)
+        2. Action items as a bulleted list (- [ ] each item)
+
+        Transcript:
+        \(transcript)
+        """
+
+        let engine = appState?.settings.preferredAIEngine ?? .auto
+        let apiKey = appState?.settings.anthropicApiKey ?? ""
+        let workspace = appState?.workspacePath ?? ""
+
+        do {
+            let result = try await aiService.generateContent(
+                engine: engine,
+                workspacePath: workspace,
+                prompt: prompt,
+                apiKey: apiKey
+            )
+
+            // Split result into summary and action items
+            let parts = result.components(separatedBy: "\n\n")
+            let summary = parts.first ?? result
+            let actions = parts.count > 1 ? parts.dropFirst().joined(separator: "\n\n") : ""
+
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .complete
+                block.meetingTitle = title
+                block.meetingSummary = summary
+                block.meetingActionItems = actions
+            }
+        } catch {
+            // On AI failure, still complete with just the transcript
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .complete
+                block.meetingTitle = title
+                block.meetingSummary = "AI summary unavailable: \(error.localizedDescription)"
+                block.meetingActionItems = ""
+            }
         }
     }
 

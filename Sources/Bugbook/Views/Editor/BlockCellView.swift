@@ -72,7 +72,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image, .pageLink:
+        case .databaseEmbed, .image, .pageLink, .meeting:
             true
         default:
             false
@@ -252,6 +252,20 @@ struct BlockCellView: View {
 
         case .column:
             ColumnBlockView(document: document, block: block, onTyping: onTyping)
+
+        case .meeting:
+            if let service = document.transcriptionService {
+                MeetingBlockView(
+                    document: document,
+                    block: block,
+                    transcriptionService: service,
+                    onStop: { document.onStopMeeting?(block.id) }
+                )
+            } else {
+                Text("Meeting block")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
