@@ -913,6 +913,7 @@ class BlockDocument {
         let block = Block(type: .pageLink, pageLinkName: name)
         let clampedIndex = min(index, blocks.count)
         blocks.insert(block, at: clampedIndex)
+        focusedBlockId = block.id
     }
 
     @ObservationIgnored private var _pagePickerCache: (search: String, entries: [FileEntry])?
@@ -1122,15 +1123,6 @@ class BlockDocument {
         let clampedIndex = min(index, blocks.count)
         blocks.insert(imageBlock, at: clampedIndex)
         focusedBlockId = imageBlock.id
-    }
-
-    func insertPageLinkBlock(at index: Int, name: String) {
-        saveUndo()
-        var block = Block(type: .pageLink)
-        block.pageLinkName = name
-        let clamped = min(index, blocks.count)
-        blocks.insert(block, at: clamped)
-        focusedBlockId = block.id
     }
 
     /// Returns true if the payload string looks like a sidebar page file path.
