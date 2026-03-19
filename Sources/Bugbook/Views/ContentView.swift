@@ -1108,17 +1108,6 @@ struct ContentView: View {
             performSave(tabId: tab.id)
             refreshFileTree()
         }
-        doc.onSidebarPageDrop = { [weak appState] sourcePath in
-            guard let appState,
-                  let tab = appState.activeTab else { return }
-            let tabPath = tab.path
-            let destDir = tabPath.hasSuffix(".md") ? String(tabPath.dropLast(3)) : tabPath
-            guard sourcePath != tabPath else { return }
-            // Save the parent document so the newly inserted [[Page]] link is on disk
-            // before performMovePage checks for duplicates.
-            performSave(tabId: tab.id)
-            performMovePage(from: sourcePath, toDirectory: destDir)
-        }
         doc.availablePages = appState.fileTree
         doc.workspacePath = appState.workspacePath
         doc.onNavigateToPage = { pageName in
@@ -1197,6 +1186,29 @@ struct ContentView: View {
             Task { @MainActor in
                 await finalizeMeeting(doc: doc, blockId: blockId, transcript: transcript, appState: appState)
             }
+        }
+        doc.onDropPageFromSidebar = { [weak appState, weak doc] sourcePath, insertionIndex in
+            guard let appState, let doc else { return }
+            guard let tab = appState.activeTab else { return }
+            // Don't drop a page onto itself
+            guard sourcePath != tab.path else { return }
+
+            let pageName = ((sourcePath as NSString).lastPathComponent as NSString)
+                .deletingPathExtension
+
+            // Insert the page link block at the drop location
+            doc.insertPageLinkBlock(at: insertionIndex, name: pageName)
+
+            // Mark dirty and save immediately so performMovePage sees the link
+            // already in the file and doesn't append a duplicate at the bottom
+            if let tabIdx = appState.openTabs.firstIndex(where: { $0.id == tab.id }) {
+                appState.openTabs[tabIdx].isDirty = true
+            }
+            performSave(tabId: tab.id)
+
+            // Move the file into this page's companion folder
+            let companionDir = tab.path.hasSuffix(".md") ? String(tab.path.dropLast(3)) : tab.path
+            performMovePage(from: sourcePath, toDirectory: companionDir)
         }
     }
 
