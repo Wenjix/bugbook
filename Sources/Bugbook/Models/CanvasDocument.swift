@@ -359,6 +359,9 @@ class CanvasDocument {
 
     private func saveUndo() {
         undoStack.append(CanvasState(nodes: nodes, edges: edges, nodeTexts: nodeTexts))
+        if undoStack.count > 50 {
+            undoStack.removeFirst(undoStack.count - 50)
+        }
         redoStack.removeAll()
     }
 
