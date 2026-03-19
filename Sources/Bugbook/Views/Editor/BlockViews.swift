@@ -20,6 +20,7 @@ private struct BlockDeletableModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .focusable()
+            .focusEffectDisabled()
             .focused($isKeyboardFocused)
             .onKeyPress(keys: Self.deleteKeys) { _ in
                 guard isSelected else { return .ignored }

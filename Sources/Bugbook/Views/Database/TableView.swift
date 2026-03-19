@@ -406,7 +406,7 @@ struct TableView: View {
                                 )
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NoFeedbackButtonStyle())
                     .fixedSize()
                     .help("Open in side peek")
                     .padding(.trailing, DatabaseZoomMetrics.size(4))
@@ -1010,5 +1010,11 @@ private extension View {
             if inside { cursor.push() }
             else { NSCursor.pop() }
         }
+    }
+}
+
+private struct NoFeedbackButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
