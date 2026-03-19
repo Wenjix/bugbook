@@ -473,15 +473,42 @@ private struct CanvasScrollZoomView: NSViewRepresentable {
 
 private class CanvasScrollCaptureNSView: NSView {
     var onCmdScroll: ((CGFloat, CGPoint) -> Void)?
+    private var scrollMonitor: Any?
 
     override var isFlipped: Bool { true }
 
-    override func scrollWheel(with event: NSEvent) {
-        if event.modifierFlags.contains(.command) {
-            let locationInView = convert(event.locationInWindow, from: nil)
-            onCmdScroll?(event.scrollingDeltaY, locationInView)
-        } else {
-            super.scrollWheel(with: event)
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil // transparent to mouse events so canvas shapes remain selectable
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil && scrollMonitor == nil {
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                self?.handleScroll(event) ?? event
+            }
+        } else if window == nil, let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
         }
+    }
+
+    deinit {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    private func handleScroll(_ event: NSEvent) -> NSEvent? {
+        guard let window = self.window,
+              event.window === window,
+              event.modifierFlags.contains(.command) else {
+            return event
+        }
+        let locationInView = convert(event.locationInWindow, from: nil)
+        // Only handle if the mouse is within this view's bounds
+        guard bounds.contains(locationInView) else { return event }
+        onCmdScroll?(event.scrollingDeltaY, locationInView)
+        return nil // consume the event
     }
 }
