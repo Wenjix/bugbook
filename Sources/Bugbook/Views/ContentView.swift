@@ -900,7 +900,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .inlineDatabaseRowPeek)) { notification in
             guard let dbPath = notification.databasePath,
                   let rowId = notification.databaseRowId else { return }
-            peekTarget = RowTarget(dbPath: dbPath, rowId: rowId)
+            if peekTarget?.dbPath == dbPath && peekTarget?.rowId == rowId {
+                closePeekPanel()
+            } else {
+                peekTarget = RowTarget(dbPath: dbPath, rowId: rowId)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .databaseRowModalRequested)) { notification in
             guard let dbPath = notification.databasePath,
