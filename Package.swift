@@ -77,7 +77,8 @@ let package = Package(
                 "Bugbook",
                 "BugbookCore",
             ],
-            path: "Tests/BugbookTests"
+            path: "Tests/BugbookTests",
+            exclude: ["perf_baseline.tsv"]
         ),
         .testTarget(
             name: "BugbookCLITests",
