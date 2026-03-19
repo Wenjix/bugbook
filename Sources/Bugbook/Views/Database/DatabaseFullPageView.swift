@@ -648,6 +648,7 @@ struct DatabaseFullPageView: View {
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
+                onUpdateSubGroupBy: { propId in state.updateSubGroupBy(propId) },
                 onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
                 onDelete: { row in state.deleteRow(row) },
                 onReorderRows: { draggedId, targetId in

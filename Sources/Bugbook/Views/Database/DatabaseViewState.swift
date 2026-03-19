@@ -378,6 +378,19 @@ final class DatabaseViewState {
     func updateGroupBy(_ propertyId: String) {
         guard var s = schema, var view = activeView else { return }
         view.groupBy = propertyId
+        // Clear sub-group if it now matches the primary group
+        if view.subGroupBy == propertyId {
+            view.subGroupBy = nil
+        }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func updateSubGroupBy(_ propertyId: String?) {
+        guard var s = schema, var view = activeView else { return }
+        view.subGroupBy = propertyId
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
