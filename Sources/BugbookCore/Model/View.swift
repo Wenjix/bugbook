@@ -64,12 +64,13 @@ public struct ViewConfig: Identifiable, Codable, Sendable {
     public var groupBy: String?
     public var dateProperty: String?
     public var manualRowOrder: [String]?
+    public var subGroupBy: String?
 
     public init(id: String, name: String, type: ViewType, sorts: [SortConfig] = [],
                 filters: [FilterConfig] = [], columnWidths: [String: Double]? = nil,
                 hiddenColumns: [String]? = nil, wrapCellText: Bool? = nil,
                 groupBy: String? = nil, dateProperty: String? = nil,
-                manualRowOrder: [String]? = nil) {
+                manualRowOrder: [String]? = nil, subGroupBy: String? = nil) {
         self.id = id
         self.name = name
         self.type = type
@@ -81,6 +82,7 @@ public struct ViewConfig: Identifiable, Codable, Sendable {
         self.groupBy = groupBy
         self.dateProperty = dateProperty
         self.manualRowOrder = manualRowOrder
+        self.subGroupBy = subGroupBy
     }
 
     enum CodingKeys: String, CodingKey {
@@ -91,5 +93,6 @@ public struct ViewConfig: Identifiable, Codable, Sendable {
         case groupBy = "group_by"
         case dateProperty = "date_property"
         case manualRowOrder = "manual_row_order"
+        case subGroupBy = "sub_group_by"
     }
 }

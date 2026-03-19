@@ -10,6 +10,7 @@ struct KanbanView: View {
     var onOpenRow: (DatabaseRow) -> Void
     var onSave: (DatabaseRow) -> Void
     var onUpdateGroupBy: ((String) -> Void)?
+    var onUpdateSubGroupBy: ((String?) -> Void)?
     var onAddSelectOption: ((String, SelectOption) -> Void)?
     var onDelete: ((DatabaseRow) -> Void)?
     var onReorderRows: ((String, String?) -> Void)?
@@ -23,6 +24,7 @@ struct KanbanView: View {
     @State private var showColumnPopover: String? = nil
     @State private var showCardPopover: String? = nil
     @State private var editingColumnName: String = ""
+    @State private var collapsedSubGroups: Set<String> = []
 
     // Custom drag state
     @State private var draggingRowId: String? = nil
@@ -35,11 +37,23 @@ struct KanbanView: View {
         schema.properties.filter { $0.type == .select }
     }
 
+    /// Properties eligible for sub-grouping: select and relation types, excluding the primary group-by.
+    private var subGroupableProperties: [PropertyDefinition] {
+        schema.properties.filter { prop in
+            (prop.type == .select || prop.type == .relation) && prop.id != groupProperty?.id
+        }
+    }
+
     private var groupProperty: PropertyDefinition? {
         guard let groupId = viewConfig.groupBy else {
             return schema.properties.first(where: { $0.type == .select })
         }
         return schema.properties.first(where: { $0.id == groupId })
+    }
+
+    private var subGroupProperty: PropertyDefinition? {
+        guard let subGroupId = viewConfig.subGroupBy else { return nil }
+        return schema.properties.first(where: { $0.id == subGroupId })
     }
 
     private var columns: [(id: String, name: String, color: String)] {
@@ -82,37 +96,131 @@ struct KanbanView: View {
         }
     }
 
+    // MARK: - Sub-Grouping
+
+    /// Extract the sub-group key from a row's property value for the sub-group property.
+    private func subGroupKey(for row: DatabaseRow) -> String {
+        guard let prop = subGroupProperty,
+              let val = row.properties[prop.id] else { return "__none__" }
+        switch val {
+        case .select(let s): return s.isEmpty ? "__none__" : s
+        case .relation(let s): return s.isEmpty ? "__none__" : s
+        case .empty: return "__none__"
+        default: return "__none__"
+        }
+    }
+
+    /// Display name for a sub-group key value.
+    private func subGroupDisplayName(for key: String) -> String {
+        guard let prop = subGroupProperty else { return key }
+        if key == "__none__" { return "No \(prop.name)" }
+        if prop.type == .select, let options = prop.options {
+            return options.first(where: { $0.id == key })?.name ?? key
+        }
+        // For relations, the key is a row id — just show it as-is
+        return key
+    }
+
+    /// Partition column rows into ordered sub-groups. "__none__" group is placed last.
+    private func subGroups(for columnRows: [DatabaseRow]) -> [(key: String, name: String, rows: [DatabaseRow])] {
+        guard subGroupProperty != nil else { return [] }
+
+        var grouped: [String: [DatabaseRow]] = [:]
+        var keyOrder: [String] = []
+        for row in columnRows {
+            let key = subGroupKey(for: row)
+            if grouped[key] == nil { keyOrder.append(key) }
+            grouped[key, default: []].append(row)
+        }
+
+        // Move "__none__" to end
+        if let noneIdx = keyOrder.firstIndex(of: "__none__") {
+            keyOrder.remove(at: noneIdx)
+            keyOrder.append("__none__")
+        }
+
+        return keyOrder.map { key in
+            (key: key, name: subGroupDisplayName(for: key), rows: grouped[key] ?? [])
+        }
+    }
+
+    /// Unique key for tracking collapsed state of a sub-group within a column.
+    private func subGroupCollapseKey(column: String, subGroup: String) -> String {
+        "\(column)::\(subGroup)"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // GroupBy selector
-            if selectProperties.count > 1 {
+            // GroupBy / Sub-group by selectors
+            if selectProperties.count > 1 || !subGroupableProperties.isEmpty {
                 HStack(spacing: 8) {
-                    Text("Group by:")
-                        .font(DatabaseZoomMetrics.font(12))
-                        .foregroundStyle(.secondary)
-                    Menu {
-                        ForEach(selectProperties) { prop in
+                    if selectProperties.count > 1 {
+                        Text("Group by:")
+                            .font(DatabaseZoomMetrics.font(12))
+                            .foregroundStyle(.secondary)
+                        Menu {
+                            ForEach(selectProperties) { prop in
+                                Button {
+                                    onUpdateGroupBy?(prop.id)
+                                } label: {
+                                    HStack {
+                                        Text(prop.name)
+                                        if prop.id == groupProperty?.id {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(groupProperty?.name ?? "Select property")
+                                    .font(DatabaseZoomMetrics.font(12))
+                                Image(systemName: "chevron.down")
+                                    .font(DatabaseZoomMetrics.font(11))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+
+                    if !subGroupableProperties.isEmpty {
+                        Text("Sub-group by:")
+                            .font(DatabaseZoomMetrics.font(12))
+                            .foregroundStyle(.secondary)
+                        Menu {
                             Button {
-                                onUpdateGroupBy?(prop.id)
+                                onUpdateSubGroupBy?(nil)
                             } label: {
                                 HStack {
-                                    Text(prop.name)
-                                    if prop.id == groupProperty?.id {
+                                    Text("None")
+                                    if viewConfig.subGroupBy == nil {
                                         Image(systemName: "checkmark")
                                     }
                                 }
                             }
+                            ForEach(subGroupableProperties) { prop in
+                                Button {
+                                    onUpdateSubGroupBy?(prop.id)
+                                } label: {
+                                    HStack {
+                                        Text(prop.name)
+                                        if prop.id == viewConfig.subGroupBy {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(subGroupProperty?.name ?? "None")
+                                    .font(DatabaseZoomMetrics.font(12))
+                                Image(systemName: "chevron.down")
+                                    .font(DatabaseZoomMetrics.font(11))
+                            }
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(groupProperty?.name ?? "Select property")
-                                .font(DatabaseZoomMetrics.font(12))
-                            Image(systemName: "chevron.down")
-                                .font(DatabaseZoomMetrics.font(11))
-                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
 
                     Spacer()
                 }
@@ -375,6 +483,86 @@ struct KanbanView: View {
         .popoverSurface()
     }
 
+    // MARK: - Sub-Group Section Header
+
+    @ViewBuilder
+    private func subGroupHeader(name: String, count: Int, collapseKey: String) -> some View {
+        let isCollapsed = collapsedSubGroups.contains(collapseKey)
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                if isCollapsed {
+                    collapsedSubGroups.remove(collapseKey)
+                } else {
+                    collapsedSubGroups.insert(collapseKey)
+                }
+            }
+        } label: {
+            HStack(spacing: DatabaseZoomMetrics.size(4)) {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(DatabaseZoomMetrics.font(9))
+                    .foregroundStyle(.tertiary)
+                Text(name)
+                    .font(DatabaseZoomMetrics.font(11))
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                Text("\(count)")
+                    .font(DatabaseZoomMetrics.font(10))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(4))
+                    .padding(.vertical, DatabaseZoomMetrics.size(1))
+                    .background(Color.fallbackBadgeBg)
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(3)))
+                Spacer()
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(4))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Column Card Content
+
+    /// Renders cards for a column, either flat or sub-grouped.
+    @ViewBuilder
+    private func columnCardContent(columnId: String, columnColor: Color) -> some View {
+        let columnRows = rowsForColumn(columnId)
+
+        if subGroupProperty != nil {
+            let groups = subGroups(for: columnRows)
+            ForEach(groups, id: \.key) { group in
+                let collapseKey = subGroupCollapseKey(column: columnId, subGroup: group.key)
+                subGroupHeader(name: group.name, count: group.rows.count, collapseKey: collapseKey)
+
+                if !collapsedSubGroups.contains(collapseKey) {
+                    ForEach(group.rows) { row in
+                        draggableCard(row, columnColor: columnColor)
+                    }
+                }
+            }
+        } else {
+            ForEach(columnRows) { row in
+                draggableCard(row, columnColor: columnColor)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func draggableCard(_ row: DatabaseRow, columnColor: Color) -> some View {
+        let title = row.title(schema: schema)
+        kanbanCard(row, title: title, columnColor: columnColor)
+            .opacity(draggingRowId == row.id ? 0.2 : 1)
+            .gesture(
+                DragGesture(coordinateSpace: .named(Self.coordinateSpaceName))
+                    .onChanged { value in
+                        updateDrag(for: row, at: value.location)
+                    }
+                    .onEnded { value in
+                        endDrag(for: row, at: value.location)
+                    }
+            )
+    }
+
     // MARK: - Kanban Column
 
     private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int, availableHeight: CGFloat) -> some View {
@@ -408,22 +596,7 @@ struct KanbanView: View {
             // Cards — scroll vertically within column
             ScrollView(.vertical) {
                 LazyVStack(spacing: DatabaseZoomMetrics.size(6)) {
-                    let columnRows = rowsForColumn(column.id)
-
-                    ForEach(columnRows) { row in
-                        let title = row.title(schema: schema)
-                        kanbanCard(row, title: title, columnColor: columnColor)
-                            .opacity(draggingRowId == row.id ? 0.2 : 1)
-                            .gesture(
-                                DragGesture(coordinateSpace: .named(Self.coordinateSpaceName))
-                                    .onChanged { value in
-                                        updateDrag(for: row, at: value.location)
-                                    }
-                                    .onEnded { value in
-                                        endDrag(for: row, at: value.location)
-                                    }
-                            )
-                    }
+                    columnCardContent(columnId: column.id, columnColor: columnColor)
 
                     // + New page button at bottom, colored like Notion
                     Button {
@@ -466,6 +639,27 @@ struct KanbanView: View {
         guard let prop = groupProperty else { return }
         guard let sourceIdx = rows.firstIndex(where: { $0.id == rowId }) else { return }
         let newValue: PropertyValue = columnId == "__none__" ? .empty : .select(columnId)
+        var updated = rows
+        updated[sourceIdx].properties[prop.id] = newValue
+        let savedRow = updated[sourceIdx]
+        rows = updated
+        onSave(savedRow)
+    }
+
+    /// Update the sub-group property value when a card is dragged to a different sub-group.
+    private func moveCardSubGroup(_ rowId: String, toSubGroup subGroupKey: String) {
+        guard let prop = subGroupProperty else { return }
+        guard let sourceIdx = rows.firstIndex(where: { $0.id == rowId }) else { return }
+        let newValue: PropertyValue
+        if subGroupKey == "__none__" {
+            newValue = .empty
+        } else {
+            switch prop.type {
+            case .select: newValue = .select(subGroupKey)
+            case .relation: newValue = .relation(subGroupKey)
+            default: return
+            }
+        }
         var updated = rows
         updated[sourceIdx].properties[prop.id] = newValue
         let savedRow = updated[sourceIdx]
@@ -571,6 +765,7 @@ struct KanbanView: View {
         dragLocation = location
         let target = reorderTarget(for: location)
         let targetColumn = targetColumnId(at: location)
+        let sourceSubGroup = subGroupProperty != nil ? subGroupKey(for: row) : nil
         draggingRowId = nil
         dragTargetColumn = nil
         reorderTarget = nil
@@ -578,6 +773,16 @@ struct KanbanView: View {
         if let targetColumn {
             moveCard(row.id, toColumn: targetColumn)
         }
+
+        // Determine the target sub-group from the drop target row
+        if subGroupProperty != nil, let target, let targetRowId = target.rowId,
+           let targetRow = rows.first(where: { $0.id == targetRowId }) {
+            let destSubGroup = subGroupKey(for: targetRow)
+            if destSubGroup != sourceSubGroup {
+                moveCardSubGroup(row.id, toSubGroup: destSubGroup)
+            }
+        }
+
         guard let target else { return }
         onReorderRows?(row.id, beforeId(for: target))
     }
