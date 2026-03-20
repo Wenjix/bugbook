@@ -179,6 +179,16 @@ struct CommandPaletteView: View {
         }
         .onChange(of: appState.fileTree) { _, newTree in
             cachedFlatEntries = flattenFileTree(newTree)
+            // Invalidate content index so searches reflect file changes
+            contentIndex = []
+            contentIndexWorkspace = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
+            Task { @MainActor in
+                await warmContentIndexIfNeeded()
+            }
+            // Re-run active search against new index
+            scheduleContentSearch(query: effectiveQuery(from: searchText))
         }
         .onChange(of: appState.workspacePath) { _, _ in
             contentIndex = []
