@@ -288,17 +288,7 @@ struct DatabaseEmbedBlockView: View {
         let content = databaseEmbedView
             .blockDeletable(document: document, blockId: block.id)
 
-        if let sidebarReferencePayload {
-            content
-                .overlay(alignment: .topLeading) {
-                    if isHoveringEmbed {
-                        sidebarDragHandle(payload: sidebarReferencePayload)
-                    }
-                }
-                .onHover { isHoveringEmbed = $0 }
-        } else {
-            content
-        }
+        content
     }
 
     private func sidebarDragHandle(payload: SidebarReferenceDragPayload) -> some View {

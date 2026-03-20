@@ -178,34 +178,40 @@ struct DatabaseFullPageView: View {
 
     // MARK: - View Tabs
 
+    @State private var isHoveringTabs = false
+
     private func viewTabs(schema: DatabaseSchema) -> some View {
         HStack(spacing: 4) {
             ForEach(schema.views) { view in
                 viewTabButton(view: view)
             }
 
-            Menu {
-                ForEach(ViewType.allCases, id: \.rawValue) { type in
-                    Button { state.addView(type: type) } label: {
-                        Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
+            if isHoveringTabs {
+                Menu {
+                    ForEach(ViewType.allCases, id: \.rawValue) { type in
+                        Button { state.addView(type: type) } label: {
+                            Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
+                        }
                     }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(DatabaseZoomMetrics.font(11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: DatabaseZoomMetrics.size(20), height: DatabaseZoomMetrics.size(20))
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Image(systemName: "plus")
-                    .font(DatabaseZoomMetrics.font(11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: DatabaseZoomMetrics.size(20), height: DatabaseZoomMetrics.size(20))
-                    .contentShape(Rectangle())
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Add a new view")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
 
             Spacer()
         }
         .padding(.leading, DatabaseZoomMetrics.size(4))
         .padding(.trailing, DatabaseZoomMetrics.size(12))
         .padding(.vertical, DatabaseZoomMetrics.size(4))
+        .onHover { isHoveringTabs = $0 }
     }
 
     private func viewTabButton(view: ViewConfig) -> some View {

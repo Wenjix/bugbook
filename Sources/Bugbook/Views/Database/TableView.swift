@@ -1,6 +1,10 @@
 import SwiftUI
 import BugbookCore
 
+private enum TableViewLayoutMetrics {
+    static let compactHeaderHeight: CGFloat = 32
+}
+
 struct TableView: View {
     static let rowControlsInset: CGFloat = 32
     private static let reorderCoordinateSpace = "table-reorder"
@@ -66,6 +70,10 @@ struct TableView: View {
 
     private var canReorderRows: Bool {
         viewConfig.sorts.isEmpty
+    }
+
+    private var compactHeaderHeight: CGFloat {
+        DatabaseZoomMetrics.size(TableViewLayoutMetrics.compactHeaderHeight)
     }
 
     private var draggingRow: DatabaseRow? {
@@ -175,6 +183,7 @@ struct TableView: View {
             TitleColumnHeaderCell(
                 name: schema.titleProperty?.name ?? "Name",
                 propertyId: schema.titleProperty?.id,
+                height: compactHeaderHeight,
                 onRename: onRenameProperty
             )
             .frame(width: titleColumnWidth)
@@ -186,6 +195,7 @@ struct TableView: View {
             ForEach(visibleProperties) { prop in
                 ColumnHeaderCell(
                     prop: prop,
+                    height: compactHeaderHeight,
                     onRename: onRenameProperty,
                     onChangeType: onChangePropertyType,
                     onToggleColumn: onToggleColumn,
@@ -214,16 +224,20 @@ struct TableView: View {
                         .font(DatabaseZoomMetrics.font(11))
                     Text("Add property")
                         .font(DatabaseZoomMetrics.font(15))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, DatabaseZoomMetrics.size(8))
                 .padding(.vertical, DatabaseZoomMetrics.size(4))
+                .frame(height: compactHeaderHeight)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }
         .padding(.horizontal, DatabaseZoomMetrics.size(4))
+        .frame(height: compactHeaderHeight)
     }
 
     // MARK: - Resize Handle (overlaid on column trailing edge)
@@ -807,6 +821,7 @@ private struct TableRowFramePreferenceKey: PreferenceKey {
 
 private struct ColumnHeaderCell: View {
     let prop: PropertyDefinition
+    let height: CGFloat
     var onRename: ((String, String) -> Void)?
     var onChangeType: ((String, PropertyType) -> Void)?
     var onToggleColumn: ((String) -> Void)?
@@ -830,15 +845,17 @@ private struct ColumnHeaderCell: View {
                     .fontWeight(.medium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
-            .padding(.vertical, DatabaseZoomMetrics.size(10))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(.vertical, DatabaseZoomMetrics.size(6))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: height, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(maxHeight: .infinity)
+        .frame(height: height)
         .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
         .contentShape(Rectangle())
         .onHover { inside in
@@ -936,6 +953,7 @@ private struct ColumnHeaderCell: View {
 private struct TitleColumnHeaderCell: View {
     let name: String
     let propertyId: String?
+    let height: CGFloat
     var onRename: ((String, String) -> Void)?
 
     @State private var isHovered = false
@@ -956,15 +974,17 @@ private struct TitleColumnHeaderCell: View {
                     .fontWeight(.medium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
-            .padding(.vertical, DatabaseZoomMetrics.size(10))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(.vertical, DatabaseZoomMetrics.size(6))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: height, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(maxHeight: .infinity)
+        .frame(height: height)
         .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }

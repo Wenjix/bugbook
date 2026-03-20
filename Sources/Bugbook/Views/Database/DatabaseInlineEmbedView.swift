@@ -16,7 +16,8 @@ struct DatabaseInlineEmbedView: View {
     @State private var showSettings: Bool = false
     @State private var searchText: String = ""
     @State private var hasStartedLoading = false
-    @State private var isHoveringHeader = false
+    @State private var isHoveringTitle = false
+    @State private var isHoveringTabs = false
     @State private var isDeleted = false
     @State private var isEditingTitle: Bool = false
     @FocusState private var isTitleFocused: Bool
@@ -133,26 +134,8 @@ struct DatabaseInlineEmbedView: View {
                 .buttonStyle(.plain)
             }
 
-            // Add view — always visible next to title
-            Menu {
-                ForEach([ViewType.table, .list, .kanban, .calendar], id: \.rawValue) { type in
-                    Button { state.addView(type: type) } label: {
-                        Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
-                    }
-                }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-
-            // Open full page — next to title controls, visible on hover
-            if isHoveringHeader {
+            // Open full page — visible on hover over title
+            if isHoveringTitle {
                 Button { onOpenDatabase?() } label: {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 12))
@@ -220,7 +203,7 @@ struct DatabaseInlineEmbedView: View {
         .padding(.bottom, 4)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
-                isHoveringHeader = hovering
+                isHoveringTitle = hovering
             }
         }
     }
@@ -232,11 +215,31 @@ struct DatabaseInlineEmbedView: View {
             ForEach(schema.views) { view in
                 inlineViewTabButton(view: view)
             }
+            if isHoveringTabs {
+                Menu {
+                    ForEach([ViewType.table, .list, .kanban, .calendar], id: \.rawValue) { type in
+                        Button { state.addView(type: type) } label: {
+                            Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Add a new view")
+            }
             Spacer()
         }
         .padding(.leading, 12)
         .padding(.trailing, 12)
         .padding(.vertical, 4)
+        .onHover { isHoveringTabs = $0 }
     }
 
     private func inlineViewTabButton(view: ViewConfig) -> some View {

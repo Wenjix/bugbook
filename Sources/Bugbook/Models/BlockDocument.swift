@@ -785,7 +785,6 @@ class BlockDocument {
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
         SlashCommand(name: "Canvas", icon: "rectangle.on.rectangle.angled", action: .blockType(.canvas, headingLevel: 0)),
-        SlashCommand(name: "Meeting Notes", icon: "person.2.wave.2", action: .meetingNotes),
         SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting),
     ]
 

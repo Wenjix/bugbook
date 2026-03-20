@@ -6,6 +6,9 @@ struct MeetingBlockView: View {
     let block: Block
     var transcriptionService: TranscriptionService
     var onStop: () -> Void
+    @State private var editingSummary: String = ""
+    @State private var isSummaryFocused: Bool = false
+    @State private var showTranscript: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -118,15 +121,24 @@ struct MeetingBlockView: View {
                     .font(.subheadline.weight(.semibold))
             }
 
-            // Summary
-            if !block.meetingSummary.isEmpty {
+            // Summary — editable
+            if !block.meetingSummary.isEmpty || isSummaryFocused {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Summary")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                    Text(block.meetingSummary)
+                    TextEditor(text: $editingSummary)
                         .font(.caption)
                         .foregroundStyle(.primary)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 40, maxHeight: 120)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onAppear { editingSummary = block.meetingSummary }
+                        .onChange(of: editingSummary) { _, newValue in
+                            document.updateBlockProperty(id: block.id) { b in
+                                b.meetingSummary = newValue
+                            }
+                        }
                 }
             }
 
@@ -142,19 +154,46 @@ struct MeetingBlockView: View {
                 }
             }
 
-            // Collapsible transcript
+            // View transcript
             if !block.meetingTranscript.isEmpty {
-                DisclosureGroup("Full Transcript") {
-                    Text(block.meetingTranscript)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 4)
+                Button { showTranscript = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.text")
+                            .font(.caption2)
+                        Text("View Transcript")
+                            .font(.caption.weight(.medium))
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showTranscript) {
+                    transcriptSheet
+                }
             }
         }
+    }
+    private var transcriptSheet: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(block.meetingTitle.isEmpty ? "Meeting Transcript" : block.meetingTitle)
+                    .font(.headline)
+                Spacer()
+                Button("Done") { showTranscript = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                Text(block.meetingTranscript)
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
+        }
+        .frame(minWidth: 500, minHeight: 400)
     }
 }
 
