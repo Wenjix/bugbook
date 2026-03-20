@@ -4,13 +4,13 @@ public struct RowSerializer {
 
     // MARK: - Cached Formatters
 
-    private static let isoFormatter: ISO8601DateFormatter = {
+    private static let sharedISOFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
 
-    private static let dateOnlyFormatter: DateFormatter = {
+    private static let sharedDateOnlyFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone(identifier: "UTC")
@@ -20,35 +20,45 @@ public struct RowSerializer {
     // MARK: - Serialize
 
     public static func serialize(row: DatabaseRow, schema: DatabaseSchema) -> String {
-        var parts: [String] = []
-        parts.reserveCapacity(6 + schema.properties.count)
+        // Estimate capacity: ~80 bytes header + ~40 bytes per property + body
+        let estimatedSize = 80 + row.properties.count * 40 + row.body.count
+        var fm = String()
+        fm.reserveCapacity(estimatedSize)
 
-        parts.append("---")
-        parts.append("id: \(row.id)")
-        parts.append("created_at: \(iso8601String(from: row.createdAt))")
-        parts.append("updated_at: \(iso8601String(from: row.updatedAt))")
+        fm += "---\nid: "
+        fm += row.id
+        fm += "\ncreated_at: "
+        fm += sharedISOFormatter.string(from: row.createdAt)
+        fm += "\nupdated_at: "
+        fm += sharedISOFormatter.string(from: row.updatedAt)
+        fm += "\n"
 
         if !row.properties.isEmpty {
-            parts.append("properties:")
+            fm += "properties:\n"
             for prop in schema.properties {
                 if let value = row.properties[prop.id] {
                     let s = serializeValue(value)
                     if !s.isEmpty {
-                        parts.append("  \(prop.id): \(s)")
+                        fm += "  "
+                        fm += prop.id
+                        fm += ": "
+                        fm += s
+                        fm += "\n"
                     }
                 }
             }
         }
 
-        parts.append("---")
-        parts.append("")
+        fm += "---\n"
 
-        var result = parts.joined(separator: "\n")
-        if !row.body.isEmpty {
-            result.append(row.body)
+        if row.body.isEmpty {
+            fm += "\n"
+        } else {
+            fm += "\n"
+            fm += row.body
         }
 
-        return result
+        return fm
     }
 
     // MARK: - Parse
@@ -72,73 +82,65 @@ public struct RowSerializer {
         let yamlBlock = content[afterMarker..<endRange.lowerBound]
         let body = skipBody ? "" : String(content[endRange.upperBound...]).trimmingCharacters(in: .newlines)
 
-        var id: Substring = ""
+        var id = ""
         var createdAt = Date()
         var updatedAt = Date()
         var properties: [String: PropertyValue] = [:]
-        properties.reserveCapacity(schema.properties.count)
         var rawProperties: [String: String] = [:]
-        rawProperties.reserveCapacity(schema.properties.count)
         var inProperties = false
 
-        let propById = Dictionary(uniqueKeysWithValues: schema.properties.map { ($0.id, $0) })
+        // Build property lookup dictionary once instead of O(n) scan per property
+        let propLookup = Dictionary(uniqueKeysWithValues: schema.properties.map { ($0.id, $0.type) })
 
-        // Manual line scanning to avoid allocating an array of substrings
+        // Manual line iteration over the Substring to avoid allocating an array of strings
         var lineStart = yamlBlock.startIndex
         while lineStart < yamlBlock.endIndex {
             let lineEnd = yamlBlock[lineStart...].firstIndex(of: "\n") ?? yamlBlock.endIndex
             let line = yamlBlock[lineStart..<lineEnd]
 
-            if !line.isEmpty {
-                if inProperties {
-                    if line.hasPrefix("  ") {
-                        let propLine = line.dropFirst(2)
-                        if let colonIdx = propLine.firstIndex(of: ":") {
-                            let key = String(propLine[propLine.startIndex..<colonIdx])
-                            let afterColon = propLine.index(after: colonIdx)
-                            let rawSub = propLine[afterColon...].drop(while: { $0 == " " })
-                            let rawValue = String(rawSub)
-                            rawProperties[key] = rawValue
-                            if let propDef = propById[key] {
-                                properties[key] = parseValue(rawValue, type: propDef.type)
-                            }
-                        }
-                    } else {
-                        inProperties = false
-                    }
-                }
+            // Advance past the newline for next iteration
+            lineStart = lineEnd < yamlBlock.endIndex ? yamlBlock.index(after: lineEnd) : yamlBlock.endIndex
 
-                if !inProperties {
-                    if line.hasSuffix("properties:") && line.drop(while: { $0 == " " }) == "properties:" {
-                        inProperties = true
-                    } else if line.contains("id:") && !line.hasPrefix(" ") {
-                        let trimmed = line.drop(while: { $0 == " " })
-                        if trimmed.hasPrefix("id:") {
-                            id = trimmed.dropFirst(3).drop(while: { $0 == " " })
-                        }
-                    } else if line.contains("created_at:") {
-                        let trimmed = line.drop(while: { $0 == " " })
-                        if trimmed.hasPrefix("created_at:") {
-                            let val = String(trimmed.dropFirst(11).drop(while: { $0 == " " }))
-                            createdAt = fastParseISO8601(val) ?? Date()
-                        }
-                    } else if line.contains("updated_at:") {
-                        let trimmed = line.drop(while: { $0 == " " })
-                        if trimmed.hasPrefix("updated_at:") {
-                            let val = String(trimmed.dropFirst(11).drop(while: { $0 == " " }))
-                            updatedAt = fastParseISO8601(val) ?? Date()
+            // Skip empty/whitespace-only lines
+            let trimmedStart = line.firstIndex(where: { $0 != " " && $0 != "\t" }) ?? line.endIndex
+            if trimmedStart == line.endIndex { continue }
+            let trimmed = line[trimmedStart..<line.endIndex]
+
+            if inProperties {
+                if line.hasPrefix("  ") {
+                    let propLine = line[line.index(line.startIndex, offsetBy: 2)...]
+                    if let colonIdx = propLine.firstIndex(of: ":") {
+                        let key = String(propLine[propLine.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
+                        let rawValue = String(propLine[propLine.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                        rawProperties[key] = rawValue
+                        if let propType = propLookup[key] {
+                            properties[key] = parseValue(rawValue, type: propType)
                         }
                     }
+                } else {
+                    inProperties = false
                 }
             }
 
-            lineStart = lineEnd < yamlBlock.endIndex ? yamlBlock.index(after: lineEnd) : yamlBlock.endIndex
+            if !inProperties {
+                if trimmed == "properties:" {
+                    inProperties = true
+                } else if trimmed.hasPrefix("id:") {
+                    id = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("created_at:") {
+                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
+                    createdAt = parseISO8601Date(val)
+                } else if trimmed.hasPrefix("updated_at:") {
+                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
+                    updatedAt = parseISO8601Date(val)
+                }
+            }
         }
 
         guard !id.isEmpty else { return nil }
 
         return ParseResult(
-            row: DatabaseRow(id: String(id), properties: properties, body: body, createdAt: createdAt, updatedAt: updatedAt),
+            row: DatabaseRow(id: id, properties: properties, body: body, createdAt: createdAt, updatedAt: updatedAt),
             rawProperties: rawProperties
         )
     }
@@ -148,14 +150,12 @@ public struct RowSerializer {
     private static func parseValue(_ raw: String, type: PropertyType) -> PropertyValue {
         var value = raw
         // Strip one pair of surrounding quotes
-        if value.first == "\"" && value.last == "\"" && value.count >= 2 {
+        if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
             value = String(value.dropFirst().dropLast())
         }
-        // Unescape backslash sequences only if backslashes are present
-        if value.contains("\\") {
-            value = value.replacingOccurrences(of: "\\\"", with: "\"")
-                         .replacingOccurrences(of: "\\\\", with: "\\")
-        }
+        // Unescape backslash sequences
+        value = value.replacingOccurrences(of: "\\\"", with: "\"")
+                     .replacingOccurrences(of: "\\\\", with: "\\")
         if value.isEmpty { return .empty }
 
         switch type {
@@ -195,9 +195,8 @@ public struct RowSerializer {
     }
 
     private static func yamlEscape(_ s: String) -> String {
-        guard s.contains("\\") || s.contains("\"") else { return s }
-        return s.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     private static func serializeValue(_ value: PropertyValue) -> String {
@@ -234,73 +233,67 @@ public struct RowSerializer {
         }
     }
 
-    // MARK: - Fast Date Parsing
+    /// Fast manual ISO 8601 date parser. Falls back to cached formatters.
+    /// Expected format: "2024-01-15T09:30:00Z" (20 chars minimum)
+    private static func parseISO8601Date(_ s: String) -> Date {
+        // Fast path: try manual parsing for standard ISO 8601 format
+        if s.count >= 20, s.hasSuffix("Z") {
+            let chars = Array(s.utf8)
+            // yyyy-MM-ddTHH:mm:ssZ
+            if chars.count >= 20,
+               chars[4] == UInt8(ascii: "-"), chars[7] == UInt8(ascii: "-"),
+               chars[10] == UInt8(ascii: "T"), chars[13] == UInt8(ascii: ":"),
+               chars[16] == UInt8(ascii: ":") {
+                let year = asciiDigits4(chars, at: 0)
+                let month = asciiDigits2(chars, at: 5)
+                let day = asciiDigits2(chars, at: 8)
+                let hour = asciiDigits2(chars, at: 11)
+                let minute = asciiDigits2(chars, at: 14)
+                let second = asciiDigits2(chars, at: 17)
 
-    /// Cumulative days before each month (non-leap year)
-    private static let monthDays: [Int] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
-
-    /// Parse "yyyy-MM-ddTHH:mm:ssZ" via direct integer math. ~5x faster than ISO8601DateFormatter.
-    private static func fastParseISO8601(_ s: String) -> Date? {
-        let u = Array(s.utf8)
-        guard u.count >= 10 else { return nil }
-
-        func d2(_ i: Int) -> Int { (Int(u[i]) - 48) * 10 + Int(u[i+1]) - 48 }
-        func d4(_ i: Int) -> Int { (Int(u[i]) - 48) * 1000 + (Int(u[i+1]) - 48) * 100 + d2(i+2) }
-
-        let year = d4(0)
-        guard u[4] == 0x2D else { return nil } // '-'
-        let month = d2(5)
-        guard u[7] == 0x2D, month >= 1, month <= 12 else { return nil }
-        let day = d2(8)
-
-        // Days from epoch (1970-01-01)
-        let y = year - 1970
-        var days = y * 365 + (y + 1) / 4  // approximate leap days
-        // Correct for century/400-year rules
-        if year > 2000 { days -= (year - 2001) / 100 - (year - 2001) / 400 }
-        days += monthDays[month - 1] + day - 1
-        // Leap day correction for current year
-        if month > 2 && (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) {
-            days += 1
+                if let year, let month, let day, let hour, let minute, let second,
+                   month >= 1, month <= 12, day >= 1, day <= 31,
+                   hour >= 0, hour <= 23, minute >= 0, minute <= 59, second >= 0, second <= 59 {
+                    var comps = DateComponents()
+                    comps.year = year
+                    comps.month = month
+                    comps.day = day
+                    comps.hour = hour
+                    comps.minute = minute
+                    comps.second = second
+                    comps.timeZone = TimeZone(identifier: "UTC")
+                    if let date = utcCalendar.date(from: comps) {
+                        return date
+                    }
+                }
+            }
         }
-
-        var seconds = Double(days) * 86400.0
-
-        // Parse time if present
-        if u.count >= 19 && u[10] == 0x54 { // 'T'
-            let hour = d2(11)
-            let minute = d2(14) // skip ':'
-            let second = d2(17)
-            seconds += Double(hour * 3600 + minute * 60 + second)
-        }
-
-        return Date(timeIntervalSince1970: seconds)
+        // Slow fallback: use cached formatters
+        return sharedISOFormatter.date(from: s) ?? sharedDateOnlyFormatter.date(from: s) ?? Date()
     }
 
-    private static func iso8601String(from date: Date) -> String {
-        let ti = Int(date.timeIntervalSince1970)
-        let seconds = ti % 60
-        let minutes = (ti / 60) % 60
-        let hours = (ti / 3600) % 24
+    private static let utcCalendar: Calendar = {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal
+    }()
 
-        var days = ti / 86400
-        var year = 1970
-        while true {
-            let daysInYear = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) ? 366 : 365
-            if days < daysInYear { break }
-            days -= daysInYear
-            year += 1
-        }
-        let isLeap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0))
-        let mdays = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        var month = 0
-        while month < 12 && days >= mdays[month] {
-            days -= mdays[month]
-            month += 1
-        }
-        let day = days + 1
-        month += 1
+    @inline(__always)
+    private static func asciiDigits2(_ bytes: [UInt8], at offset: Int) -> Int? {
+        let d0 = Int(bytes[offset]) - 48
+        let d1 = Int(bytes[offset + 1]) - 48
+        guard d0 >= 0, d0 <= 9, d1 >= 0, d1 <= 9 else { return nil }
+        return d0 * 10 + d1
+    }
 
-        return String(format: "%04d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hours, minutes, seconds)
+    @inline(__always)
+    private static func asciiDigits4(_ bytes: [UInt8], at offset: Int) -> Int? {
+        let d0 = Int(bytes[offset]) - 48
+        let d1 = Int(bytes[offset + 1]) - 48
+        let d2 = Int(bytes[offset + 2]) - 48
+        let d3 = Int(bytes[offset + 3]) - 48
+        guard d0 >= 0, d0 <= 9, d1 >= 0, d1 <= 9,
+              d2 >= 0, d2 <= 9, d3 >= 0, d3 <= 9 else { return nil }
+        return d0 * 1000 + d1 * 100 + d2 * 10 + d3
     }
 }

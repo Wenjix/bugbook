@@ -1,0 +1,13 @@
+test_name	avg_seconds	date	notes
+testSerializePerformance_100rows	0.001	2026-03-19	cached ISO formatter + reserveCapacity
+testSerializePerformance_1000rows	0.010	2026-03-19	cached ISO formatter + reserveCapacity
+testParsePerformance_100rows	0.004	2026-03-19	manual line iter + dict lookup + fast date parse
+testParsePerformance_1000rows	0.041	2026-03-19	manual line iter + dict lookup + fast date parse
+testParsePerformance_skipBody_1000rows	0.039	2026-03-19	manual line iter + dict lookup + fast date parse
+testRoundTripPerformance_1000rows	0.050	2026-03-19	combined serialize+parse optimizations
+testQueryFilterPerformance_1000rows	0.001	2026-03-19	single-pass filter
+testQuerySortPerformance_1000rows	0.001	2026-03-19	baseline
+testQueryFilterAndSortPerformance_1000rows	0.001	2026-03-19	single-pass filter + sort + limit
+testIndexRebuildPerformance_100rows	0.005	2026-03-19	cached formatter + single-pass indexes
+testIndexRebuildPerformance_500rows	0.014	2026-03-19	cached formatter + single-pass indexes
+testSchemaValidationPerformance_1000rows	0.005	2026-03-19	baseline

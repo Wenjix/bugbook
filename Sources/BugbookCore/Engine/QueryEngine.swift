@@ -4,15 +4,24 @@ public struct QueryEngine {
 
     /// Execute a query against a set of rows: filter, sort, paginate.
     public static func execute(query: Query, schema: DatabaseSchema, rows: [DatabaseRow]) -> QueryResult {
-        // 1. Apply all filters (ANDed)
-        var filtered = rows
-        for filter in query.filters {
-            filtered = filtered.filter { row in matches(row: row, filter: filter) }
+        // 1. Apply all filters in a single pass (ANDed)
+        let filtered: [DatabaseRow]
+        if query.filters.isEmpty {
+            filtered = rows
+        } else {
+            let filters = query.filters
+            filtered = rows.filter { row in
+                for filter in filters {
+                    if !matches(row: row, filter: filter) { return false }
+                }
+                return true
+            }
         }
+        var sorted = filtered
 
         // 2. Sort
         if !query.sorts.isEmpty {
-            filtered.sort { a, b in
+            sorted.sort { a, b in
                 for sort in query.sorts {
                     let aVal = a.properties[sort.property]
                     let bVal = b.properties[sort.property]
@@ -26,15 +35,15 @@ public struct QueryEngine {
         }
 
         // 3. Total count before pagination
-        let totalCount = filtered.count
+        let totalCount = sorted.count
 
         // 4. Apply offset/limit
         let offset = query.offset ?? 0
         if offset > 0 {
-            filtered = Array(filtered.dropFirst(offset))
+            sorted = Array(sorted.dropFirst(offset))
         }
         if let limit = query.limit {
-            filtered = Array(filtered.prefix(limit))
+            sorted = Array(sorted.prefix(limit))
         }
 
         let hasMore: Bool
@@ -44,7 +53,7 @@ public struct QueryEngine {
             hasMore = false
         }
 
-        return QueryResult(rows: filtered, totalCount: totalCount, hasMore: hasMore)
+        return QueryResult(rows: sorted, totalCount: totalCount, hasMore: hasMore)
     }
 
     // MARK: - Filter Matching
