@@ -3,6 +3,12 @@ import Foundation
 public class IndexManager {
     private let fm = FileManager.default
 
+    private static let sharedISOFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     public init() {}
 
     // MARK: - Load
@@ -45,12 +51,27 @@ public class IndexManager {
     // MARK: - Rebuild
 
     public func rebuild(dbPath: String, schema: DatabaseSchema, rows: [DatabaseRow]) -> [String: Any] {
+        let formatter = Self.sharedISOFormatter
+
+        // Pre-filter to only indexed property definitions to avoid checking every prop
+        let indexedTypes: Set<PropertyType> = [.select, .multiSelect, .relation, .checkbox]
+        let indexedProps = schema.properties.filter { indexedTypes.contains($0.type) }
+
         var rowsMap: [String: Any] = [:]
+        rowsMap.reserveCapacity(rows.count)
+
+        // Build reverse indexes in a single pass alongside the rows map
+        var indexes: [String: [String: [String]]] = [:]
+        for prop in indexedProps {
+            indexes[prop.id] = [:]
+        }
+
         for row in rows {
             let title = row.title(schema: schema)
             let suffix = RowStore.extractIdSuffix(from: row.id)
 
             var props: [String: Any] = [:]
+            props.reserveCapacity(row.properties.count)
             for prop in schema.properties {
                 if let val = row.properties[prop.id] {
                     props[prop.id] = RowSerializer.serializeValueForIndex(val)
@@ -69,46 +90,38 @@ public class IndexManager {
 
             rowsMap[row.id] = [
                 "properties": props,
-                "created_at": iso8601String(from: row.createdAt),
-                "updated_at": iso8601String(from: row.updatedAt),
+                "created_at": formatter.string(from: row.createdAt),
+                "updated_at": formatter.string(from: row.updatedAt),
                 "filename": filename,
                 "mtime": mtime
             ] as [String: Any]
-        }
 
-        // Build reverse indexes
-        let indexedTypes: Set<PropertyType> = [.select, .multiSelect, .relation, .checkbox]
-        var indexes: [String: [String: [String]]] = [:]
-        for prop in schema.properties where indexedTypes.contains(prop.type) {
-            var propIndex: [String: [String]] = [:]
-            for row in rows {
+            // Build reverse indexes in the same pass
+            for prop in indexedProps {
                 guard let val = row.properties[prop.id] else { continue }
                 switch val {
                 case .select(let optId):
-                    propIndex[optId, default: []].append(row.id)
+                    indexes[prop.id]![optId, default: []].append(row.id)
                 case .multiSelect(let optIds):
                     for optId in optIds {
-                        propIndex[optId, default: []].append(row.id)
+                        indexes[prop.id]![optId, default: []].append(row.id)
                     }
                 case .relation(let rowId):
-                    propIndex[rowId, default: []].append(row.id)
+                    indexes[prop.id]![rowId, default: []].append(row.id)
                 case .relationMany(let rowIds):
                     for rid in rowIds {
-                        propIndex[rid, default: []].append(row.id)
+                        indexes[prop.id]![rid, default: []].append(row.id)
                     }
                 case .checkbox(let b):
-                    propIndex[b ? "true" : "false", default: []].append(row.id)
+                    indexes[prop.id]![b ? "true" : "false", default: []].append(row.id)
                 default:
                     break
                 }
             }
-            if !propIndex.isEmpty {
-                indexes[prop.id] = propIndex
-            }
         }
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
+        // Remove empty indexes
+        indexes = indexes.filter { !$0.value.isEmpty }
 
         return [
             "version": 1,
@@ -129,8 +142,6 @@ public class IndexManager {
     // MARK: - Private
 
     private func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        Self.sharedISOFormatter.string(from: date)
     }
 }
