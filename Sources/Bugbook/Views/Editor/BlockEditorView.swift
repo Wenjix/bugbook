@@ -21,6 +21,7 @@ struct BlockEditorView: View {
     var document: BlockDocument
     var onTextChange: (() -> Void)?
     var onTyping: (() -> Void)?
+    var onPageDrop: ((String, Int) -> Void)?
     var contentColumnMaxWidth: CGFloat? = nil
     var horizontalPadding: CGFloat = 48
     @State private var activeDropIndex: Int?
@@ -191,8 +192,7 @@ struct BlockEditorView: View {
                     document.appendEmptyBlock()
                 }
             } label: {
-                Rectangle()
-                    .fill(Color.white.opacity(0.001))
+                Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 300)
                     .contentShape(Rectangle())
@@ -234,6 +234,13 @@ struct BlockEditorView: View {
         document.createColumnFromDrop(droppedId: droppedId, targetId: targetId)
         columnDropTargetId = nil
         localColumnDropTarget = nil
+    }
+
+    private func handlePageDrop(_ path: String, at index: Int) -> Bool {
+        guard let handler = onPageDrop else { return false }
+        handler(path, index)
+        activeDropIndex = nil
+        return true
     }
 
     private func handleImageDrop(_ urls: [URL], at index: Int) -> Bool {
@@ -812,14 +819,14 @@ final class EditorFrameReporterView: NSView {
 /// Thin drop zone between blocks that shows a blue line when a drag hovers over it.
 /// Height is constant to prevent layout shifts that cause flickering.
 /// Accepts block UUID drops (reorder), image URL drops (insert image),
-/// and sidebar page drops (insert page link + move file).
+/// and sidebar page drops (file path strings that create page links).
 struct DropZoneView: View {
     let isActive: Bool
     var height: CGFloat = 4
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
-    var onPageDrop: ((String) -> Void)?
+    var onPageDrop: ((String) -> Bool)?
 
     @State private var imageDropTargeted = false
 
@@ -842,11 +849,10 @@ struct DropZoneView: View {
                     onDrop(droppedIds)
                     return true
                 }
-                // If not a block UUID, check if it's a file path from sidebar drag
-                if payload.hasPrefix("/") && payload.hasSuffix(".md"),
-                   let onPageDrop {
-                    onPageDrop(payload)
-                    return true
+                // If not a block UUID, check if it's a file path (sidebar page drag)
+                if payload.hasPrefix("/"), payload.hasSuffix(".md"),
+                   let handler = onPageDrop {
+                    return handler(payload)
                 }
                 return false
             } isTargeted: { targeted in

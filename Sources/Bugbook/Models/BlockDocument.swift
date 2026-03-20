@@ -892,6 +892,15 @@ class BlockDocument {
         dismissSlashMenu()
     }
 
+    /// Inserts a pageLink block at the given top-level index. Used when dragging a page from the sidebar.
+    func insertPageLinkBlock(at index: Int, name: String) {
+        saveUndo()
+        var block = Block(type: .pageLink)
+        block.pageLinkName = name
+        let clamped = min(index, blocks.count)
+        blocks.insert(block, at: clamped)
+    }
+
     func insertPageLink(name: String) {
         guard let blockId = pagePickerBlockId,
               blockLocation(for: blockId) != nil else {
