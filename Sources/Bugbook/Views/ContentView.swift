@@ -1012,7 +1012,10 @@ struct ContentView: View {
                                         syncTitle(from: document)
                                         scheduleSave()
                                     },
-                                    onTyping: { triggerFocusMode() }
+                                    onTyping: { triggerFocusMode() },
+                                    onPageDrop: { path, index in
+                                        handleSidebarPageDropIntoEditor(sourcePath: path, insertIndex: index, document: document)
+                                    }
                                 )
                             }
                             .frame(maxWidth: document.fullWidth ? .infinity : 860)
@@ -1522,6 +1525,29 @@ struct ContentView: View {
             return nil
         }
         return json["name"] as? String
+    }
+
+    /// Handles a page dragged from the sidebar into the editor at a specific block index.
+    /// Creates a pageLink block at the drop position and moves the file to be a sub-page.
+    private func handleSidebarPageDropIntoEditor(sourcePath: String, insertIndex: Int, document: BlockDocument) {
+        guard let tab = appState.activeTab else { return }
+        let currentPagePath = tab.path
+        // Don't drop a page onto itself
+        guard sourcePath != currentPagePath else { return }
+        // Don't drop a page that's already a sub-page of the current page
+        let currentCompanion = currentPagePath.hasSuffix(".md") ? String(currentPagePath.dropLast(3)) : currentPagePath
+        guard !(sourcePath as NSString).deletingLastPathComponent.hasPrefix(currentCompanion) else { return }
+
+        let pageName = (sourcePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+
+        // 1. Insert the pageLink block at the drop position
+        document.insertPageLinkBlock(at: insertIndex, name: pageName)
+
+        // 2. Save the current document so the link is persisted before move
+        performSave(tabId: tab.id)
+
+        // 3. Move the file to be a sub-page of the current page
+        performMovePage(from: sourcePath, toDirectory: currentCompanion)
     }
 
     private func addSidebarReference(_ payload: SidebarReferenceDragPayload) {
