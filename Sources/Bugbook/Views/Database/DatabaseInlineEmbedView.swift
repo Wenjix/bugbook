@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BugbookCore
 
 /// Compact database embed for rendering inside a markdown page.
@@ -21,6 +22,8 @@ struct DatabaseInlineEmbedView: View {
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isSearchFocused: Bool
     @State private var newRowScrollId: String? = nil
+    @State private var draggedViewTabId: String?
+    @State private var viewTabDropTargetId: String?
 
     init(dbPath: String, onOpenRow: ((DatabaseRow) -> Void)? = nil, onOpenDatabase: (() -> Void)? = nil) {
         self.dbPath = dbPath
@@ -227,34 +230,56 @@ struct DatabaseInlineEmbedView: View {
     private func viewTabsStrip(schema: DatabaseSchema) -> some View {
         HStack(spacing: 4) {
             ForEach(schema.views) { view in
-                Button {
-                    state.activeViewId = view.id
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: iconForViewType(view.type))
-                        Text(view.name)
-                    }
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .clipShape(.rect(cornerRadius: 4))
-                    .foregroundStyle(view.id == state.activeViewId ? .primary : .secondary)
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button(role: .destructive) {
-                        state.deleteView(view)
-                    } label: {
-                        Label("Delete View", systemImage: "trash")
-                    }
-                }
+                inlineViewTabButton(view: view)
             }
             Spacer()
         }
         .padding(.leading, 12)
         .padding(.trailing, 12)
         .padding(.vertical, 4)
+    }
+
+    private func inlineViewTabButton(view: ViewConfig) -> some View {
+        Button {
+            draggedViewTabId = nil
+            viewTabDropTargetId = nil
+            state.activeViewId = view.id
+        } label: {
+            HStack(spacing: 4) {
+                if viewTabDropTargetId == view.id {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 2, height: 14)
+                }
+                Image(systemName: iconForViewType(view.type))
+                Text(view.name)
+            }
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
+            .clipShape(.rect(cornerRadius: 4))
+            .foregroundStyle(view.id == state.activeViewId ? .primary : .secondary)
+            .opacity(draggedViewTabId == view.id ? 0.4 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                state.deleteView(view)
+            } label: {
+                Label("Delete View", systemImage: "trash")
+            }
+        }
+        .onDrag {
+            draggedViewTabId = view.id
+            return NSItemProvider(object: view.id as NSString)
+        }
+        .onDrop(of: [.text], delegate: ViewTabDropDelegate(
+            targetId: view.id,
+            state: state,
+            draggedId: $draggedViewTabId,
+            dropTargetId: $viewTabDropTargetId
+        ))
     }
 
     // MARK: - Settings Popover
@@ -663,6 +688,7 @@ struct DatabaseInlineEmbedView: View {
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
+                onUpdateSubGroupBy: { propId in state.updateSubGroupBy(propId) },
                 onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
                 onDelete: { row in state.deleteRow(row) },
                 onReorderRows: { draggedId, targetId in

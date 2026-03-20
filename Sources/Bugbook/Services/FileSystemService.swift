@@ -13,6 +13,7 @@ class FileSystemService {
     private let fileManager = FileManager.default
     private let recentWorkspacesKey = "recentWorkspaces"
     private let maxRecentWorkspaces = 20
+    private let maxTreeDepth = 10
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
 
@@ -62,7 +63,7 @@ class FileSystemService {
             }
         }
 
-        guard depth < 10 else { return [] }
+        guard depth < maxTreeDepth else { return [] }
 
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
             return []
@@ -85,10 +86,13 @@ class FileSystemService {
             guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                if isDatabaseFolder(at: fullPath) {
+                // Check schema first — skip canvas check for database folders.
+                let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
+                let hasSchema = fileManager.fileExists(atPath: schemaPath)
+
+                if hasSchema {
                     // Database folder - read display name from _schema.json
                     var dbName = name
-                    let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let schemaName = json["name"] as? String {
@@ -105,8 +109,8 @@ class FileSystemService {
                 } else if isCanvasFolder(at: fullPath) {
                     // Canvas folder - read display name from _canvas.json
                     var canvasName = name
-                    let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
+                    let canvasPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: canvasPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let n = json["name"] as? String {
                         canvasName = n

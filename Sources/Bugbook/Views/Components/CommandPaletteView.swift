@@ -28,6 +28,8 @@ private struct ContentMatch {
     let fileName: String
     let lineNumber: Int
     let lineText: String
+    /// Which search engine produced this result (nil = in-memory fallback)
+    var searchMode: QmdSearchMode?
 }
 
 private struct IndexedContentLine: Sendable {
@@ -105,11 +107,24 @@ struct CommandPaletteView: View {
                         let sections = groupedSections(items)
 
                         if items.isEmpty && !searchText.isEmpty {
-                            Text("No results")
-                                .foregroundStyle(.secondary)
-                                .font(.callout)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 20)
+                            VStack(spacing: 6) {
+                                Text("No results for \"\(effectiveQuery(from: searchText))\"")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                if let binary = qmdBinaryPath, !binary.isEmpty {
+                                    let current = appState.settings.qmdSearchMode
+                                    let suggestion: String = current == .bm25
+                                        ? "Try Semantic or Hybrid mode for broader matches"
+                                        : current == .semantic
+                                            ? "Try BM25 or Hybrid mode for exact keyword matches"
+                                            : "Try adjusting your search terms"
+                                    Text(suggestion)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 20)
                         }
 
                         ForEach(sections, id: \.title) { section in
@@ -160,9 +175,9 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
+            // Always rebuild the content index when Cmd+K opens so edits
+            // to file contents (and new/removed files) are picked up.
+            invalidateContentIndex()
             // Detect qmd once; in-memory index remains the fallback
             Task {
                 let path = await Task.detached(priority: .utility) {
@@ -179,24 +194,14 @@ struct CommandPaletteView: View {
         }
         .onChange(of: appState.fileTree) { _, newTree in
             cachedFlatEntries = flattenFileTree(newTree)
-            contentIndex = []
-            contentIndexWorkspace = nil
-            contentIndexTask?.cancel()
-            contentIndexTask = nil
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
+            // Mark content index stale; it will be rebuilt next time
+            // the palette opens (onAppear) or a content search runs.
+            clearContentIndex()
         }
         .onChange(of: appState.workspacePath) { _, _ in
-            contentIndex = []
-            contentIndexWorkspace = nil
-            contentIndexTask?.cancel()
-            contentIndexTask = nil
             cachedFlatEntries = flattenFileTree(appState.fileTree)
+            invalidateContentIndex()
             scheduleContentSearch(query: effectiveQuery(from: searchText))
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
         }
     }
 
@@ -286,7 +291,7 @@ struct CommandPaletteView: View {
 
         let contentItems = items.filter { if case .contentMatch = $0 { return true }; return false }
         if !contentItems.isEmpty {
-            sections.append(PaletteSection(title: "In Content", items: contentItems))
+            sections.append(PaletteSection(title: "Content Matches", items: contentItems))
         }
 
         let aiItems = items.filter { if case .askAI = $0 { return true }; return false }
@@ -312,22 +317,42 @@ struct CommandPaletteView: View {
                     Text(entry.name.replacingOccurrences(of: ".md", with: ""))
                         .font(.system(size: 15))
                     Spacer()
-                    Text(relativePath(for: entry))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-
-                case .contentMatch(let match):
-                    Image(systemName: "text.magnifyingglass")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(match.fileName.replacingOccurrences(of: ".md", with: ""))
-                            .font(.system(size: 14, weight: .medium))
-                        highlightedLine(match)
-                            .font(.system(size: 13))
+                    if let breadcrumb = breadcrumb(for: entry), !breadcrumb.isEmpty {
+                        Text(breadcrumb)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
                             .lineLimit(1)
                     }
-                    Spacer()
+
+                case .contentMatch(let match):
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "text.magnifyingglass")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                            Text(contentMatchBreadcrumb(match))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Spacer()
+                            if let mode = match.searchMode {
+                                Text(mode.label)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.secondary.opacity(0.1))
+                                    .clipShape(.rect(cornerRadius: 3))
+                            }
+                        }
+                        highlightedContext(match)
+                            .font(.system(size: 13))
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .background(Color.primary.opacity(Opacity.subtle))
+                    .clipShape(.rect(cornerRadius: 4))
 
                 case .command(let cmd):
                     Image(systemName: cmd.icon)
@@ -381,21 +406,43 @@ struct CommandPaletteView: View {
 
     // MARK: - Content Match Highlighting
 
-    private func highlightedLine(_ match: ContentMatch) -> Text {
+    /// Shows the matched text with ~30 chars of surrounding context and ellipsis.
+    /// Uses an amber/yellow background highlight on the matched phrase.
+    private func highlightedContext(_ match: ContentMatch) -> Text {
         let line = match.lineText
-        let query = effectiveQuery(from: searchText).lowercased()
+        let query = effectiveQuery(from: searchText)
 
-        guard let range = line.lowercased().range(of: query) else {
+        guard let range = line.range(of: query, options: .caseInsensitive) else {
             return Text(line).foregroundStyle(.secondary)
         }
 
-        let before = String(line[line.startIndex..<range.lowerBound])
-        let matched = String(line[range])
-        let after = String(line[range.upperBound..<line.endIndex])
+        // Extract context window around the match
+        let contextChars = 30
+        let matchStart = range.lowerBound
+        let matchEnd = range.upperBound
 
-        return Text(before).foregroundStyle(.secondary)
-            + Text(matched).foregroundStyle(Color.accentColor).bold()
-            + Text(after).foregroundStyle(.secondary)
+        let beforeStart = line.index(matchStart, offsetBy: -contextChars, limitedBy: line.startIndex) ?? line.startIndex
+        let afterEnd = line.index(matchEnd, offsetBy: contextChars, limitedBy: line.endIndex) ?? line.endIndex
+
+        let needsLeadingEllipsis = beforeStart > line.startIndex
+        let needsTrailingEllipsis = afterEnd < line.endIndex
+
+        let beforeText = (needsLeadingEllipsis ? "..." : "") + String(line[beforeStart..<matchStart])
+        let matchedText = String(line[range])
+        let afterText = String(line[matchEnd..<afterEnd]) + (needsTrailingEllipsis ? "..." : "")
+
+        // Build attributed string with yellow background on the matched portion
+        var result = AttributedString(beforeText)
+        result.foregroundColor = .secondary
+
+        var highlighted = AttributedString(matchedText)
+        highlighted.backgroundColor = Color.yellow.opacity(0.3)
+        highlighted.font = .system(size: 13, weight: .semibold)
+
+        var trailing = AttributedString(afterText)
+        trailing.foregroundColor = .secondary
+
+        return Text(result + highlighted + trailing)
     }
 
     // MARK: - Commands
@@ -455,6 +502,22 @@ struct CommandPaletteView: View {
     }
 
     // MARK: - Content Search
+
+    /// Clear the cached content index so the next search rebuilds it.
+    private func clearContentIndex() {
+        contentIndex = []
+        contentIndexWorkspace = nil
+        contentIndexTask?.cancel()
+        contentIndexTask = nil
+    }
+
+    /// Clear the cached content index and kick off a fresh build.
+    private func invalidateContentIndex() {
+        clearContentIndex()
+        Task { @MainActor in
+            await warmContentIndexIfNeeded()
+        }
+    }
 
     private func scheduleContentSearch(query: String) {
         contentSearchTask?.cancel()
@@ -631,7 +694,8 @@ struct CommandPaletteView: View {
                     filePath: line.filePath,
                     fileName: line.fileName,
                     lineNumber: line.lineNumber,
-                    lineText: line.lineText
+                    lineText: line.lineText,
+                    searchMode: nil
                 ))
                 matchesPerFile[line.filePath] = current + 1
                 if matches.count >= maxTotal { break }
@@ -643,7 +707,8 @@ struct CommandPaletteView: View {
 
     private func searchWithQmd(query: String, workspace: String, binary: String) async -> [ContentMatch]? {
         let collection = URL(fileURLWithPath: workspace).lastPathComponent
-        let cliCommand = appState.settings.qmdSearchMode.cliCommand
+        let searchMode = appState.settings.qmdSearchMode
+        let cliCommand = searchMode.cliCommand
 
         return await Task.detached(priority: .userInitiated) {
             let task = Process()
@@ -729,7 +794,8 @@ struct CommandPaletteView: View {
                     filePath: fullPath,
                     fileName: displayName,
                     lineNumber: lineNumber,
-                    lineText: lineText.isEmpty ? displayName : lineText
+                    lineText: lineText.isEmpty ? displayName : lineText,
+                    searchMode: searchMode
                 )
             }
         }.value
@@ -787,9 +853,32 @@ struct CommandPaletteView: View {
 
     // MARK: - Helpers
 
-    private func relativePath(for entry: FileEntry) -> String {
-        guard let workspace = appState.workspacePath else { return "" }
-        return entry.path.replacingOccurrences(of: workspace + "/", with: "")
+    /// Builds a breadcrumb string like "Parent > Child" from a file's relative path.
+    /// Returns nil if the file is at the workspace root.
+    private func breadcrumb(for entry: FileEntry) -> String? {
+        guard let workspace = appState.workspacePath else { return nil }
+        let rel = entry.path.replacingOccurrences(of: workspace + "/", with: "")
+        let components = rel.components(separatedBy: "/").dropLast() // drop the filename
+        guard !components.isEmpty else { return nil }
+        return components
+            .map { $0.replacingOccurrences(of: ".md", with: "") }
+            .joined(separator: " > ")
+    }
+
+    /// Breadcrumb for content matches: shows "Parent > FileName" or just "FileName".
+    private func contentMatchBreadcrumb(_ match: ContentMatch) -> String {
+        guard let workspace = appState.workspacePath else {
+            return match.fileName.replacingOccurrences(of: ".md", with: "")
+        }
+        let rel = match.filePath.replacingOccurrences(of: workspace + "/", with: "")
+        let components = rel.components(separatedBy: "/")
+        let display = components.map { $0.replacingOccurrences(of: ".md", with: "") }
+        if display.count <= 1 {
+            return display.first ?? match.fileName.replacingOccurrences(of: ".md", with: "")
+        }
+        // Show last 2-3 path components as breadcrumb
+        let crumbs = display.suffix(min(3, display.count))
+        return crumbs.joined(separator: " > ")
     }
 
     @ViewBuilder

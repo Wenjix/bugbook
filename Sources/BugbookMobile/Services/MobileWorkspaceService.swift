@@ -9,6 +9,7 @@ import BugbookCore
     var isICloudAvailable: Bool = false
 
     private let fileManager = FileManager.default
+    private let maxTreeDepth = 10
 
     init() {
         let path = resolveWorkspacePath()
@@ -51,7 +52,7 @@ import BugbookCore
     }
 
     private func buildTree(at path: String, preserveFolders: Bool, depth: Int) -> [MobileNoteFile] {
-        guard depth < 5 else { return [] }
+        guard depth < maxTreeDepth else { return [] }
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else { return [] }
 
         let siblingNames = Set(contents)

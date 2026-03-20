@@ -78,6 +78,7 @@ class CanvasDocument {
     var selectedNodeIds: Set<String> = []
     var selectedEdgeId: String?
     var editingNodeId: String?
+    private(set) var dragStartPositions: [String: CGPoint] = [:]
 
     /// Convenience: returns the single selected node ID (nil if 0 or 2+ selected)
     var selectedNodeId: String? {
@@ -325,6 +326,29 @@ class CanvasDocument {
         isDirty = true
     }
 
+    func moveSelectedNodes(delta: CGSize) {
+        for id in selectedNodeIds {
+            guard let start = dragStartPositions[id],
+                  let idx = nodes.firstIndex(where: { $0.id == id }) else { continue }
+            nodes[idx].x = start.x + delta.width
+            nodes[idx].y = start.y + delta.height
+        }
+        isDirty = true
+    }
+
+    func storeDragStartPositions() {
+        dragStartPositions = [:]
+        for id in selectedNodeIds {
+            if let node = nodes.first(where: { $0.id == id }) {
+                dragStartPositions[id] = CGPoint(x: node.x, y: node.y)
+            }
+        }
+    }
+
+    func clearDragStartPositions() {
+        dragStartPositions = [:]
+    }
+
     func resizeNode(id: String, width: CGFloat, height: CGFloat) {
         guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
         nodes[idx].width = max(120, width)
@@ -395,7 +419,9 @@ class CanvasDocument {
 
     private func saveUndo() {
         undoStack.append(CanvasState(nodes: nodes, edges: edges, nodeTexts: nodeTexts))
-        if undoStack.count > 50 { undoStack.removeFirst() }
+        if undoStack.count > 50 {
+            undoStack.removeFirst(undoStack.count - 50)
+        }
         redoStack.removeAll()
     }
 

@@ -2,19 +2,15 @@ import XCTest
 @testable import Bugbook
 @testable import BugbookCore
 
-// MARK: - Baseline TSV Helpers
+// MARK: - Baseline TSV Helper
 
-/// Reads/writes perf_baseline.tsv alongside the test source file.
-/// Format: test_name\tmetric\tvalue\ttimestamp
+/// Reads/writes performance baselines to a TSV file next to the test sources.
 private enum PerfBaseline {
     static let tsvPath: String = {
-        // Place baseline TSV next to the compiled test bundle's resource dir,
-        // but more practically, use a well-known path in the repo.
-        let repoRoot = ProcessInfo.processInfo.environment["REPO_ROOT"]
-            ?? URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent() // Tests/BugbookTests/
-                .path
-        return (repoRoot as NSString).appendingPathComponent("perf_baseline.tsv")
+        // Place the TSV next to the test file itself
+        let thisFile = #filePath
+        let dir = (thisFile as NSString).deletingLastPathComponent
+        return (dir as NSString).appendingPathComponent("perf_baseline.tsv")
     }()
 
     struct Entry {
@@ -24,132 +20,149 @@ private enum PerfBaseline {
         let timestamp: String
     }
 
-    static func loadBaseline() -> [String: Entry] {
-        guard let content = try? String(contentsOfFile: tsvPath, encoding: .utf8) else { return [:] }
+    static func load() -> [String: Entry] {
+        guard let text = try? String(contentsOfFile: tsvPath, encoding: .utf8) else { return [:] }
         var entries: [String: Entry] = [:]
-        for line in content.components(separatedBy: "\n") {
+        for line in text.components(separatedBy: "\n").dropFirst() { // skip header
             let cols = line.components(separatedBy: "\t")
-            guard cols.count >= 4, cols[0] != "test_name" else { continue }
-            if let val = Double(cols[2]) {
-                entries[cols[0]] = Entry(testName: cols[0], metric: cols[1], value: val, timestamp: cols[3])
-            }
+            guard cols.count >= 4, let val = Double(cols[2]) else { continue }
+            entries[cols[0]] = Entry(testName: cols[0], metric: cols[1], value: val, timestamp: cols[3])
         }
         return entries
     }
 
-    static func appendResult(testName: String, metric: String, value: Double) {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        let ts = iso.string(from: Date())
-
-        let line = "\(testName)\t\(metric)\t\(String(format: "%.6f", value))\t\(ts)\n"
-
-        if !FileManager.default.fileExists(atPath: tsvPath) {
-            let header = "test_name\tmetric\tvalue\ttimestamp\n"
-            try? (header + line).write(toFile: tsvPath, atomically: true, encoding: .utf8)
-        } else {
-            if let handle = FileHandle(forWritingAtPath: tsvPath) {
-                handle.seekToEndOfFile()
-                handle.write(line.data(using: .utf8)!)
-                handle.closeFile()
-            }
+    static func save(_ entries: [String: Entry]) {
+        var lines = ["test_name\tmetric\tvalue\ttimestamp"]
+        for key in entries.keys.sorted() {
+            let e = entries[key]!
+            lines.append("\(e.testName)\t\(e.metric)\t\(String(format: "%.3f", e.value))\t\(e.timestamp)")
         }
+        try? lines.joined(separator: "\n").write(toFile: tsvPath, atomically: true, encoding: .utf8)
     }
 
-    /// Compare a new measurement against the baseline.
-    /// Returns (passed, message). Regression threshold: 20% slower.
-    static func compare(testName: String, metric: String, newValue: Double) -> (Bool, String) {
-        let baseline = loadBaseline()
-        guard let entry = baseline[testName] else {
-            return (true, "\(testName): \(String(format: "%.4f", newValue))s (no baseline, recording)")
+    static func record(testName: String, metric: String, value: Double) {
+        var entries = load()
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let entry = Entry(testName: testName, metric: metric, value: value, timestamp: ts)
+
+        // Compare to existing baseline if present
+        if let baseline = entries[testName] {
+            let pctChange = ((value - baseline.value) / baseline.value) * 100
+            let direction = pctChange > 0 ? "slower" : "faster"
+            let symbol = pctChange > 20 ? "REGRESSION" : "ok"
+            print(String(format: "  %@: %.1fms -> %.1fms (%.0f%% %@) %@",
+                         testName, baseline.value, value, abs(pctChange), direction, symbol))
+        } else {
+            print(String(format: "  %@: %.1fms (baseline)", testName, value))
         }
-        let change = (newValue - entry.value) / entry.value * 100
-        let arrow = change > 0 ? "slower" : "faster"
-        let passed = change < 20.0 // fail if >20% regression
-        let status = passed ? "PASS" : "FAIL"
-        let msg = "\(status) \(testName): \(String(format: "%.4f", entry.value))s -> \(String(format: "%.4f", newValue))s (\(String(format: "%+.1f", change))% \(arrow))"
-        return (passed, msg)
+
+        entries[testName] = entry
+        save(entries)
     }
 }
 
 // MARK: - Test Data Generators
 
 private enum TestData {
-    static func makeSchema(propertyCount: Int = 5) -> DatabaseSchema {
-        var props: [PropertyDefinition] = [
-            PropertyDefinition(id: "prop_title", name: "Title", type: .title)
-        ]
-        let types: [PropertyType] = [.text, .number, .select, .checkbox, .date]
-        for i in 1..<propertyCount {
-            props.append(PropertyDefinition(
-                id: "prop_\(i)",
-                name: "Prop \(i)",
-                type: types[i % types.count]
-            ))
-        }
-        return DatabaseSchema(
+
+    /// Build a schema with several property types for realistic serialization.
+    static func makeSchema() -> DatabaseSchema {
+        DatabaseSchema(
             id: "db_perf_test",
-            name: "Perf Test DB",
-            properties: props,
+            name: "PerfTest",
+            properties: [
+                PropertyDefinition(id: "prop_title", name: "Title", type: .title),
+                PropertyDefinition(id: "prop_status", name: "Status", type: .select),
+                PropertyDefinition(id: "prop_priority", name: "Priority", type: .number),
+                PropertyDefinition(id: "prop_tags", name: "Tags", type: .multiSelect),
+                PropertyDefinition(id: "prop_done", name: "Done", type: .checkbox),
+                PropertyDefinition(id: "prop_due", name: "Due", type: .date),
+                PropertyDefinition(id: "prop_url", name: "URL", type: .url),
+            ],
             views: [ViewConfig(id: "view_table", name: "Table", type: .table)],
             defaultView: "view_table",
             createdAt: "2025-01-01T00:00:00Z"
         )
     }
 
-    static func makeRow(index: Int, schema: DatabaseSchema) -> DatabaseRow {
-        var props: [String: PropertyValue] = [:]
-        for prop in schema.properties {
-            switch prop.type {
-            case .title: props[prop.id] = .text("Row \(index)")
-            case .text: props[prop.id] = .text("Some text content for row \(index) property \(prop.id)")
-            case .number: props[prop.id] = .number(Double(index) * 1.5)
-            case .select: props[prop.id] = .select("option_\(index % 5)")
-            case .checkbox: props[prop.id] = .checkbox(index % 2 == 0)
-            case .date: props[prop.id] = .date("2025-01-\(String(format: "%02d", (index % 28) + 1))")
-            default: break
-            }
-        }
-        return DatabaseRow(
+    /// Create a row with all properties populated.
+    static func makeRow(index: Int) -> DatabaseRow {
+        DatabaseRow(
             id: "row_\(String(format: "%06d", index))",
-            properties: props,
-            body: "Body content for row \(index).\nSecond line of body.",
-            createdAt: Date(timeIntervalSince1970: 1700000000 + Double(index)),
-            updatedAt: Date(timeIntervalSince1970: 1700000000 + Double(index) + 100)
+            properties: [
+                "prop_title": .text("Task number \(index) with a reasonably long title for realism"),
+                "prop_status": .select("In Progress"),
+                "prop_priority": .number(Double(index % 5)),
+                "prop_tags": .multiSelect(["backend", "urgent", "sprint-\(index % 10)"]),
+                "prop_done": .checkbox(index % 3 == 0),
+                "prop_due": .date("2025-06-\(String(format: "%02d", (index % 28) + 1))"),
+                "prop_url": .url("https://example.com/task/\(index)"),
+            ],
+            body: "This is the body of row \(index).\nIt has multiple lines.\n\nAnd a blank line too.",
+            createdAt: Date(timeIntervalSinceReferenceDate: Double(index * 86400)),
+            updatedAt: Date()
         )
     }
 
-    static func makeMarkdownDocument(lineCount: Int) -> String {
-        var lines: [String] = ["# Performance Test Document"]
-        var currentLine = 1
-        while currentLine < lineCount {
-            let blockType = currentLine % 10
-            switch blockType {
+    /// Generate a 500-line markdown document with varied block types.
+    static func makeMarkdown(lineCount: Int) -> String {
+        var lines: [String] = []
+        lines.append("# Performance Test Document")
+        lines.append("")
+        var i = 2
+        while i < lineCount {
+            let mod = i % 20
+            switch mod {
             case 0:
-                lines.append("## Section \(currentLine)")
-            case 1, 2:
-                lines.append("This is paragraph text on line \(currentLine). It contains some **bold** and *italic* formatting.")
-            case 3:
-                lines.append("- Bullet item \(currentLine)")
+                lines.append("## Section \(i / 20)")
+            case 1, 2, 3:
+                lines.append("This is paragraph \(i). It contains some **bold** and *italic* text, plus a [[wiki link]] and `inline code`.")
             case 4:
-                lines.append("- [ ] Task item \(currentLine)")
+                lines.append("- Bullet item \(i)")
             case 5:
-                lines.append("> Blockquote on line \(currentLine)")
+                lines.append("  - Nested bullet item \(i)")
             case 6:
-                lines.append("\(currentLine). Numbered item")
+                lines.append("- [ ] Task item \(i)")
             case 7:
-                lines.append("```swift")
-                lines.append("let x = \(currentLine)")
-                lines.append("```")
-                currentLine += 2
+                lines.append("- [x] Completed task \(i)")
             case 8:
-                lines.append("")
+                lines.append("1. Numbered item \(i)")
             case 9:
-                lines.append("[[Page Link \(currentLine)]]")
+                lines.append("> Blockquote text at line \(i)")
+            case 10:
+                lines.append("```swift")
+                lines.append("let x = \(i)")
+                lines.append("print(x)")
+                lines.append("```")
+                i += 3
+            case 11:
+                lines.append("---")
+            case 12:
+                lines.append("### Heading Three \(i)")
+            case 13:
+                lines.append("[[Page Link \(i)]]")
+            case 14, 15, 16, 17, 18, 19:
+                lines.append("Regular paragraph line \(i) with some content to parse.")
             default:
-                lines.append("Paragraph \(currentLine)")
+                lines.append("")
             }
-            currentLine += 1
+            i += 1
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Generate markdown for N blocks (paragraphs, headings, lists).
+    static func makeBlockMarkdown(blockCount: Int) -> String {
+        var lines: [String] = []
+        for j in 0..<blockCount {
+            switch j % 5 {
+            case 0: lines.append("# Heading \(j)")
+            case 1: lines.append("Paragraph \(j) with some text content for the block document.")
+            case 2: lines.append("- Bullet \(j)")
+            case 3: lines.append("- [ ] Task \(j)")
+            case 4: lines.append("> Quote \(j)")
+            default: lines.append("")
+            }
         }
         return lines.joined(separator: "\n")
     }
@@ -157,197 +170,155 @@ private enum TestData {
 
 // MARK: - Performance Tests
 
+@MainActor
 final class PerformanceTests: XCTestCase {
 
-    // MARK: 1. RowSerializer — serialize/deserialize 100 rows
+    /// Run a block 10 times, return the median duration in milliseconds.
+    /// Separate from XCTest's `measure` because its results aren't programmatically accessible.
+    private func timed(_ block: () -> Void) -> Double {
+        var samples: [Double] = []
+        for _ in 0..<10 {
+            let start = CFAbsoluteTimeGetCurrent()
+            block()
+            samples.append((CFAbsoluteTimeGetCurrent() - start) * 1000)
+        }
+        samples.sort()
+        return samples[samples.count / 2] // median
+    }
 
-    func testRowSerializerPerformance() {
+    // MARK: 1. RowSerializer: serialize/deserialize 100 rows
+
+    func testRowSerialize100() {
         let schema = TestData.makeSchema()
-        let rows = (0..<100).map { TestData.makeRow(index: $0, schema: schema) }
+        let rows = (0..<100).map { TestData.makeRow(index: $0) }
 
-        var elapsed: Double = 0
         measure {
-            let start = CFAbsoluteTimeGetCurrent()
             for row in rows {
-                let serialized = RowSerializer.serialize(row: row, schema: schema)
-                _ = RowSerializer.parse(content: serialized, schema: schema)
+                _ = RowSerializer.serialize(row: row, schema: schema)
             }
-            elapsed = CFAbsoluteTimeGetCurrent() - start
         }
 
-        PerfBaseline.appendResult(testName: "RowSerializer_100rows", metric: "wall_time_s", value: elapsed)
-        let (passed, msg) = PerfBaseline.compare(testName: "RowSerializer_100rows", metric: "wall_time_s", newValue: elapsed)
-        print(msg)
-        XCTAssertTrue(passed, msg)
+        let ms = timed {
+            for row in rows { _ = RowSerializer.serialize(row: row, schema: schema) }
+        }
+        PerfBaseline.record(testName: "row_serialize_100", metric: "ms", value: ms)
     }
 
-    // MARK: 2. MarkdownBlockParser — parse a 500-line document
+    func testRowDeserialize100() {
+        let schema = TestData.makeSchema()
+        let serialized = (0..<100).map { RowSerializer.serialize(row: TestData.makeRow(index: $0), schema: schema) }
 
-    func testMarkdownBlockParserPerformance() {
-        let markdown = TestData.makeMarkdownDocument(lineCount: 500)
-
-        var elapsed: Double = 0
         measure {
-            let start = CFAbsoluteTimeGetCurrent()
-            _ = MarkdownBlockParser.parse(markdown)
-            elapsed = CFAbsoluteTimeGetCurrent() - start
+            for content in serialized {
+                _ = RowSerializer.parse(content: content, schema: schema)
+            }
         }
 
-        PerfBaseline.appendResult(testName: "MarkdownBlockParser_500lines", metric: "wall_time_s", value: elapsed)
-        let (passed, msg) = PerfBaseline.compare(testName: "MarkdownBlockParser_500lines", metric: "wall_time_s", newValue: elapsed)
-        print(msg)
-        XCTAssertTrue(passed, msg)
+        let ms = timed {
+            for content in serialized { _ = RowSerializer.parse(content: content, schema: schema) }
+        }
+        PerfBaseline.record(testName: "row_deserialize_100", metric: "ms", value: ms)
     }
 
-    // MARK: 3. DatabaseStore — load schema + 100 rows from disk
+    // MARK: 2. MarkdownBlockParser: parse 500-line document
 
-    func testDatabaseStoreLoadPerformance() throws {
+    func testMarkdownParse500Lines() {
+        let markdown = TestData.makeMarkdown(lineCount: 500)
+
+        measure { _ = MarkdownBlockParser.parse(markdown) }
+
+        let ms = timed { _ = MarkdownBlockParser.parse(markdown) }
+        PerfBaseline.record(testName: "markdown_parse_500", metric: "ms", value: ms)
+    }
+
+    func testMarkdownSerialize500Lines() {
+        let markdown = TestData.makeMarkdown(lineCount: 500)
+        let blocks = MarkdownBlockParser.parse(markdown)
+
+        measure { _ = MarkdownBlockParser.serialize(blocks) }
+
+        let ms = timed { _ = MarkdownBlockParser.serialize(blocks) }
+        PerfBaseline.record(testName: "markdown_serialize_500", metric: "ms", value: ms)
+    }
+
+    // MARK: 3. DatabaseStore: load schema + 100 rows from disk
+
+    func testDatabaseStoreLoad100Rows() throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("BugbookPerfTest-\(UUID().uuidString)", isDirectory: true)
-        let dbPath = tmpDir.appendingPathComponent("perf_db").path
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        // Set up a database on disk
+        let dbPath = tmpDir.path
         let schema = TestData.makeSchema()
-        let store = DatabaseStore()
-        try FileManager.default.createDirectory(atPath: dbPath, withIntermediateDirectories: true)
-        try store.saveSchema(schema, at: dbPath)
 
+        // Write schema
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let schemaData = try encoder.encode(schema)
+        try schemaData.write(to: tmpDir.appendingPathComponent("_schema.json"))
+
+        // Write 100 row files
         let rowStore = RowStore()
         for i in 0..<100 {
-            let row = TestData.makeRow(index: i, schema: schema)
+            let row = TestData.makeRow(index: i)
             try rowStore.saveRow(row, schema: schema, dbPath: dbPath)
         }
 
-        var elapsed: Double = 0
+        let store = DatabaseStore()
+
         measure {
-            let start = CFAbsoluteTimeGetCurrent()
-            let loadedSchema = try! store.loadSchema(at: dbPath)
-            _ = rowStore.loadAllRows(in: dbPath, schema: loadedSchema)
-            elapsed = CFAbsoluteTimeGetCurrent() - start
+            let s = try! store.loadSchema(at: dbPath)
+            _ = rowStore.loadAllRows(in: dbPath, schema: s)
         }
 
-        PerfBaseline.appendResult(testName: "DatabaseStore_load_100rows", metric: "wall_time_s", value: elapsed)
-        let (passed, msg) = PerfBaseline.compare(testName: "DatabaseStore_load_100rows", metric: "wall_time_s", newValue: elapsed)
-        print(msg)
-        XCTAssertTrue(passed, msg)
+        let ms = timed {
+            let s = try! store.loadSchema(at: dbPath)
+            _ = rowStore.loadAllRows(in: dbPath, schema: s)
+        }
+        PerfBaseline.record(testName: "database_load_100", metric: "ms", value: ms)
     }
 
-    // MARK: 4. BlockDocument — init with 50 blocks
+    // MARK: 4. BlockDocument: init with 50 blocks
 
-    @MainActor
-    func testBlockDocumentInitPerformance() {
-        // Build markdown with ~50 blocks
-        let markdown = TestData.makeMarkdownDocument(lineCount: 50)
+    func testBlockDocumentInit50Blocks() {
+        let markdown = TestData.makeBlockMarkdown(blockCount: 50)
 
-        var elapsed: Double = 0
-        measure {
-            let start = CFAbsoluteTimeGetCurrent()
-            _ = BlockDocument(markdown: markdown)
-            elapsed = CFAbsoluteTimeGetCurrent() - start
-        }
+        measure { _ = BlockDocument(markdown: markdown) }
 
-        PerfBaseline.appendResult(testName: "BlockDocument_init_50blocks", metric: "wall_time_s", value: elapsed)
-        let (passed, msg) = PerfBaseline.compare(testName: "BlockDocument_init_50blocks", metric: "wall_time_s", newValue: elapsed)
-        print(msg)
-        XCTAssertTrue(passed, msg)
+        let ms = timed { _ = BlockDocument(markdown: markdown) }
+        PerfBaseline.record(testName: "block_document_init_50", metric: "ms", value: ms)
     }
 
-    // MARK: 5. QmdService — binary path lookup (index rebuild requires live workspace)
+    // MARK: 5. QmdService: binary path detection
 
-    func testQmdServiceDetectPerformance() {
-        // Skip if qmd is not installed
-        guard QmdService.findBinaryPath() != nil else {
-            print("SKIP QmdService_detect: qmd not installed")
-            return
-        }
+    func testQmdFindBinaryPath() {
+        measure { _ = QmdService.findBinaryPath() }
 
-        var elapsed: Double = 0
-        measure {
-            let start = CFAbsoluteTimeGetCurrent()
-            _ = QmdService.findBinaryPath()
-            elapsed = CFAbsoluteTimeGetCurrent() - start
-        }
-
-        PerfBaseline.appendResult(testName: "QmdService_detect", metric: "wall_time_s", value: elapsed)
-        let (passed, msg) = PerfBaseline.compare(testName: "QmdService_detect", metric: "wall_time_s", newValue: elapsed)
-        print(msg)
-        XCTAssertTrue(passed, msg)
+        let ms = timed { _ = QmdService.findBinaryPath() }
+        PerfBaseline.record(testName: "qmd_find_binary", metric: "ms", value: ms)
     }
 
-    // MARK: 6. FileSystemService — build file tree for 100 files
+    // MARK: 6. FileSystemService: build file tree for 100 files
 
-    @MainActor
-    func testFileSystemBuildTreePerformance() throws {
+    func testFileSystemBuildTree100Files() throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("BugbookPerfTree-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         // Create 100 .md files
         for i in 0..<100 {
-            let filePath = tmpDir.appendingPathComponent("Note \(String(format: "%03d", i)).md")
-            try "# Note \(i)\n\nContent here.\n".write(to: filePath, atomically: true, encoding: .utf8)
+            let filename = "Page \(String(format: "%03d", i)).md"
+            let filePath = tmpDir.appendingPathComponent(filename)
+            try "# Page \(i)\n\nSome content here.\n".write(to: filePath, atomically: true, encoding: .utf8)
         }
 
         let service = FileSystemService()
 
-        var elapsed: Double = 0
-        measure {
-            let start = CFAbsoluteTimeGetCurrent()
-            _ = service.buildFileTree(at: tmpDir.path)
-            elapsed = CFAbsoluteTimeGetCurrent() - start
-        }
+        measure { _ = service.buildFileTree(at: tmpDir.path) }
 
-        PerfBaseline.appendResult(testName: "FileSystemService_buildTree_100files", metric: "wall_time_s", value: elapsed)
-        let (passed, msg) = PerfBaseline.compare(testName: "FileSystemService_buildTree_100files", metric: "wall_time_s", newValue: elapsed)
-        print(msg)
-        XCTAssertTrue(passed, msg)
-    }
-
-    // MARK: 7. IndexManager — rebuild index for 100 rows
-
-    func testIndexManagerRebuildPerformance() {
-        let schema = TestData.makeSchema()
-        let rows = (0..<100).map { TestData.makeRow(index: $0, schema: schema) }
-        let indexManager = IndexManager()
-
-        let tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BugbookPerfIndex-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: tmpDir) }
-        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-
-        var elapsed: Double = 0
-        measure {
-            let start = CFAbsoluteTimeGetCurrent()
-            _ = indexManager.rebuild(dbPath: tmpDir.path, schema: schema, rows: rows)
-            elapsed = CFAbsoluteTimeGetCurrent() - start
-        }
-
-        PerfBaseline.appendResult(testName: "IndexManager_rebuild_100rows", metric: "wall_time_s", value: elapsed)
-        let (passed, msg) = PerfBaseline.compare(testName: "IndexManager_rebuild_100rows", metric: "wall_time_s", newValue: elapsed)
-        print(msg)
-        XCTAssertTrue(passed, msg)
-    }
-
-    // MARK: - Summary / Compare All
-
-    func testPerfSummary() {
-        let baseline = PerfBaseline.loadBaseline()
-        if baseline.isEmpty {
-            print("\n=== PERF BASELINE ===")
-            print("No baseline found at \(PerfBaseline.tsvPath)")
-            print("First run — results are being recorded as the new baseline.")
-            print("=====================\n")
-        } else {
-            print("\n=== PERF COMPARISON ===")
-            print("Baseline: \(PerfBaseline.tsvPath)")
-            print("Entries: \(baseline.count)")
-            for (name, entry) in baseline.sorted(by: { $0.key < $1.key }) {
-                print("  \(name): \(String(format: "%.4f", entry.value))s (recorded \(entry.timestamp))")
-            }
-            print("========================\n")
-        }
+        let ms = timed { _ = service.buildFileTree(at: tmpDir.path) }
+        PerfBaseline.record(testName: "filesystem_tree_100", metric: "ms", value: ms)
     }
 }

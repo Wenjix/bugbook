@@ -101,12 +101,15 @@ class DatabaseService {
 
     func renameProperty(_ propertyId: String, to newName: String, in schema: inout DatabaseSchema, rows: inout [DatabaseRow], at dbPath: String) throws {
         guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        let isTitleProperty = schema.properties[idx].type == .title
         schema.properties[idx].name = newName
         try saveSchema(schema, at: dbPath)
         // Row properties are keyed by ID, not name — no row migration needed.
-        // But re-save rows so filenames update if the title property was renamed.
-        for i in rows.indices {
-            try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
+        // Only re-save rows if the title property was renamed (affects filenames).
+        if isTitleProperty {
+            for i in rows.indices {
+                try rowStore.saveRow(rows[i], schema: schema, dbPath: dbPath)
+            }
         }
     }
 
@@ -513,11 +516,13 @@ class DatabaseService {
         return nil
     }
 
+    private static let nonAlphanumericRegex = try! NSRegularExpression(pattern: "[^a-z0-9]+")
+
     private func normalizeStatusToken(_ value: String) -> String {
-        value
-            .lowercased()
-            .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = value.lowercased()
+        let range = NSRange(lower.startIndex..., in: lower)
+        let replaced = Self.nonAlphanumericRegex.stringByReplacingMatches(in: lower, range: range, withTemplate: " ")
+        return replaced.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func scalarText(from rawValue: String) -> String? {

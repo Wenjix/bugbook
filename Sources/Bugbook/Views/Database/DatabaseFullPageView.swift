@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BugbookCore
 
 extension Notification.Name {
@@ -39,8 +40,8 @@ struct DatabaseFullPageView: View {
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
     @State private var initialPeekHandled = false
-    @State private var draggingViewTabId: String?
-    @State private var dropTargetViewId: String?
+    @State private var draggedViewTabId: String?
+    @State private var viewTabDropTargetId: String?
 
     init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
@@ -178,9 +179,9 @@ struct DatabaseFullPageView: View {
     // MARK: - View Tabs
 
     private func viewTabs(schema: DatabaseSchema) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 4) {
             ForEach(schema.views) { view in
-                viewTab(view: view)
+                viewTabButton(view: view)
             }
 
             Menu {
@@ -207,65 +208,40 @@ struct DatabaseFullPageView: View {
         .padding(.vertical, DatabaseZoomMetrics.size(4))
     }
 
-    private func viewTab(view: ViewConfig) -> some View {
-        let isDropTarget = dropTargetViewId == view.id && draggingViewTabId != view.id
-
-        return HStack(spacing: 0) {
-            // Drop insertion indicator (leading edge)
-            RoundedRectangle(cornerRadius: 1)
-                .fill(Color.accentColor)
-                .frame(width: 2, height: DatabaseZoomMetrics.size(16))
-                .opacity(isDropTarget ? 1 : 0)
-                .padding(.trailing, isDropTarget ? 2 : 0)
-
-            Button {
-                state.activeViewId = view.id
-                state.persistActiveView(view.id)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: iconForViewType(view.type))
-                    Text(view.name)
-                }
-                .font(DatabaseZoomMetrics.font(12))
-                .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                .padding(.vertical, DatabaseZoomMetrics.size(4))
-                .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
-                .opacity(draggingViewTabId == view.id ? 0.4 : 1)
-            }
-            .buttonStyle(.plain)
-        }
-        .draggable(view.id) {
-            // Drag preview
+    private func viewTabButton(view: ViewConfig) -> some View {
+        Button {
+            draggedViewTabId = nil
+            viewTabDropTargetId = nil
+            state.activeViewId = view.id
+            state.persistActiveView(view.id)
+        } label: {
             HStack(spacing: 4) {
+                if viewTabDropTargetId == view.id {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 2, height: DatabaseZoomMetrics.size(14))
+                }
                 Image(systemName: iconForViewType(view.type))
                 Text(view.name)
             }
             .font(DatabaseZoomMetrics.font(12))
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
             .padding(.vertical, DatabaseZoomMetrics.size(4))
-            .background(Color.primary.opacity(0.1))
+            .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
             .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
-            .onAppear { draggingViewTabId = view.id }
-            .onDisappear {
-                draggingViewTabId = nil
-                dropTargetViewId = nil
-            }
+            .opacity(draggedViewTabId == view.id ? 0.4 : 1.0)
         }
-        .dropDestination(for: String.self) { items, _ in
-            guard let draggedId = items.first,
-                  draggedId != view.id else { return false }
-            state.moveView(fromId: draggedId, toId: view.id)
-            draggingViewTabId = nil
-            dropTargetViewId = nil
-            return true
-        } isTargeted: { targeted in
-            if targeted {
-                dropTargetViewId = view.id
-            } else if dropTargetViewId == view.id {
-                dropTargetViewId = nil
-            }
+        .buttonStyle(.plain)
+        .onDrag {
+            draggedViewTabId = view.id
+            return NSItemProvider(object: view.id as NSString)
         }
+        .onDrop(of: [.text], delegate: ViewTabDropDelegate(
+            targetId: view.id,
+            state: state,
+            draggedId: $draggedViewTabId,
+            dropTargetId: $viewTabDropTargetId
+        ))
     }
 
     // MARK: - Settings Popover
@@ -697,6 +673,7 @@ struct DatabaseFullPageView: View {
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
+                onUpdateSubGroupBy: { propId in state.updateSubGroupBy(propId) },
                 onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
                 onDelete: { row in state.deleteRow(row) },
                 onReorderRows: { draggedId, targetId in

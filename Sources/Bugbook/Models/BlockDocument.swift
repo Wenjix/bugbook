@@ -68,9 +68,12 @@ class BlockDocument {
     @ObservationIgnored var onSubmitAiPrompt: ((String) -> Void)?
     @ObservationIgnored var onCancelAiPrompt: (() -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
-    /// Called when a page is dragged from the sidebar and dropped into the editor.
-    /// Parameters: source file path, insertion index where the page link was created.
-    @ObservationIgnored var onSidebarPageDrop: ((String) -> Void)?
+    /// Called when a page is dropped from the sidebar into the editor.
+    /// Parameters: (sourcePath, insertionIndex). Should move the file and refresh tree.
+    @ObservationIgnored var onDropPageFromSidebar: ((String, Int) -> Void)?
+    @ObservationIgnored var onStartMeeting: ((UUID) -> Void)?
+    @ObservationIgnored var onStopMeeting: ((UUID) -> Void)?
+    @ObservationIgnored var transcriptionService: TranscriptionService?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
     @ObservationIgnored var workspacePath: String?
@@ -754,6 +757,7 @@ class BlockDocument {
         case imagePicker
         case askAI
         case meetingNotes
+        case meeting
     }
 
     struct SlashCommand {
@@ -782,6 +786,7 @@ class BlockDocument {
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
         SlashCommand(name: "Canvas", icon: "rectangle.on.rectangle.angled", action: .blockType(.canvas, headingLevel: 0)),
         SlashCommand(name: "Meeting Notes", icon: "person.2.wave.2", action: .meetingNotes),
+        SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting),
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -849,6 +854,20 @@ class BlockDocument {
             dismissSlashMenu()
             return
 
+        case .meeting:
+            saveUndo()
+            updateBlockProperty(id: blockId) { block in
+                block.type = .meeting
+                block.meetingState = .recording
+                block.meetingTranscript = ""
+                block.meetingSummary = ""
+                block.meetingActionItems = ""
+                block.meetingTitle = ""
+            }
+            dismissSlashMenu()
+            onStartMeeting?(blockId)
+            return
+
         case let .blockType(type, headingLevel):
             // Database command needs special handling — creates files via callback
             if type == .databaseEmbed {
@@ -886,6 +905,15 @@ class BlockDocument {
             block.text = ""
         }
         dismissPagePicker()
+    }
+
+    /// Insert a page link block at a specific index (used for sidebar drag-drop).
+    func insertPageLinkBlock(at index: Int, name: String) {
+        saveUndo()
+        let block = Block(type: .pageLink, pageLinkName: name)
+        let clampedIndex = min(index, blocks.count)
+        blocks.insert(block, at: clampedIndex)
+        focusedBlockId = block.id
     }
 
     @ObservationIgnored private var _pagePickerCache: (search: String, entries: [FileEntry])?
@@ -1095,15 +1123,6 @@ class BlockDocument {
         let clampedIndex = min(index, blocks.count)
         blocks.insert(imageBlock, at: clampedIndex)
         focusedBlockId = imageBlock.id
-    }
-
-    func insertPageLinkBlock(at index: Int, name: String) {
-        saveUndo()
-        var block = Block(type: .pageLink)
-        block.pageLinkName = name
-        let clamped = min(index, blocks.count)
-        blocks.insert(block, at: clamped)
-        focusedBlockId = block.id
     }
 
     /// Returns true if the payload string looks like a sidebar page file path.

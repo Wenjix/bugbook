@@ -1,5 +1,44 @@
 import SwiftUI
 
+// MARK: - Shared block-deletion keyboard modifier
+
+/// Makes a non-text block focusable and deletable via Delete/Backspace when selected.
+private struct BlockDeletableModifier: ViewModifier {
+    var document: BlockDocument
+    let blockId: UUID
+    @FocusState private var isKeyboardFocused: Bool
+
+    private var isSelected: Bool {
+        document.selectedBlockIds.contains(blockId)
+    }
+
+    private static let deleteKeys: Set<KeyEquivalent> = [
+        .delete,
+        .init(Character(UnicodeScalar(127))), // backspace
+    ]
+
+    func body(content: Content) -> some View {
+        content
+            .focusable()
+            .focusEffectDisabled()
+            .focused($isKeyboardFocused)
+            .onKeyPress(keys: Self.deleteKeys) { _ in
+                guard isSelected else { return .ignored }
+                document.deleteSelectedBlocks()
+                return .handled
+            }
+            .onChange(of: isSelected) { _, selected in
+                isKeyboardFocused = selected
+            }
+    }
+}
+
+extension View {
+    func blockDeletable(document: BlockDocument, blockId: UUID) -> some View {
+        modifier(BlockDeletableModifier(document: document, blockId: blockId))
+    }
+}
+
 /// Horizontal rule block.
 struct HorizontalRuleView: View {
     var body: some View {
@@ -40,14 +79,8 @@ struct ImageBlockView: View {
     @State private var isResizing = false
     @State private var resizeStartWidth: CGFloat?
     @State private var transientWidth: CGFloat?
-    @FocusState private var isKeyboardFocused: Bool
-
     private var isLocalImage: Bool {
         block.imageSource.hasPrefix("/") || block.imageSource.hasPrefix("file://")
-    }
-
-    private var isSelected: Bool {
-        document.selectedBlockIds.contains(block.id)
     }
 
     private var currentWidth: CGFloat? {
@@ -77,7 +110,6 @@ struct ImageBlockView: View {
                     document.clearBlockSelection()
                     document.selectedBlockIds = [block.id]
                     document.focusedBlockId = nil
-                    isKeyboardFocused = true
                 }
                 .draggable(document.dragPayload(for: block.id)) {
                     imageDragPreview
@@ -107,18 +139,7 @@ struct ImageBlockView: View {
             .buttonStyle(.plain)
             .appCursor(.iBeam)
         }
-        .focusable()
-        .focused($isKeyboardFocused)
-        .onKeyPress(.delete) {
-            guard isSelected else { return .ignored }
-            document.deleteSelectedBlocks()
-            return .handled
-        }
-        .onKeyPress(.init(Character(UnicodeScalar(127)))) { // backspace
-            guard isSelected else { return .ignored }
-            document.deleteSelectedBlocks()
-            return .handled
-        }
+        .blockDeletable(document: document, blockId: block.id)
         .task(id: block.imageSource) {
             guard isLocalImage else { return }
             let source = block.imageSource
@@ -126,11 +147,6 @@ struct ImageBlockView: View {
                 ? URL(string: source)!
                 : URL(fileURLWithPath: source)
             cachedImage = NSImage(contentsOf: fileURL)
-        }
-        .onChange(of: isSelected) { _, selected in
-            if !selected {
-                isKeyboardFocused = false
-            }
         }
     }
 
@@ -252,18 +268,50 @@ struct ImageBlockView: View {
 
 /// Database embed block — wraps existing DatabaseInlineEmbedView.
 struct DatabaseEmbedBlockView: View {
+    var document: BlockDocument
     let block: Block
     let dbPath: String
     var onOpenDatabaseTab: ((String) -> Void)?
     var sidebarReferencePayload: SidebarReferenceDragPayload?
+    @State private var isHoveringEmbed = false
+
+    private var displayName: String {
+        let name = (dbPath as NSString).lastPathComponent
+        let ext = ".bugbookdb"
+        if name.hasSuffix(ext) {
+            return String(name.dropLast(ext.count))
+        }
+        return name
+    }
 
     var body: some View {
+        let content = databaseEmbedView
+            .blockDeletable(document: document, blockId: block.id)
+
         if let sidebarReferencePayload {
-            databaseEmbedView
-                .draggable(sidebarReferencePayload)
+            content
+                .overlay(alignment: .topLeading) {
+                    if isHoveringEmbed {
+                        sidebarDragHandle(payload: sidebarReferencePayload)
+                    }
+                }
+                .onHover { isHoveringEmbed = $0 }
         } else {
-            databaseEmbedView
+            content
         }
+    }
+
+    private func sidebarDragHandle(payload: SidebarReferenceDragPayload) -> some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 20, height: 20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .padding(6)
+            .draggable(payload) {
+                SidebarDragPreview(systemImage: "tablecells", title: displayName)
+            }
     }
 
     private var databaseEmbedView: some View {

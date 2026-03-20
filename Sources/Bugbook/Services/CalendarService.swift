@@ -229,6 +229,7 @@ class CalendarService {
     // MARK: - Database Overlay Items
 
     func loadDatabaseOverlayItems(workspace: String) async {
+        let start = CFAbsoluteTimeGetCurrent()
         var items: [CalendarDatabaseItem] = []
         let dbStore = DatabaseStore()
         let visibleOverlays = overlays.filter(\.isVisible)
@@ -269,6 +270,10 @@ class CalendarService {
         }
 
         databaseItems = items
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 500 {
+            print("[Perf] loadDatabaseOverlayItems took \(Int(elapsed))ms (\(items.count) items)")
+        }
     }
 
     // MARK: - Overlay Management

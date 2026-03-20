@@ -96,11 +96,16 @@ final class QmdService {
     }
 
     func ensureCollection(workspace: String) async {
+        let start = CFAbsoluteTimeGetCurrent()
         guard case .installed(_, let path) = status else { return }
         // v2: collection name is derived from the directory's last path component
         _ = try? await runBinary(path, args: ["collection", "add", workspace])
         _ = try? await runBinary(path, args: ["update"])
         collectionReady = true
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        if elapsed > 500 {
+            print("[Perf] ensureCollection took \(Int(elapsed))ms")
+        }
     }
 
     /// Fetch index health from `qmd status` for display in settings.

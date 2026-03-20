@@ -72,7 +72,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image, .pageLink, .canvas:
+        case .databaseEmbed, .image, .pageLink, .canvas, .meeting:
             true
         default:
             false
@@ -233,6 +233,7 @@ struct BlockCellView: View {
 
         case .databaseEmbed:
             DatabaseEmbedBlockView(
+                document: document,
                 block: block,
                 dbPath: resolvedDatabasePath ?? block.databasePath,
                 onOpenDatabaseTab: document.onOpenDatabaseTab,
@@ -255,6 +256,20 @@ struct BlockCellView: View {
 
         case .canvas:
             CanvasBlockView(document: document, block: block)
+
+        case .meeting:
+            if let service = document.transcriptionService {
+                MeetingBlockView(
+                    document: document,
+                    block: block,
+                    transcriptionService: service,
+                    onStop: { document.onStopMeeting?(block.id) }
+                )
+            } else {
+                Text("Meeting block")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

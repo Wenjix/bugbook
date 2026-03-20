@@ -8,8 +8,6 @@ struct CanvasCardView: View {
 
     @State private var isDragging = false
     @State private var isResizing = false
-    @State private var dragStart: CGPoint = .zero
-    @State private var dragStartPositions: [String: CGPoint] = [:]
     @State private var resizeStart: CGSize = .zero
     @State private var isEditingLabel = false
     @State private var editingLabelText = ""
@@ -414,31 +412,21 @@ struct CanvasCardView: View {
             .onChanged { value in
                 if !isDragging {
                     isDragging = true
-                    dragStart = CGPoint(x: node.x, y: node.y)
-                    // Capture start positions of all selected nodes for multi-drag
-                    if document.selectedNodeIds.count > 1 && document.selectedNodeIds.contains(node.id) {
-                        dragStartPositions = [:]
-                        for n in document.nodes where document.selectedNodeIds.contains(n.id) {
-                            dragStartPositions[n.id] = CGPoint(x: n.x, y: n.y)
-                        }
+                    // Ensure this node is selected (handles dragging an unselected node)
+                    if !document.selectedNodeIds.contains(node.id) {
+                        document.selectedNodeId = node.id
                     }
+                    document.storeDragStartPositions()
                 }
-                let dx = value.translation.width / zoom
-                let dy = value.translation.height / zoom
-                if dragStartPositions.count > 1 {
-                    // Move all selected nodes by the same delta
-                    for (id, start) in dragStartPositions {
-                        document.moveNode(id: id, to: CGPoint(x: start.x + dx, y: start.y + dy))
-                    }
-                } else {
-                    let newX = dragStart.x + dx
-                    let newY = dragStart.y + dy
-                    document.moveNode(id: node.id, to: CGPoint(x: newX, y: newY))
-                }
+                let delta = CGSize(
+                    width: value.translation.width / zoom,
+                    height: value.translation.height / zoom
+                )
+                document.moveSelectedNodes(delta: delta)
             }
             .onEnded { _ in
                 isDragging = false
-                dragStartPositions = [:]
+                document.clearDragStartPositions()
             }
     }
 }

@@ -28,5 +28,20 @@
 	<string></string>
 	<key>SUPublicEDKey</key>
 	<string></string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.bugbook.sidebar-reference</string>
+			<key>UTTypeDescription</key>
+			<string>Bugbook Sidebar Reference</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+	</array>
 </dict>
 </plist>
