@@ -20,12 +20,25 @@ struct CanvasNodeMeta: Codable, Identifiable {
     var height: CGFloat
     var file: String?      // relative path for file nodes
     var color: String?
+    var borderColor: String?
+    var label: String?
 }
 
 enum CanvasNodeType: String, Codable {
     case text
     case file
     case image
+    case rectangle
+    case roundedRect
+    case ellipse
+    case diamond
+
+    var isShape: Bool {
+        switch self {
+        case .rectangle, .roundedRect, .ellipse, .diamond: return true
+        default: return false
+        }
+    }
 }
 
 struct CanvasEdgeMeta: Codable, Identifiable {
@@ -269,6 +282,24 @@ class CanvasDocument {
         isDirty = true
     }
 
+    func addShapeNode(at position: CGPoint, type: CanvasNodeType) {
+        saveUndo()
+        let id = generateId(prefix: "node")
+        let w: CGFloat = 120
+        let h: CGFloat = 80
+        let node = CanvasNodeMeta(
+            id: id,
+            type: type,
+            x: position.x - w / 2,
+            y: position.y - h / 2,
+            width: w,
+            height: h
+        )
+        nodes.append(node)
+        selectedNodeId = id
+        isDirty = true
+    }
+
     func removeNode(id: String) {
         saveUndo()
         let removedNode = nodes.first { $0.id == id }
@@ -310,6 +341,17 @@ class CanvasDocument {
             nodes[idx].x = start.x + delta.width
             nodes[idx].y = start.y + delta.height
         }
+        isDirty = true
+    }
+
+    func clearDragStartPositions() {
+        dragStartPositions = [:]
+    }
+
+    func updateShapeLabel(id: String, label: String) {
+        guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
+        saveUndo()
+        nodes[idx].label = label.isEmpty ? nil : label
         isDirty = true
     }
 

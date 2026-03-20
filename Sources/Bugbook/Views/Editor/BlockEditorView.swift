@@ -254,11 +254,6 @@ struct BlockEditorView: View {
         return true
     }
 
-    private func handlePageDrop(_ path: String, at index: Int) {
-        document.onDropPageFromSidebar?(path, index)
-        activeDropIndex = nil
-    }
-
     /// Index after the focused block, or end of document.
     private var insertionIndexAtFocus: Int {
         if let focusedId = document.focusedBlockId,
