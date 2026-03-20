@@ -78,6 +78,7 @@ class CanvasDocument {
             }
         }
     }
+    var dragStartPositions: [String: CGPoint] = [:]
     var isDirty: Bool = false
     var loadResult: CanvasLoadResult = .newCanvas
 
@@ -185,13 +186,15 @@ class CanvasDocument {
     func addTextNode(at position: CGPoint) {
         saveUndo()
         let id = generateId(prefix: "node")
+        let w: CGFloat = 300
+        let h: CGFloat = 200
         let node = CanvasNodeMeta(
             id: id,
             type: .text,
-            x: position.x,
-            y: position.y,
-            width: 300,
-            height: 200
+            x: position.x - w / 2,
+            y: position.y - h / 2,
+            width: w,
+            height: h
         )
         nodes.append(node)
         nodeTexts[id] = ""
@@ -204,13 +207,15 @@ class CanvasDocument {
         saveUndo()
         let id = generateId(prefix: "node")
         let relativePath = Self.relativePath(from: canvasPath, to: filePath)
+        let w: CGFloat = 300
+        let h: CGFloat = 80
         let node = CanvasNodeMeta(
             id: id,
             type: .file,
-            x: position.x,
-            y: position.y,
-            width: 300,
-            height: 80,
+            x: position.x - w / 2,
+            y: position.y - h / 2,
+            width: w,
+            height: h,
             file: relativePath
         )
         nodes.append(node)
@@ -248,13 +253,15 @@ class CanvasDocument {
         let width = image.size.width * scale
         let height = image.size.height * scale
 
+        let nodeWidth = max(120, width)
+        let nodeHeight = max(60, height)
         let node = CanvasNodeMeta(
             id: id,
             type: .image,
-            x: position.x,
-            y: position.y,
-            width: max(120, width),
-            height: max(60, height),
+            x: position.x - nodeWidth / 2,
+            y: position.y - nodeHeight / 2,
+            width: nodeWidth,
+            height: nodeHeight,
             file: filename
         )
         nodes.append(node)
@@ -286,6 +293,23 @@ class CanvasDocument {
         guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
         nodes[idx].x = position.x
         nodes[idx].y = position.y
+        isDirty = true
+    }
+
+    func storeDragStartPositions() {
+        dragStartPositions = [:]
+        for node in nodes where selectedNodeIds.contains(node.id) {
+            dragStartPositions[node.id] = CGPoint(x: node.x, y: node.y)
+        }
+    }
+
+    func moveSelectedNodes(delta: CGSize) {
+        for id in selectedNodeIds {
+            guard let start = dragStartPositions[id],
+                  let idx = nodes.firstIndex(where: { $0.id == id }) else { continue }
+            nodes[idx].x = start.x + delta.width
+            nodes[idx].y = start.y + delta.height
+        }
         isDirty = true
     }
 
@@ -359,6 +383,9 @@ class CanvasDocument {
 
     private func saveUndo() {
         undoStack.append(CanvasState(nodes: nodes, edges: edges, nodeTexts: nodeTexts))
+        if undoStack.count > 50 {
+            undoStack.removeFirst(undoStack.count - 50)
+        }
         redoStack.removeAll()
     }
 

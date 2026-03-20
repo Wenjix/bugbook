@@ -31,7 +31,7 @@ struct CanvasView: View {
 
             // Viewport-transformed content
             canvasContent
-                .scaleEffect(zoom)
+                .scaleEffect(zoom, anchor: .topLeading)
                 .offset(
                     x: document.viewport.x + panOffset.width,
                     y: document.viewport.y + panOffset.height
@@ -306,8 +306,9 @@ struct CanvasView: View {
                 guard oldZoom > 0 else { return }
                 let newZoom = max(0.3, min(3.0, baseZoom * value.magnification))
                 let pivot = lastMouseLocation
-                document.viewport.x += pivot.x * (1 - newZoom / oldZoom)
-                document.viewport.y += pivot.y * (1 - newZoom / oldZoom)
+                let ratio = 1 - newZoom / oldZoom
+                document.viewport.x += (pivot.x - document.viewport.x) * ratio
+                document.viewport.y += (pivot.y - document.viewport.y) * ratio
                 document.viewport.zoom = newZoom
             }
             .onEnded { _ in
@@ -453,8 +454,9 @@ private struct CanvasScrollZoomView: NSViewRepresentable {
             guard oldZoom > 0 else { return }
             let newZoom = max(0.3, min(3.0, oldZoom + deltaY * sensitivity))
             // Pivot zoom around the mouse location
-            document.viewport.x += mouseLocation.x * (1 - newZoom / oldZoom)
-            document.viewport.y += mouseLocation.y * (1 - newZoom / oldZoom)
+            let ratio = 1 - newZoom / oldZoom
+            document.viewport.x += (mouseLocation.x - document.viewport.x) * ratio
+            document.viewport.y += (mouseLocation.y - document.viewport.y) * ratio
             document.viewport.zoom = newZoom
             baseZoom.wrappedValue = newZoom
         }
@@ -473,15 +475,32 @@ private struct CanvasScrollZoomView: NSViewRepresentable {
 
 private class CanvasScrollCaptureNSView: NSView {
     var onCmdScroll: ((CGFloat, CGPoint) -> Void)?
+    private var scrollMonitor: Any?
 
     override var isFlipped: Bool { true }
 
-    override func scrollWheel(with event: NSEvent) {
-        if event.modifierFlags.contains(.command) {
-            let locationInView = convert(event.locationInWindow, from: nil)
-            onCmdScroll?(event.scrollingDeltaY, locationInView)
-        } else {
-            super.scrollWheel(with: event)
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil && scrollMonitor == nil {
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let window = self.window,
+                      event.window === window,
+                      event.modifierFlags.contains(.command) else { return event }
+                let locationInView = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(locationInView) else { return event }
+                self.onCmdScroll?(event.scrollingDeltaY, locationInView)
+                return nil
+            }
         }
+    }
+
+    override func removeFromSuperview() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
+        super.removeFromSuperview()
     }
 }
