@@ -7,6 +7,9 @@ struct AiSidePanelView: View {
     @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var activeTask: Task<Void, Never>?
+    @State private var referencedItems: [AiContextItem] = []
+    @State private var showPagePicker = false
+    @State private var pagePickerSearch = ""
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -92,30 +95,57 @@ struct AiSidePanelView: View {
 
             Divider()
 
-            // Input area
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField("Ask about your notes...", text: $inputText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .lineLimit(1...20)
-                    .frame(minHeight: 24)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .focused($inputFocused)
-                    .onSubmit {
-                        sendMessage()
+            // Context chips + input area
+            VStack(spacing: 6) {
+                if !referencedItems.isEmpty {
+                    contextChipsView
+                }
+
+                HStack(alignment: .bottom, spacing: 8) {
+                    Button {
+                        showPagePicker.toggle()
+                    } label: {
+                        Image(systemName: "at")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 24)
+                            .background(Color.fallbackBadgeBg)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reference a page")
+                    .floatingPopover(isPresented: $showPagePicker, arrowEdge: .top) {
+                        pageReferencePickerView
                     }
 
-                Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(
-                            inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? Color.fallbackTextMuted
-                                : Brand.primary
-                        )
+                    TextField("Ask about your notes...", text: $inputText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .lineLimit(1...20)
+                        .frame(minHeight: 24)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .focused($inputFocused)
+                        .onChange(of: inputText) { _, value in
+                            if value.hasSuffix("@") {
+                                showPagePicker = true
+                            }
+                        }
+                        .onSubmit {
+                            sendMessage()
+                        }
+
+                    Button(action: sendMessage) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(
+                                canSend
+                                    ? Color.fallbackTextPrimary
+                                    : Color.fallbackTextMuted
+                            )
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!canSend)
                 }
-                .buttonStyle(.borderless)
-                .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty || aiService.isRunning)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -124,6 +154,13 @@ struct AiSidePanelView: View {
         .background(Color.fallbackEditorBg)
         .task {
             inputFocused = true
+            // Ingest any referenced items passed via appState
+            let incoming = appState.aiReferencedItems
+            if !incoming.isEmpty {
+                let existing = Set(referencedItems.map(\.id))
+                referencedItems += incoming.filter { !existing.contains($0.id) }
+                appState.aiReferencedItems.removeAll()
+            }
             if let prompt = appState.aiInitialPrompt, !prompt.isEmpty {
                 inputText = prompt
                 appState.aiInitialPrompt = nil
@@ -133,6 +170,94 @@ struct AiSidePanelView: View {
                 }
             }
         }
+        .onChange(of: appState.aiReferencedItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            let existing = Set(referencedItems.map(\.id))
+            referencedItems += newItems.filter { !existing.contains($0.id) }
+            appState.aiReferencedItems.removeAll()
+        }
+    }
+
+    // MARK: - Context Chips
+
+    private var contextChipsView: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(referencedItems) { item in
+                    HStack(spacing: 5) {
+                        Image(systemName: item.iconName)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+
+                        Text(item.displayLabel)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+
+                        Button {
+                            referencedItems.removeAll { $0.id == item.id }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.fallbackBadgeBg)
+                    .clipShape(.capsule)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    // MARK: - Page Reference Picker
+
+    private var pageReferencePickerView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Reference a page")
+                .font(.system(size: 14, weight: .semibold))
+
+            TextField("Search pages...", text: $pagePickerSearch)
+                .textFieldStyle(.roundedBorder)
+
+            if filteredPages.isEmpty {
+                Text("No pages found")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, 8)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filteredPages.prefix(100), id: \.path) { entry in
+                            Button {
+                                addPageReference(entry)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(displayName(for: entry.name))
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text(relativePath(for: entry.path))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 340, height: 280)
+        .popoverSurface()
     }
 
     // MARK: - Message Bubble
@@ -222,6 +347,35 @@ struct AiSidePanelView: View {
 
     // MARK: - Actions
 
+    private var canSend: Bool {
+        !inputText.trimmingCharacters(in: .whitespaces).isEmpty && !aiService.isRunning
+    }
+
+    private func buildContext(
+        references: [AiContextItem],
+        selectionContext: String?
+    ) -> String {
+        if !references.isEmpty {
+            var sections: [String] = []
+            if let selectionContext {
+                sections.append("Selected text:\n\(selectionContext)")
+            } else if let doc = activeDocument {
+                sections.append("Current page:\n\(MarkdownBlockParser.serialize(doc.blocks))")
+            }
+            for ref in references {
+                sections.append("\(ref.contextHeading):\n\(ref.contextMarkdown)")
+            }
+            return sections.joined(separator: "\n\n---\n\n")
+        }
+        if let selectionContext {
+            return selectionContext
+        }
+        if let doc = activeDocument {
+            return MarkdownBlockParser.serialize(doc.blocks)
+        }
+        return ""
+    }
+
     private func sendMessage() {
         let trimmed = inputText.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, !aiService.isRunning else { return }
@@ -230,23 +384,22 @@ struct AiSidePanelView: View {
         messages.append(userMessage)
         inputText = ""
 
+        // Snapshot referenced items for this message and clear them
+        let currentReferences = referencedItems
+        referencedItems.removeAll()
+
         // Capture selection context and block range before it gets cleared
         let selectionContext = appState.aiSelectionContext
         let hasSelection = selectionContext != nil
         let blockRange = activeDocument?.selectedBlockPathRange()
         let pagePath = activeDocument?.filePath
 
-        // Build context
-        let pageContext: String
-        if let selectionContext {
-            pageContext = selectionContext
-        } else if let doc = activeDocument {
-            pageContext = MarkdownBlockParser.serialize(doc.blocks)
-        } else {
-            pageContext = ""
-        }
-
         let task = Task {
+            // Build context off main thread (contextMarkdown may read files)
+            let pageContext = buildContext(
+                references: currentReferences,
+                selectionContext: selectionContext
+            )
             do {
                 let workspacePath = appState.workspacePath ?? ""
                 let response: String
@@ -326,14 +479,9 @@ struct AiSidePanelView: View {
 
                 // Delete remaining original blocks (they're now shifted, delete from last to first+1)
                 if range.first != range.last {
-                    // After replacing the first block, the indices shift.
-                    // The safest approach: get fresh block count, delete by original range
                     let firstIdx = Int(range.first.replacingOccurrences(of: "path:", with: "")) ?? 0
                     let lastIdx = Int(range.last.replacingOccurrences(of: "path:", with: "")) ?? 0
                     if lastIdx > firstIdx {
-                        // Delete from last to first+1 (reverse order to keep indices stable)
-                        // But after replace, the new content may span multiple blocks.
-                        // Count how many blocks the AI response creates
                         let newBlockCount = MarkdownBlockParser.parse(response).count
                         let deleteStart = firstIdx + newBlockCount
                         let deleteEnd = lastIdx + newBlockCount - 1
@@ -378,5 +526,60 @@ struct AiSidePanelView: View {
 
     private func openFullChat() {
         appState.openNotesChat()
+    }
+
+    // MARK: - Page Reference Helpers
+
+    private var allPages: [FileEntry] {
+        var files: [FileEntry] = []
+        flattenFiles(appState.fileTree, into: &files)
+        let unique = Dictionary(files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        return unique.values
+            .filter { !$0.isDirectory && !$0.isDatabase }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var filteredPages: [FileEntry] {
+        let existingPaths = Set(referencedItems.compactMap { item -> String? in
+            if case .page(let path, _) = item { return path }
+            return nil
+        })
+        let query = pagePickerSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return allPages.filter { entry in
+            guard !existingPaths.contains(entry.path) else { return false }
+            if query.isEmpty { return true }
+            return entry.name.lowercased().contains(query) || relativePath(for: entry.path).lowercased().contains(query)
+        }
+    }
+
+    private func flattenFiles(_ entries: [FileEntry], into result: inout [FileEntry]) {
+        for entry in entries {
+            result.append(entry)
+            if let children = entry.children {
+                flattenFiles(children, into: &result)
+            }
+        }
+    }
+
+    private func addPageReference(_ entry: FileEntry) {
+        let item = AiContextItem.page(path: entry.path, name: entry.name)
+        guard !referencedItems.contains(where: { $0.id == item.id }) else { return }
+        referencedItems.append(item)
+        if inputText.hasSuffix("@") {
+            inputText.removeLast()
+        }
+        showPagePicker = false
+        pagePickerSearch = ""
+        inputFocused = true
+    }
+
+    private func relativePath(for path: String) -> String {
+        guard let workspace = appState.workspacePath, path.hasPrefix(workspace) else { return path }
+        let relative = path.dropFirst(workspace.count)
+        return relative.hasPrefix("/") ? String(relative.dropFirst()) : String(relative)
+    }
+
+    private func displayName(for name: String) -> String {
+        name.hasSuffix(".md") ? String(name.dropLast(3)) : name
     }
 }
