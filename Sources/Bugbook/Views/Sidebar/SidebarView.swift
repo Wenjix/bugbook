@@ -457,35 +457,16 @@ struct SidebarView: View {
         }
     }
 
-    private func createCanvas() {
-        invokeAction {
-            NotificationCenter.default.post(name: .newCanvas, object: nil)
-        }
-    }
-
     private var newPageMenuButton: some View {
-        Menu {
-            Button {
-                createFile()
-            } label: {
-                Label("New Page", systemImage: "doc")
-            }
-            Button {
-                createCanvas()
-            } label: {
-                Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
-            }
+        Button {
+            createFile()
         } label: {
             Image(systemName: "square.and.pencil")
                 .font(ShellZoomMetrics.font(Typography.body, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: ShellZoomMetrics.size(24), height: ShellZoomMetrics.size(24))
-        } primaryAction: {
-            createFile()
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(.borderless)
         .help("New Page")
     }
 
@@ -494,7 +475,6 @@ struct SidebarView: View {
             NotificationCenter.default.post(name: .openSettings, object: nil)
         }
     }
-
 
     @ViewBuilder
     private func chromeButton(
