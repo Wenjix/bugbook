@@ -14,6 +14,7 @@ enum BlockType: Equatable {
     case pageLink
     case column
     case toggle
+    case meeting
 }
 
 struct Block: Identifiable, Equatable {
@@ -34,6 +35,7 @@ struct Block: Identifiable, Equatable {
     var children: [Block]
     var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
     var isExpanded: Bool
+    var meetingNotes: String
 
     init(
         id: UUID = UUID(),
@@ -52,7 +54,8 @@ struct Block: Identifiable, Equatable {
         backgroundColor: BlockColor = .default,
         children: [Block] = [],
         columnIndex: Int = 0,
-        isExpanded: Bool = true
+        isExpanded: Bool = true,
+        meetingNotes: String = ""
     ) {
         self.id = id
         self.type = type
@@ -71,5 +74,6 @@ struct Block: Identifiable, Equatable {
         self.children = children
         self.columnIndex = columnIndex
         self.isExpanded = isExpanded
+        self.meetingNotes = meetingNotes
     }
 }

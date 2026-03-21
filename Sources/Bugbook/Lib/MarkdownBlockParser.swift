@@ -415,6 +415,20 @@ enum MarkdownBlockParser {
                     }
                 }
                 lines.append("<!-- /columns -->")
+
+            case .meeting:
+                lines.append("<!-- meeting -->")
+                if !block.meetingNotes.isEmpty {
+                    lines.append("<!-- meeting-notes -->")
+                    lines.append(block.meetingNotes)
+                    lines.append("<!-- /meeting-notes -->")
+                }
+                if !block.text.isEmpty {
+                    lines.append("<!-- meeting-transcript -->")
+                    lines.append(block.text)
+                    lines.append("<!-- /meeting-transcript -->")
+                }
+                lines.append("<!-- /meeting -->")
             }
         }
 
