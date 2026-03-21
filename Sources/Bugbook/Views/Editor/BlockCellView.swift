@@ -72,7 +72,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image, .pageLink:
+        case .databaseEmbed, .image, .pageLink, .meeting:
             true
         default:
             false
@@ -249,6 +249,9 @@ struct BlockCellView: View {
 
         case .toggle:
             ToggleBlockView(document: document, block: block, onTyping: onTyping)
+
+        case .meeting:
+            MeetingBlockView(document: document, block: block)
 
         case .column:
             ColumnBlockView(document: document, block: block, onTyping: onTyping)
