@@ -870,6 +870,16 @@ class BlockDocument {
         dismissPagePicker()
     }
 
+    /// Insert a pageLink block at a specific index (used for sidebar drag-drop).
+    func insertPageLinkBlock(at index: Int, name: String) {
+        saveUndo()
+        var block = Block(type: .pageLink)
+        block.pageLinkName = name
+        let clampedIndex = min(index, blocks.count)
+        blocks.insert(block, at: clampedIndex)
+        focusedBlockId = block.id
+    }
+
     @ObservationIgnored private var _pagePickerCache: (search: String, entries: [FileEntry])?
 
     var filteredPagePickerEntries: [FileEntry] {

@@ -21,6 +21,8 @@ struct BlockEditorView: View {
     var document: BlockDocument
     var onTextChange: (() -> Void)?
     var onTyping: (() -> Void)?
+    /// Called when a page file path is dropped from the sidebar. Parameters: (filePath, insertIndex).
+    var onPagePathDrop: ((String, Int) -> Void)?
     var contentColumnMaxWidth: CGFloat? = nil
     var horizontalPadding: CGFloat = 48
     @State private var activeDropIndex: Int?
@@ -82,6 +84,8 @@ struct BlockEditorView: View {
                 activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
             } onImageDrop: { urls in
                 handleImageDrop(urls, at: startIndex)
+            } onPagePathDrop: { path in
+                handlePagePathDrop(path, at: startIndex)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -131,6 +135,8 @@ struct BlockEditorView: View {
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 } onImageDrop: { urls in
                     handleImageDrop(urls, at: index + 1)
+                } onPagePathDrop: { path in
+                    handlePagePathDrop(path, at: index + 1)
                 }
                 .overlay {
                     Button {
@@ -221,6 +227,13 @@ struct BlockEditorView: View {
                 document.insertImageBlock(at: index + offset, imagePath: path)
             }
         }
+        return true
+    }
+
+    private func handlePagePathDrop(_ path: String, at index: Int) -> Bool {
+        guard onPagePathDrop != nil else { return false }
+        onPagePathDrop?(path, index)
+        activeDropIndex = nil
         return true
     }
 
@@ -781,6 +794,7 @@ struct DropZoneView: View {
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
+    var onPagePathDrop: ((String) -> Bool)?
 
     @State private var imageDropTargeted = false
 
@@ -799,9 +813,15 @@ struct DropZoneView: View {
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
                 let droppedIds = BlockDocument.draggedBlockIds(from: payload)
-                guard !droppedIds.isEmpty else { return false }
-                onDrop(droppedIds)
-                return true
+                if !droppedIds.isEmpty {
+                    onDrop(droppedIds)
+                    return true
+                }
+                // Not block UUIDs — check if it's a page file path from the sidebar
+                if payload.hasSuffix(".md"), FileManager.default.fileExists(atPath: payload) {
+                    return onPagePathDrop?(payload) ?? false
+                }
+                return false
             } isTargeted: { targeted in
                 onTargetChanged(targeted)
             }

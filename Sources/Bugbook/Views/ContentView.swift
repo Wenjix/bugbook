@@ -695,6 +695,35 @@ struct ContentView: View {
         }
     }
 
+    /// Handle a page file path dropped from the sidebar into the editor.
+    /// Inserts a [[Page]] link block at the drop index and moves the file into
+    /// the target page's companion folder so it disappears from the sidebar.
+    private func handleSidebarPageDrop(sourcePath: String, into document: BlockDocument, at insertIndex: Int) {
+        guard let targetFilePath = document.filePath else { return }
+        // Don't drop a page onto itself
+        guard sourcePath != targetFilePath else { return }
+
+        let pageName = ((sourcePath as NSString).lastPathComponent as NSString).deletingPathExtension
+
+        // Insert the pageLink block into the live document
+        document.insertPageLinkBlock(at: insertIndex, name: pageName)
+
+        // Force-save the document to disk immediately so that performMovePage
+        // sees the [[PageName]] link already present and won't add a duplicate.
+        if let tab = appState.activeTab {
+            if appState.activeTabIndex < appState.openTabs.count {
+                appState.openTabs[appState.activeTabIndex].isDirty = true
+            }
+            performSave(tabId: tab.id)
+        }
+
+        // Move the source file into the target page's companion folder
+        let companionDir = targetFilePath.hasSuffix(".md")
+            ? String(targetFilePath.dropLast(3))
+            : targetFilePath
+        performMovePage(from: sourcePath, toDirectory: companionDir)
+    }
+
     /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
     private static func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
         guard filePath.hasSuffix(".md"),
@@ -1012,7 +1041,10 @@ struct ContentView: View {
                                         syncTitle(from: document)
                                         scheduleSave()
                                     },
-                                    onTyping: { triggerFocusMode() }
+                                    onTyping: { triggerFocusMode() },
+                                    onPagePathDrop: { sourcePath, insertIndex in
+                                        handleSidebarPageDrop(sourcePath: sourcePath, into: document, at: insertIndex)
+                                    }
                                 )
                             }
                             .frame(maxWidth: document.fullWidth ? .infinity : 860)
