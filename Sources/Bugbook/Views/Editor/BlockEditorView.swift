@@ -32,6 +32,7 @@ struct BlockEditorView: View {
     @State private var marqueeDragState: MarqueeDragState?
     @State private var blockMoveDragState: BlockMoveDragState?
     @State private var autoScrollTimer: Timer?
+    @FocusState private var isEditorFocused: Bool
 
     var body: some View {
         // Skip the title block (first heading-1) — it's rendered separately above
@@ -59,6 +60,21 @@ struct BlockEditorView: View {
         )
         .simultaneousGesture(marqueeSelectionGesture)
         .editorTextCursor()
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isEditorFocused)
+        .onKeyPress(.delete) {
+            guard !document.selectedBlockIds.isEmpty,
+                  document.focusedBlockId == nil else { return .ignored }
+            document.deleteSelectedBlocks()
+            return .handled
+        }
+        .onKeyPress(.init(Character(UnicodeScalar(127)))) { // backspace
+            guard !document.selectedBlockIds.isEmpty,
+                  document.focusedBlockId == nil else { return .ignored }
+            document.deleteSelectedBlocks()
+            return .handled
+        }
         .dropDestination(for: URL.self) { urls, _ in
             handleImageFileDrop(urls)
         } isTargeted: { _ in }
@@ -305,6 +321,9 @@ struct BlockEditorView: View {
 
         if marqueeDragState?.isActive == true {
             document.endMarqueeBlockSelection()
+            if !document.selectedBlockIds.isEmpty {
+                isEditorFocused = true
+            }
         }
     }
 
