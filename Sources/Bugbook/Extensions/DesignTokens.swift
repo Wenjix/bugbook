@@ -82,7 +82,7 @@ enum StatusColor {
     static let neutral = Color(light: Color(hex: "787774"), dark: Color(hex: "979a9b"))
 
     /// Queued, ready, informational
-    static let info = Color(light: Color(hex: "2383e2"), dark: Color(hex: "528bcc"))
+    static let info = Color(light: Color(hex: "787774"), dark: Color(hex: "979a9b"))
 
     /// Active, in progress, running
     static let active = Color(light: Color(hex: "d9730d"), dark: Color(hex: "e8993f"))
@@ -124,18 +124,6 @@ enum Elevation {
     static let shadowOpacity: Double = 0.12
 }
 
-// MARK: - Brand
-//
-// The ladybug. Warm red-orange for identity moments — logo tints, empty states,
-// onboarding, highlights. Not the primary action color (that stays blue/accent).
-
-enum Brand {
-    /// Ladybug red — the signature color
-    static let primary = Color(light: Color(hex: "e8453c"), dark: Color(hex: "ef6b64"))
-
-    /// Soft ladybug tint for backgrounds
-    static let subtle = Color(light: Color(hex: "fef2f1"), dark: Color(hex: "3a2424"))
-}
 
 // MARK: - Tag/Label Colors
 //
