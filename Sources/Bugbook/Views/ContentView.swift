@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
     @State private var lastTrashPurgeWorkspace: String?
+    @State private var recordingPillController = FloatingRecordingPillController()
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
 
     // Database row peek / modal
@@ -148,6 +149,9 @@ struct ContentView: View {
                     ensureAiInitializedIfNeeded()
                 }
             }
+            .onChange(of: appState.isRecording) { _, recording in
+                recordingPillController.isRecording = recording
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
                 flushDirtyTabs()
             }
@@ -161,6 +165,7 @@ struct ContentView: View {
                 editorUI.cleanUp()
                 sidebarPeek.cleanUp()
                 workspaceWatcher?.stop()
+                recordingPillController.cleanup()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 if let path = notification.object as? String {
