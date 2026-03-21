@@ -108,7 +108,8 @@ enum MarkdownBlockParser {
             pageLinkName: String = "",
             children: [Block] = [],
             columnIndex: Int = 0,
-            isExpanded: Bool = true
+            isExpanded: Bool = true,
+            meetingNotes: String = ""
         ) -> Block {
             let colors = pendingColors ?? (.default, .default)
             let block = Block(
@@ -128,7 +129,8 @@ enum MarkdownBlockParser {
                 backgroundColor: colors.1,
                 children: children,
                 columnIndex: columnIndex,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                meetingNotes: meetingNotes
             )
             pendingBlockID = nil
             pendingColors = nil
@@ -248,6 +250,38 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Meeting block
+            if trimmed == "<!-- meeting -->" {
+                i += 1
+                var transcriptLines: [String] = []
+                var notesLines: [String] = []
+                var inNotes = false
+                while i < lines.count {
+                    let meetLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if meetLine == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    if meetLine == "<!-- meeting-notes -->" {
+                        inNotes = true
+                        i += 1
+                        continue
+                    }
+                    if inNotes {
+                        notesLines.append(lines[i])
+                    } else {
+                        transcriptLines.append(lines[i])
+                    }
+                    i += 1
+                }
+                blocks.append(makeBlock(
+                    type: .meeting,
+                    text: transcriptLines.joined(separator: "\n"),
+                    meetingNotes: notesLines.joined(separator: "\n")
+                ))
+                continue
+            }
+
             // Toggle block
             if trimmed == "<!-- toggle -->" || trimmed == "<!-- toggle collapsed -->" {
                 let collapsed = trimmed.contains("collapsed")
@@ -337,7 +371,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle {
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .meeting {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -401,6 +435,17 @@ enum MarkdownBlockParser {
                     lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
                 }
                 lines.append("<!-- /toggle -->")
+
+            case .meeting:
+                lines.append("<!-- meeting -->")
+                if !block.text.isEmpty {
+                    lines.append(block.text)
+                }
+                if !block.meetingNotes.isEmpty {
+                    lines.append("<!-- meeting-notes -->")
+                    lines.append(block.meetingNotes)
+                }
+                lines.append("<!-- /meeting -->")
 
             case .column:
                 lines.append("<!-- columns -->")
@@ -479,6 +524,9 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
+            || trimmed == "<!-- meeting -->"
+            || trimmed == "<!-- meeting-notes -->"
+            || trimmed == "<!-- /meeting -->"
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {
