@@ -252,18 +252,22 @@ struct ImageBlockView: View {
 
 /// Database embed block — wraps existing DatabaseInlineEmbedView.
 struct DatabaseEmbedBlockView: View {
-    let block: Block
     let dbPath: String
     var onOpenDatabaseTab: ((String) -> Void)?
     var sidebarReferencePayload: SidebarReferenceDragPayload?
+    @State private var isHovered = false
 
     var body: some View {
-        if let sidebarReferencePayload {
-            databaseEmbedView
-                .draggable(sidebarReferencePayload)
-        } else {
-            databaseEmbedView
-        }
+        databaseEmbedView
+            .overlay(alignment: .topTrailing) {
+                if let sidebarReferencePayload {
+                    sidebarDragHandle(payload: sidebarReferencePayload)
+                        .opacity(isHovered ? 1 : 0)
+                }
+            }
+            .onHover { hovering in
+                isHovered = hovering
+            }
     }
 
     private var databaseEmbedView: some View {
@@ -272,5 +276,32 @@ struct DatabaseEmbedBlockView: View {
             onOpenDatabase: { onOpenDatabaseTab?(dbPath) }
         )
         .padding(.vertical, 4)
+    }
+
+    private func sidebarDragHandle(payload: SidebarReferenceDragPayload) -> some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 22, height: 22)
+            .background(.ultraThinMaterial)
+            .clipShape(.rect(cornerRadius: 4))
+            .contentShape(Rectangle())
+            .draggable(payload) {
+                HStack(spacing: 4) {
+                    Image(systemName: "tablecells")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text(dbPath.components(separatedBy: "/").last ?? "Database")
+                        .font(.system(size: EditorTypography.bodyFontSize))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial)
+                .clipShape(.rect(cornerRadius: 6))
+            }
+            .appCursor(.openHand)
+            .padding(6)
+            .help("Drag to sidebar to pin")
     }
 }

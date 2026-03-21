@@ -8,25 +8,39 @@ struct WikiLinkView: View {
 
     var body: some View {
         if let sidebarReferencePayload {
-            linkButton
-                .draggable(sidebarReferencePayload)
+            linkContent
+                .draggable(sidebarReferencePayload) {
+                    dragPreview
+                }
         } else {
-            linkButton
+            linkContent
         }
     }
 
-    @ViewBuilder
-    private var linkButton: some View {
-        Button(action: onNavigate) {
-            HStack(spacing: 4) {
-                iconView
-                Text(pageName)
-                    .font(.system(size: EditorTypography.bodyFontSize))
-                    .foregroundStyle(.primary)
-                    .underline()
-            }
+    private var linkContent: some View {
+        HStack(spacing: 4) {
+            iconView
+            Text(pageName)
+                .font(.system(size: EditorTypography.bodyFontSize))
+                .foregroundStyle(.primary)
+                .underline()
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onNavigate)
+        .appCursor(.pointingHand)
+    }
+
+    private var dragPreview: some View {
+        HStack(spacing: 4) {
+            iconView
+            Text(pageName)
+                .font(.system(size: EditorTypography.bodyFontSize))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial)
+        .clipShape(.rect(cornerRadius: 6))
     }
 
     @ViewBuilder
