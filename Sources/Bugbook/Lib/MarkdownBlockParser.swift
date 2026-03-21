@@ -313,6 +313,22 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Meeting block
+            if trimmed == "<!-- meeting -->" {
+                i += 1
+                var contentLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    contentLines.append(lines[i])
+                    i += 1
+                }
+                blocks.append(makeBlock(type: .meeting, text: contentLines.joined(separator: "\n")))
+                continue
+            }
+
             // Paragraph (including empty lines)
             blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             i += 1
@@ -415,6 +431,13 @@ enum MarkdownBlockParser {
                     }
                 }
                 lines.append("<!-- /columns -->")
+
+            case .meeting:
+                lines.append("<!-- meeting -->")
+                if !block.text.isEmpty {
+                    lines.append(block.text)
+                }
+                lines.append("<!-- /meeting -->")
             }
         }
 
@@ -479,6 +502,8 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
+            || trimmed == "<!-- meeting -->"
+            || trimmed == "<!-- /meeting -->"
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {

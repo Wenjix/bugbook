@@ -91,6 +91,7 @@ private enum ParsedPageBlockType: String {
     case pageLink = "page_link"
     case column
     case toggle
+    case meeting
 }
 
 private struct ParsedPageBlock {
@@ -742,6 +743,13 @@ private enum PageBlockParser {
                     emittedColumn = true
                 }
             }
+
+        case .meeting:
+            lines.append("<!-- meeting -->")
+            if !block.text.isEmpty {
+                lines.append(block.text)
+            }
+            lines.append("<!-- /meeting -->")
         }
 
         return lines
@@ -1821,7 +1829,7 @@ private func parsedPageBlockSupportsTextMutation(_ block: ParsedPageBlock) -> Bo
     switch block.type {
     case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .codeBlock, .blockquote, .toggle:
         return true
-    case .horizontalRule, .image, .databaseEmbed, .pageLink, .column:
+    case .horizontalRule, .image, .databaseEmbed, .pageLink, .column, .meeting:
         return false
     }
 }
