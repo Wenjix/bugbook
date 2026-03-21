@@ -160,6 +160,11 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
+            // Always invalidate the content index so edits to existing files are picked up
+            contentIndex = []
+            contentIndexWorkspace = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
             Task { @MainActor in
                 await warmContentIndexIfNeeded()
             }
