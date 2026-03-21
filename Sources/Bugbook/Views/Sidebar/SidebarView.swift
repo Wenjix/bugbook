@@ -306,27 +306,8 @@ struct SidebarView: View {
             }
             .accessibilityIdentifier("sidebar-file-tree")
 
-            // Bottom bar with settings, trash, and chat
+            // Bottom bar with trash and settings
             VStack(spacing: sectionSpacing) {
-                Button(action: openSettings) {
-                    HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "gearshape")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Text("Settings")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, rowHorizontalPadding)
-                    .padding(.vertical, rowVerticalPadding)
-                    .background(hoveredButton == "settings" ? Color.primary.opacity(0.06) : Color.clear)
-                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in hoveredButton = hovering ? "settings" : nil }
-
                 Button(action: { trashPopoverPresented.wrappedValue.toggle() }) {
                     HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "trash")
@@ -355,28 +336,24 @@ struct SidebarView: View {
                     )
                 }
 
-                Button(action: {
-                    invokeAction {
-                        appState.openNotesChat()
-                    }
-                }) {
+                Button(action: openSettings) {
                     HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "bubble.left.and.text.bubble.right")
+                        Image(systemName: "gearshape")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
-                        Text("Chat with Notes")
+                        Text("Settings")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, rowHorizontalPadding)
                     .padding(.vertical, rowVerticalPadding)
-                    .background(hoveredButton == "chat" ? Color.primary.opacity(0.06) : Color.clear)
+                    .background(hoveredButton == "settings" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in hoveredButton = hovering ? "chat" : nil }
+                .onHover { hovering in hoveredButton = hovering ? "settings" : nil }
             }
             .padding(.horizontal, sectionHorizontalPadding)
             .padding(.vertical, sectionVerticalPadding)
