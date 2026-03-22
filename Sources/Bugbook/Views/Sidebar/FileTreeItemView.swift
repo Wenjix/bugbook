@@ -242,10 +242,7 @@ struct FileTreeItemView: View {
             ctxButton(id: "new-db", icon: "tablecells", label: "New Database") {
                 showContextMenu = false; performCreateDatabase()
             }
-<<<<<<< HEAD
 
-=======
->>>>>>> worktree-agent-a6d795f4
             ctxDivider
 
             ctxButton(id: "rename", icon: "pencil", label: "Rename") {
@@ -418,8 +415,4 @@ struct FileTreeItemView: View {
     private func requestMovePage() {
         NotificationCenter.default.post(name: .movePage, object: entry.path)
     }
-<<<<<<< HEAD
-=======
-
->>>>>>> worktree-agent-a6d795f4
 }
