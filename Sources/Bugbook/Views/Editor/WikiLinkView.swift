@@ -17,7 +17,6 @@ struct WikiLinkView: View {
         }
     }
 
-    @ViewBuilder
     private var linkContent: some View {
         HStack(spacing: 4) {
             iconView

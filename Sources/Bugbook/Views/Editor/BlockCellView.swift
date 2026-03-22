@@ -233,8 +233,6 @@ struct BlockCellView: View {
 
         case .databaseEmbed:
             DatabaseEmbedBlockView(
-                document: document,
-                block: block,
                 dbPath: resolvedDatabasePath ?? block.databasePath,
                 onOpenDatabaseTab: document.onOpenDatabaseTab,
                 sidebarReferencePayload: databaseSidebarReferencePayload

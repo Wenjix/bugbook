@@ -268,39 +268,21 @@ struct ImageBlockView: View {
 
 /// Database embed block — wraps existing DatabaseInlineEmbedView.
 struct DatabaseEmbedBlockView: View {
-    var document: BlockDocument
-    let block: Block
     let dbPath: String
     var onOpenDatabaseTab: ((String) -> Void)?
     var sidebarReferencePayload: SidebarReferenceDragPayload?
-    @State private var isHoveringEmbed = false
-
-    private var displayName: String {
-        let name = (dbPath as NSString).lastPathComponent
-        let ext = ".bugbookdb"
-        if name.hasSuffix(ext) {
-            return String(name.dropLast(ext.count))
-        }
-        return name
-    }
+    @State private var isHovered = false
 
     var body: some View {
-        let content = databaseEmbedView
-            .blockDeletable(document: document, blockId: block.id)
-
-        content
-    }
-
-    private func sidebarDragHandle(payload: SidebarReferenceDragPayload) -> some View {
-        Image(systemName: "arrow.up.left.and.arrow.down.right")
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(.secondary)
-            .frame(width: 20, height: 20)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .padding(6)
-            .draggable(payload) {
-                SidebarDragPreview(systemImage: "tablecells", title: displayName)
+        databaseEmbedView
+            .overlay(alignment: .topTrailing) {
+                if let sidebarReferencePayload {
+                    sidebarDragHandle(payload: sidebarReferencePayload)
+                        .opacity(isHovered ? 1 : 0)
+                }
+            }
+            .onHover { hovering in
+                isHovered = hovering
             }
     }
 
@@ -310,5 +292,32 @@ struct DatabaseEmbedBlockView: View {
             onOpenDatabase: { onOpenDatabaseTab?(dbPath) }
         )
         .padding(.vertical, 4)
+    }
+
+    private func sidebarDragHandle(payload: SidebarReferenceDragPayload) -> some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 22, height: 22)
+            .background(.ultraThinMaterial)
+            .clipShape(.rect(cornerRadius: 4))
+            .contentShape(Rectangle())
+            .draggable(payload) {
+                HStack(spacing: 4) {
+                    Image(systemName: "tablecells")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text(dbPath.components(separatedBy: "/").last ?? "Database")
+                        .font(.system(size: EditorTypography.bodyFontSize))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial)
+                .clipShape(.rect(cornerRadius: 6))
+            }
+            .appCursor(.openHand)
+            .padding(6)
+            .help("Drag to sidebar to pin")
     }
 }
