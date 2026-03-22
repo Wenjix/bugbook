@@ -242,10 +242,6 @@ struct FileTreeItemView: View {
             ctxButton(id: "new-db", icon: "tablecells", label: "New Database") {
                 showContextMenu = false; performCreateDatabase()
             }
-            ctxButton(id: "new-canvas", icon: "rectangle.on.rectangle.angled", label: "New Canvas") {
-                showContextMenu = false; performCreateCanvas()
-            }
-
             ctxDivider
 
             ctxButton(id: "rename", icon: "pencil", label: "Rename") {
@@ -419,16 +415,4 @@ struct FileTreeItemView: View {
         NotificationCenter.default.post(name: .movePage, object: entry.path)
     }
 
-    private func performCreateCanvas() {
-        let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
-        if let path = try? fileSystem.createCanvas(in: dir, name: "Untitled Canvas") {
-            onRefreshTree()
-            let displayName = "Untitled Canvas"
-            let canvas = FileEntry(
-                id: path, name: displayName,
-                path: path, isDirectory: false, kind: .canvas
-            )
-            onSelectFile(canvas)
-        }
-    }
 }

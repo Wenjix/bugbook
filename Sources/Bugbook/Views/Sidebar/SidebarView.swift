@@ -457,23 +457,12 @@ struct SidebarView: View {
         }
     }
 
-    private func createCanvas() {
-        invokeAction {
-            NotificationCenter.default.post(name: .newCanvas, object: nil)
-        }
-    }
-
     private var newPageMenuButton: some View {
         Menu {
             Button {
                 createFile()
             } label: {
                 Label("New Page", systemImage: "doc")
-            }
-            Button {
-                createCanvas()
-            } label: {
-                Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
             }
         } label: {
             Image(systemName: "square.and.pencil")
