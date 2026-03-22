@@ -81,6 +81,61 @@ public class RowStore {
         return bestByID.values.map(\.row).sorted { $0.createdAt < $1.createdAt }
     }
 
+    /// Result of a detailed row load that includes raw property strings for legacy repair.
+    public struct DetailedLoadResult {
+        public let row: DatabaseRow
+        public let filename: String
+        public let rawProperties: [String: String]
+    }
+
+    /// Load all rows with detailed parse results (raw properties for legacy repair).
+    /// Handles duplicate detection and cleanup just like loadAllRows.
+    public func loadAllRowsDetailed(in dbPath: String, schema: DatabaseSchema) -> [DetailedLoadResult] {
+        guard let contents = try? fm.contentsOfDirectory(atPath: dbPath) else { return [] }
+
+        var bestByID: [String: DetailedLoadResult] = [:]
+        var duplicateFiles: [String] = []
+
+        for name in contents {
+            guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
+            let filePath = (dbPath as NSString).appendingPathComponent(name)
+            guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
+            guard let parsed = RowSerializer.parseDetailed(content: content, schema: schema, skipBody: true) else { continue }
+
+            let detail = DetailedLoadResult(row: parsed.row, filename: name, rawProperties: parsed.rawProperties)
+            let rowId = parsed.row.id
+
+            if let existing = bestByID[rowId] {
+                let suffix = Self.extractIdSuffix(from: rowId)
+                let existingIsCanonical = existing.filename.contains("(\(suffix))")
+                let newIsCanonical = name.contains("(\(suffix))")
+
+                if newIsCanonical && !existingIsCanonical {
+                    duplicateFiles.append(existing.filename)
+                    bestByID[rowId] = detail
+                } else if !newIsCanonical && existingIsCanonical {
+                    duplicateFiles.append(name)
+                } else {
+                    if parsed.row.updatedAt > existing.row.updatedAt {
+                        duplicateFiles.append(existing.filename)
+                        bestByID[rowId] = detail
+                    } else {
+                        duplicateFiles.append(name)
+                    }
+                }
+            } else {
+                bestByID[rowId] = detail
+            }
+        }
+
+        for filename in duplicateFiles {
+            let filePath = (dbPath as NSString).appendingPathComponent(filename)
+            try? fm.removeItem(atPath: filePath)
+        }
+
+        return bestByID.values.sorted { $0.row.createdAt < $1.row.createdAt }
+    }
+
     /// Load just the body content for a row by ID.
     public func loadRowBody(rowId: String, dbPath: String) -> String {
         let suffix = Self.extractIdSuffix(from: rowId)

@@ -170,6 +170,7 @@ final class DatabaseViewState {
         Task { [weak self] in
             for row in rowsToPersist {
                 try? service.saveRow(row, schema: currentSchema, at: path)
+                try? service.incrementalIndexUpdate(row: row, schema: currentSchema, at: path)
             }
             self?.postChangeNotification()
         }
@@ -184,6 +185,7 @@ final class DatabaseViewState {
         guard !rowsToPersist.isEmpty else { return }
         for row in rowsToPersist {
             try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
+            try? dbService.incrementalIndexUpdate(row: row, schema: currentSchema, at: dbPath)
         }
         postChangeNotification()
     }
@@ -195,7 +197,7 @@ final class DatabaseViewState {
         rows.removeAll { $0.id == row.id }
         // Synchronous to prevent race with loadData reintroducing deleted rows
         try? dbService.deleteRow(row.id, in: dbPath)
-        try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+        try? dbService.incrementalIndexDelete(rowId: row.id, schema: schema, at: dbPath)
         // Notify all views so stale saves for this row are cancelled
         NotificationCenter.default.post(
             name: .databaseRowDeleted,

@@ -16,6 +16,10 @@ class FileSystemService {
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
 
+    /// Cache for display names parsed from JSON metadata files (_schema.json, _canvas.json).
+    /// Keyed by file path; stores the parsed name and the file's modification date at parse time.
+    private var displayNameCache: [String: (name: String, mtime: Date)] = [:]
+
     init() {
         loadRecentWorkspaces()
     }
@@ -77,14 +81,9 @@ class FileSystemService {
 
             if isDir.boolValue {
                 if isDatabaseFolder(at: fullPath) {
-                    // Database folder - read display name from _schema.json
-                    var dbName = name
+                    // Database folder - read display name from _schema.json (cached)
                     let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String {
-                        dbName = schemaName
-                    }
+                    let dbName = cachedDisplayName(for: schemaPath, key: "name") ?? name
                     // Treat database as a non-expandable item (like TS version)
                     folders.append(FileEntry(
                         id: fullPath,
@@ -94,14 +93,9 @@ class FileSystemService {
                         kind: .database
                     ))
                 } else if isCanvasFolder(at: fullPath) {
-                    // Canvas folder - read display name from _canvas.json
-                    var canvasName = name
+                    // Canvas folder - read display name from _canvas.json (cached)
                     let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let n = json["name"] as? String {
-                        canvasName = n
-                    }
+                    let canvasName = cachedDisplayName(for: metaPath, key: "name") ?? name
                     folders.append(FileEntry(
                         id: fullPath,
                         name: canvasName,
@@ -815,6 +809,28 @@ class FileSystemService {
 
     private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {
         siblings.contains("\(folderName).md")
+    }
+
+    /// Return a cached display name for a JSON metadata file, re-parsing only when the file's
+    /// modification date has changed.
+    private func cachedDisplayName(for filePath: String, key: String) -> String? {
+        let attrs = try? fileManager.attributesOfItem(atPath: filePath)
+        let mtime = attrs?[.modificationDate] as? Date
+
+        if let mtime, let cached = displayNameCache[filePath], cached.mtime == mtime {
+            return cached.name
+        }
+
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = json[key] as? String else {
+            return nil
+        }
+
+        if let mtime {
+            displayNameCache[filePath] = (name, mtime)
+        }
+        return name
     }
 
     func isDatabaseFolder(at path: String) -> Bool {

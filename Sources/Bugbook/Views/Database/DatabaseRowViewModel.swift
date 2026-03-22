@@ -123,6 +123,7 @@ final class DatabaseRowViewModel {
             guard !Task.isCancelled, !deletedRowIds.contains(row.id) else { return }
             do {
                 try dbService.saveRow(row, schema: schema, at: dbPath)
+                try? dbService.incrementalIndexUpdate(row: row, schema: schema, at: dbPath)
                 draftStore.clearRowBodyDraft(dbPath: dbPath, rowId: row.id)
                 NotificationCenter.default.post(
                     name: .databaseDidChange,
@@ -145,6 +146,7 @@ final class DatabaseRowViewModel {
            !deletedRowIds.contains(currentRow.id) {
             do {
                 try dbService.saveRow(currentRow, schema: currentSchema, at: dbPath)
+                try? dbService.incrementalIndexUpdate(row: currentRow, schema: currentSchema, at: dbPath)
                 draftStore.clearRowBodyDraft(dbPath: dbPath, rowId: currentRow.id)
             } catch {
                 return
@@ -296,10 +298,9 @@ final class DatabaseRowViewModel {
         deletedRowIds.insert(rowId)
         draftStore.clearRowBodyDraft(dbPath: dbPath, rowId: rowId)
         try? dbService.deleteRow(rowId, in: dbPath)
-        // Rebuild the index so the deleted row is no longer referenced
+        // Remove the deleted row from the index incrementally
         if let schema = schema {
-            let (_, remainingRows) = (try? dbService.loadDatabase(at: dbPath)) ?? (schema, [])
-            try? dbService.updateIndex(rows: remainingRows, schema: schema, at: dbPath)
+            try? dbService.incrementalIndexDelete(rowId: rowId, schema: schema, at: dbPath)
         }
         // Notify all views so stale saves for this row are cancelled
         NotificationCenter.default.post(

@@ -51,13 +51,29 @@ final class QmdService {
 
     // MARK: - Public
 
+    nonisolated private static let cachedPathKey = "QmdService.cachedBinaryPath"
+
     func detect() async {
         status = .unknown
+
+        // Try cached path first (fast filesystem check)
+        if let cached = UserDefaults.standard.string(forKey: Self.cachedPathKey),
+           !cached.isEmpty,
+           FileManager.default.fileExists(atPath: cached) {
+            let raw = try? await runShell("\"\(cached)\" --version")
+            let version = raw?.components(separatedBy: "\n").first ?? "unknown"
+            status = .installed(version: version, path: cached)
+            return
+        }
+
+        // Fall back to shell lookup
         if let path = try? await runShell("which qmd"), !path.isEmpty {
+            UserDefaults.standard.set(path, forKey: Self.cachedPathKey)
             let raw = try? await runShell("\"\(path)\" --version")
             let version = raw?.components(separatedBy: "\n").first ?? "unknown"
             status = .installed(version: version, path: path)
         } else {
+            UserDefaults.standard.removeObject(forKey: Self.cachedPathKey)
             status = .notInstalled
         }
     }
@@ -134,6 +150,13 @@ final class QmdService {
     // MARK: - Path resolution (nonisolated so Task.detached can call them)
 
     nonisolated static func findBinaryPath() -> String? {
+        // Try cached path first (fast filesystem check)
+        if let cached = UserDefaults.standard.string(forKey: cachedPathKey),
+           !cached.isEmpty,
+           FileManager.default.fileExists(atPath: cached) {
+            return cached
+        }
+
         // Login shell PATH lookup — respects nvm, bun, npm global configs
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/zsh")
@@ -146,7 +169,10 @@ final class QmdService {
             if task.terminationStatus == 0 {
                 let p = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if !p.isEmpty { return p }
+                if !p.isEmpty {
+                    UserDefaults.standard.set(p, forKey: cachedPathKey)
+                    return p
+                }
             }
         }
         // Fallback: check common install dirs without a login shell
@@ -158,6 +184,7 @@ final class QmdService {
             "/usr/local/bin/qmd",
             "/opt/homebrew/bin/qmd",
         ] where FileManager.default.fileExists(atPath: p) {
+            UserDefaults.standard.set(p, forKey: cachedPathKey)
             return p
         }
         return nil

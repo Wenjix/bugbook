@@ -2,6 +2,11 @@ import Foundation
 
 public class IndexManager {
     private let fm = FileManager.default
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
 
     public init() {}
 
@@ -47,33 +52,7 @@ public class IndexManager {
     public func rebuild(dbPath: String, schema: DatabaseSchema, rows: [DatabaseRow]) -> [String: Any] {
         var rowsMap: [String: Any] = [:]
         for row in rows {
-            let title = row.title(schema: schema)
-            let suffix = RowStore.extractIdSuffix(from: row.id)
-
-            var props: [String: Any] = [:]
-            for prop in schema.properties {
-                if let val = row.properties[prop.id] {
-                    props[prop.id] = RowSerializer.serializeValueForIndex(val)
-                }
-            }
-
-            let filename = RowStore.rowFilename(title: title, suffix: suffix).replacingOccurrences(of: ".md", with: "")
-            let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
-            let mtime: Int
-            if let attrs = try? fm.attributesOfItem(atPath: filePath),
-               let modDate = attrs[.modificationDate] as? Date {
-                mtime = Int(modDate.timeIntervalSince1970 * 1000)
-            } else {
-                mtime = Int(row.updatedAt.timeIntervalSince1970 * 1000)
-            }
-
-            rowsMap[row.id] = [
-                "properties": props,
-                "created_at": iso8601String(from: row.createdAt),
-                "updated_at": iso8601String(from: row.updatedAt),
-                "filename": filename,
-                "mtime": mtime
-            ] as [String: Any]
+            rowsMap[row.id] = buildRowEntry(row: row, schema: schema, dbPath: dbPath)
         }
 
         // Build reverse indexes
@@ -107,14 +86,43 @@ public class IndexManager {
             }
         }
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-
         return [
             "version": 1,
-            "updated_at": formatter.string(from: Date()),
+            "updated_at": Self.isoFormatter.string(from: Date()),
             "rows": rowsMap,
             "indexes": indexes
+        ]
+    }
+
+    // MARK: - Single Row Entry
+
+    /// Build the index entry dictionary for a single row (used by incremental updates).
+    public func buildRowEntry(row: DatabaseRow, schema: DatabaseSchema, dbPath: String) -> [String: Any] {
+        var props: [String: Any] = [:]
+        for prop in schema.properties {
+            if let val = row.properties[prop.id] {
+                props[prop.id] = RowSerializer.serializeValueForIndex(val)
+            }
+        }
+
+        let title = row.title(schema: schema)
+        let suffix = RowStore.extractIdSuffix(from: row.id)
+        let filename = RowStore.rowFilename(title: title, suffix: suffix).replacingOccurrences(of: ".md", with: "")
+        let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
+        let mtime: Int
+        if let attrs = try? fm.attributesOfItem(atPath: filePath),
+           let modDate = attrs[.modificationDate] as? Date {
+            mtime = Int(modDate.timeIntervalSince1970 * 1000)
+        } else {
+            mtime = Int(row.updatedAt.timeIntervalSince1970 * 1000)
+        }
+
+        return [
+            "properties": props,
+            "created_at": iso8601String(from: row.createdAt),
+            "updated_at": iso8601String(from: row.updatedAt),
+            "filename": filename,
+            "mtime": mtime
         ]
     }
 
@@ -129,8 +137,6 @@ public class IndexManager {
     // MARK: - Private
 
     private func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        Self.isoFormatter.string(from: date)
     }
 }
