@@ -735,6 +735,18 @@ class BlockDocument {
         updateBlockProperty(id: blockId) { $0.imageWidth = Int(width) }
     }
 
+    func updateBlockText(blockId: UUID, text: String) {
+        updateBlockProperty(id: blockId) { $0.text = text }
+    }
+
+    func updateMeetingNotes(blockId: UUID, notes: String) {
+        updateBlockProperty(id: blockId) { $0.meetingNotes = notes }
+    }
+
+    func updateMeetingSummary(blockId: UUID, summary: String) {
+        updateBlockProperty(id: blockId) { $0.language = summary }
+    }
+
     func dismissBlockMenu() {
         blockMenuBlockId = nil
     }

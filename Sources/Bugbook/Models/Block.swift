@@ -16,6 +16,7 @@ enum BlockType: Equatable {
     case toggle
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     case headingToggle
     case canvas
     case meeting
@@ -32,6 +33,9 @@ enum MeetingBlockState: Equatable {
 =======
     case meeting
 >>>>>>> worktree-agent-a04c7e97
+=======
+    case meeting
+>>>>>>> worktree-agent-a6f82bb5
 }
 
 struct Block: Identifiable, Equatable {
@@ -52,6 +56,7 @@ struct Block: Identifiable, Equatable {
     var children: [Block]
     var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
     var isExpanded: Bool
+<<<<<<< HEAD
     var meetingNotes: String  // user-typed notes during a meeting block
 <<<<<<< HEAD
 
@@ -64,6 +69,9 @@ struct Block: Identifiable, Equatable {
     var meetingNotes: String
 =======
 >>>>>>> worktree-agent-a04c7e97
+=======
+    var meetingNotes: String  // user-typed notes during meeting recording
+>>>>>>> worktree-agent-a6f82bb5
 
     init(
         id: UUID = UUID(),
@@ -85,6 +93,7 @@ struct Block: Identifiable, Equatable {
         isExpanded: Bool = true,
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         meetingState: MeetingBlockState = .complete,
         meetingTranscript: String = "",
         meetingSummary: String = "",
@@ -94,6 +103,8 @@ struct Block: Identifiable, Equatable {
 >>>>>>> worktree-agent-af1aa33e
 =======
 >>>>>>> worktree-agent-a04c7e97
+=======
+>>>>>>> worktree-agent-a6f82bb5
         meetingNotes: String = ""
     ) {
         self.id = id
@@ -115,6 +126,7 @@ struct Block: Identifiable, Equatable {
         self.isExpanded = isExpanded
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         self.meetingState = meetingState
         self.meetingTranscript = meetingTranscript
         self.meetingSummary = meetingSummary
@@ -124,6 +136,8 @@ struct Block: Identifiable, Equatable {
 >>>>>>> worktree-agent-af1aa33e
 =======
 >>>>>>> worktree-agent-a04c7e97
+=======
+>>>>>>> worktree-agent-a6f82bb5
         self.meetingNotes = meetingNotes
     }
 }

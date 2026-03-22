@@ -386,6 +386,7 @@ enum MarkdownBlockParser {
             // Meeting block
             if trimmed == "<!-- meeting -->" {
                 i += 1
+<<<<<<< HEAD
                 var title = ""
                 var transcript = ""
                 var summary = ""
@@ -432,6 +433,18 @@ enum MarkdownBlockParser {
                 meetingBlock.meetingNotes = notes
                 meetingBlock.meetingState = .complete
                 blocks.append(meetingBlock)
+=======
+                var contentLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    contentLines.append(lines[i])
+                    i += 1
+                }
+                blocks.append(makeBlock(type: .meeting, text: contentLines.joined(separator: "\n")))
+>>>>>>> worktree-agent-a6f82bb5
                 continue
             }
 
@@ -573,6 +586,7 @@ enum MarkdownBlockParser {
                 lines.append("<!-- /columns -->")
 
             case .meeting:
+<<<<<<< HEAD
                 // Only serialize completed meetings; recording/processing blocks are transient
                 guard block.meetingState == .complete else { break }
                 lines.append("<!-- meeting -->")
@@ -594,6 +608,11 @@ enum MarkdownBlockParser {
                 if !block.meetingTranscript.isEmpty {
                     lines.append("<!-- meeting-transcript -->")
                     lines.append(block.meetingTranscript)
+=======
+                lines.append("<!-- meeting -->")
+                if !block.text.isEmpty {
+                    lines.append(block.text)
+>>>>>>> worktree-agent-a6f82bb5
                 }
                 lines.append("<!-- /meeting -->")
             }
@@ -662,6 +681,7 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
 <<<<<<< HEAD
+<<<<<<< HEAD
             || trimmed == "<!-- canvas -->"
             || trimmed == "<!-- /canvas -->"
             || trimmed == "<!-- meeting -->"
@@ -679,6 +699,10 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- meeting-notes -->"
             || trimmed == "<!-- /meeting -->"
 >>>>>>> worktree-agent-a04c7e97
+=======
+            || trimmed == "<!-- meeting -->"
+            || trimmed == "<!-- /meeting -->"
+>>>>>>> worktree-agent-a6f82bb5
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {

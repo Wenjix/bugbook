@@ -1,14 +1,21 @@
 import Foundation
+<<<<<<< HEAD
 import AVFoundation
 import Speech
 
 <<<<<<< HEAD
 <<<<<<< HEAD
 /// Captures microphone audio and streams live transcription using on-device SFSpeechRecognizer.
+=======
+import Speech
+import AVFoundation
+
+>>>>>>> worktree-agent-a6f82bb5
 @MainActor
 @Observable
 class TranscriptionService {
     var isRecording = false
+<<<<<<< HEAD
     var currentTranscript = ""
 =======
 =======
@@ -98,20 +105,42 @@ class TranscriptionService {
         }
 
         let speechGranted = await withCheckedContinuation { continuation in
+=======
+    var transcript = ""
+    var error: String?
+
+    @ObservationIgnored private var recognizer: SFSpeechRecognizer?
+    @ObservationIgnored private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    @ObservationIgnored private var recognitionTask: SFSpeechRecognitionTask?
+    @ObservationIgnored private var audioEngine = AVAudioEngine()
+
+    init() {
+        recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    }
+
+    // MARK: - Authorization
+
+    func requestAuthorization() async -> Bool {
+        await withCheckedContinuation { continuation in
+>>>>>>> worktree-agent-a6f82bb5
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)
             }
         }
+<<<<<<< HEAD
         guard speechGranted else {
             error = "Speech recognition access denied. Enable in System Settings > Privacy > Speech Recognition."
             return false
         }
 
         return true
+=======
+>>>>>>> worktree-agent-a6f82bb5
     }
 
     // MARK: - Recording
 
+<<<<<<< HEAD
     func startRecording() async {
         guard !isRecording else { return }
 
@@ -251,5 +280,66 @@ class TranscriptionService {
 >>>>>>> worktree-agent-af1aa33e
 =======
 >>>>>>> worktree-agent-a04c7e97
+=======
+    func startRecording() {
+        guard let recognizer, recognizer.isAvailable else {
+            error = "Speech recognition not available"
+            return
+        }
+
+        // Reset state
+        transcript = ""
+        error = nil
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
+
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            request.append(buffer)
+        }
+
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, err in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let result {
+                    self.transcript = result.bestTranscription.formattedString
+                }
+                if let err, self.isRecording {
+                    self.error = err.localizedDescription
+                }
+            }
+        }
+
+        do {
+            audioEngine.prepare()
+            try audioEngine.start()
+            isRecording = true
+        } catch {
+            self.error = "Could not start audio engine: \(error.localizedDescription)"
+            cleanup()
+        }
+    }
+
+    func stopRecording() -> String {
+        let finalTranscript = transcript
+        cleanup()
+        return finalTranscript
+    }
+
+    private func cleanup() {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        recognitionRequest = nil
+        recognitionTask = nil
+        isRecording = false
+>>>>>>> worktree-agent-a6f82bb5
     }
 }
