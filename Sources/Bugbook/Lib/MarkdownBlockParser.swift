@@ -611,7 +611,13 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
             || trimmed == "<!-- canvas -->"
-            || trimmed == "<!-- /canvas -->" {
+            || trimmed == "<!-- /canvas -->"
+            || trimmed == "<!-- meeting -->"
+            || trimmed == "<!-- /meeting -->"
+            || trimmed == "<!-- meeting-notes -->"
+            || trimmed == "<!-- meeting-transcript -->"
+            || trimmed == "<!-- meeting-summary -->"
+            || trimmed == "<!-- meeting-actions -->" {
             return true
         }
         if parseHeadingToggleComment(trimmed) != nil { return true }
