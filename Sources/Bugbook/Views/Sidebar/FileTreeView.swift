@@ -55,14 +55,14 @@ struct FileTreeView: View {
                 .overlay(alignment: .top) {
                     if case .above(index) = dropState.mode {
                         Rectangle()
-                            .fill(Color.accentColor)
+                            .fill(Color.dragIndicator)
                             .frame(height: 2)
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
-                        .fill(dropState.mode == .onto(index) ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .fill(dropState.mode == .onto(index) ? Color.dragIndicator.opacity(0.15) : Color.clear)
                         .allowsHitTesting(false)
                 )
                 .onDrag {
@@ -87,7 +87,7 @@ struct FileTreeView: View {
                 .overlay(alignment: .top) {
                     if dropState.mode == .above(cachedEntries.count) {
                         Rectangle()
-                            .fill(Color.accentColor)
+                            .fill(Color.dragIndicator)
                             .frame(height: 2)
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }

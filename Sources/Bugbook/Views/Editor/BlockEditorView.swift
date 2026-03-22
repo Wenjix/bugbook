@@ -853,7 +853,7 @@ struct DropZoneView: View {
             .frame(maxWidth: .infinity)
             .overlay {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(height: 2)
                     .opacity(isActive || imageDropTargeted ? 1 : 0)
             }
@@ -902,7 +902,7 @@ struct ColumnDropZoneView: View {
             .frame(maxHeight: .infinity)
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(width: 2)
                     .opacity(isActive ? 1 : 0)
             }

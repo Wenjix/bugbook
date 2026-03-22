@@ -299,7 +299,7 @@ struct SidebarView: View {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                    .stroke(isSidebarReferenceDropTargeted ? Color.accentColor.opacity(0.8) : Color.clear, lineWidth: 1.5)
+                    .stroke(isSidebarReferenceDropTargeted ? Color.dragIndicator.opacity(0.8) : Color.clear, lineWidth: 1.5)
                     .padding(.horizontal, sectionHorizontalPadding)
                     .padding(.vertical, treeVerticalPadding)
                     .allowsHitTesting(false)
