@@ -546,7 +546,7 @@ struct KanbanView: View {
 
     private var kanbanInsertionIndicator: some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(0.9))
+            .fill(Color.dragIndicator)
             .frame(height: 2)
             .padding(.horizontal, DatabaseZoomMetrics.size(6))
     }

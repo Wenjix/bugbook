@@ -63,6 +63,9 @@ extension Color {
     static let fallbackSurfaceHover  = Color(light: Color(hex: "0000000A"), dark: Color(hex: "ffffff0A"))
     static let fallbackSurfaceSubtle = Color(light: Color(hex: "00000008"), dark: Color(hex: "ffffff08"))
     static let fallbackBadgeBg       = Color(light: Color(hex: "0000001A"), dark: Color(hex: "ffffff1A"))
+
+    // Drag & drop indicator — #B4D7FF blue
+    static let dragIndicator = Color(light: Color(hex: "B4D7FF"), dark: Color(hex: "B4D7FF").opacity(0.7))
 }
 
 // MARK: - Helpers

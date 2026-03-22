@@ -235,7 +235,7 @@ struct TableView: View {
             .frame(width: hitWidth)
             .overlay {
                 Rectangle()
-                    .fill(isActive ? Color.accentColor : Color.clear)
+                    .fill(isActive ? Color.dragIndicator : Color.clear)
                     .frame(width: isActive ? 2 : 1)
                     .padding(.vertical, -8)
             }
@@ -659,7 +659,7 @@ struct TableView: View {
 
     private var insertionIndicator: some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(0.9))
+            .fill(Color.dragIndicator)
             .frame(height: 2)
     }
 
