@@ -21,7 +21,8 @@ struct BlockEditorView: View {
     var document: BlockDocument
     var onTextChange: (() -> Void)?
     var onTyping: (() -> Void)?
-    var onPageDrop: ((String, Int) -> Void)?
+    /// Called when a page file path is dropped from the sidebar. Parameters: (filePath, insertIndex).
+    var onPagePathDrop: ((String, Int) -> Void)?
     var contentColumnMaxWidth: CGFloat? = nil
     var horizontalPadding: CGFloat = 48
     @State private var activeDropIndex: Int?
@@ -84,7 +85,7 @@ struct BlockEditorView: View {
             guard let payload = items.first else { return false }
             // Only handle file paths from sidebar drag (not block UUIDs)
             guard payload.hasPrefix("/") && payload.hasSuffix(".md") else { return false }
-            handlePageDrop(payload, at: insertionIndexAtFocus)
+            handlePagePathDrop(payload, at: insertionIndexAtFocus)
             return true
         } isTargeted: { _ in }
         .onDisappear { stopAutoScroll() }
@@ -107,8 +108,8 @@ struct BlockEditorView: View {
                 activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
             } onImageDrop: { urls in
                 handleImageDrop(urls, at: startIndex)
-            } onPageDrop: { path in
-                handlePageDrop(path, at: startIndex)
+            } onPagePathDrop: { path in
+                handlePagePathDrop(path, at: startIndex)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -159,8 +160,8 @@ struct BlockEditorView: View {
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 } onImageDrop: { urls in
                     handleImageDrop(urls, at: index + 1)
-                } onPageDrop: { path in
-                    handlePageDrop(path, at: index + 1)
+                } onPagePathDrop: { path in
+                    handlePagePathDrop(path, at: index + 1)
                 }
                 .overlay {
                     Button {
@@ -252,14 +253,6 @@ struct BlockEditorView: View {
         localColumnDropTarget = nil
     }
 
-    @discardableResult
-    private func handlePageDrop(_ path: String, at index: Int) -> Bool {
-        guard let handler = onPageDrop else { return false }
-        handler(path, index)
-        activeDropIndex = nil
-        return true
-    }
-
     private func handleImageDrop(_ urls: [URL], at index: Int) -> Bool {
         let imageURLs = urls.filter { supportedImageExtensions.contains($0.pathExtension.lowercased()) }
         guard !imageURLs.isEmpty else { return false }
@@ -268,6 +261,14 @@ struct BlockEditorView: View {
                 document.insertImageBlock(at: index + offset, imagePath: path)
             }
         }
+        return true
+    }
+
+    @discardableResult
+    private func handlePagePathDrop(_ path: String, at index: Int) -> Bool {
+        guard onPagePathDrop != nil else { return false }
+        onPagePathDrop?(path, index)
+        activeDropIndex = nil
         return true
     }
 
@@ -841,7 +842,7 @@ struct DropZoneView: View {
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
-    var onPageDrop: ((String) -> Bool)?
+    var onPagePathDrop: ((String) -> Bool)?
 
     @State private var imageDropTargeted = false
 
@@ -864,10 +865,9 @@ struct DropZoneView: View {
                     onDrop(droppedIds)
                     return true
                 }
-                // If not a block UUID, check if it's a file path (sidebar page drag)
-                if payload.hasPrefix("/"), payload.hasSuffix(".md"),
-                   let handler = onPageDrop {
-                    return handler(payload)
+                // Not block UUIDs — check if it's a page file path from the sidebar
+                if payload.hasSuffix(".md"), FileManager.default.fileExists(atPath: payload) {
+                    return onPagePathDrop?(payload) ?? false
                 }
                 return false
             } isTargeted: { targeted in
