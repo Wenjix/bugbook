@@ -93,7 +93,7 @@ struct BlockEditorView: View {
                 // After an image block use a slimmer drop zone since ImageBlockView
                 // already provides a generous 44pt tap region internally.
                 let dropZoneAfterImage = block.type == .image
-                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 6)
+                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 12)
 
                 BlockCellView(
                     document: document,
@@ -777,7 +777,7 @@ final class EditorFrameReporterView: NSView {
 /// Accepts both block UUID drops (reorder) and image URL drops (insert image).
 struct DropZoneView: View {
     let isActive: Bool
-    var height: CGFloat = 4
+    var height: CGFloat = 12
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
