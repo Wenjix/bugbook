@@ -21,6 +21,7 @@ struct BlockEditorView: View {
     var document: BlockDocument
     var onTextChange: (() -> Void)?
     var onTyping: (() -> Void)?
+    var onPagePathDrop: ((String, Int) -> Void)?
     var contentColumnMaxWidth: CGFloat? = nil
     var horizontalPadding: CGFloat = 48
     @State private var activeDropIndex: Int?
@@ -82,6 +83,8 @@ struct BlockEditorView: View {
                 activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
             } onImageDrop: { urls in
                 handleImageDrop(urls, at: startIndex)
+            } onPagePathDrop: { path in
+                onPagePathDrop?(path, startIndex)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -131,6 +134,8 @@ struct BlockEditorView: View {
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 } onImageDrop: { urls in
                     handleImageDrop(urls, at: index + 1)
+                } onPagePathDrop: { path in
+                    onPagePathDrop?(path, index + 1)
                 }
                 .overlay {
                     Button {
@@ -781,6 +786,7 @@ struct DropZoneView: View {
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
+    var onPagePathDrop: ((String) -> Void)?
 
     @State private var imageDropTargeted = false
 
@@ -798,6 +804,11 @@ struct DropZoneView: View {
             .contentShape(Rectangle())
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
+                // Check if this is a page path from sidebar drag (not block UUIDs)
+                if payload.hasSuffix(".md"), payload.contains("/") {
+                    onPagePathDrop?(payload)
+                    return onPagePathDrop != nil
+                }
                 let droppedIds = BlockDocument.draggedBlockIds(from: payload)
                 guard !droppedIds.isEmpty else { return false }
                 onDrop(droppedIds)

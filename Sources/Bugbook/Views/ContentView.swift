@@ -695,6 +695,38 @@ struct ContentView: View {
         }
     }
 
+    /// Handle a page path dropped from the sidebar into the editor.
+    /// Inserts a page link block and moves the source file into the current page's companion folder.
+    private func handlePagePathDrop(sourcePath: String, into document: BlockDocument, at insertIndex: Int) {
+        guard let tab = appState.activeTab,
+              sourcePath != tab.path,
+              FileManager.default.fileExists(atPath: sourcePath) else { return }
+
+        let pageName = ((sourcePath as NSString).lastPathComponent as NSString).deletingPathExtension
+
+        // Derive the companion folder for the current page (target)
+        let targetCompanionDir: String
+        if tab.path.hasSuffix(".md") {
+            targetCompanionDir = String(tab.path.dropLast(3))
+        } else {
+            targetCompanionDir = tab.path
+        }
+
+        // Don't allow dropping a page into its own editor
+        guard !tab.path.hasPrefix(sourcePath.hasSuffix(".md") ? String(sourcePath.dropLast(3)) + "/" : sourcePath + "/") else { return }
+
+        // Move the source file into the companion folder
+        performMovePage(from: sourcePath, toDirectory: targetCompanionDir)
+
+        // Insert a pageLink block if one doesn't already exist (performMovePage may have added one via content rewrite)
+        let alreadyLinked = document.blocks.contains { $0.type == .pageLink && $0.pageLinkName == pageName }
+        if !alreadyLinked {
+            document.insertPageLinkBlock(at: insertIndex, name: pageName)
+        }
+
+        scheduleSave()
+    }
+
     /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
     private static func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
         guard filePath.hasSuffix(".md"),
@@ -1012,7 +1044,10 @@ struct ContentView: View {
                                         syncTitle(from: document)
                                         scheduleSave()
                                     },
-                                    onTyping: { triggerFocusMode() }
+                                    onTyping: { triggerFocusMode() },
+                                    onPagePathDrop: { sourcePath, insertIndex in
+                                        handlePagePathDrop(sourcePath: sourcePath, into: document, at: insertIndex)
+                                    }
                                 )
                             }
                             .frame(maxWidth: document.fullWidth ? .infinity : 860)

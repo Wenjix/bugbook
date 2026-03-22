@@ -1079,6 +1079,15 @@ class BlockDocument {
         focusedBlockId = imageBlock.id
     }
 
+    /// Inserts a new pageLink block at the given index.
+    func insertPageLinkBlock(at index: Int, name: String) {
+        saveUndo()
+        let block = Block(type: .pageLink, pageLinkName: name)
+        let clampedIndex = min(index, blocks.count)
+        blocks.insert(block, at: clampedIndex)
+        focusedBlockId = block.id
+    }
+
     /// Saves raw image data to the workspace `_assets/` directory and returns the absolute path.
     func saveImageDataToAssets(_ data: Data, fileExtension: String = "png") -> String? {
         guard let workspace = workspacePath else { return nil }
