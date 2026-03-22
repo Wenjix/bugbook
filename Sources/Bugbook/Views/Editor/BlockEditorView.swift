@@ -202,20 +202,16 @@ struct BlockEditorView: View {
                 }
             }
 
-            // Click target after last block — always visible, creates new block
+            // Click target after last block — always visible, focuses or creates trailing empty paragraph
             Button {
                 if document.consumePendingEditorTapAfterBlockSelection() {
                     return
                 }
                 document.clearMultiBlockTextSelection()
-                if let lastBlock = document.blocks.last,
-                   lastBlock.text.isEmpty,
-                   lastBlock.type != .databaseEmbed,
-                   lastBlock.type != .canvas {
+                document.ensureTrailingParagraph()
+                if let lastBlock = document.blocks.last {
                     document.focusedBlockId = lastBlock.id
                     document.cursorPosition = 0
-                } else {
-                    document.appendEmptyBlock()
                 }
             } label: {
                 Color.clear
