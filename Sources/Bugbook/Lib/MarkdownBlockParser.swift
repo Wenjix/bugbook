@@ -15,7 +15,7 @@ enum MarkdownBlockParser {
     /// Returns the metadata and the remaining markdown content after metadata lines.
     static func parseMetadata(_ markdown: String) -> (Metadata, String) {
         var metadata = Metadata()
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
         var contentStartIndex = 0
 
         for line in lines {
@@ -57,8 +57,7 @@ enum MarkdownBlockParser {
             break
         }
 
-        let remainingLines = Array(lines.dropFirst(contentStartIndex))
-        let remaining = remainingLines.joined(separator: "\n")
+        let remaining = lines.dropFirst(contentStartIndex).joined(separator: "\n")
         return (metadata, remaining)
     }
 
@@ -85,7 +84,7 @@ enum MarkdownBlockParser {
             return [Block(type: .paragraph)]
         }
 
-        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
         if lines.count > 1, lines.last == "" {
             lines.removeLast()
         }
@@ -136,7 +135,7 @@ enum MarkdownBlockParser {
         }
 
         while i < lines.count {
-            let line = lines[i]
+            let line = String(lines[i])
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if let blockID = parseBlockIDComment(line) {
@@ -154,7 +153,7 @@ enum MarkdownBlockParser {
             // Code fence
             if line.hasPrefix("```") {
                 let language = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                var codeLines: [String] = []
+                var codeLines: [Substring] = []
                 i += 1
                 while i < lines.count {
                     if lines[i].hasPrefix("```") {
@@ -253,10 +252,10 @@ enum MarkdownBlockParser {
                 let collapsed = trimmed.contains("collapsed")
                 i += 1
                 // First line is the toggle title
-                let title = i < lines.count ? lines[i] : ""
+                let title = i < lines.count ? String(lines[i]) : ""
                 i += 1
                 // Remaining lines until <!-- /toggle --> are children
-                var childLines: [String] = []
+                var childLines: [Substring] = []
                 while i < lines.count {
                     if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle -->" {
                         i += 1
@@ -311,7 +310,7 @@ enum MarkdownBlockParser {
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
                 var currentColumnIndex = 0
-                var currentColumnLines: [String] = []
+                var currentColumnLines: [Substring] = []
                 i += 1
                 while i < lines.count {
                     let colLine = lines[i]

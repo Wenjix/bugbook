@@ -2591,9 +2591,11 @@ struct ContentView: View {
         }
 
         let dbService = DatabaseService()
+        // Load schema before deleting so we can do an incremental index removal
+        let schemaForIndex = try? dbService.loadDatabase(at: dbPath).0
         try? dbService.deleteRow(rowId, in: dbPath)
-        if let (schema, rows) = try? dbService.loadDatabase(at: dbPath) {
-            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+        if let schema = schemaForIndex {
+            try? dbService.incrementalIndexDelete(rowId: rowId, schema: schema, at: dbPath)
         }
 
         NotificationCenter.default.post(

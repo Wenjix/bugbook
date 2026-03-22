@@ -13,9 +13,12 @@ class FileSystemService {
     private let fileManager = FileManager.default
     private let recentWorkspacesKey = "recentWorkspaces"
     private let maxRecentWorkspaces = 20
-    private let maxTreeDepth = 10
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
+
+    /// Cache for display names parsed from JSON metadata files (_schema.json, _canvas.json).
+    /// Keyed by file path; stores the parsed name and the file's modification date at parse time.
+    private var displayNameCache: [String: (name: String, mtime: Date)] = [:]
 
     init() {
         loadRecentWorkspaces()
@@ -51,19 +54,10 @@ class FileSystemService {
     // MARK: - File Tree Building
 
     func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
-        let start = depth == 0 ? CFAbsoluteTimeGetCurrent() : 0
         let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
-        defer {
-            if let state { Log.signpost.endInterval("buildFileTree", state) }
-            if depth == 0 {
-                let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
-                if elapsed > 200 {
-                    Log.fileSystem.warning("buildFileTree took \(Int(elapsed))ms at \((path as NSString).lastPathComponent)")
-                }
-            }
-        }
+        defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
 
-        guard depth < maxTreeDepth else { return [] }
+        guard depth < 5 else { return [] }
 
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
             return []
@@ -86,18 +80,10 @@ class FileSystemService {
             guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                // Check schema first — skip canvas check for database folders.
-                let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
-                let hasSchema = fileManager.fileExists(atPath: schemaPath)
-
-                if hasSchema {
-                    // Database folder - read display name from _schema.json
-                    var dbName = name
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String {
-                        dbName = schemaName
-                    }
+                if isDatabaseFolder(at: fullPath) {
+                    // Database folder - read display name from _schema.json (cached)
+                    let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
+                    let dbName = cachedDisplayName(for: schemaPath, key: "name") ?? name
                     // Treat database as a non-expandable item (like TS version)
                     folders.append(FileEntry(
                         id: fullPath,
@@ -107,14 +93,9 @@ class FileSystemService {
                         kind: .database
                     ))
                 } else if isCanvasFolder(at: fullPath) {
-                    // Canvas folder - read display name from _canvas.json
-                    var canvasName = name
-                    let canvasPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: canvasPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let n = json["name"] as? String {
-                        canvasName = n
-                    }
+                    // Canvas folder - read display name from _canvas.json (cached)
+                    let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
+                    let canvasName = cachedDisplayName(for: metaPath, key: "name") ?? name
                     folders.append(FileEntry(
                         id: fullPath,
                         name: canvasName,
@@ -336,7 +317,7 @@ class FileSystemService {
         return try createDatabase(in: companion, name: name)
     }
 
-    func createDatabase(in directory: String, name: String, properties: [PropertyDefinition]? = nil, views: [ViewConfig]? = nil) throws -> String {
+    func createDatabase(in directory: String, name: String) throws -> String {
         let sanitizedName = sanitizeDatabaseFolderName(name)
         let folderPath = uniqueDirectoryPath(in: directory, base: sanitizedName)
         try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
@@ -349,13 +330,13 @@ class FileSystemService {
             id: dbId,
             name: schemaName,
             version: 1,
-            properties: properties ?? [
+            properties: [
                 PropertyDefinition(id: "prop_title", name: "Name", type: .title),
             ],
-            views: views ?? [
+            views: [
                 ViewConfig(id: defaultViewId, name: "Table", type: .table, sorts: [], filters: [])
             ],
-            defaultView: views?.first?.id ?? defaultViewId,
+            defaultView: defaultViewId,
             createdAt: now
         )
 
@@ -577,26 +558,28 @@ class FileSystemService {
 
     /// Sort entries using custom order if available, falling back to directories-first then alphabetical.
     /// This is called from computed properties during rendering — it must be side-effect-free.
-    /// Preserves custom order for known entries and appends new/unrecognized entries at the end
-    /// rather than discarding the entire custom order on any mismatch.
+    /// Only applies custom order when it covers ALL current entries to prevent partial/stale orders
+    /// from causing items to jump around.
     func sortedEntries(_ entries: [FileEntry], parentPath: String) -> [FileEntry] {
         guard let order = customOrder(for: parentPath), !order.isEmpty else {
             return defaultSortedEntries(entries)
         }
 
-        let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
-        var known: [FileEntry] = []
-        var unknown: [FileEntry] = []
-        for entry in entries {
-            if orderMap[entry.name] != nil {
-                known.append(entry)
-            } else {
-                unknown.append(entry)
-            }
+        let entryNames = Set(entries.map(\.name))
+
+        // Only use custom order if it covers every current entry.
+        // A partial/stale order causes unrecognized items to jump to the bottom.
+        let coversAll = entryNames.allSatisfy { order.contains($0) }
+        guard coversAll else {
+            return defaultSortedEntries(entries)
         }
 
-        known.sort { (orderMap[$0.name] ?? Int.max) < (orderMap[$1.name] ?? Int.max) }
-        return known + defaultSortedEntries(unknown)
+        let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        return entries.sorted { a, b in
+            let idxA = orderMap[a.name] ?? Int.max
+            let idxB = orderMap[b.name] ?? Int.max
+            return idxA < idxB
+        }
     }
 
     /// Default sort: directories first, then alphabetical.
@@ -828,6 +811,28 @@ class FileSystemService {
         siblings.contains("\(folderName).md")
     }
 
+    /// Return a cached display name for a JSON metadata file, re-parsing only when the file's
+    /// modification date has changed.
+    private func cachedDisplayName(for filePath: String, key: String) -> String? {
+        let attrs = try? fileManager.attributesOfItem(atPath: filePath)
+        let mtime = attrs?[.modificationDate] as? Date
+
+        if let mtime, let cached = displayNameCache[filePath], cached.mtime == mtime {
+            return cached.name
+        }
+
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = json[key] as? String else {
+            return nil
+        }
+
+        if let mtime {
+            displayNameCache[filePath] = (name, mtime)
+        }
+        return name
+    }
+
     func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return fileManager.fileExists(atPath: schemaPath)
@@ -888,12 +893,8 @@ class FileSystemService {
     }
 
     private func parseIconFromFile(at path: String) -> String? {
-        // Read only the first 512 bytes — icon comments are always near the top.
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { handle.closeFile() }
-        let data = handle.readData(ofLength: 512)
-        guard let head = String(data: data, encoding: .utf8) else { return nil }
-        return parseIcon(from: head)
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return parseIcon(from: content)
     }
 
     private func loadRecentWorkspaces() {

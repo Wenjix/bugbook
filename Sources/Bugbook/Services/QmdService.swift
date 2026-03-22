@@ -28,18 +28,9 @@ enum QmdSearchMode: String, Codable, CaseIterable {
 
     var detail: String {
         switch self {
-        case .bm25: return "Fast keyword search (no models needed)."
-        case .semantic: return "Vector similarity search. Downloads ~300 MB model on first use."
-        case .hybrid: return "BM25 + semantic + reranking via qmd query. Best quality, runs locally."
-        }
-    }
-
-    /// The qmd CLI subcommand for this search mode.
-    var cliCommand: String {
-        switch self {
-        case .bm25: return "search"
-        case .semantic: return "vsearch"
-        case .hybrid: return "query"
+        case .bm25: return "Fast keyword search. No models needed."
+        case .semantic: return "Vector search. Finds meaning, not just exact words. Requires ~300 MB model on first use."
+        case .hybrid: return "BM25 + semantic + re-ranking. Best quality. Keeps models loaded in background."
         }
     }
 }
@@ -52,30 +43,37 @@ enum QmdError: Error, LocalizedError {
     }
 }
 
-/// Parsed output from `qmd status`.
-struct QmdIndexStatus: Equatable {
-    var totalFiles: Int = 0
-    var totalVectors: Int = 0
-    var collections: Int = 0
-    var indexSize: String = ""
-}
-
 @MainActor
 @Observable
 final class QmdService {
     var status: QmdStatus = .unknown
     var collectionReady: Bool = false
-    var indexStatus: QmdIndexStatus?
 
     // MARK: - Public
 
+    nonisolated private static let cachedPathKey = "QmdService.cachedBinaryPath"
+
     func detect() async {
         status = .unknown
+
+        // Try cached path first (fast filesystem check)
+        if let cached = UserDefaults.standard.string(forKey: Self.cachedPathKey),
+           !cached.isEmpty,
+           FileManager.default.fileExists(atPath: cached) {
+            let raw = try? await runShell("\"\(cached)\" --version")
+            let version = raw?.components(separatedBy: "\n").first ?? "unknown"
+            status = .installed(version: version, path: cached)
+            return
+        }
+
+        // Fall back to shell lookup
         if let path = try? await runShell("which qmd"), !path.isEmpty {
+            UserDefaults.standard.set(path, forKey: Self.cachedPathKey)
             let raw = try? await runShell("\"\(path)\" --version")
             let version = raw?.components(separatedBy: "\n").first ?? "unknown"
             status = .installed(version: version, path: path)
         } else {
+            UserDefaults.standard.removeObject(forKey: Self.cachedPathKey)
             status = .notInstalled
         }
     }
@@ -96,50 +94,45 @@ final class QmdService {
     }
 
     func ensureCollection(workspace: String) async {
-        let start = CFAbsoluteTimeGetCurrent()
         guard case .installed(_, let path) = status else { return }
-        // v2: collection name is derived from the directory's last path component
-        _ = try? await runBinary(path, args: ["collection", "add", workspace])
+        let name = collectionName(for: workspace)
+        _ = try? await runBinary(path, args: ["collection", "add", workspace, "--name", name])
         _ = try? await runBinary(path, args: ["update"])
         collectionReady = true
-        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
-        if elapsed > 500 {
-            print("[Perf] ensureCollection took \(Int(elapsed))ms")
+    }
+
+    /// Start the qmd HTTP daemon in the background if hybrid mode is selected and it isn't already running.
+    /// Returns immediately — model loading takes ~30s and happens asynchronously.
+    nonisolated static func prewarmDaemonIfNeeded(mode: QmdSearchMode) {
+        guard mode == .hybrid else { return }
+        Task.detached(priority: .background) {
+            guard let path = Self.findBinaryPath() else { return }
+            guard await !Self.isDaemonHealthy() else { return }
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: path)
+            task.arguments = ["mcp", "--http", "--daemon"]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            try? task.run()
+            // Intentionally don't waitUntilExit — daemon runs in background
         }
     }
 
-    /// Fetch index health from `qmd status` for display in settings.
-    func fetchIndexStatus() async {
-        guard case .installed(_, let path) = status else { return }
-        guard let output = try? await runShellOutput(path, args: ["status"]) else { return }
-        var parsed = QmdIndexStatus()
-        for line in output.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("Size:") {
-                parsed.indexSize = trimmed.replacingOccurrences(of: "Size:", with: "").trimmingCharacters(in: .whitespaces)
-            } else if trimmed.hasPrefix("Total:") {
-                // "Total:    123 files indexed"
-                let digits = trimmed.components(separatedBy: CharacterSet.decimalDigits.inverted)
-                    .first(where: { !$0.isEmpty })
-                parsed.totalFiles = digits.flatMap { Int($0) } ?? 0
-            } else if trimmed.hasPrefix("Vectors:") {
-                let digits = trimmed.components(separatedBy: CharacterSet.decimalDigits.inverted)
-                    .first(where: { !$0.isEmpty })
-                parsed.totalVectors = digits.flatMap { Int($0) } ?? 0
-            } else if trimmed.hasPrefix("Collections (") {
-                let digits = trimmed.components(separatedBy: CharacterSet.decimalDigits.inverted)
-                    .first(where: { !$0.isEmpty })
-                parsed.collections = digits.flatMap { Int($0) } ?? 0
-            }
-        }
-        indexStatus = parsed
+    nonisolated private static func isDaemonHealthy() async -> Bool {
+        guard let url = URL(string: "http://localhost:8181/health") else { return false }
+        var req = URLRequest(url: url, timeoutInterval: 2)
+        req.httpMethod = "GET"
+        return (try? await URLSession.shared.data(for: req))
+            .flatMap { $0.1 as? HTTPURLResponse }
+            .map { $0.statusCode == 200 } ?? false
     }
 
     /// Fire-and-forget: registers the workspace as a qmd collection if qmd is on PATH.
-    /// Safe to call at startup -- returns immediately if qmd is not found.
+    /// Safe to call at startup — returns immediately if qmd is not found.
     nonisolated static func registerCollectionInBackground(workspace: String) {
         Task.detached(priority: .background) {
             guard let path = Self.findBinaryPath() else { return }
+            let name = Self.collectionNameFor(workspace)
             func run(_ args: [String]) {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: path)
@@ -149,8 +142,7 @@ final class QmdService {
                 try? task.run()
                 task.waitUntilExit()
             }
-            // v2: no --name flag, collection name derived from directory
-            run(["collection", "add", workspace])
+            run(["collection", "add", workspace, "--name", name])
             run(["update"])
         }
     }
@@ -158,7 +150,14 @@ final class QmdService {
     // MARK: - Path resolution (nonisolated so Task.detached can call them)
 
     nonisolated static func findBinaryPath() -> String? {
-        // Login shell PATH lookup -- respects nvm, bun, npm global configs
+        // Try cached path first (fast filesystem check)
+        if let cached = UserDefaults.standard.string(forKey: cachedPathKey),
+           !cached.isEmpty,
+           FileManager.default.fileExists(atPath: cached) {
+            return cached
+        }
+
+        // Login shell PATH lookup — respects nvm, bun, npm global configs
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/zsh")
         task.arguments = ["-l", "-c", "which qmd"]
@@ -170,7 +169,10 @@ final class QmdService {
             if task.terminationStatus == 0 {
                 let p = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if !p.isEmpty { return p }
+                if !p.isEmpty {
+                    UserDefaults.standard.set(p, forKey: cachedPathKey)
+                    return p
+                }
             }
         }
         // Fallback: check common install dirs without a login shell
@@ -182,12 +184,22 @@ final class QmdService {
             "/usr/local/bin/qmd",
             "/opt/homebrew/bin/qmd",
         ] where FileManager.default.fileExists(atPath: p) {
+            UserDefaults.standard.set(p, forKey: cachedPathKey)
             return p
         }
         return nil
     }
 
     // MARK: - Private
+
+    private func collectionName(for workspace: String) -> String {
+        Self.collectionNameFor(workspace)
+    }
+
+    nonisolated private static func collectionNameFor(_ workspace: String) -> String {
+        let name = URL(fileURLWithPath: workspace).lastPathComponent
+        return name.isEmpty ? "bugbook" : name
+    }
 
     @discardableResult
     private func runShell(_ command: String) async throws -> String {
@@ -230,29 +242,6 @@ final class QmdService {
                     cont.resume()
                 } catch {
                     cont.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    /// Run the qmd binary and capture stdout.
-    private func runShellOutput(_ path: String, args: [String]) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let task = Process()
-                task.executableURL = URL(fileURLWithPath: path)
-                task.arguments = args
-                let pipe = Pipe()
-                task.standardOutput = pipe
-                task.standardError = FileHandle.nullDevice
-                do {
-                    try task.run()
-                    task.waitUntilExit()
-                    let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    continuation.resume(returning: out)
-                } catch {
-                    continuation.resume(throwing: error)
                 }
             }
         }
