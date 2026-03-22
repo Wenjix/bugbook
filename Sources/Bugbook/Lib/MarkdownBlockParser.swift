@@ -587,6 +587,7 @@ enum MarkdownBlockParser {
 
             case .meeting:
 <<<<<<< HEAD
+<<<<<<< HEAD
                 // Only serialize completed meetings; recording/processing blocks are transient
                 guard block.meetingState == .complete else { break }
                 lines.append("<!-- meeting -->")
@@ -613,6 +614,18 @@ enum MarkdownBlockParser {
                 if !block.text.isEmpty {
                     lines.append(block.text)
 >>>>>>> worktree-agent-a6f82bb5
+=======
+                lines.append("<!-- meeting -->")
+                if !block.meetingNotes.isEmpty {
+                    lines.append("<!-- meeting-notes -->")
+                    lines.append(block.meetingNotes)
+                    lines.append("<!-- /meeting-notes -->")
+                }
+                if !block.text.isEmpty {
+                    lines.append("<!-- meeting-transcript -->")
+                    lines.append(block.text)
+                    lines.append("<!-- /meeting-transcript -->")
+>>>>>>> worktree-agent-aedc8a07
                 }
                 lines.append("<!-- /meeting -->")
             }
