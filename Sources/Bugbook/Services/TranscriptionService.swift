@@ -3,6 +3,7 @@ import AVFoundation
 import Speech
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 /// Captures microphone audio and streams live transcription using on-device SFSpeechRecognizer.
 @MainActor
 @Observable
@@ -10,18 +11,24 @@ class TranscriptionService {
     var isRecording = false
     var currentTranscript = ""
 =======
+=======
+>>>>>>> worktree-agent-a04c7e97
 @MainActor
 @Observable
 class TranscriptionService {
     var currentTranscript: String = ""
     var audioLevel: Float = 0
     var isRecording: Bool = false
+<<<<<<< HEAD
 >>>>>>> worktree-agent-af1aa33e
+=======
+>>>>>>> worktree-agent-a04c7e97
     var error: String?
 
     @ObservationIgnored private var audioEngine: AVAudioEngine?
     @ObservationIgnored private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var recognitionTask: SFSpeechRecognitionTask?
+<<<<<<< HEAD
 <<<<<<< HEAD
     @ObservationIgnored private var speechRecognizer: SFSpeechRecognizer?
 
@@ -73,6 +80,8 @@ class TranscriptionService {
 
     private func beginAudioSession() {
 =======
+=======
+>>>>>>> worktree-agent-a04c7e97
     @ObservationIgnored private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
 
     // MARK: - Permissions
@@ -118,11 +127,15 @@ class TranscriptionService {
         currentTranscript = ""
         audioLevel = 0
 
+<<<<<<< HEAD
 >>>>>>> worktree-agent-af1aa33e
+=======
+>>>>>>> worktree-agent-a04c7e97
         let engine = AVAudioEngine()
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         guard let speechRecognizer else {
             error = "Speech recognizer not initialized."
@@ -149,6 +162,8 @@ class TranscriptionService {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
             request.append(buffer)
 =======
+=======
+>>>>>>> worktree-agent-a04c7e97
         let inputNode = engine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
@@ -167,12 +182,16 @@ class TranscriptionService {
             Task { @MainActor [weak self] in
                 self?.audioLevel = normalized
             }
+<<<<<<< HEAD
 >>>>>>> worktree-agent-af1aa33e
+=======
+>>>>>>> worktree-agent-a04c7e97
         }
 
         do {
             engine.prepare()
             try engine.start()
+<<<<<<< HEAD
 <<<<<<< HEAD
             audioEngine = engine
             recognitionRequest = request
@@ -182,6 +201,8 @@ class TranscriptionService {
             stopRecording()
         }
 =======
+=======
+>>>>>>> worktree-agent-a04c7e97
         } catch {
             self.error = "Failed to start audio engine: \(error.localizedDescription)"
             inputNode.removeTap(onBus: 0)
@@ -226,6 +247,9 @@ class TranscriptionService {
         audioLevel = 0
 
         return currentTranscript
+<<<<<<< HEAD
 >>>>>>> worktree-agent-af1aa33e
+=======
+>>>>>>> worktree-agent-a04c7e97
     }
 }

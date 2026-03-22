@@ -107,7 +107,8 @@ enum MarkdownBlockParser {
             pageLinkName: String = "",
             children: [Block] = [],
             columnIndex: Int = 0,
-            isExpanded: Bool = true
+            isExpanded: Bool = true,
+            meetingNotes: String = ""
         ) -> Block {
             let colors = pendingColors ?? (.default, .default)
             let block = Block(
@@ -127,7 +128,8 @@ enum MarkdownBlockParser {
                 backgroundColor: colors.1,
                 children: children,
                 columnIndex: columnIndex,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                meetingNotes: meetingNotes
             )
             pendingBlockID = nil
             pendingColors = nil
@@ -244,6 +246,38 @@ enum MarkdownBlockParser {
             if let name = parsePageLinkComment(line) {
                 blocks.append(makeBlock(type: .pageLink, pageLinkName: name))
                 i += 1
+                continue
+            }
+
+            // Meeting block
+            if trimmed == "<!-- meeting -->" {
+                i += 1
+                var transcriptLines: [String] = []
+                var notesLines: [String] = []
+                var inNotes = false
+                while i < lines.count {
+                    let meetLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if meetLine == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    if meetLine == "<!-- meeting-notes -->" {
+                        inNotes = true
+                        i += 1
+                        continue
+                    }
+                    if inNotes {
+                        notesLines.append(lines[i])
+                    } else {
+                        transcriptLines.append(lines[i])
+                    }
+                    i += 1
+                }
+                blocks.append(makeBlock(
+                    type: .meeting,
+                    text: transcriptLines.joined(separator: "\n"),
+                    meetingNotes: notesLines.joined(separator: "\n")
+                ))
                 continue
             }
 
@@ -425,7 +459,11 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
+<<<<<<< HEAD
             if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle, block.type != .canvas {
+=======
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .meeting {
+>>>>>>> worktree-agent-a04c7e97
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -490,6 +528,7 @@ enum MarkdownBlockParser {
                 }
                 lines.append("<!-- /toggle -->")
 
+<<<<<<< HEAD
             case .headingToggle:
                 let level = max(1, min(3, block.headingLevel))
                 let collapsed = block.isExpanded ? "" : " collapsed"
@@ -506,6 +545,18 @@ enum MarkdownBlockParser {
                     lines.append(block.text)
                 }
                 lines.append("<!-- /canvas -->")
+=======
+            case .meeting:
+                lines.append("<!-- meeting -->")
+                if !block.text.isEmpty {
+                    lines.append(block.text)
+                }
+                if !block.meetingNotes.isEmpty {
+                    lines.append("<!-- meeting-notes -->")
+                    lines.append(block.meetingNotes)
+                }
+                lines.append("<!-- /meeting -->")
+>>>>>>> worktree-agent-a04c7e97
 
             case .column:
                 lines.append("<!-- columns -->")
@@ -610,6 +661,7 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
+<<<<<<< HEAD
             || trimmed == "<!-- canvas -->"
             || trimmed == "<!-- /canvas -->"
             || trimmed == "<!-- meeting -->"
@@ -622,6 +674,11 @@ enum MarkdownBlockParser {
         }
         if parseHeadingToggleComment(trimmed) != nil { return true }
         return false
+=======
+            || trimmed == "<!-- meeting -->"
+            || trimmed == "<!-- meeting-notes -->"
+            || trimmed == "<!-- /meeting -->"
+>>>>>>> worktree-agent-a04c7e97
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {
