@@ -36,9 +36,7 @@ struct BlockCellView: View {
         blockShell
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color.accentColor.opacity(
-                    isBlockHighlighted ? 0.15 : 0
-                ))
+                .fill(isBlockHighlighted ? Color.selectionHighlight : Color.clear)
                 .allowsHitTesting(false)
         )
     }

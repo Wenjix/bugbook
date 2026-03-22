@@ -1,15 +1,18 @@
 {
   "images" : [
     {
-      "filename" : "bugbook.svg",
-      "idiom" : "universal"
+      "filename" : "bugbook.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "filename" : "bugbook@2x.png",
+      "idiom" : "universal",
+      "scale" : "2x"
     }
   ],
   "info" : {
     "author" : "xcode",
     "version" : 1
-  },
-  "properties" : {
-    "preserves-vector-representation" : true
   }
 }

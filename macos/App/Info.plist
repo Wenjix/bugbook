@@ -28,9 +28,5 @@
 	<string></string>
 	<key>SUPublicEDKey</key>
 	<string></string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Bugbook needs microphone access to record meeting audio for transcription.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Bugbook uses speech recognition to transcribe meeting audio in real-time.</string>
 </dict>
 </plist>

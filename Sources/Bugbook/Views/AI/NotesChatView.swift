@@ -36,21 +36,6 @@ struct NotesChatView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Image("BugbookLogo")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 32, height: 32)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Bugbook")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text("Chat with Notes")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.fallbackTextPrimary)
-            }
-
             Spacer()
 
             enginePicker
@@ -84,22 +69,9 @@ struct NotesChatView: View {
     private var messageArea: some View {
         if messages.isEmpty && !aiService.isRunning {
             Spacer()
-            VStack(spacing: 16) {
-                Image("BugbookLogo")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .opacity(0.85)
-                VStack(spacing: 6) {
-                    Text("Chat with your notes")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-                    Text("Ask anything about your workspace")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text("Ask anything about your workspace")
+                .font(.system(size: 14))
+                .foregroundStyle(.tertiary)
             Spacer()
         } else {
             ScrollViewReader { proxy in

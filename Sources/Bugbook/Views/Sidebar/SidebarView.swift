@@ -160,7 +160,7 @@ struct SidebarView: View {
 
                 Button(action: { invokeAction { NotificationCenter.default.post(name: .openAIPanel, object: nil) } }) {
                     HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "sparkles")
+                        Image(systemName: "ladybug")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Text("Ask AI")

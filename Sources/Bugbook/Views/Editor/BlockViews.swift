@@ -275,15 +275,6 @@ struct DatabaseEmbedBlockView: View {
 
     var body: some View {
         databaseEmbedView
-            .overlay(alignment: .topTrailing) {
-                if let sidebarReferencePayload {
-                    sidebarDragHandle(payload: sidebarReferencePayload)
-                        .opacity(isHovered ? 1 : 0)
-                }
-            }
-            .onHover { hovering in
-                isHovered = hovering
-            }
     }
 
     private var databaseEmbedView: some View {

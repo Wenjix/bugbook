@@ -607,10 +607,10 @@ private struct MarqueeSelectionOverlay: View {
 
     var body: some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(0.14))
+            .fill(Color.selectionHighlight.opacity(0.5))
             .overlay {
                 Rectangle()
-                    .stroke(Color.accentColor.opacity(0.9), lineWidth: 1)
+                    .stroke(Color(hex: "B4D7FF"), lineWidth: 1)
             }
             .frame(width: max(rect.width, 1), height: max(rect.height, 1))
             .offset(x: rect.minX, y: rect.minY)

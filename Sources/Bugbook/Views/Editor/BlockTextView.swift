@@ -25,7 +25,7 @@ enum EditorTypography {
 
 enum EditorSelectionStyle {
     static var backgroundColor: NSColor {
-        NSColor.controlAccentColor.withAlphaComponent(0.28)
+        NSColor(red: 0.706, green: 0.843, blue: 1.0, alpha: 0.45) // #B4D7FF at 45%
     }
 
     static var foregroundColor: NSColor {
