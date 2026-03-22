@@ -1037,26 +1037,24 @@ struct ContentView: View {
                                         .padding(.trailing, 52)
                                         .padding(.top, 8)
                                 }
-
-                                BlockEditorView(
-                                    document: document,
-                                    onTextChange: {
-                                        guard appState.activeTabIndex < appState.openTabs.count else { return }
-                                        if !appState.openTabs[appState.activeTabIndex].isDirty {
-                                            appState.openTabs[appState.activeTabIndex].isDirty = true
-                                        }
-                                        syncTitle(from: document)
-                                        scheduleSave()
-                                    },
-                                    onTyping: { triggerFocusMode() },
-                                    onPagePathDrop: { sourcePath, insertIndex in
-                                        handleSidebarPageDrop(sourcePath: sourcePath, into: document, at: insertIndex)
-                                    }
-                                )
                             }
                             .frame(maxWidth: document.fullWidth ? .infinity : 860)
                             Spacer(minLength: 0)
                         }
+
+                        BlockEditorView(
+                            document: document,
+                            onTextChange: {
+                                guard appState.activeTabIndex < appState.openTabs.count else { return }
+                                if !appState.openTabs[appState.activeTabIndex].isDirty {
+                                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                                }
+                                syncTitle(from: document)
+                                scheduleSave()
+                            },
+                            onTyping: { triggerFocusMode() },
+                            contentColumnMaxWidth: document.fullWidth ? nil : 860
+                        )
                     }
                 }
                 .background(Color.fallbackEditorBg)
