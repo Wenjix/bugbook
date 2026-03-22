@@ -67,7 +67,7 @@ struct CalendarMonthView: View {
                 Text("\(calendar.component(.day, from: day))")
                     .font(.system(size: Typography.bodySmall, weight: calendar.isDateInToday(day) ? .bold : .regular))
                     .foregroundStyle(
-                        calendar.isDateInToday(day) ? Color.white :
+                        calendar.isDateInToday(day) ? Color.fallbackAccentFg :
                         isCurrentMonth ? Color.primary : Color.secondary.opacity(0.5)
                     )
                     .frame(width: 24, height: 24)

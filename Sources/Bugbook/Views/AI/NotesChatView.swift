@@ -321,7 +321,7 @@ struct NotesChatView: View {
                 Text(message.content)
                     .font(.system(size: 16))
                     .lineSpacing(3)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.fallbackAccentFg)
                     .textSelection(.enabled)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)

@@ -653,7 +653,7 @@ struct PropertyEditorView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.fallbackAccentFg)
                         .frame(width: 20, height: 20)
                         .background(Color.accentColor)
                         .clipShape(Circle())
@@ -1107,7 +1107,7 @@ private struct DatePropertyPopover: View {
                     Text("\(calendar.component(.day, from: cell.date))")
                         .font(.callout)
                         .fontWeight(cell.isSelected ? .semibold : .regular)
-                        .foregroundStyle(cell.isSelected ? Color.white : (cell.isCurrentMonth ? Color.primary : Color.secondary))
+                        .foregroundStyle(cell.isSelected ? Color.fallbackAccentFg : (cell.isCurrentMonth ? Color.primary : Color.secondary))
                         .frame(maxWidth: .infinity)
                         .frame(height: 38)
                         .background(
