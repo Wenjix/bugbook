@@ -236,6 +236,7 @@ struct BlockEditorView: View {
         localColumnDropTarget = nil
     }
 
+    @discardableResult
     private func handlePageDrop(_ path: String, at index: Int) -> Bool {
         guard let handler = onPageDrop else { return false }
         handler(path, index)

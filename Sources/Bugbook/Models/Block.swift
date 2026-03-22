@@ -51,6 +51,7 @@ struct Block: Identifiable, Equatable {
     var meetingSummary: String
     var meetingActionItems: String
     var meetingTitle: String
+    var meetingNotes: String
 
     init(
         id: UUID = UUID(),
@@ -74,7 +75,8 @@ struct Block: Identifiable, Equatable {
         meetingTranscript: String = "",
         meetingSummary: String = "",
         meetingActionItems: String = "",
-        meetingTitle: String = ""
+        meetingTitle: String = "",
+        meetingNotes: String = ""
     ) {
         self.id = id
         self.type = type
@@ -98,5 +100,6 @@ struct Block: Identifiable, Equatable {
         self.meetingSummary = meetingSummary
         self.meetingActionItems = meetingActionItems
         self.meetingTitle = meetingTitle
+        self.meetingNotes = meetingNotes
     }
 }

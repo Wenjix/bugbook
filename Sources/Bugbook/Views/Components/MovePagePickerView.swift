@@ -65,7 +65,7 @@ struct MovePagePickerView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 16)
                         } else {
-                            ForEach(items.enumerated(), id: \.element.id) { index, dest in
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, dest in
                                 destinationRow(dest, index: index)
                                     .id(dest.id)
                             }

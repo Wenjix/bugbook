@@ -147,6 +147,10 @@ class BlockDocument {
         }
     }
 
+    func updateMeetingSummary(blockId: UUID, summary: String) {
+        updateBlockProperty(id: blockId) { $0.language = summary }
+    }
+
     /// Safely update a block's properties whether it's top-level or inside a column.
     func updateBlockProperty(id: UUID, _ mutate: (inout Block) -> Void) {
         guard let loc = blockLocation(for: id) else { return }

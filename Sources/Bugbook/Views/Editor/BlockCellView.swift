@@ -258,18 +258,10 @@ struct BlockCellView: View {
             CanvasBlockView(document: document, block: block)
 
         case .meeting:
-            if let service = document.transcriptionService {
-                MeetingBlockView(
-                    document: document,
-                    block: block,
-                    transcriptionService: service,
-                    onStop: { document.onStopMeeting?(block.id) }
-                )
-            } else {
-                Text("Meeting block")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            MeetingBlockView(
+                document: document,
+                block: block
+            )
         }
     }
 }

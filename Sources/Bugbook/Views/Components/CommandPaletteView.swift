@@ -129,7 +129,7 @@ struct CommandPaletteView: View {
 
                         ForEach(sections, id: \.title) { section in
                             SectionHeader(title: section.title)
-                            ForEach(section.items.enumerated(), id: \.element.id) { _, item in
+                            ForEach(section.items, id: \.id) { item in
                                 let idx = globalIndex(of: item, in: items)
                                 paletteRow(item: item, index: idx)
                                     .id(item.id)

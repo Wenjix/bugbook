@@ -317,7 +317,7 @@ class FileSystemService {
         return try createDatabase(in: companion, name: name)
     }
 
-    func createDatabase(in directory: String, name: String) throws -> String {
+    func createDatabase(in directory: String, name: String, properties: [PropertyDefinition]? = nil, views: [ViewConfig]? = nil) throws -> String {
         let sanitizedName = sanitizeDatabaseFolderName(name)
         let folderPath = uniqueDirectoryPath(in: directory, base: sanitizedName)
         try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
@@ -330,10 +330,10 @@ class FileSystemService {
             id: dbId,
             name: schemaName,
             version: 1,
-            properties: [
+            properties: properties ?? [
                 PropertyDefinition(id: "prop_title", name: "Name", type: .title),
             ],
-            views: [
+            views: views ?? [
                 ViewConfig(id: defaultViewId, name: "Table", type: .table, sorts: [], filters: [])
             ],
             defaultView: defaultViewId,

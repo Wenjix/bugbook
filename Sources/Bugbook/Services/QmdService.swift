@@ -33,6 +33,14 @@ enum QmdSearchMode: String, Codable, CaseIterable {
         case .hybrid: return "BM25 + semantic + re-ranking. Best quality. Keeps models loaded in background."
         }
     }
+
+    var cliCommand: String {
+        switch self {
+        case .bm25: return "search"
+        case .semantic: return "semantic"
+        case .hybrid: return "hybrid"
+        }
+    }
 }
 
 enum QmdError: Error, LocalizedError {
@@ -43,11 +51,18 @@ enum QmdError: Error, LocalizedError {
     }
 }
 
+struct QmdIndexStatus {
+    var totalFiles: Int
+    var totalVectors: Int
+    var indexSize: String
+}
+
 @MainActor
 @Observable
 final class QmdService {
     var status: QmdStatus = .unknown
     var collectionReady: Bool = false
+    var indexStatus: QmdIndexStatus?
 
     // MARK: - Public
 
@@ -99,6 +114,22 @@ final class QmdService {
         _ = try? await runBinary(path, args: ["collection", "add", workspace, "--name", name])
         _ = try? await runBinary(path, args: ["update"])
         collectionReady = true
+    }
+
+    func fetchIndexStatus() async {
+        guard case .installed(_, let path) = status else { return }
+        do {
+            let output = try await runShell("\"\(path)\" collection status --json")
+            if let data = output.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let files = json["totalFiles"] as? Int ?? json["total_files"] as? Int ?? 0
+                let vectors = json["totalVectors"] as? Int ?? json["total_vectors"] as? Int ?? 0
+                let size = json["indexSize"] as? String ?? json["index_size"] as? String ?? ""
+                indexStatus = QmdIndexStatus(totalFiles: files, totalVectors: vectors, indexSize: size)
+            }
+        } catch {
+            // leave indexStatus as nil so the UI shows loading state rather than fake zeros
+        }
     }
 
     /// Start the qmd HTTP daemon in the background if hybrid mode is selected and it isn't already running.

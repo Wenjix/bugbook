@@ -281,11 +281,11 @@ enum MarkdownBlockParser {
                         i += 1
                         break
                     }
-                    childLines.append(lines[i])
+                    childLines.append(String(lines[i]))
                     i += 1
                 }
                 let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
-                blocks.append(makeBlock(type: .headingToggle, text: title, headingLevel: headingToggleLevel, children: children, isExpanded: !collapsed))
+                blocks.append(makeBlock(type: .headingToggle, text: String(title), headingLevel: headingToggleLevel, children: children, isExpanded: !collapsed))
                 continue
             }
 
@@ -298,7 +298,7 @@ enum MarkdownBlockParser {
                         i += 1
                         break
                     }
-                    jsonLines.append(lines[i])
+                    jsonLines.append(String(lines[i]))
                     i += 1
                 }
                 let json = jsonLines.joined(separator: "\n")
@@ -356,6 +356,7 @@ enum MarkdownBlockParser {
                 var transcript = ""
                 var summary = ""
                 var actionItems = ""
+                var notes = ""
                 var section = ""
                 while i < lines.count {
                     let mLine = lines[i].trimmingCharacters(in: .whitespaces)
@@ -371,6 +372,8 @@ enum MarkdownBlockParser {
                         section = "actions"
                     } else if mLine == "<!-- meeting-transcript -->" {
                         section = "transcript"
+                    } else if mLine == "<!-- meeting-notes -->" {
+                        section = "notes"
                     } else {
                         switch section {
                         case "summary":
@@ -379,6 +382,8 @@ enum MarkdownBlockParser {
                             actionItems += (actionItems.isEmpty ? "" : "\n") + lines[i]
                         case "transcript":
                             transcript += (transcript.isEmpty ? "" : "\n") + lines[i]
+                        case "notes":
+                            notes += (notes.isEmpty ? "" : "\n") + lines[i]
                         default:
                             break
                         }
@@ -390,6 +395,7 @@ enum MarkdownBlockParser {
                 meetingBlock.meetingTranscript = transcript
                 meetingBlock.meetingSummary = summary
                 meetingBlock.meetingActionItems = actionItems
+                meetingBlock.meetingNotes = notes
                 meetingBlock.meetingState = .complete
                 blocks.append(meetingBlock)
                 continue
@@ -529,6 +535,10 @@ enum MarkdownBlockParser {
                 if !block.meetingActionItems.isEmpty {
                     lines.append("<!-- meeting-actions -->")
                     lines.append(block.meetingActionItems)
+                }
+                if !block.meetingNotes.isEmpty {
+                    lines.append("<!-- meeting-notes -->")
+                    lines.append(block.meetingNotes)
                 }
                 if !block.meetingTranscript.isEmpty {
                     lines.append("<!-- meeting-transcript -->")
