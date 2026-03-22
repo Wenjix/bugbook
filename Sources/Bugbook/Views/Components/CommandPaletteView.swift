@@ -711,7 +711,8 @@ struct CommandPaletteView: View {
 
     private func searchWithQmd(query: String, workspace: String, binary: String) async -> [ContentMatch]? {
         let collection = URL(fileURLWithPath: workspace).lastPathComponent
-        let cliCommand = appState.settings.qmdSearchMode.cliCommand
+        let searchMode = appState.settings.qmdSearchMode
+        let cliCommand = searchMode.cliCommand
 
         return await Task.detached(priority: .userInitiated) {
             let task = Process()

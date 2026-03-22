@@ -735,18 +735,6 @@ class BlockDocument {
         updateBlockProperty(id: blockId) { $0.imageWidth = Int(width) }
     }
 
-    func updateBlockText(blockId: UUID, text: String) {
-        updateBlockProperty(id: blockId) { $0.text = text }
-    }
-
-    func updateMeetingNotes(blockId: UUID, notes: String) {
-        updateBlockProperty(id: blockId) { $0.meetingNotes = notes }
-    }
-
-    func updateMeetingSummary(blockId: UUID, summary: String) {
-        updateBlockProperty(id: blockId) { $0.language = summary }
-    }
-
     func dismissBlockMenu() {
         blockMenuBlockId = nil
     }
@@ -801,16 +789,8 @@ class BlockDocument {
         SlashCommand(name: "Meeting", icon: "mic.fill", action: .blockType(.meeting, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
-<<<<<<< HEAD
-<<<<<<< HEAD
         SlashCommand(name: "Canvas", icon: "rectangle.on.rectangle.angled", action: .blockType(.canvas, headingLevel: 0)),
         SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting),
-=======
-        SlashCommand(name: "Meeting", icon: "mic.fill", action: .blockType(.meeting, headingLevel: 0)),
->>>>>>> worktree-agent-af1aa33e
-=======
-        SlashCommand(name: "Meeting", icon: "mic.fill", action: .blockType(.meeting, headingLevel: 0)),
->>>>>>> worktree-agent-a04c7e97
     ]
 
     var filteredSlashCommands: [SlashCommand] {
@@ -1042,7 +1022,6 @@ class BlockDocument {
         return MarkdownBlockParser.serialize(selectedBlocks)
     }
 
-    /// Returns `AiContextItem` references for selected blocks (for AI sidebar context chips).
     func selectedBlockContextItems() -> [AiContextItem] {
         guard let indices = selectedBlockIndices() else { return [] }
         return indices.map { idx in
@@ -1568,4 +1547,5 @@ class BlockDocument {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
+
 }

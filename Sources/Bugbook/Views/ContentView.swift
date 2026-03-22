@@ -1190,8 +1190,7 @@ struct ContentView: View {
         }
         doc.transcriptionService = transcriptionService
         doc.onStartMeeting = { [weak doc] blockId in
-            transcriptionService.loadModels()
-            transcriptionService.startRecording()
+            Task { await transcriptionService.startRecording() }
             // Update live transcript into the block as it streams
             Task { @MainActor in
                 var lastTranscript = ""

@@ -72,11 +72,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-<<<<<<< HEAD
         case .databaseEmbed, .image, .pageLink, .canvas, .meeting:
-=======
-        case .databaseEmbed, .image, .pageLink, .meeting:
->>>>>>> worktree-agent-af1aa33e
             true
         default:
             false
@@ -252,9 +248,6 @@ struct BlockCellView: View {
 
         case .toggle:
             ToggleBlockView(document: document, block: block, onTyping: onTyping)
-
-        case .meeting:
-            MeetingBlockView(document: document, block: block)
 
         case .column:
             ColumnBlockView(document: document, block: block, onTyping: onTyping)
