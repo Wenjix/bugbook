@@ -789,8 +789,12 @@ class BlockDocument {
         SlashCommand(name: "Meeting", icon: "mic.fill", action: .blockType(.meeting, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
+<<<<<<< HEAD
         SlashCommand(name: "Canvas", icon: "rectangle.on.rectangle.angled", action: .blockType(.canvas, headingLevel: 0)),
         SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting),
+=======
+        SlashCommand(name: "Meeting", icon: "mic.fill", action: .blockType(.meeting, headingLevel: 0)),
+>>>>>>> worktree-agent-af1aa33e
     ]
 
     var filteredSlashCommands: [SlashCommand] {
