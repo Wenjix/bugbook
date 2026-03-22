@@ -139,6 +139,10 @@ struct FileTreeDropDelegate: DropDelegate {
         return entry.name.hasSuffix(".md") || entry.isDirectory
     }
 
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.text])
+    }
+
     func dropEntered(info: DropInfo) {
         updateDropMode(info: info)
     }
@@ -148,6 +152,7 @@ struct FileTreeDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard info.hasItemsConforming(to: [.text]) else { return nil }
         updateDropMode(info: info)
         return DropProposal(operation: .move)
     }
