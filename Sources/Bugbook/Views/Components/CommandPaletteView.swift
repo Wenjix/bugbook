@@ -474,9 +474,6 @@ struct CommandPaletteView: View {
             PaletteCommand(id: "new_database", name: "New Database", icon: "tablecells.badge.ellipsis", shortcut: nil) {
                 NotificationCenter.default.post(name: .newDatabase, object: nil)
             },
-            PaletteCommand(id: "new_canvas", name: "New Canvas", icon: "rectangle.on.rectangle.angled", shortcut: nil) {
-                NotificationCenter.default.post(name: .newCanvas, object: nil)
-            },
             PaletteCommand(id: "open_settings", name: "Open Settings", icon: "gear", shortcut: "Cmd+,") {
                 NotificationCenter.default.post(name: .openSettings, object: nil)
             },
@@ -714,8 +711,8 @@ struct CommandPaletteView: View {
 
     private func searchWithQmd(query: String, workspace: String, binary: String) async -> [ContentMatch]? {
         let collection = URL(fileURLWithPath: workspace).lastPathComponent
-        let searchMode = appState.settings.qmdSearchMode
-        let cliCommand = searchMode.cliCommand
+<<<<<<< HEAD
+        let cliCommand = appState.settings.qmdSearchMode.cliCommand
 
         return await Task.detached(priority: .userInitiated) {
             let task = Process()

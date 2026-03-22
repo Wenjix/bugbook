@@ -19,9 +19,7 @@ struct ContentView: View {
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var flashcardCards: [FlashcardItem] = []
-    @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
-    @State private var canvasSaveTask: Task<Void, Never>?
     @State private var sidebarPeek = SidebarPeekState()
     @State private var editorUI = EditorUIState()
     @State private var themeToast: ThemeMode?
@@ -258,9 +256,6 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .newCanvas)) { _ in
-                createNewCanvas()
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateBack)) { _ in
                 navigateBackInActiveTab()
@@ -925,7 +920,7 @@ struct ContentView: View {
                 )
                 .onAppear { openDefaultPageIfConfigured() }
             } else if tab.isCanvas {
-                canvasEditor(for: tab)
+                canvasDisabledPlaceholder
             } else if tab.isDatabaseRow, let dbPath = tab.databasePath, let rowId = tab.databaseRowId {
                 DatabaseRowFullPageView(
                     dbPath: dbPath,
@@ -2073,56 +2068,19 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Canvas
+    // MARK: - Canvas (disabled)
 
-    @ViewBuilder
-    private func canvasEditor(for tab: OpenFile) -> some View {
-        if let doc = canvasDocuments[tab.id] {
-            CanvasView(
-                document: doc,
-                onNavigateToFile: { path in navigateToFilePath(path) },
-                availablePages: appState.fileTree
-            )
-            .onChange(of: doc.isDirty) { _, dirty in
-                if dirty { scheduleCanvasSave(tabId: tab.id) }
-            }
-        } else {
-            Color.fallbackEditorBg
-                .onAppear { loadCanvasContent(for: tab) }
+    private var canvasDisabledPlaceholder: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "rectangle.on.rectangle.angled")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+            Text("Canvas (coming soon)")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
         }
-    }
-
-    private func loadCanvasContent(for tab: OpenFile) {
-        guard tab.isCanvas else { return }
-        let doc = CanvasDocument()
-        doc.load(from: tab.path)
-        canvasDocuments[tab.id] = doc
-    }
-
-    private func scheduleCanvasSave(tabId: UUID) {
-        let docs = self.canvasDocuments
-        canvasSaveTask?.cancel()
-        canvasSaveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            docs[tabId]?.save()
-        }
-    }
-
-    private func createNewCanvas() {
-        guard let workspace = appState.workspacePath else { return }
-        do {
-            let path = try fileSystem.createCanvas(in: workspace, name: "Untitled Canvas")
-            let displayName = (path as NSString).lastPathComponent
-            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .canvas)
-            appState.openFile(entry)
-            if let tab = appState.activeTab {
-                loadCanvasContent(for: tab)
-            }
-            refreshFileTree()
-        } catch {
-            Log.canvas.error("Failed to create canvas: \(error.localizedDescription)")
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.fallbackEditorBg)
     }
 
     private func createNewDatabase() {
@@ -2424,7 +2382,6 @@ struct ContentView: View {
     /// Removes any databaseEmbed blocks referencing `dbPath` from all currently open BlockDocuments.
     private func cleanupTabDocuments(_ tabId: UUID) {
         blockDocuments.removeValue(forKey: tabId)
-        canvasDocuments.removeValue(forKey: tabId)
         databaseRowFullWidth.removeValue(forKey: tabId)
     }
 

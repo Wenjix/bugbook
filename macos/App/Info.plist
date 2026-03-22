@@ -24,28 +24,9 @@
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Bugbook uses speech recognition to transcribe meeting notes.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Bugbook uses the microphone to record and transcribe meetings.</string>
 	<key>SUFeedURL</key>
 	<string></string>
 	<key>SUPublicEDKey</key>
 	<string></string>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.bugbook.sidebar-reference</string>
-			<key>UTTypeDescription</key>
-			<string>Bugbook Sidebar Reference</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict/>
-		</dict>
-	</array>
 </dict>
 </plist>

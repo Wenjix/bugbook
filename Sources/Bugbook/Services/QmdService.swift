@@ -26,6 +26,14 @@ enum QmdSearchMode: String, Codable, CaseIterable {
         }
     }
 
+    var cliCommand: String {
+        switch self {
+        case .bm25: return "search"
+        case .semantic: return "vsearch"
+        case .hybrid: return "query"
+        }
+    }
+
     var detail: String {
         switch self {
         case .bm25: return "Fast keyword search. No models needed."
@@ -34,13 +42,6 @@ enum QmdSearchMode: String, Codable, CaseIterable {
         }
     }
 
-    var cliCommand: String {
-        switch self {
-        case .bm25: return "search"
-        case .semantic: return "semantic"
-        case .hybrid: return "hybrid"
-        }
-    }
 }
 
 enum QmdError: Error, LocalizedError {
