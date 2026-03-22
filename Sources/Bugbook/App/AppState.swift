@@ -31,6 +31,7 @@ enum ViewMode {
     var aiSidePanelOpen: Bool = false
     var aiInitialPrompt: String?
     var aiSelectionContext: String?
+    var aiReferencedItems: [AiContextItem] = []
     var currentView: ViewMode = .editor
     var movePagePath: String?  // non-nil triggers move page picker
     var flashcardReviewOpen: Bool = false
@@ -371,8 +372,11 @@ enum ViewMode {
         openAiPanel(prompt: prompt)
     }
 
-    func openAiPanel(prompt: String? = nil) {
+    func openAiPanel(prompt: String? = nil, referencedItems: [AiContextItem] = []) {
         aiInitialPrompt = prompt
+        if !referencedItems.isEmpty {
+            aiReferencedItems.append(contentsOf: referencedItems)
+        }
         showSettings = false
         if currentView == .chat {
             currentView = .editor

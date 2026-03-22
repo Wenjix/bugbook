@@ -1042,6 +1042,17 @@ class BlockDocument {
         return MarkdownBlockParser.serialize(selectedBlocks)
     }
 
+    /// Returns `AiContextItem` references for selected blocks (for AI sidebar context chips).
+    func selectedBlockContextItems() -> [AiContextItem] {
+        guard let indices = selectedBlockIndices() else { return [] }
+        return indices.map { idx in
+            let block = blocks[idx]
+            let markdown = MarkdownBlockParser.serialize([block])
+            let plainPreview = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AiContextItem.block(id: block.id, preview: plainPreview, markdown: markdown)
+        }
+    }
+
     /// Replaces the selected blocks with AI-generated content.
     func replaceSelectedBlocks(markdown: String) {
         guard let indices = selectedBlockIndices(), !indices.isEmpty else { return }

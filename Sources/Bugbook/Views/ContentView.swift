@@ -1353,8 +1353,9 @@ struct ContentView: View {
                       let doc = blockDocuments[tab.id],
                       let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
                 hideFormattingPanel()
+                let blockItems = doc.selectedBlockContextItems()
                 appState.aiSelectionContext = selectedMarkdown
-                appState.openAiPanel()
+                appState.openAiPanel(referencedItems: blockItems)
             }
         )
         panel.show(above: rect)
@@ -1391,8 +1392,9 @@ struct ContentView: View {
                       let doc = blockDocuments[tab.id],
                       let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
                 hideFormattingPanel()
+                let blockItems = doc.selectedBlockContextItems()
                 appState.aiSelectionContext = selectedMarkdown
-                appState.openAiPanel()
+                appState.openAiPanel(referencedItems: blockItems)
             }
         )
         panel.show(above: blockRect)
