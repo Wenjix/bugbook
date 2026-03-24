@@ -75,7 +75,7 @@ struct InColumnDropZone: View {
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(height: 8)
+            .frame(height: 12)
             .frame(maxWidth: .infinity)
             .overlay {
                 Rectangle()

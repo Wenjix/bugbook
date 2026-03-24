@@ -93,7 +93,7 @@ struct BlockEditorView: View {
                 // After an image block use a slimmer drop zone since ImageBlockView
                 // already provides a generous 44pt tap region internally.
                 let dropZoneAfterImage = block.type == .image
-                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 6)
+                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 12)
 
                 BlockCellView(
                     document: document,
@@ -138,13 +138,13 @@ struct BlockEditorView: View {
                             return
                         }
                         document.clearMultiBlockTextSelection()
-                        // After an image block, always focus or insert an empty paragraph
-                        if block.type == .image {
+                        // After a non-editable block, always focus or insert an empty paragraph
+                        if block.type == .image || block.type == .pageLink || block.type == .databaseEmbed || block.type == .horizontalRule {
                             document.focusOrInsertParagraphAfter(blockId: block.id)
                         } else if index + 1 < document.blocks.count {
                             let next = document.blocks[index + 1]
-                            // If next block is non-editable (image, etc.), insert a paragraph between
-                            if next.type == .image || next.type == .databaseEmbed {
+                            // If next block is non-editable, insert a paragraph between
+                            if next.type == .image || next.type == .databaseEmbed || next.type == .pageLink || next.type == .horizontalRule {
                                 document.focusOrInsertParagraphAfter(blockId: block.id)
                             } else {
                                 document.focusedBlockId = next.id
@@ -777,7 +777,7 @@ final class EditorFrameReporterView: NSView {
 /// Accepts both block UUID drops (reorder) and image URL drops (insert image).
 struct DropZoneView: View {
     let isActive: Bool
-    var height: CGFloat = 4
+    var height: CGFloat = 12
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
