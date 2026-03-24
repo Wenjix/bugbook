@@ -33,6 +33,7 @@ struct TableView: View {
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
     var usesInnerScroll: Bool = true
+    var containerWidth: CGFloat? = nil
 
     @State private var dragWidths: [String: CGFloat] = [:]
     @State private var hoveredResizeKey: String?
@@ -66,6 +67,19 @@ struct TableView: View {
 
     private var wrapCellText: Bool {
         viewConfig.wrapCellText ?? false
+    }
+
+    /// Minimum width the table content needs (columns + controls + padding).
+    private var contentMinWidth: CGFloat {
+        let columnsWidth = titleColumnWidth + visibleProperties.reduce(0) { $0 + columnWidth(for: $1) }
+        // scaledRowControlsInset + horizontal padding on row HStack + approx "Add property" button
+        let extras = scaledRowControlsInset + DatabaseZoomMetrics.size(8) + DatabaseZoomMetrics.size(120)
+        return columnsWidth + extras
+    }
+
+    /// The effective minimum width: at least as wide as column content OR the container.
+    private var effectiveMinWidth: CGFloat {
+        max(contentMinWidth, containerWidth ?? 0)
     }
 
     private var canReorderRows: Bool {
@@ -107,6 +121,7 @@ struct TableView: View {
             }
         }
         .frame(
+            minWidth: effectiveMinWidth,
             maxWidth: .infinity,
             maxHeight: usesInnerScroll ? .infinity : nil,
             alignment: .topLeading

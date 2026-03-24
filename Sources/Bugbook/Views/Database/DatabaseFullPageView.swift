@@ -660,7 +660,8 @@ struct DatabaseFullPageView: View {
                         onClearSorts: { state.clearSorts() },
                         onNewRow: { createNewRow() },
                         showVerticalLines: showVerticalLines,
-                        usesInnerScroll: false
+                        usesInnerScroll: false,
+                        containerWidth: geo.size.width
                     )
                     .frame(
                         minWidth: geo.size.width,
