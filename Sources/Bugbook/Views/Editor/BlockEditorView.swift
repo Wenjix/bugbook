@@ -96,11 +96,11 @@ struct BlockEditorView: View {
 
     @ViewBuilder
     private func editorSurface(startIndex: Int) -> some View {
-        if contentColumnMaxWidth != nil {
+        if let maxWidth = contentColumnMaxWidth {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 editorContent(startIndex: startIndex)
-                    .frame(maxWidth: contentColumnMaxWidth)
+                    .frame(maxWidth: maxWidth)
                 Spacer(minLength: 0)
             }
         } else {
