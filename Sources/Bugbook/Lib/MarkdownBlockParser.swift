@@ -418,6 +418,13 @@ enum MarkdownBlockParser {
 
             case .meeting:
                 lines.append("<!-- meeting: \(block.meetingTitle) -->")
+
+            case .canvas:
+                lines.append("<!-- canvas -->")
+
+            case .headingToggle:
+                let hashes = String(repeating: "#", count: max(1, min(6, block.headingLevel)))
+                lines.append("\(hashes) \(block.text)")
             }
         }
 

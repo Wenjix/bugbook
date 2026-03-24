@@ -1,4 +1,36 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
+
+/// Manages the floating recording pill panel lifecycle.
+class FloatingRecordingPillController {
+    #if os(macOS)
+    private var panel: FloatingRecordingPillPanel?
+    #endif
+
+    var isRecording: Bool = false {
+        didSet {
+            #if os(macOS)
+            if isRecording {
+                let p = FloatingRecordingPillPanel(startDate: Date())
+                p.orderFront(nil)
+                panel = p
+            } else {
+                panel?.close()
+                panel = nil
+            }
+            #endif
+        }
+    }
+
+    func cleanup() {
+        #if os(macOS)
+        panel?.close()
+        panel = nil
+        #endif
+    }
+}
 
 /// A floating pill indicator shown when a meeting recording is active.
 /// Displays a pulsing red dot, elapsed time, and audio level bars.
