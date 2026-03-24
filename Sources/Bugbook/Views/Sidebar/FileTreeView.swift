@@ -55,14 +55,14 @@ struct FileTreeView: View {
                 .overlay(alignment: .top) {
                     if case .above(index) = dropState.mode {
                         Rectangle()
-                            .fill(Color.accentColor)
+                            .fill(Color.dragIndicator)
                             .frame(height: 2)
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
-                        .fill(dropState.mode == .onto(index) ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .fill(dropState.mode == .onto(index) ? Color.dragIndicator.opacity(0.15) : Color.clear)
                         .allowsHitTesting(false)
                 )
                 .onDrag {
@@ -87,7 +87,7 @@ struct FileTreeView: View {
                 .overlay(alignment: .top) {
                     if dropState.mode == .above(cachedEntries.count) {
                         Rectangle()
-                            .fill(Color.accentColor)
+                            .fill(Color.dragIndicator)
                             .frame(height: 2)
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
@@ -139,6 +139,10 @@ struct FileTreeDropDelegate: DropDelegate {
         return entry.name.hasSuffix(".md") || entry.isDirectory
     }
 
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.text])
+    }
+
     func dropEntered(info: DropInfo) {
         updateDropMode(info: info)
     }
@@ -148,6 +152,7 @@ struct FileTreeDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard info.hasItemsConforming(to: [.text]) else { return nil }
         updateDropMode(info: info)
         return DropProposal(operation: .move)
     }
@@ -217,10 +222,10 @@ struct FileTreeDropDelegate: DropDelegate {
                 case .above(let insertIndex):
                     let draggedName = (draggedPath as NSString).lastPathComponent
                     let draggedParent = (draggedPath as NSString).deletingLastPathComponent
-                    let sameParent = entries.contains(where: { ($0.path as NSString).deletingLastPathComponent == draggedParent })
+                    let isAlreadySibling = draggedParent == parentPath || entries.contains(where: { $0.path == draggedPath })
 
-                    if sameParent {
-                        // Same parent — just reorder
+                    if isAlreadySibling {
+                        // Reorder within the same directory
                         fileSystem.reorderEntry(
                             named: draggedName,
                             toIndex: insertIndex,
@@ -229,24 +234,20 @@ struct FileTreeDropDelegate: DropDelegate {
                         )
                         onDidReorder()
                     } else {
-                        // Cross-parent — move file to this directory, then reorder
-                        // Don't drop into own descendant
-                        let draggedCompanion = draggedPath.hasSuffix(".md") ? String(draggedPath.dropLast(3)) : draggedPath
-                        guard !parentPath.hasPrefix(draggedCompanion + "/") else { return }
+                        // Move from another location into this directory
+                        // Insert into custom order at the drop position so it
+                        // appears where the user dropped it, not alphabetically.
+                        var names = entries.map(\.name)
+                        let insertAt = min(insertIndex, names.count)
+                        names.insert(draggedName, at: insertAt)
+                        fileSystem.saveCustomOrder(names, for: parentPath)
 
-                        // Determine destination directory from parentPath
-                        // parentPath is either a companion folder path or the workspace root
-                        let destDir = parentPath
                         NotificationCenter.default.post(
                             name: .movePageToDir,
                             object: nil,
-                            userInfo: [
-                                "sourcePath": draggedPath,
-                                "destDir": destDir,
-                                "insertIndex": insertIndex,
-                                "siblings": entries.map(\.name)
-                            ]
+                            userInfo: ["sourcePath": draggedPath, "destDir": parentPath]
                         )
+                        onRefreshTree()
                     }
 
                 case .none:
