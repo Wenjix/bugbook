@@ -17,6 +17,7 @@ struct KanbanView: View {
     var onRenameSelectOption: ((String, String, String) -> Void)?
     var onDeleteSelectOption: ((String, String) -> Void)?
     var onHideColumn: ((String, String) -> Void)?
+    var usesInnerScroll: Bool = true
 
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
@@ -120,35 +121,46 @@ struct KanbanView: View {
                 .padding(.vertical, DatabaseZoomMetrics.size(6))
             }
 
-            GeometryReader { geo in
-                ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: DatabaseZoomMetrics.size(12)) {
-                        ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
-                            kanbanColumn(column, index: index, availableHeight: geo.size.height - 24)
-                        }
-
-                        // Add new option column
-                        if groupProperty != nil {
-                            addOptionColumn
-                        }
-                    }
-                    .padding(DatabaseZoomMetrics.size(12))
-                    .coordinateSpace(name: Self.coordinateSpaceName)
-                    .onPreferenceChange(KanbanCardFramePreferenceKey.self) { cardFrames = $0 }
-                    .overlay {
-                        if let dragId = draggingRowId,
-                           let row = rows.first(where: { $0.id == dragId }) {
-                            let title = row.title(schema: schema)
-                            dragPreview(title)
-                                .position(dragLocation)
-                                .allowsHitTesting(false)
-                        }
-                    }
+            if usesInnerScroll {
+                GeometryReader { geo in
+                    kanbanScrollContent(availableHeight: geo.size.height - 24)
                 }
-                .scrollIndicators(.hidden)
+            } else {
+                kanbanScrollContent(availableHeight: nil)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: usesInnerScroll ? .infinity : nil, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: !usesInnerScroll)
+    }
+
+    // MARK: - Scroll Content
+
+    private func kanbanScrollContent(availableHeight: CGFloat?) -> some View {
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DatabaseZoomMetrics.size(12)) {
+                ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
+                    kanbanColumn(column, index: index, availableHeight: availableHeight)
+                }
+
+                // Add new option column
+                if groupProperty != nil {
+                    addOptionColumn
+                }
+            }
+            .padding(DatabaseZoomMetrics.size(12))
+            .coordinateSpace(name: Self.coordinateSpaceName)
+            .onPreferenceChange(KanbanCardFramePreferenceKey.self) { cardFrames = $0 }
+            .overlay {
+                if let dragId = draggingRowId,
+                   let row = rows.first(where: { $0.id == dragId }) {
+                    let title = row.title(schema: schema)
+                    dragPreview(title)
+                        .position(dragLocation)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
     }
 
     // MARK: - Drag Preview
@@ -377,7 +389,7 @@ struct KanbanView: View {
 
     // MARK: - Kanban Column
 
-    private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int, availableHeight: CGFloat) -> some View {
+    private func kanbanColumn(_ column: (id: String, name: String, color: String), index: Int, availableHeight: CGFloat?) -> some View {
         let isTargeted = dragTargetColumn == column.id
         let columnColor = colorForName(column.color)
         return VStack(alignment: .leading, spacing: 0) {
@@ -405,48 +417,15 @@ struct KanbanView: View {
                 columnPopoverContent(for: column)
             }
 
-            // Cards — scroll vertically within column
-            ScrollView(.vertical) {
-                LazyVStack(spacing: DatabaseZoomMetrics.size(6)) {
-                    let columnRows = rowsForColumn(column.id)
-
-                    ForEach(columnRows) { row in
-                        let title = row.title(schema: schema)
-                        kanbanCard(row, title: title, columnColor: columnColor)
-                            .opacity(draggingRowId == row.id ? 0.2 : 1)
-                            .gesture(
-                                DragGesture(coordinateSpace: .named(Self.coordinateSpaceName))
-                                    .onChanged { value in
-                                        updateDrag(for: row, at: value.location)
-                                    }
-                                    .onEnded { value in
-                                        endDrag(for: row, at: value.location)
-                                    }
-                            )
-                    }
-
-                    // + New page button at bottom, colored like Notion
-                    Button {
-                        addCardInColumn(column.id)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus")
-                            Text("New page")
-                        }
-                        .font(DatabaseZoomMetrics.font(12))
-                        .foregroundStyle(columnColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, DatabaseZoomMetrics.size(10))
-                        .padding(.vertical, DatabaseZoomMetrics.size(8))
-                        .background(columnColor.opacity(0.08))
-                        .clipShape(.rect(cornerRadius: cardCornerRadius))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+            // Cards
+            if usesInnerScroll {
+                ScrollView(.vertical) {
+                    columnCards(column, columnColor: columnColor)
                 }
-                .padding(.bottom, DatabaseZoomMetrics.size(8))
+                .scrollIndicators(.automatic)
+            } else {
+                columnCards(column, columnColor: columnColor)
             }
-            .scrollIndicators(.automatic)
         }
         .frame(width: columnWidth)
         .frame(maxHeight: availableHeight)
@@ -458,6 +437,49 @@ struct KanbanView: View {
             RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(8))
                 .stroke(isTargeted ? columnColor.opacity(0.4) : columnColor.opacity(0.1), lineWidth: 1)
         )
+    }
+
+    // MARK: - Column Cards
+
+    private func columnCards(_ column: (id: String, name: String, color: String), columnColor: Color) -> some View {
+        LazyVStack(spacing: DatabaseZoomMetrics.size(6)) {
+            let columnRows = rowsForColumn(column.id)
+
+            ForEach(columnRows) { row in
+                let title = row.title(schema: schema)
+                kanbanCard(row, title: title, columnColor: columnColor)
+                    .opacity(draggingRowId == row.id ? 0.2 : 1)
+                    .gesture(
+                        DragGesture(coordinateSpace: .named(Self.coordinateSpaceName))
+                            .onChanged { value in
+                                updateDrag(for: row, at: value.location)
+                            }
+                            .onEnded { value in
+                                endDrag(for: row, at: value.location)
+                            }
+                    )
+            }
+
+            // + New page button at bottom, colored like Notion
+            Button {
+                addCardInColumn(column.id)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                    Text("New page")
+                }
+                .font(DatabaseZoomMetrics.font(12))
+                .foregroundStyle(columnColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DatabaseZoomMetrics.size(10))
+                .padding(.vertical, DatabaseZoomMetrics.size(8))
+                .background(columnColor.opacity(0.08))
+                .clipShape(.rect(cornerRadius: cardCornerRadius))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, DatabaseZoomMetrics.size(6))
+        }
+        .padding(.bottom, DatabaseZoomMetrics.size(8))
     }
 
     // MARK: - Move Card
