@@ -14,41 +14,16 @@ enum BlockType: Equatable {
     case pageLink
     case column
     case toggle
+    case headingToggle
+    case canvas
     case meeting
 }
 
-// MARK: - Meeting Block State
-
-enum MeetingState: Equatable {
-    case before
-    case during
-    case after
-}
-
-struct TranscriptEntry: Identifiable, Equatable {
-    let id: UUID
-    var text: String
-    var isUser: Bool
-    var timestamp: Date
-
-    init(id: UUID = UUID(), text: String, isUser: Bool = false, timestamp: Date = Date()) {
-        self.id = id
-        self.text = text
-        self.isUser = isUser
-        self.timestamp = timestamp
-    }
-}
-
-struct ActionItem: Identifiable, Equatable {
-    let id: UUID
-    var text: String
-    var isChecked: Bool
-
-    init(id: UUID = UUID(), text: String, isChecked: Bool = false) {
-        self.id = id
-        self.text = text
-        self.isChecked = isChecked
-    }
+/// The lifecycle state of a meeting recording block.
+enum MeetingBlockState: Equatable {
+    case recording
+    case processing
+    case complete
 }
 
 struct Block: Identifiable, Equatable {
@@ -71,16 +46,12 @@ struct Block: Identifiable, Equatable {
     var isExpanded: Bool
 
     // Meeting block properties
-    var meetingState: MeetingState
+    var meetingState: MeetingBlockState
+    var meetingTranscript: String
+    var meetingSummary: String
+    var meetingActionItems: String
     var meetingTitle: String
     var meetingNotes: String
-    var meetingTranscript: [TranscriptEntry]
-    var meetingSummary: String
-    var meetingKeyDecisions: [String]
-    var meetingActionItems: [ActionItem]
-    var meetingDiscussionNotes: String
-    var meetingStartDate: Date?
-    var meetingDuration: TimeInterval
     var transcriptEntries: [String] = []
 
     init(
@@ -101,16 +72,12 @@ struct Block: Identifiable, Equatable {
         children: [Block] = [],
         columnIndex: Int = 0,
         isExpanded: Bool = true,
-        meetingState: MeetingState = .before,
-        meetingTitle: String = "",
-        meetingNotes: String = "",
-        meetingTranscript: [TranscriptEntry] = [],
+        meetingState: MeetingBlockState = .complete,
+        meetingTranscript: String = "",
         meetingSummary: String = "",
-        meetingKeyDecisions: [String] = [],
-        meetingActionItems: [ActionItem] = [],
-        meetingDiscussionNotes: String = "",
-        meetingStartDate: Date? = nil,
-        meetingDuration: TimeInterval = 0
+        meetingActionItems: String = "",
+        meetingTitle: String = "",
+        meetingNotes: String = ""
     ) {
         self.id = id
         self.type = type
@@ -130,14 +97,10 @@ struct Block: Identifiable, Equatable {
         self.columnIndex = columnIndex
         self.isExpanded = isExpanded
         self.meetingState = meetingState
-        self.meetingTitle = meetingTitle
-        self.meetingNotes = meetingNotes
         self.meetingTranscript = meetingTranscript
         self.meetingSummary = meetingSummary
-        self.meetingKeyDecisions = meetingKeyDecisions
         self.meetingActionItems = meetingActionItems
-        self.meetingDiscussionNotes = meetingDiscussionNotes
-        self.meetingStartDate = meetingStartDate
-        self.meetingDuration = meetingDuration
+        self.meetingTitle = meetingTitle
+        self.meetingNotes = meetingNotes
     }
 }

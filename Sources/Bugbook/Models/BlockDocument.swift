@@ -870,7 +870,7 @@ class BlockDocument {
             saveUndo()
             updateBlockProperty(id: blockId) { block in
                 block.type = .meeting
-                block.meetingState = .recording
+                block.meetingState = .complete
                 block.meetingTranscript = ""
                 block.meetingSummary = ""
                 block.meetingActionItems = ""
