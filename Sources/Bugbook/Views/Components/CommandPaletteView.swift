@@ -960,15 +960,3 @@ struct CommandPaletteView: View {
         }
     }
 }
-View {
-        if entry.isCanvas {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        } else {
-            Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        }
-    }
-}
