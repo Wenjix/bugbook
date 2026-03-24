@@ -21,6 +21,7 @@ enum BlockType: Equatable {
 
 /// The lifecycle state of a meeting recording block.
 enum MeetingBlockState: Equatable {
+    case ready
     case recording
     case processing
     case complete

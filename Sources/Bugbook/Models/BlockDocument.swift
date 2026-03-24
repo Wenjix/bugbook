@@ -151,6 +151,18 @@ class BlockDocument {
         updateBlockProperty(id: blockId) { $0.language = summary }
     }
 
+    func updateMeetingTitle(blockId: UUID, title: String) {
+        updateBlockProperty(id: blockId) { $0.meetingTitle = title }
+    }
+
+    func updateMeetingNotes(blockId: UUID, notes: String) {
+        updateBlockProperty(id: blockId) { $0.meetingNotes = notes }
+    }
+
+    func updateMeetingState(blockId: UUID, state: MeetingBlockState) {
+        updateBlockProperty(id: blockId) { $0.meetingState = state }
+    }
+
     /// Safely update a block's properties whether it's top-level or inside a column.
     func updateBlockProperty(id: UUID, _ mutate: (inout Block) -> Void) {
         guard let loc = blockLocation(for: id) else { return }
@@ -870,11 +882,12 @@ class BlockDocument {
             saveUndo()
             updateBlockProperty(id: blockId) { block in
                 block.type = .meeting
-                block.meetingState = .complete
+                block.meetingState = .ready
                 block.meetingTranscript = ""
                 block.meetingSummary = ""
                 block.meetingActionItems = ""
                 block.meetingTitle = ""
+                block.meetingNotes = ""
             }
             dismissSlashMenu()
             onStartMeeting?(blockId)
