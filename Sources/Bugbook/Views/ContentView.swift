@@ -231,10 +231,12 @@ struct ContentView: View {
                 handleSidebarToggleRequest()
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
+                flushDirtyTabContent()
                 appState.commandPaletteMode = .search
                 appState.commandPaletteOpen.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpenNewTab)) { _ in
+                flushDirtyTabContent()
                 appState.commandPaletteMode = .newTab
                 appState.commandPaletteOpen = true
             }
@@ -2262,6 +2264,18 @@ struct ContentView: View {
         lastTrashPurgeWorkspace = workspace
         Task { @MainActor in
             fileSystem.purgeOldTrash(in: workspace)
+        }
+    }
+
+    /// Syncs in-memory BlockDocument content into openTabs[].content for every
+    /// dirty tab so the command palette's content index sees the latest edits,
+    /// even if the 1-second save debounce hasn't fired yet.
+    private func flushDirtyTabContent() {
+        for i in appState.openTabs.indices where appState.openTabs[i].isDirty {
+            let tabId = appState.openTabs[i].id
+            if let doc = blockDocuments[tabId] {
+                appState.openTabs[i].content = doc.markdown
+            }
         }
     }
 

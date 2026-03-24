@@ -175,7 +175,9 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
-            // Invalidate cached content index so it rebuilds from disk on next search
+            // Always invalidate the content index so we pick up recent edits.
+            // Files with unsaved changes (dirty tabs) are read from the in-memory
+            // tab content rather than disk, avoiding the 1-second save debounce.
             contentIndex = []
             contentIndexWorkspace = nil
             contentIndexTask?.cancel()
@@ -567,9 +569,13 @@ struct CommandPaletteView: View {
             return indexed
         }
 
+        // Collect in-memory content for dirty tabs so the index reflects
+        // edits that haven't been flushed to disk yet (1-second debounce).
+        let dirtyContent = dirtyTabContent()
+
         contentIndexTask?.cancel()
         let buildTask = Task<[IndexedContentLine], Never> {
-            await buildContentIndex(workspace: workspace)
+            await buildContentIndex(workspace: workspace, dirtyContent: dirtyContent)
         }
         contentIndexTask = buildTask
 
@@ -585,7 +591,21 @@ struct CommandPaletteView: View {
         return indexed
     }
 
-    private func buildContentIndex(workspace: String) async -> [IndexedContentLine] {
+    /// Returns a snapshot of in-memory content for any open tab whose file
+    /// may not have been flushed to disk yet (isDirty == true).
+    @MainActor
+    private func dirtyTabContent() -> [String: String] {
+        var result: [String: String] = [:]
+        for tab in appState.openTabs where tab.isDirty && !tab.path.isEmpty && !tab.content.isEmpty {
+            result[tab.path] = tab.content
+        }
+        return result
+    }
+
+    /// Builds the content index by reading .md files from disk.
+    /// For files in `dirtyContent`, the in-memory string is used instead of
+    /// the on-disk version, so edits that haven't been saved yet are indexed.
+    private func buildContentIndex(workspace: String, dirtyContent: [String: String] = [:]) async -> [IndexedContentLine] {
         await Task.detached(priority: .utility) {
             let fm = FileManager.default
             guard let enumerator = fm.enumerator(atPath: workspace) else { return [IndexedContentLine]() }
@@ -618,7 +638,14 @@ struct CommandPaletteView: View {
                 if excludedDirs.contains(parentDir) { continue }
 
                 let fullPath = (workspace as NSString).appendingPathComponent(relativePath)
-                guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
+                // Prefer in-memory content for dirty (unsaved) tabs over stale disk content.
+                let content: String
+                if let dirtyVersion = dirtyContent[fullPath] {
+                    content = dirtyVersion
+                } else {
+                    guard let diskContent = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
+                    content = diskContent
+                }
 
                 let lines = content.components(separatedBy: .newlines)
                 for (lineIndex, line) in lines.enumerated() {
@@ -674,8 +701,11 @@ struct CommandPaletteView: View {
     private func searchFileContents(query: String) async -> [ContentMatch] {
         guard let workspace = appState.workspacePath else { return [] }
 
-        // Use qmd when available — faster and ranking-aware
-        if let binary = qmdBinaryPath, !binary.isEmpty {
+        // Use qmd when available — faster and ranking-aware.
+        // Skip qmd for dirty tabs since its external index won't reflect unsaved edits;
+        // the in-memory index (below) uses dirty tab content instead of stale disk files.
+        let dirty = dirtyTabContent()
+        if let binary = qmdBinaryPath, !binary.isEmpty, dirty.isEmpty {
             if let results = await searchWithQmd(query: query, workspace: workspace, binary: binary) {
                 return results
             }
@@ -919,6 +949,18 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private func defaultFileIcon(for entry: FileEntry) -> some View {
+        if entry.isCanvas {
+            Image(systemName: "rectangle.on.rectangle.angled")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        } else {
+            Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+View {
         if entry.isCanvas {
             Image(systemName: "rectangle.on.rectangle.angled")
                 .font(.system(size: 13))
