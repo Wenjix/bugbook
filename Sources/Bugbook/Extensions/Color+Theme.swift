@@ -19,9 +19,6 @@ extension Color {
     static let borderColor = Color("borderColor", bundle: nil)
     static let dividerColor = Color("dividerColor", bundle: nil)
 
-    // MARK: - Drag & Drop
-    static let dragIndicator = Color(light: Color(hex: "B4D7FF"), dark: Color(hex: "B4D7FF").opacity(0.7))
-
     // MARK: - Surfaces
     static let sidebarBg = Color("sidebarBg", bundle: nil)
     static let editorBg = Color("editorBg", bundle: nil)

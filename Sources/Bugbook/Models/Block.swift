@@ -81,6 +81,7 @@ struct Block: Identifiable, Equatable {
     var meetingDiscussionNotes: String
     var meetingStartDate: Date?
     var meetingDuration: TimeInterval
+    var transcriptEntries: [String] = []
 
     init(
         id: UUID = UUID(),

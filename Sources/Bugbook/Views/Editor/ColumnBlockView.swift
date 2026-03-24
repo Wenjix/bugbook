@@ -66,7 +66,7 @@ struct ColumnBlockView: View {
     }
 }
 
-/// Thin drop zone within a column that shows a horizontal line.
+/// Thin drop zone within a column that shows a horizontal blue line.
 struct InColumnDropZone: View {
     let isActive: Bool
     let onDrop: (UUID) -> Void

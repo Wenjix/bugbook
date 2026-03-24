@@ -36,9 +36,7 @@ struct BlockCellView: View {
         blockShell
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color.accentColor.opacity(
-                    isBlockHighlighted ? 0.15 : 0
-                ))
+                .fill(isBlockHighlighted ? Color.selectionHighlight : Color.clear)
                 .allowsHitTesting(false)
         )
     }
@@ -72,7 +70,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image, .pageLink, .meeting:
+        case .databaseEmbed, .image, .pageLink, .canvas, .meeting:
             true
         default:
             false
@@ -83,7 +81,7 @@ struct BlockCellView: View {
         isRowHovering
             || isHandleHovering
             || isHandleDragging
-            || document.blockMenuBlockId == block.id
+            || showBlockMenu
     }
 
     private var isBlockHighlighted: Bool {
@@ -219,7 +217,7 @@ struct BlockCellView: View {
     @ViewBuilder
     private var blockContent: some View {
         switch block.type {
-        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote:
+        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .headingToggle:
             TextBlockView(document: document, block: block, onTyping: onTyping)
 
         case .codeBlock:
@@ -233,7 +231,6 @@ struct BlockCellView: View {
 
         case .databaseEmbed:
             DatabaseEmbedBlockView(
-                block: block,
                 dbPath: resolvedDatabasePath ?? block.databasePath,
                 onOpenDatabaseTab: document.onOpenDatabaseTab,
                 sidebarReferencePayload: databaseSidebarReferencePayload
@@ -253,12 +250,23 @@ struct BlockCellView: View {
         case .column:
             ColumnBlockView(document: document, block: block, onTyping: onTyping)
 
+        case .canvas:
+            CanvasBlockView(document: document, block: block)
+
         case .meeting:
-            MeetingBlockView(document: document, block: block)
+            MeetingBlockView(
+                document: document,
+                block: block
+            )
         }
     }
 }
 
+/// Attaches floating popovers only to the block that currently needs them.
+/// Instead of adding 4 NSViewRepresentable anchors (one per popover type) to
+/// every block, we check the document's active IDs and only attach popovers
+/// when this block is the target.  This reduces per-block overhead from 4
+/// hidden NSViews + 8 onChange handlers to zero for non-active blocks.
 private struct PopoverSyncModifier: ViewModifier {
     var document: BlockDocument
     let block: Block
@@ -267,54 +275,19 @@ private struct PopoverSyncModifier: ViewModifier {
     @Binding var showPagePicker: Bool
     @Binding var showAiPrompt: Bool
 
+    /// Whether this block is the target of any popover right now.
+    private var isSlashTarget: Bool { document.slashMenuBlockId == block.id }
+    private var isBlockMenuTarget: Bool { document.blockMenuBlockId == block.id }
+    private var isPagePickerTarget: Bool { document.showPagePicker && document.pagePickerBlockId == block.id }
+    private var isAiPromptTarget: Bool { document.aiPromptBlockId == block.id }
+
     func body(content: Content) -> some View {
         popoverLayer(content)
-            .modifier(PopoverChangeTracker(
-                document: document,
-                block: block,
-                showSlashMenu: $showSlashMenu,
-                showBlockMenu: $showBlockMenu,
-                showPagePicker: $showPagePicker,
-                showAiPrompt: $showAiPrompt
-            ))
-    }
-
-    @ViewBuilder
-    private func popoverLayer(_ content: Content) -> some View {
-        content
-            .floatingPopover(isPresented: $showSlashMenu, arrowEdge: .bottom) {
-                SlashCommandMenu(document: document)
-            }
-            .floatingPopover(isPresented: $showBlockMenu, arrowEdge: .leading, onDelete: {
-                document.dismissBlockMenu()
-                document.deleteBlock(id: block.id)
-            }) {
-                BlockMenuView(document: document, blockId: block.id)
-            }
-            .floatingPopover(isPresented: $showPagePicker, arrowEdge: .bottom) {
-                PagePickerView(document: document)
-            }
-            .floatingPopover(isPresented: $showAiPrompt, arrowEdge: .bottom) {
-                AiPromptView(document: document)
-            }
-    }
-}
-
-private struct PopoverChangeTracker: ViewModifier {
-    var document: BlockDocument
-    let block: Block
-    @Binding var showSlashMenu: Bool
-    @Binding var showBlockMenu: Bool
-    @Binding var showPagePicker: Bool
-    @Binding var showAiPrompt: Bool
-
-    func body(content: Content) -> some View {
-        content
             .onAppear {
-                showSlashMenu = (document.slashMenuBlockId == block.id)
-                showBlockMenu = (document.blockMenuBlockId == block.id)
-                showPagePicker = document.showPagePicker && document.pagePickerBlockId == block.id
-                showAiPrompt = (document.aiPromptBlockId == block.id)
+                showSlashMenu = isSlashTarget
+                showBlockMenu = isBlockMenuTarget
+                showPagePicker = isPagePickerTarget
+                showAiPrompt = isAiPromptTarget
             }
             .onChange(of: document.slashMenuBlockId) { _, newVal in
                 let shouldShow = (newVal == block.id)
@@ -353,11 +326,49 @@ private struct PopoverChangeTracker: ViewModifier {
             }
             .onChange(of: showAiPrompt) { _, show in
                 if !show && document.aiPromptBlockId == block.id {
-                    // Don't dismiss while generating — keep the popover alive
                     if document.isAiGenerating {
                         showAiPrompt = true
                     } else {
                         document.dismissAiPrompt()
+                    }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func popoverLayer(_ content: Content) -> some View {
+        // Only attach the floatingPopover modifier (which creates an NSViewRepresentable
+        // anchor) when this block is the active target for that popover type.
+        // Non-target blocks get zero hidden NSViews from popovers.
+        content
+            .background {
+                if isSlashTarget {
+                    Color.clear.floatingPopover(isPresented: $showSlashMenu, arrowEdge: .bottom) {
+                        SlashCommandMenu(document: document)
+                    }
+                }
+            }
+            .background {
+                if isBlockMenuTarget {
+                    Color.clear.floatingPopover(isPresented: $showBlockMenu, arrowEdge: .leading, onDelete: {
+                        document.dismissBlockMenu()
+                        document.deleteBlock(id: block.id)
+                    }) {
+                        BlockMenuView(document: document, blockId: block.id)
+                    }
+                }
+            }
+            .background {
+                if isPagePickerTarget {
+                    Color.clear.floatingPopover(isPresented: $showPagePicker, arrowEdge: .bottom) {
+                        PagePickerView(document: document)
+                    }
+                }
+            }
+            .background {
+                if isAiPromptTarget {
+                    Color.clear.floatingPopover(isPresented: $showAiPrompt, arrowEdge: .bottom) {
+                        AiPromptView(document: document)
                     }
                 }
             }
@@ -447,7 +458,7 @@ private struct AiPromptView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Brand.subtle)
+        .background(Color.fallbackSurfaceSubtle)
     }
 
     private var aiPromptHints: some View {

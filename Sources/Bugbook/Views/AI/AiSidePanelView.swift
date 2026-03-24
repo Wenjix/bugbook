@@ -369,7 +369,7 @@ struct AiSidePanelView: View {
                         .foregroundStyle(
                             inputText.trimmingCharacters(in: .whitespaces).isEmpty
                                 ? Color.fallbackTextMuted
-                                : Brand.primary
+                                : Color.fallbackTextPrimary
                         )
                 }
                 .buttonStyle(.borderless)
