@@ -107,7 +107,8 @@ enum MarkdownBlockParser {
             pageLinkName: String = "",
             children: [Block] = [],
             columnIndex: Int = 0,
-            isExpanded: Bool = true
+            isExpanded: Bool = true,
+            transcriptEntries: [String] = []
         ) -> Block {
             let colors = pendingColors ?? (.default, .default)
             let block = Block(
@@ -127,7 +128,8 @@ enum MarkdownBlockParser {
                 backgroundColor: colors.1,
                 children: children,
                 columnIndex: columnIndex,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                transcriptEntries: transcriptEntries
             )
             pendingBlockID = nil
             pendingColors = nil
@@ -352,6 +354,7 @@ enum MarkdownBlockParser {
             // Meeting block
             if trimmed == "<!-- meeting -->" {
                 i += 1
+<<<<<<< HEAD
                 var title = ""
                 var transcript = ""
                 var summary = ""
@@ -398,6 +401,18 @@ enum MarkdownBlockParser {
                 meetingBlock.meetingNotes = notes
                 meetingBlock.meetingState = .complete
                 blocks.append(meetingBlock)
+=======
+                var transcriptLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    transcriptLines.append(lines[i])
+                    i += 1
+                }
+                blocks.append(makeBlock(type: .meeting, transcriptEntries: transcriptLines))
+>>>>>>> worktree-agent-a64e714e
                 continue
             }
 
@@ -490,6 +505,7 @@ enum MarkdownBlockParser {
                 }
                 lines.append("<!-- /toggle -->")
 
+<<<<<<< HEAD
             case .headingToggle:
                 let level = max(1, min(3, block.headingLevel))
                 let collapsed = block.isExpanded ? "" : " collapsed"
@@ -506,6 +522,18 @@ enum MarkdownBlockParser {
                     lines.append(block.text)
                 }
                 lines.append("<!-- /canvas -->")
+=======
+            case .meeting:
+                lines.append("<!-- meeting -->")
+                for entry in block.transcriptEntries {
+                    lines.append(entry)
+                }
+                // Include any in-progress text as well
+                if !block.text.isEmpty {
+                    lines.append(block.text)
+                }
+                lines.append("<!-- /meeting -->")
+>>>>>>> worktree-agent-a64e714e
 
             case .column:
                 lines.append("<!-- columns -->")

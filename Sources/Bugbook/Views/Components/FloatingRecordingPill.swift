@@ -1,196 +1,138 @@
-import AppKit
 import SwiftUI
 
-// MARK: - Floating Recording Pill Panel
+/// A floating pill indicator shown when a meeting recording is active.
+/// Displays a pulsing red dot, elapsed time, and audio level bars.
+struct FloatingRecordingPill: View {
+    let audioLevel: Float
+    let onStop: () -> Void
 
-/// A small always-on-top pill that appears when a meeting is recording and Bugbook
-/// loses focus. Shows animated green audio bars inside a dark capsule.
-/// Clicking it brings Bugbook back to the front.
-final class FloatingRecordingPillPanel: NSPanel {
-    private let hostingView: NSHostingView<RecordingPillView>
-
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    init() {
-        self.hostingView = NSHostingView(rootView: RecordingPillView())
-
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 60, height: 30),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
-
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        isMovableByWindowBackground = true
-        hidesOnDeactivate = false
-        contentView = hostingView
-    }
-
-    func showPill() {
-        hostingView.rootView = RecordingPillView(isAnimating: true)
-
-        // Re-evaluate size and position each show (handles display changes)
-        let size = hostingView.fittingSize
-        setContentSize(size)
-        if let screen = NSScreen.main {
-            let screenFrame = screen.visibleFrame
-            let x = screenFrame.midX - size.width / 2
-            let y = screenFrame.maxY - size.height - 12
-            setFrameOrigin(NSPoint(x: x, y: y))
-        }
-
-        orderFront(nil)
-    }
-
-    func hidePill() {
-        hostingView.rootView = RecordingPillView(isAnimating: false)
-        orderOut(nil)
-    }
-}
-
-// MARK: - Recording Pill SwiftUI View
-
-private struct RecordingPillView: View {
-    var isAnimating: Bool = true
+    @State private var elapsed: TimeInterval = 0
+    @State private var timer: Timer?
+    @State private var startDate = Date()
 
     var body: some View {
-        HStack(spacing: 6) {
-            // App icon (small ladybug)
-            Image(systemName: "ladybug.fill")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.9))
+        HStack(spacing: 8) {
+            // Pulsing red dot
+            PulsingDot()
 
-            // Animated audio bars
-            AudioBarsView(isAnimating: isAnimating)
-                .frame(width: 16, height: 14)
+            // Elapsed time
+            Text(formattedTime)
+                .font(.system(size: Typography.caption, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.fallbackTextPrimary)
+
+            // Mini audio bars
+            MiniAudioBars(audioLevel: audioLevel)
+                .frame(width: 32, height: 14)
+
+            // Stop button
+            Button {
+                onStop()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white)
+                    .frame(width: 20, height: 20)
+                    .background(StatusColor.error)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Elevation.popoverBg)
+        .clipShape(Capsule())
+        .overlay(
             Capsule()
-                .fill(Color(hex: "1a1a1a"))
-                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                .strokeBorder(Elevation.popoverBorder, lineWidth: 1)
         )
-        .contentShape(Capsule())
-        .onTapGesture {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
-    }
-}
-
-// MARK: - Animated Audio Bars
-
-private struct AudioBarsView: View {
-    var isAnimating: Bool
-
-    private static let barCount = 3
-    private static let spacing: CGFloat = 1.5
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 0.15, paused: !isAnimating)) { timeline in
-            HStack(spacing: Self.spacing) {
-                ForEach(0..<Self.barCount, id: \.self) { index in
-                    AudioBar(
-                        date: timeline.date,
-                        seed: index,
-                        isAnimating: isAnimating
-                    )
+        .shadow(
+            color: Elevation.shadowColor.opacity(Elevation.shadowOpacity),
+            radius: Elevation.shadowRadius,
+            y: Elevation.shadowY
+        )
+        .onAppear {
+            startDate = Date()
+            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+                Task { @MainActor in
+                    elapsed = Date().timeIntervalSince(startDate)
                 }
             }
         }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    private var formattedTime: String {
+        let minutes = Int(elapsed) / 60
+        let seconds = Int(elapsed) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 
-private struct AudioBar: View {
-    var date: Date
-    var seed: Int
-    var isAnimating: Bool
+// MARK: - Pulsing Dot
 
-    private let green = Color(hex: "4ade80")
-    private let maxHeight: CGFloat = 14
-    private let minFraction: CGFloat = 0.25
+private struct PulsingDot: View {
+    @State private var isPulsing = false
 
     var body: some View {
-        let fraction = isAnimating ? barHeight(date: date, seed: seed) : 0.3
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(green)
-            .frame(width: 3, height: fraction * maxHeight)
-            .animation(.easeInOut(duration: 0.15), value: date)
-    }
-
-    /// Pseudo-random bar height derived from time + seed for organic movement.
-    private func barHeight(date: Date, seed: Int) -> CGFloat {
-        let t = date.timeIntervalSinceReferenceDate
-        // Different frequency per bar so they don't sync up
-        let freq = 2.5 + Double(seed) * 1.3
-        let raw = (sin(t * freq) + 1) / 2       // 0...1
-        let jitter = sin(t * freq * 2.7) * 0.15  // small wobble
-        return max(minFraction, min(1.0, raw + jitter))
+        Circle()
+            .fill(StatusColor.error)
+            .frame(width: 8, height: 8)
+            .opacity(isPulsing ? 0.4 : 1.0)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    isPulsing = true
+                }
+            }
     }
 }
 
-// MARK: - Controller
+// MARK: - Mini Audio Bars
 
-/// Manages the lifecycle of the floating recording pill.
-/// Owns the panel and responds to app activation / recording state changes.
-@MainActor
-final class FloatingRecordingPillController {
-    private var panel: FloatingRecordingPillPanel?
-    private var activateObserver: NSObjectProtocol?
-    private var resignObserver: NSObjectProtocol?
+private struct MiniAudioBars: View {
+    let audioLevel: Float
+    private let barCount = 5
 
-    /// Whether recording is active. Set from outside; the controller handles show/hide.
-    var isRecording: Bool = false {
-        didSet {
-            guard isRecording != oldValue else { return }
-            updateVisibility()
-        }
-    }
-
-    init() {
-        activateObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.updateVisibility() }
-        }
-
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.updateVisibility() }
-        }
-    }
-
-    /// Tear down the panel and notification observers. Call from `.onDisappear`
-    /// so cleanup runs on MainActor (deinit is nonisolated and can't do this safely).
-    func cleanup() {
-        if let o = activateObserver { NotificationCenter.default.removeObserver(o) }
-        if let o = resignObserver { NotificationCenter.default.removeObserver(o) }
-        activateObserver = nil
-        resignObserver = nil
-        panel?.orderOut(nil)
-        panel = nil
-    }
-
-    private func updateVisibility() {
-        let shouldShow = isRecording && !NSApplication.shared.isActive
-        if shouldShow {
-            if panel == nil {
-                panel = FloatingRecordingPillPanel()
+    var body: some View {
+        HStack(spacing: 1.5) {
+            ForEach(0..<barCount, id: \.self) { index in
+                MiniBar(audioLevel: audioLevel, barIndex: index, totalBars: barCount)
             }
-            panel?.showPill()
-        } else {
-            panel?.hidePill()
         }
+    }
+}
+
+private struct MiniBar: View {
+    let audioLevel: Float
+    let barIndex: Int
+    let totalBars: Int
+
+    @State private var animatedHeight: CGFloat = 0.15
+
+    private var targetHeight: CGFloat {
+        let center = CGFloat(totalBars) / 2.0
+        let distance = abs(CGFloat(barIndex) - center) / center
+        let baseHeight: CGFloat = 0.15
+        let level = CGFloat(audioLevel)
+        let taper = 1.0 - (distance * 0.5)
+        let jitter = CGFloat.random(in: 0.85...1.15)
+        return max(baseHeight, level * taper * jitter)
+    }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(StatusColor.error.opacity(0.7))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect(y: animatedHeight, anchor: .center)
+            .onChange(of: audioLevel) { _, _ in
+                withAnimation(.easeInOut(duration: 0.08)) {
+                    animatedHeight = targetHeight
+                }
+            }
+            .onAppear {
+                animatedHeight = targetHeight
+            }
     }
 }

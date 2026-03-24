@@ -16,6 +16,7 @@ enum BlockType: Equatable {
     case toggle
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     case headingToggle
     case canvas
     case meeting
@@ -68,6 +69,9 @@ struct ActionItem: Identifiable, Equatable {
 >>>>>>> worktree-agent-af890d65
 =======
 >>>>>>> worktree-agent-a9737ffc
+=======
+    case meeting
+>>>>>>> worktree-agent-a64e714e
 }
 
 struct Block: Identifiable, Equatable {
@@ -88,6 +92,7 @@ struct Block: Identifiable, Equatable {
     var children: [Block]
     var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
     var isExpanded: Bool
+    var transcriptEntries: [String]  // transcript lines for meeting blocks
 
     // Meeting block properties
 <<<<<<< HEAD
@@ -136,6 +141,7 @@ struct Block: Identifiable, Equatable {
         isExpanded: Bool = true,
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         meetingState: MeetingBlockState = .complete,
         meetingTranscript: String = "",
         meetingSummary: String = "",
@@ -159,6 +165,9 @@ struct Block: Identifiable, Equatable {
 >>>>>>> worktree-agent-af890d65
 =======
 >>>>>>> worktree-agent-a9737ffc
+=======
+        transcriptEntries: [String] = []
+>>>>>>> worktree-agent-a64e714e
     ) {
         self.id = id
         self.type = type
@@ -177,6 +186,7 @@ struct Block: Identifiable, Equatable {
         self.children = children
         self.columnIndex = columnIndex
         self.isExpanded = isExpanded
+<<<<<<< HEAD
         self.meetingState = meetingState
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -201,5 +211,8 @@ struct Block: Identifiable, Equatable {
 >>>>>>> worktree-agent-af890d65
 =======
 >>>>>>> worktree-agent-a9737ffc
+=======
+        self.transcriptEntries = transcriptEntries
+>>>>>>> worktree-agent-a64e714e
     }
 }
