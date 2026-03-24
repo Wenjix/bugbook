@@ -62,6 +62,12 @@ struct BlockEditorView: View {
             EditorFrameReporter(frameInWindow: $editorFrameInWindow, window: $editorWindow)
         )
         .simultaneousGesture(marqueeSelectionGesture)
+        .onTapGesture {
+            if !document.selectedBlockIds.isEmpty {
+                document.clearBlockSelection()
+                document.clearMultiBlockTextSelection()
+            }
+        }
         .editorTextCursor()
         .focusable()
         .focusEffectDisabled()

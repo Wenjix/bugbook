@@ -43,6 +43,7 @@ struct BlockTextView: NSViewRepresentable {
     var isMultiline: Bool = false
     var font: NSFont = .systemFont(ofSize: EditorTypography.bodyFontSize)
     var textColor: NSColor = .labelColor
+    var strikethrough: Bool = false
     var placeholder: String? = nil
     var onTextChange: (() -> Void)? = nil
     @Binding var textHeight: CGFloat
@@ -201,13 +202,18 @@ struct BlockTextView: NSViewRepresentable {
             .foregroundColor: EditorSelectionStyle.foregroundColor
         ]
 
-        // Re-apply foreground color to existing text when textColor changes
+        // Re-apply foreground color and strikethrough to existing text when textColor changes
         if textColor != context.coordinator.lastTextColor {
             context.coordinator.lastTextColor = textColor
             let fullRange = NSRange(location: 0, length: textView.textStorage?.length ?? 0)
             if fullRange.length > 0 {
                 context.coordinator.withProgrammaticViewUpdate {
                     textView.textStorage?.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+                    textView.textStorage?.addAttribute(
+                        .strikethroughStyle,
+                        value: strikethrough ? NSUnderlineStyle.single.rawValue : 0,
+                        range: fullRange
+                    )
                 }
             }
         }

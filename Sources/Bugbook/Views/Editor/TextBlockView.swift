@@ -24,6 +24,7 @@ struct TextBlockView: View {
                     isMultiline: false,
                     font: nsFont,
                     textColor: nsTextColor,
+                    strikethrough: block.type == .taskItem && block.isChecked,
                     placeholder: nil,
                     onTextChange: onTyping,
                     textHeight: $textHeight
