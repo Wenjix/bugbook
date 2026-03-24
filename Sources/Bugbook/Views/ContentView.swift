@@ -697,33 +697,32 @@ struct ContentView: View {
         }
     }
 
-    /// Handle a page file path dropped from the sidebar into the editor.
-    /// Inserts a [[Page]] link block at the drop index and moves the file into
-    /// the target page's companion folder so it disappears from the sidebar.
+    /// Handle a page path dropped from the sidebar into the editor.
+    /// Inserts a page link block and moves the source file into the current page's companion folder.
     private func handleSidebarPageDrop(sourcePath: String, into document: BlockDocument, at insertIndex: Int) {
-        guard let targetFilePath = document.filePath else { return }
-        // Don't drop a page onto itself
-        guard sourcePath != targetFilePath else { return }
+        guard let tab = appState.activeTab,
+              sourcePath != tab.path,
+              FileManager.default.fileExists(atPath: sourcePath) else { return }
 
         let pageName = ((sourcePath as NSString).lastPathComponent as NSString).deletingPathExtension
 
-        // Insert the pageLink block into the live document
-        document.insertPageLinkBlock(at: insertIndex, name: pageName)
-
-        // Force-save the document to disk immediately so that performMovePage
-        // sees the [[PageName]] link already present and won't add a duplicate.
-        if let tab = appState.activeTab {
-            if appState.activeTabIndex < appState.openTabs.count {
-                appState.openTabs[appState.activeTabIndex].isDirty = true
-            }
-            performSave(tabId: tab.id)
+        let targetCompanionDir: String
+        if tab.path.hasSuffix(".md") {
+            targetCompanionDir = String(tab.path.dropLast(3))
+        } else {
+            targetCompanionDir = tab.path
         }
 
-        // Move the source file into the target page's companion folder
-        let companionDir = targetFilePath.hasSuffix(".md")
-            ? String(targetFilePath.dropLast(3))
-            : targetFilePath
-        performMovePage(from: sourcePath, toDirectory: companionDir)
+        guard !tab.path.hasPrefix(sourcePath.hasSuffix(".md") ? String(sourcePath.dropLast(3)) + "/" : sourcePath + "/") else { return }
+
+        performMovePage(from: sourcePath, toDirectory: targetCompanionDir)
+
+        let alreadyLinked = document.blocks.contains { $0.type == .pageLink && $0.pageLinkName == pageName }
+        if !alreadyLinked {
+            document.insertPageLinkBlock(at: insertIndex, name: pageName)
+        }
+
+        scheduleSave()
     }
 
     /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
@@ -1037,26 +1036,27 @@ struct ContentView: View {
                                         .padding(.trailing, 52)
                                         .padding(.top, 8)
                                 }
-
-                                BlockEditorView(
-                                    document: document,
-                                    onTextChange: {
-                                        guard appState.activeTabIndex < appState.openTabs.count else { return }
-                                        if !appState.openTabs[appState.activeTabIndex].isDirty {
-                                            appState.openTabs[appState.activeTabIndex].isDirty = true
-                                        }
-                                        syncTitle(from: document)
-                                        scheduleSave()
-                                    },
-                                    onTyping: { triggerFocusMode() },
-                                    onPagePathDrop: { sourcePath, insertIndex in
-                                        handleSidebarPageDrop(sourcePath: sourcePath, into: document, at: insertIndex)
-                                    }
-                                )
                             }
                             .frame(maxWidth: document.fullWidth ? .infinity : 860)
                             Spacer(minLength: 0)
                         }
+
+                        BlockEditorView(
+                            document: document,
+                            onTextChange: {
+                                guard appState.activeTabIndex < appState.openTabs.count else { return }
+                                if !appState.openTabs[appState.activeTabIndex].isDirty {
+                                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                                }
+                                syncTitle(from: document)
+                                scheduleSave()
+                            },
+                            onTyping: { triggerFocusMode() },
+                            onPagePathDrop: { sourcePath, insertIndex in
+                                handleSidebarPageDrop(sourcePath: sourcePath, into: document, at: insertIndex)
+                            },
+                            contentColumnMaxWidth: document.fullWidth ? nil : 860
+                        )
                     }
                 }
                 .background(Color.fallbackEditorBg)

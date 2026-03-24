@@ -68,6 +68,9 @@ extension Color {
 
     // Selection / highlight
     static let selectionHighlight = Color(light: Color(hex: "B4D7FF").opacity(0.45), dark: Color(hex: "B4D7FF").opacity(0.2))
+
+    // Drag & drop indicator — #B4D7FF blue
+    static let dragIndicator = Color(light: Color(hex: "B4D7FF"), dark: Color(hex: "B4D7FF").opacity(0.7))
 }
 
 // MARK: - Helpers

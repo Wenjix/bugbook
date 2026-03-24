@@ -55,14 +55,14 @@ struct FileTreeView: View {
                 .overlay(alignment: .top) {
                     if case .above(index) = dropState.mode {
                         Rectangle()
-                            .fill(Color.accentColor)
+                            .fill(Color.dragIndicator)
                             .frame(height: 2)
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
-                        .fill(dropState.mode == .onto(index) ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .fill(dropState.mode == .onto(index) ? Color.dragIndicator.opacity(0.15) : Color.clear)
                         .allowsHitTesting(false)
                 )
                 .onDrag {
@@ -87,7 +87,7 @@ struct FileTreeView: View {
                 .overlay(alignment: .top) {
                     if dropState.mode == .above(cachedEntries.count) {
                         Rectangle()
-                            .fill(Color.accentColor)
+                            .fill(Color.dragIndicator)
                             .frame(height: 2)
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
@@ -139,6 +139,10 @@ struct FileTreeDropDelegate: DropDelegate {
         return entry.name.hasSuffix(".md") || entry.isDirectory
     }
 
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.text])
+    }
+
     func dropEntered(info: DropInfo) {
         updateDropMode(info: info)
     }
@@ -148,6 +152,7 @@ struct FileTreeDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard info.hasItemsConforming(to: [.text]) else { return nil }
         updateDropMode(info: info)
         return DropProposal(operation: .move)
     }

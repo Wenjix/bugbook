@@ -96,7 +96,16 @@ struct BlockEditorView: View {
 
     @ViewBuilder
     private func editorSurface(startIndex: Int) -> some View {
-        editorContent(startIndex: startIndex)
+        if contentColumnMaxWidth != nil {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                editorContent(startIndex: startIndex)
+                    .frame(maxWidth: contentColumnMaxWidth)
+                Spacer(minLength: 0)
+            }
+        } else {
+            editorContent(startIndex: startIndex)
+        }
     }
 
     private func editorContent(startIndex: Int) -> some View {
@@ -122,7 +131,7 @@ struct BlockEditorView: View {
                 // After an image block use a slimmer drop zone since ImageBlockView
                 // already provides a generous 44pt tap region internally.
                 let dropZoneAfterImage = block.type == .image
-                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 8 : (useTallDropZone ? 24 : 12)
+                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 12)
 
                 BlockCellView(
                     document: document,
@@ -193,20 +202,16 @@ struct BlockEditorView: View {
                 }
             }
 
-            // Click target after last block — always visible, creates new block
+            // Click target after last block — always visible, focuses or creates trailing empty paragraph
             Button {
                 if document.consumePendingEditorTapAfterBlockSelection() {
                     return
                 }
                 document.clearMultiBlockTextSelection()
-                if let lastBlock = document.blocks.last,
-                   lastBlock.text.isEmpty,
-                   lastBlock.type != .databaseEmbed,
-                   lastBlock.type != .canvas {
+                document.ensureTrailingParagraph()
+                if let lastBlock = document.blocks.last {
                     document.focusedBlockId = lastBlock.id
                     document.cursorPosition = 0
-                } else {
-                    document.appendEmptyBlock()
                 }
             } label: {
                 Color.clear
@@ -838,7 +843,7 @@ final class EditorFrameReporterView: NSView {
 /// and sidebar page drops (file path strings that create page links).
 struct DropZoneView: View {
     let isActive: Bool
-    var height: CGFloat = 4
+    var height: CGFloat = 12
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
@@ -853,7 +858,7 @@ struct DropZoneView: View {
             .frame(maxWidth: .infinity)
             .overlay {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(height: 2)
                     .opacity(isActive || imageDropTargeted ? 1 : 0)
             }
@@ -902,7 +907,7 @@ struct ColumnDropZoneView: View {
             .frame(maxHeight: .infinity)
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(width: 2)
                     .opacity(isActive ? 1 : 0)
             }

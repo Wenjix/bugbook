@@ -285,6 +285,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureWindows() {
         for window in NSApplication.shared.windows {
+            guard !(window is NSPanel) else { continue }
             guard !window.titlebarAppearsTransparent else { continue }
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden

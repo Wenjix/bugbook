@@ -175,9 +175,14 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
-            // Always rebuild the content index when Cmd+K opens so edits
-            // to file contents (and new/removed files) are picked up.
-            invalidateContentIndex()
+            // Always rebuild content index from disk so edits are found
+            contentIndex = []
+            contentIndexWorkspace = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
+            Task { @MainActor in
+                await warmContentIndexIfNeeded()
+            }
             // Detect qmd once; in-memory index remains the fallback
             Task {
                 let path = await Task.detached(priority: .utility) {
