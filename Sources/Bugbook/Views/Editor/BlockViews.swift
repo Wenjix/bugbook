@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Shared block-deletion keyboard modifier
 
@@ -274,7 +275,16 @@ struct DatabaseEmbedBlockView: View {
     @State private var isHovered = false
 
     var body: some View {
-        databaseEmbedView
+        if let sidebarReferencePayload {
+            databaseEmbedView
+                .onDrag {
+                    let encoder = JSONEncoder()
+                    let data = (try? encoder.encode(sidebarReferencePayload)) ?? Data()
+                    return NSItemProvider(item: data as NSData, typeIdentifier: UTType.json.identifier)
+                }
+        } else {
+            databaseEmbedView
+        }
     }
 
     private var databaseEmbedView: some View {

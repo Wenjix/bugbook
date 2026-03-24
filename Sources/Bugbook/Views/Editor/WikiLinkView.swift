@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct WikiLinkView: View {
     let pageName: String
@@ -9,8 +10,10 @@ struct WikiLinkView: View {
     var body: some View {
         if let sidebarReferencePayload {
             linkContent
-                .draggable(sidebarReferencePayload) {
-                    dragPreview
+                .onDrag {
+                    let encoder = JSONEncoder()
+                    let data = (try? encoder.encode(sidebarReferencePayload)) ?? Data()
+                    return NSItemProvider(item: data as NSData, typeIdentifier: UTType.json.identifier)
                 }
         } else {
             linkContent
