@@ -60,7 +60,6 @@ class BlockDocument {
     }
 
     @ObservationIgnored var onCreateDatabase: ((String) -> String?)?
-    @ObservationIgnored var onCreateMeetingDatabase: (() -> String?)?
     @ObservationIgnored var onCreateSubPage: ((String) -> String?)?
     @ObservationIgnored var onDeleteSubPage: ((String) -> Void)?
     @ObservationIgnored var onNavigateToPage: ((String) -> Void)?
@@ -70,12 +69,6 @@ class BlockDocument {
     /// Opens the AI sidebar with pre-loaded context (transcript + notes)
     @ObservationIgnored var onOpenAiPanelWithContext: ((String) -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
-    /// Called when a page is dropped from the sidebar into the editor.
-    /// Parameters: (sourcePath, insertionIndex). Should move the file and refresh tree.
-    @ObservationIgnored var onDropPageFromSidebar: ((String, Int) -> Void)?
-    @ObservationIgnored var onStartMeeting: ((UUID) -> Void)?
-    @ObservationIgnored var onStopMeeting: ((UUID) -> Void)?
-    @ObservationIgnored var transcriptionService: TranscriptionService?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
     @ObservationIgnored var workspacePath: String?
@@ -147,10 +140,6 @@ class BlockDocument {
         } else {
             blocks[loc.topLevel].text = text
         }
-    }
-
-    func updateMeetingSummary(blockId: UUID, summary: String) {
-        updateBlockProperty(id: blockId) { $0.language = summary }
     }
 
     /// Safely update a block's properties whether it's top-level or inside a column.
@@ -790,47 +779,15 @@ class BlockDocument {
         case template
         case imagePicker
         case askAI
-        case meetingNotes
-        case meeting
     }
 
     struct SlashCommand {
         let name: String
         let icon: String
         let action: SlashCommandAction
-        let section: String
-        var keywords: [String] = []
-
-        func matches(_ query: String) -> Bool {
-            if name.localizedStandardContains(query) { return true }
-            return keywords.contains { $0.localizedStandardContains(query) }
-        }
     }
 
     static let slashCommands: [SlashCommand] = [
-<<<<<<< HEAD
-        // Suggested
-        SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI, section: "Suggested", keywords: ["ai", "chat", "generate", "write"]),
-        SlashCommand(name: "Image", icon: "photo", action: .imagePicker, section: "Suggested", keywords: ["photo", "picture", "media", "upload"]),
-        SlashCommand(name: "Template", icon: "doc.on.doc", action: .template, section: "Suggested", keywords: ["snippet", "preset"]),
-        SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting, section: "Suggested", keywords: ["record", "transcribe", "audio", "notes"]),
-        // Basic blocks
-        SlashCommand(name: "Text", icon: "text.alignleft", action: .blockType(.paragraph, headingLevel: 0), section: "Basic blocks", keywords: ["paragraph", "plain"]),
-        SlashCommand(name: "Heading 1", icon: "textformat.size.larger", action: .blockType(.heading, headingLevel: 1), section: "Basic blocks", keywords: ["h1", "title", "header"]),
-        SlashCommand(name: "Heading 2", icon: "textformat.size", action: .blockType(.heading, headingLevel: 2), section: "Basic blocks", keywords: ["h2", "subtitle", "header"]),
-        SlashCommand(name: "Heading 3", icon: "textformat.size.smaller", action: .blockType(.heading, headingLevel: 3), section: "Basic blocks", keywords: ["h3", "header"]),
-        SlashCommand(name: "Bullet List", icon: "list.bullet", action: .blockType(.bulletListItem, headingLevel: 0), section: "Basic blocks", keywords: ["unordered", "bullets", "ul"]),
-        SlashCommand(name: "Numbered List", icon: "list.number", action: .blockType(.numberedListItem, headingLevel: 0), section: "Basic blocks", keywords: ["ordered", "ol", "numbers"]),
-        SlashCommand(name: "To-do", icon: "checkmark.square", action: .blockType(.taskItem, headingLevel: 0), section: "Basic blocks", keywords: ["checkbox", "task", "checklist", "check"]),
-        SlashCommand(name: "Quote", icon: "text.quote", action: .blockType(.blockquote, headingLevel: 0), section: "Basic blocks", keywords: ["blockquote", "callout"]),
-        SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0), section: "Basic blocks", keywords: ["codeblock", "snippet", "programming"]),
-        SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0), section: "Basic blocks", keywords: ["separator", "line", "hr", "horizontal rule"]),
-        SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0), section: "Basic blocks", keywords: ["collapse", "expand", "accordion", "dropdown"]),
-        // Inline
-        SlashCommand(name: "Page", icon: "doc.text", action: .createPage, section: "Inline", keywords: ["subpage", "new page", "child"]),
-        SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage, section: "Inline", keywords: ["wiki", "reference", "mention"]),
-        SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0), section: "Inline", keywords: ["table", "spreadsheet", "kanban", "board"]),
-=======
         SlashCommand(name: "Text", icon: "text.alignleft", action: .blockType(.paragraph, headingLevel: 0)),
         SlashCommand(name: "Heading 1", icon: "textformat.size.larger", action: .blockType(.heading, headingLevel: 1)),
         SlashCommand(name: "Heading 2", icon: "textformat.size", action: .blockType(.heading, headingLevel: 2)),
@@ -849,16 +806,11 @@ class BlockDocument {
         SlashCommand(name: "Meeting", icon: "mic.fill", action: .blockType(.meeting, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
-<<<<<<< HEAD
->>>>>>> worktree-agent-a9737ffc
-=======
-        SlashCommand(name: "Meeting", icon: "waveform", action: .blockType(.meeting, headingLevel: 0)),
->>>>>>> worktree-agent-a64e714e
     ]
 
     var filteredSlashCommands: [SlashCommand] {
         if slashMenuFilter.isEmpty { return Self.slashCommands }
-        return Self.slashCommands.filter { $0.matches(slashMenuFilter) }
+        return Self.slashCommands.filter { $0.name.localizedStandardContains(slashMenuFilter) }
     }
 
     func executeSlashCommand() {
@@ -910,31 +862,6 @@ class BlockDocument {
             dismissSlashMenu()
             return
 
-        case .meetingNotes:
-            if let createDb = onCreateMeetingDatabase,
-               let dbPath = createDb() {
-                updateBlockProperty(id: blockId) { block in
-                    block.type = .databaseEmbed
-                    block.databasePath = dbPath
-                }
-            }
-            dismissSlashMenu()
-            return
-
-        case .meeting:
-            saveUndo()
-            updateBlockProperty(id: blockId) { block in
-                block.type = .meeting
-                block.meetingState = .recording
-                block.meetingTranscript = ""
-                block.meetingSummary = ""
-                block.meetingActionItems = ""
-                block.meetingTitle = ""
-            }
-            dismissSlashMenu()
-            onStartMeeting?(blockId)
-            return
-
         case let .blockType(type, headingLevel):
             // Database command needs special handling — creates files via callback
             if type == .databaseEmbed {
@@ -972,15 +899,6 @@ class BlockDocument {
             block.text = ""
         }
         dismissPagePicker()
-    }
-
-    /// Insert a page link block at a specific index (used for sidebar drag-drop).
-    func insertPageLinkBlock(at index: Int, name: String) {
-        saveUndo()
-        let block = Block(type: .pageLink, pageLinkName: name)
-        let clampedIndex = min(index, blocks.count)
-        blocks.insert(block, at: clampedIndex)
-        focusedBlockId = block.id
     }
 
     @ObservationIgnored private var _pagePickerCache: (search: String, entries: [FileEntry])?
@@ -1083,16 +1001,6 @@ class BlockDocument {
         guard let indices = selectedBlockIndices() else { return nil }
         let selectedBlocks = indices.map { blocks[$0] }
         return MarkdownBlockParser.serialize(selectedBlocks)
-    }
-
-    func selectedBlockContextItems() -> [AiContextItem] {
-        guard let indices = selectedBlockIndices() else { return [] }
-        return indices.map { idx in
-            let block = blocks[idx]
-            let markdown = MarkdownBlockParser.serialize([block])
-            let plainPreview = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return AiContextItem.block(id: block.id, preview: plainPreview, markdown: markdown)
-        }
     }
 
     /// Replaces the selected blocks with AI-generated content.
@@ -1200,17 +1108,6 @@ class BlockDocument {
         let clampedIndex = min(index, blocks.count)
         blocks.insert(imageBlock, at: clampedIndex)
         focusedBlockId = imageBlock.id
-    }
-
-    /// Returns true if the payload string looks like a sidebar page file path.
-    static func isSidebarPagePath(_ payload: String) -> Bool {
-        payload.hasPrefix("/") && payload.hasSuffix(".md")
-    }
-
-    /// Extracts the page display name from a sidebar file path.
-    static func pageNameFromPath(_ path: String) -> String {
-        let filename = (path as NSString).lastPathComponent
-        return filename.hasSuffix(".md") ? String(filename.dropLast(3)) : filename
     }
 
     /// Saves raw image data to the workspace `_assets/` directory and returns the absolute path.
@@ -1610,5 +1507,4 @@ class BlockDocument {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
-
 }

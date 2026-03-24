@@ -14,23 +14,6 @@ enum BlockType: Equatable {
     case pageLink
     case column
     case toggle
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-    case headingToggle
-    case canvas
-    case meeting
-}
-
-/// The lifecycle state of a meeting recording block.
-enum MeetingBlockState: Equatable {
-    case recording
-    case processing
-    case complete
-=======
-=======
->>>>>>> worktree-agent-a9737ffc
     case meeting
 }
 
@@ -66,16 +49,6 @@ struct ActionItem: Identifiable, Equatable {
         self.text = text
         self.isChecked = isChecked
     }
-<<<<<<< HEAD
->>>>>>> worktree-agent-af890d65
-=======
->>>>>>> worktree-agent-a9737ffc
-=======
-    case meeting
->>>>>>> worktree-agent-a64e714e
-=======
-    case meeting
->>>>>>> worktree-agent-a923313b
 }
 
 struct Block: Identifiable, Equatable {
@@ -96,21 +69,8 @@ struct Block: Identifiable, Equatable {
     var children: [Block]
     var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
     var isExpanded: Bool
-<<<<<<< HEAD
-    var transcriptEntries: [String]  // transcript lines for meeting blocks
 
     // Meeting block properties
-<<<<<<< HEAD
-<<<<<<< HEAD
-    var meetingState: MeetingBlockState
-    var meetingTranscript: String
-    var meetingSummary: String
-    var meetingActionItems: String
-    var meetingTitle: String
-    var meetingNotes: String
-=======
-=======
->>>>>>> worktree-agent-a9737ffc
     var meetingState: MeetingState
     var meetingTitle: String
     var meetingNotes: String
@@ -121,14 +81,6 @@ struct Block: Identifiable, Equatable {
     var meetingDiscussionNotes: String
     var meetingStartDate: Date?
     var meetingDuration: TimeInterval
-<<<<<<< HEAD
->>>>>>> worktree-agent-af890d65
-=======
->>>>>>> worktree-agent-a9737ffc
-=======
-    var meetingTranscript: String
-    var meetingNotes: String
->>>>>>> worktree-agent-a923313b
 
     init(
         id: UUID = UUID(),
@@ -148,19 +100,6 @@ struct Block: Identifiable, Equatable {
         children: [Block] = [],
         columnIndex: Int = 0,
         isExpanded: Bool = true,
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-        meetingState: MeetingBlockState = .complete,
-        meetingTranscript: String = "",
-        meetingSummary: String = "",
-        meetingActionItems: String = "",
-        meetingTitle: String = "",
-        meetingNotes: String = ""
-=======
-=======
->>>>>>> worktree-agent-a9737ffc
         meetingState: MeetingState = .before,
         meetingTitle: String = "",
         meetingNotes: String = "",
@@ -171,17 +110,6 @@ struct Block: Identifiable, Equatable {
         meetingDiscussionNotes: String = "",
         meetingStartDate: Date? = nil,
         meetingDuration: TimeInterval = 0
-<<<<<<< HEAD
->>>>>>> worktree-agent-af890d65
-=======
->>>>>>> worktree-agent-a9737ffc
-=======
-        transcriptEntries: [String] = []
->>>>>>> worktree-agent-a64e714e
-=======
-        meetingTranscript: String = "",
-        meetingNotes: String = ""
->>>>>>> worktree-agent-a923313b
     ) {
         self.id = id
         self.type = type
@@ -200,19 +128,7 @@ struct Block: Identifiable, Equatable {
         self.children = children
         self.columnIndex = columnIndex
         self.isExpanded = isExpanded
-<<<<<<< HEAD
-<<<<<<< HEAD
         self.meetingState = meetingState
-<<<<<<< HEAD
-<<<<<<< HEAD
-        self.meetingTranscript = meetingTranscript
-        self.meetingSummary = meetingSummary
-        self.meetingActionItems = meetingActionItems
-        self.meetingTitle = meetingTitle
-        self.meetingNotes = meetingNotes
-=======
-=======
->>>>>>> worktree-agent-a9737ffc
         self.meetingTitle = meetingTitle
         self.meetingNotes = meetingNotes
         self.meetingTranscript = meetingTranscript
@@ -222,16 +138,5 @@ struct Block: Identifiable, Equatable {
         self.meetingDiscussionNotes = meetingDiscussionNotes
         self.meetingStartDate = meetingStartDate
         self.meetingDuration = meetingDuration
-<<<<<<< HEAD
->>>>>>> worktree-agent-af890d65
-=======
->>>>>>> worktree-agent-a9737ffc
-=======
-        self.transcriptEntries = transcriptEntries
->>>>>>> worktree-agent-a64e714e
-=======
-        self.meetingTranscript = meetingTranscript
-        self.meetingNotes = meetingNotes
->>>>>>> worktree-agent-a923313b
     }
 }

@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import os
 import Sentry
-import BugbookCore
 
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -15,11 +14,12 @@ struct ContentView: View {
     @State private var calendarService = CalendarService()
     @State private var calendarVM = CalendarViewModel()
     @State private var meetingNoteService = MeetingNoteService()
-    @State private var transcriptionService = TranscriptionService()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var flashcardCards: [FlashcardItem] = []
+    @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
     @State private var saveTask: Task<Void, Never>?
+    @State private var canvasSaveTask: Task<Void, Never>?
     @State private var sidebarPeek = SidebarPeekState()
     @State private var editorUI = EditorUIState()
     @State private var themeToast: ThemeMode?
@@ -29,7 +29,6 @@ struct ContentView: View {
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
     @State private var lastTrashPurgeWorkspace: String?
-    @State private var recordingPillController = FloatingRecordingPillController()
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
 
     // Database row peek / modal
@@ -103,8 +102,8 @@ struct ContentView: View {
                 guard oldValue != clamped else { return }
                 editorUI.showZoomHud()
             }
-            .onChange(of: appState.settings.qmdSearchMode) { _, _ in
-                // v2: no daemon needed, qmd query runs locally
+            .onChange(of: appState.settings.qmdSearchMode) { _, mode in
+                QmdService.prewarmDaemonIfNeeded(mode: mode)
             }
             .onChange(of: appState.sidebarOpen) { _, _ in
                 sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
@@ -149,9 +148,6 @@ struct ContentView: View {
                     ensureAiInitializedIfNeeded()
                 }
             }
-            .onChange(of: appState.isRecording) { _, recording in
-                recordingPillController.isRecording = recording
-            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
                 flushDirtyTabs()
             }
@@ -165,7 +161,6 @@ struct ContentView: View {
                 editorUI.cleanUp()
                 sidebarPeek.cleanUp()
                 workspaceWatcher?.stop()
-                recordingPillController.cleanup()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 if let path = notification.object as? String {
@@ -263,6 +258,9 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .newCanvas)) { _ in
+                createNewCanvas()
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateBack)) { _ in
                 navigateBackInActiveTab()
@@ -668,34 +666,6 @@ struct ContentView: View {
         }
     }
 
-    /// Handle a page path dropped from the sidebar into the editor.
-    /// Inserts a page link block and moves the source file into the current page's companion folder.
-    private func handleSidebarPageDrop(sourcePath: String, into document: BlockDocument, at insertIndex: Int) {
-        guard let tab = appState.activeTab,
-              sourcePath != tab.path,
-              FileManager.default.fileExists(atPath: sourcePath) else { return }
-
-        let pageName = ((sourcePath as NSString).lastPathComponent as NSString).deletingPathExtension
-
-        let targetCompanionDir: String
-        if tab.path.hasSuffix(".md") {
-            targetCompanionDir = String(tab.path.dropLast(3))
-        } else {
-            targetCompanionDir = tab.path
-        }
-
-        guard !tab.path.hasPrefix(sourcePath.hasSuffix(".md") ? String(sourcePath.dropLast(3)) + "/" : sourcePath + "/") else { return }
-
-        performMovePage(from: sourcePath, toDirectory: targetCompanionDir)
-
-        let alreadyLinked = document.blocks.contains { $0.type == .pageLink && $0.pageLinkName == pageName }
-        if !alreadyLinked {
-            document.insertPageLinkBlock(at: insertIndex, name: pageName)
-        }
-
-        scheduleSave()
-    }
-
     /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
     private static func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
         guard filePath.hasSuffix(".md"),
@@ -900,11 +870,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .inlineDatabaseRowPeek)) { notification in
             guard let dbPath = notification.databasePath,
                   let rowId = notification.databaseRowId else { return }
-            if peekTarget?.dbPath == dbPath && peekTarget?.rowId == rowId {
-                closePeekPanel()
-            } else {
-                peekTarget = RowTarget(dbPath: dbPath, rowId: rowId)
-            }
+            peekTarget = RowTarget(dbPath: dbPath, rowId: rowId)
         }
         .onReceive(NotificationCenter.default.publisher(for: .databaseRowModalRequested)) { notification in
             guard let dbPath = notification.databasePath,
@@ -924,7 +890,7 @@ struct ContentView: View {
                 )
                 .onAppear { openDefaultPageIfConfigured() }
             } else if tab.isCanvas {
-                canvasDisabledPlaceholder
+                canvasEditor(for: tab)
             } else if tab.isDatabaseRow, let dbPath = tab.databasePath, let rowId = tab.databaseRowId {
                 DatabaseRowFullPageView(
                     dbPath: dbPath,
@@ -941,7 +907,6 @@ struct ContentView: View {
                     calendarService: calendarService,
                     calendarVM: calendarVM,
                     meetingNoteService: meetingNoteService,
-                    aiService: aiService,
                     onNavigateToFile: { path in
                         navigateToFilePath(path)
                     }
@@ -1007,30 +972,23 @@ struct ContentView: View {
                                         .padding(.trailing, 52)
                                         .padding(.top, 8)
                                 }
+
+                                BlockEditorView(
+                                    document: document,
+                                    onTextChange: {
+                                        guard appState.activeTabIndex < appState.openTabs.count else { return }
+                                        if !appState.openTabs[appState.activeTabIndex].isDirty {
+                                            appState.openTabs[appState.activeTabIndex].isDirty = true
+                                        }
+                                        syncTitle(from: document)
+                                        scheduleSave()
+                                    },
+                                    onTyping: { triggerFocusMode() }
+                                )
                             }
                             .frame(maxWidth: document.fullWidth ? .infinity : 860)
                             Spacer(minLength: 0)
                         }
-
-                        BlockEditorView(
-                            document: document,
-                            onTextChange: {
-                                guard appState.activeTabIndex < appState.openTabs.count else { return }
-                                if !appState.openTabs[appState.activeTabIndex].isDirty {
-                                    appState.openTabs[appState.activeTabIndex].isDirty = true
-                                }
-                                syncTitle(from: document)
-                                scheduleSave()
-                            },
-                            onTyping: { triggerFocusMode() },
-<<<<<<< HEAD
-                            onPagePathDrop: { sourcePath, insertIndex in
-                                handleSidebarPageDrop(sourcePath: sourcePath, into: document, at: insertIndex)
-                            },
-=======
->>>>>>> worktree-agent-a6919ad7
-                            contentColumnMaxWidth: document.fullWidth ? nil : 860
-                        )
                     }
                 }
                 .background(Color.fallbackEditorBg)
@@ -1050,9 +1008,6 @@ struct ContentView: View {
                                 onCreateTemplate: {
                                     document.showTemplatePicker = false
                                     saveCurrentNoteAsTemplate(document: document)
-                                },
-                                onDelete: { template in
-                                    try? fileSystem.deleteFile(at: template.path)
                                 }
                             )
                             .onTapGesture { }
@@ -1088,12 +1043,6 @@ struct ContentView: View {
         doc.onCreateDatabase = { [weak appState] name in
             guard appState?.workspacePath != nil else { return nil }
             let path = try? createDatabasePath(name: name, parentPagePath: doc.filePath)
-            if path != nil { refreshFileTree() }
-            return path
-        }
-        doc.onCreateMeetingDatabase = { [weak appState] in
-            guard let workspace = appState?.workspacePath else { return nil }
-            let path = findOrCreateMeetingsDatabase(in: workspace)
             if path != nil { refreshFileTree() }
             return path
         }
@@ -1165,137 +1114,6 @@ struct ContentView: View {
         doc.onCancelAiPrompt = { [weak doc] in
             doc?.dismissAiPrompt()
         }
-<<<<<<< HEAD
-<<<<<<< HEAD
-        doc.transcriptionService = transcriptionService
-        doc.onStartMeeting = { [weak doc] blockId in
-            Task { await transcriptionService.startRecording() }
-            // Update live transcript into the block as it streams
-            Task { @MainActor in
-                var lastTranscript = ""
-                while transcriptionService.isRecording {
-                    let current = transcriptionService.currentTranscript
-                    if current != lastTranscript {
-                        lastTranscript = current
-                        doc?.updateBlockProperty(id: blockId) { block in
-                            block.meetingTranscript = current
-                        }
-                    }
-                    try? await Task.sleep(for: .milliseconds(500))
-                }
-            }
-        }
-        doc.onStopMeeting = { [weak doc, weak appState] blockId in
-            transcriptionService.stopRecording()
-            guard let doc else { return }
-            let transcript = transcriptionService.currentTranscript
-            doc.updateBlockProperty(id: blockId) { block in
-                block.meetingState = .processing
-                block.meetingTranscript = transcript
-            }
-            Task { @MainActor in
-                await finalizeMeeting(doc: doc, blockId: blockId, transcript: transcript, appState: appState)
-            }
-        }
-        doc.onDropPageFromSidebar = { [weak appState, weak doc] sourcePath, insertionIndex in
-            guard let appState, let doc else { return }
-            guard let tab = appState.activeTab else { return }
-            // Don't drop a page onto itself
-            guard sourcePath != tab.path else { return }
-
-            let pageName = ((sourcePath as NSString).lastPathComponent as NSString)
-                .deletingPathExtension
-
-            // Insert the page link block at the drop location
-            doc.insertPageLinkBlock(at: insertionIndex, name: pageName)
-
-            // Mark dirty and save immediately so performMovePage sees the link
-            // already in the file and doesn't append a duplicate at the bottom
-            if let tabIdx = appState.openTabs.firstIndex(where: { $0.id == tab.id }) {
-                appState.openTabs[tabIdx].isDirty = true
-            }
-            performSave(tabId: tab.id)
-
-            // Move the file into this page's companion folder
-            let companionDir = tab.path.hasSuffix(".md") ? String(tab.path.dropLast(3)) : tab.path
-            performMovePage(from: sourcePath, toDirectory: companionDir)
-        }
-    }
-
-    // MARK: - Meeting Finalization
-
-    private static let meetingTitleDateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateFormat = "MMM d, yyyy"
-        return df
-    }()
-
-    private func finalizeMeeting(doc: BlockDocument, blockId: UUID, transcript: String, appState: AppState?) async {
-        let title = "Meeting \(Self.meetingTitleDateFormatter.string(from: Date()))"
-
-        guard !transcript.isEmpty else {
-            doc.updateBlockProperty(id: blockId) { block in
-                block.meetingState = .complete
-                block.meetingTitle = title
-                block.meetingSummary = "No audio was captured."
-                block.meetingActionItems = ""
-            }
-            return
-        }
-
-        // Use AiService to summarize
-        let prompt = """
-        Summarize this meeting transcript. Return ONLY two sections separated by a blank line:
-        1. A concise summary (2-4 sentences)
-        2. Action items as a bulleted list (- [ ] each item)
-
-        Transcript:
-        \(transcript)
-        """
-
-        let engine = appState?.settings.preferredAIEngine ?? .auto
-        let apiKey = appState?.settings.anthropicApiKey ?? ""
-        let workspace = appState?.workspacePath ?? ""
-
-        do {
-            let result = try await aiService.generateContent(
-                engine: engine,
-                workspacePath: workspace,
-                prompt: prompt,
-                apiKey: apiKey
-            )
-
-            // Split result into summary and action items
-            let parts = result.components(separatedBy: "\n\n")
-            let summary = parts.first ?? result
-            let actions = parts.count > 1 ? parts.dropFirst().joined(separator: "\n\n") : ""
-
-            doc.updateBlockProperty(id: blockId) { block in
-                block.meetingState = .complete
-                block.meetingTitle = title
-                block.meetingSummary = summary
-                block.meetingActionItems = actions
-            }
-        } catch {
-            // On AI failure, still complete with just the transcript
-            doc.updateBlockProperty(id: blockId) { block in
-                block.meetingState = .complete
-                block.meetingTitle = title
-                block.meetingSummary = "AI summary unavailable: \(error.localizedDescription)"
-                block.meetingActionItems = ""
-            }
-=======
-=======
->>>>>>> worktree-agent-a9737ffc
-        doc.onOpenAiPanelWithContext = { [weak appState] context in
-            guard let appState else { return }
-            appState.aiSelectionContext = context
-            appState.openAiPanel()
-<<<<<<< HEAD
->>>>>>> worktree-agent-af890d65
-=======
->>>>>>> worktree-agent-a9737ffc
-        }
     }
 
     // MARK: - Theme
@@ -1342,9 +1160,8 @@ struct ContentView: View {
                       let doc = blockDocuments[tab.id],
                       let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
                 hideFormattingPanel()
-                let blockItems = doc.selectedBlockContextItems()
                 appState.aiSelectionContext = selectedMarkdown
-                appState.openAiPanel(referencedItems: blockItems)
+                appState.openAiPanel()
             }
         )
         panel.show(above: rect)
@@ -1381,9 +1198,8 @@ struct ContentView: View {
                       let doc = blockDocuments[tab.id],
                       let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
                 hideFormattingPanel()
-                let blockItems = doc.selectedBlockContextItems()
                 appState.aiSelectionContext = selectedMarkdown
-                appState.openAiPanel(referencedItems: blockItems)
+                appState.openAiPanel()
             }
         )
         panel.show(above: blockRect)
@@ -1556,6 +1372,8 @@ struct ContentView: View {
 
         // Register workspace as a qmd collection in the background (no-op if qmd not installed)
         QmdService.registerCollectionInBackground(workspace: workspacePath)
+        // Pre-warm the daemon now if hybrid mode is already selected
+        QmdService.prewarmDaemonIfNeeded(mode: appState.settings.qmdSearchMode)
 
         // Create onboarding file for empty workspaces before building the file tree
         if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: workspacePath) {
@@ -1675,29 +1493,6 @@ struct ContentView: View {
             return nil
         }
         return json["name"] as? String
-    }
-
-    /// Handles a page dragged from the sidebar into the editor at a specific block index.
-    /// Creates a pageLink block at the drop position and moves the file to be a sub-page.
-    private func handleSidebarPageDropIntoEditor(sourcePath: String, insertIndex: Int, document: BlockDocument) {
-        guard let tab = appState.activeTab else { return }
-        let currentPagePath = tab.path
-        // Don't drop a page onto itself
-        guard sourcePath != currentPagePath else { return }
-        // Don't drop a page that's already a sub-page of the current page
-        let currentCompanion = currentPagePath.hasSuffix(".md") ? String(currentPagePath.dropLast(3)) : currentPagePath
-        guard !(sourcePath as NSString).deletingLastPathComponent.hasPrefix(currentCompanion) else { return }
-
-        let pageName = (sourcePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
-
-        // 1. Insert the pageLink block at the drop position
-        document.insertPageLinkBlock(at: insertIndex, name: pageName)
-
-        // 2. Save the current document so the link is persisted before move
-        performSave(tabId: tab.id)
-
-        // 3. Move the file to be a sub-page of the current page
-        performMovePage(from: sourcePath, toDirectory: currentCompanion)
     }
 
     private func addSidebarReference(_ payload: SidebarReferenceDragPayload) {
@@ -2093,19 +1888,56 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Canvas (disabled)
+    // MARK: - Canvas
 
-    private var canvasDisabledPlaceholder: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(.system(size: 32))
-                .foregroundStyle(.secondary)
-            Text("Canvas (coming soon)")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
+    @ViewBuilder
+    private func canvasEditor(for tab: OpenFile) -> some View {
+        if let doc = canvasDocuments[tab.id] {
+            CanvasView(
+                document: doc,
+                onNavigateToFile: { path in navigateToFilePath(path) },
+                availablePages: appState.fileTree
+            )
+            .onChange(of: doc.isDirty) { _, dirty in
+                if dirty { scheduleCanvasSave(tabId: tab.id) }
+            }
+        } else {
+            Color.fallbackEditorBg
+                .onAppear { loadCanvasContent(for: tab) }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.fallbackEditorBg)
+    }
+
+    private func loadCanvasContent(for tab: OpenFile) {
+        guard tab.isCanvas else { return }
+        let doc = CanvasDocument()
+        doc.load(from: tab.path)
+        canvasDocuments[tab.id] = doc
+    }
+
+    private func scheduleCanvasSave(tabId: UUID) {
+        let docs = self.canvasDocuments
+        canvasSaveTask?.cancel()
+        canvasSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            docs[tabId]?.save()
+        }
+    }
+
+    private func createNewCanvas() {
+        guard let workspace = appState.workspacePath else { return }
+        do {
+            let path = try fileSystem.createCanvas(in: workspace, name: "Untitled Canvas")
+            let displayName = (path as NSString).lastPathComponent
+            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .canvas)
+            appState.openFile(entry)
+            if let tab = appState.activeTab {
+                loadCanvasContent(for: tab)
+            }
+            refreshFileTree()
+        } catch {
+            Log.canvas.error("Failed to create canvas: \(error.localizedDescription)")
+        }
     }
 
     private func createNewDatabase() {
@@ -2135,40 +1967,6 @@ struct ContentView: View {
             return try fileSystem.createDatabase(underPage: pagePath, name: name)
         }
         return try fileSystem.createDatabase(in: workspace, name: name)
-    }
-
-    private func findOrCreateMeetingsDatabase(in workspace: String) -> String? {
-        // Look for an existing "Meetings" database at the workspace root
-        if let contents = try? FileManager.default.contentsOfDirectory(atPath: workspace) {
-            for name in contents where !name.hasPrefix(".") {
-                let fullPath = (workspace as NSString).appendingPathComponent(name)
-                guard fileSystem.isDatabaseFolder(at: fullPath) else { continue }
-                let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
-                guard let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
-                      let schema = try? JSONDecoder().decode(DatabaseSchema.self, from: data),
-                      schema.name.lowercased().contains("meeting") else { continue }
-                return fullPath
-            }
-        }
-
-        // Create a new Meetings database with the right schema
-        let properties: [PropertyDefinition] = [
-            PropertyDefinition(id: "prop_title", name: "Title", type: .title),
-            PropertyDefinition(id: "prop_date", name: "Date", type: .date),
-            PropertyDefinition(id: "prop_attendees", name: "Attendees", type: .text),
-            PropertyDefinition(id: "prop_status", name: "Status", type: .select, config: PropertyConfig(options: [
-                SelectOption(id: "opt_scheduled", name: "Scheduled", color: "gray"),
-                SelectOption(id: "opt_recorded", name: "Recorded", color: "blue"),
-                SelectOption(id: "opt_summarized", name: "Summarized", color: "green"),
-            ])),
-            PropertyDefinition(id: "prop_action_items", name: "Action Items", type: .text),
-        ]
-        let views: [ViewConfig] = [
-            ViewConfig(id: "view_table", name: "All Meetings", type: .table, sorts: [
-                SortConfig(property: "prop_date", direction: "desc")
-            ]),
-        ]
-        return try? fileSystem.createDatabase(in: workspace, name: "Meetings", properties: properties, views: views)
     }
 
     private func activePagePathForDatabaseCreation() -> String? {
@@ -2407,6 +2205,7 @@ struct ContentView: View {
     /// Removes any databaseEmbed blocks referencing `dbPath` from all currently open BlockDocuments.
     private func cleanupTabDocuments(_ tabId: UUID) {
         blockDocuments.removeValue(forKey: tabId)
+        canvasDocuments.removeValue(forKey: tabId)
         databaseRowFullWidth.removeValue(forKey: tabId)
     }
 
@@ -2573,11 +2372,9 @@ struct ContentView: View {
         }
 
         let dbService = DatabaseService()
-        // Load schema before deleting so we can do an incremental index removal
-        let schemaForIndex = try? dbService.loadDatabase(at: dbPath).0
         try? dbService.deleteRow(rowId, in: dbPath)
-        if let schema = schemaForIndex {
-            try? dbService.incrementalIndexDelete(rowId: rowId, schema: schema, at: dbPath)
+        if let (schema, rows) = try? dbService.loadDatabase(at: dbPath) {
+            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
         }
 
         NotificationCenter.default.post(

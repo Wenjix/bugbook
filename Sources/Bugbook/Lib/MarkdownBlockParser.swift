@@ -15,7 +15,7 @@ enum MarkdownBlockParser {
     /// Returns the metadata and the remaining markdown content after metadata lines.
     static func parseMetadata(_ markdown: String) -> (Metadata, String) {
         var metadata = Metadata()
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         var contentStartIndex = 0
 
         for line in lines {
@@ -57,7 +57,8 @@ enum MarkdownBlockParser {
             break
         }
 
-        let remaining = lines.dropFirst(contentStartIndex).joined(separator: "\n")
+        let remainingLines = Array(lines.dropFirst(contentStartIndex))
+        let remaining = remainingLines.joined(separator: "\n")
         return (metadata, remaining)
     }
 
@@ -84,7 +85,7 @@ enum MarkdownBlockParser {
             return [Block(type: .paragraph)]
         }
 
-        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if lines.count > 1, lines.last == "" {
             lines.removeLast()
         }
@@ -107,13 +108,7 @@ enum MarkdownBlockParser {
             pageLinkName: String = "",
             children: [Block] = [],
             columnIndex: Int = 0,
-            isExpanded: Bool = true,
-<<<<<<< HEAD
-            transcriptEntries: [String] = []
-=======
-            meetingTranscript: String = "",
-            meetingNotes: String = ""
->>>>>>> worktree-agent-a923313b
+            isExpanded: Bool = true
         ) -> Block {
             let colors = pendingColors ?? (.default, .default)
             let block = Block(
@@ -133,13 +128,7 @@ enum MarkdownBlockParser {
                 backgroundColor: colors.1,
                 children: children,
                 columnIndex: columnIndex,
-                isExpanded: isExpanded,
-<<<<<<< HEAD
-                transcriptEntries: transcriptEntries
-=======
-                meetingTranscript: meetingTranscript,
-                meetingNotes: meetingNotes
->>>>>>> worktree-agent-a923313b
+                isExpanded: isExpanded
             )
             pendingBlockID = nil
             pendingColors = nil
@@ -147,7 +136,7 @@ enum MarkdownBlockParser {
         }
 
         while i < lines.count {
-            let line = String(lines[i])
+            let line = lines[i]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if let blockID = parseBlockIDComment(line) {
@@ -165,7 +154,7 @@ enum MarkdownBlockParser {
             // Code fence
             if line.hasPrefix("```") {
                 let language = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                var codeLines: [Substring] = []
+                var codeLines: [String] = []
                 i += 1
                 while i < lines.count {
                     if lines[i].hasPrefix("```") {
@@ -264,10 +253,10 @@ enum MarkdownBlockParser {
                 let collapsed = trimmed.contains("collapsed")
                 i += 1
                 // First line is the toggle title
-                let title = i < lines.count ? String(lines[i]) : ""
+                let title = i < lines.count ? lines[i] : ""
                 i += 1
                 // Remaining lines until <!-- /toggle --> are children
-                var childLines: [Substring] = []
+                var childLines: [String] = []
                 while i < lines.count {
                     if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle -->" {
                         i += 1
@@ -281,103 +270,11 @@ enum MarkdownBlockParser {
                 continue
             }
 
-<<<<<<< HEAD
-            // Heading toggle block
-            if let headingToggleLevel = parseHeadingToggleComment(trimmed) {
-                let collapsed = trimmed.contains("collapsed")
-                i += 1
-                let title = i < lines.count ? lines[i] : ""
-                i += 1
-                var childLines: [String] = []
-                while i < lines.count {
-                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle-heading -->" {
-                        i += 1
-                        break
-                    }
-                    childLines.append(String(lines[i]))
-                    i += 1
-                }
-                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
-                blocks.append(makeBlock(type: .headingToggle, text: String(title), headingLevel: headingToggleLevel, children: children, isExpanded: !collapsed))
-                continue
-            }
-
-            // Canvas block
-            if trimmed == "<!-- canvas -->" {
-                i += 1
-                var jsonLines: [String] = []
-                while i < lines.count {
-                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /canvas -->" {
-                        i += 1
-                        break
-                    }
-                    jsonLines.append(String(lines[i]))
-                    i += 1
-                }
-                let json = jsonLines.joined(separator: "\n")
-                blocks.append(makeBlock(type: .canvas, text: json))
-=======
-            // Meeting block
-            if trimmed == "<!-- meeting -->" {
-                i += 1
-                var title = ""
-                var transcript = ""
-                var notes = ""
-                enum Section { case none, transcript, notes }
-                var section = Section.none
-                var sectionLines: [String] = []
-
-                func flushSection() {
-                    let content = sectionLines.joined(separator: "\n")
-                    switch section {
-                    case .transcript: transcript = content
-                    case .notes: notes = content
-                    case .none: break
-                    }
-                    sectionLines = []
-                }
-
-                // First line is the title
-                if i < lines.count {
-                    title = lines[i]
-                    i += 1
-                }
-
-                while i < lines.count {
-                    let meetLine = lines[i].trimmingCharacters(in: .whitespaces)
-                    if meetLine == "<!-- /meeting -->" {
-                        flushSection()
-                        i += 1
-                        break
-                    }
-                    if meetLine == "<!-- transcript -->" {
-                        flushSection()
-                        section = .transcript
-                        i += 1
-                        continue
-                    }
-                    if meetLine == "<!-- notes -->" {
-                        flushSection()
-                        section = .notes
-                        i += 1
-                        continue
-                    }
-                    sectionLines.append(lines[i])
-                    i += 1
-                }
-                blocks.append(makeBlock(
-                    type: .meeting, text: title,
-                    meetingTranscript: transcript, meetingNotes: notes
-                ))
->>>>>>> worktree-agent-a923313b
-                continue
-            }
-
             // Column block
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
                 var currentColumnIndex = 0
-                var currentColumnLines: [Substring] = []
+                var currentColumnLines: [String] = []
                 i += 1
                 while i < lines.count {
                     let colLine = lines[i]
@@ -416,71 +313,6 @@ enum MarkdownBlockParser {
                 continue
             }
 
-            // Meeting block
-            if trimmed == "<!-- meeting -->" {
-                i += 1
-<<<<<<< HEAD
-                var title = ""
-                var transcript = ""
-                var summary = ""
-                var actionItems = ""
-                var notes = ""
-                var section = ""
-                while i < lines.count {
-                    let mLine = lines[i].trimmingCharacters(in: .whitespaces)
-                    if mLine == "<!-- /meeting -->" {
-                        i += 1
-                        break
-                    }
-                    if mLine.hasPrefix("<!-- meeting-title:") && mLine.hasSuffix("-->") {
-                        title = String(mLine.dropFirst(19).dropLast(3)).trimmingCharacters(in: .whitespaces)
-                    } else if mLine == "<!-- meeting-summary -->" {
-                        section = "summary"
-                    } else if mLine == "<!-- meeting-actions -->" {
-                        section = "actions"
-                    } else if mLine == "<!-- meeting-transcript -->" {
-                        section = "transcript"
-                    } else if mLine == "<!-- meeting-notes -->" {
-                        section = "notes"
-                    } else {
-                        switch section {
-                        case "summary":
-                            summary += (summary.isEmpty ? "" : "\n") + lines[i]
-                        case "actions":
-                            actionItems += (actionItems.isEmpty ? "" : "\n") + lines[i]
-                        case "transcript":
-                            transcript += (transcript.isEmpty ? "" : "\n") + lines[i]
-                        case "notes":
-                            notes += (notes.isEmpty ? "" : "\n") + lines[i]
-                        default:
-                            break
-                        }
-                    }
-                    i += 1
-                }
-                var meetingBlock = makeBlock(type: .meeting)
-                meetingBlock.meetingTitle = title
-                meetingBlock.meetingTranscript = transcript
-                meetingBlock.meetingSummary = summary
-                meetingBlock.meetingActionItems = actionItems
-                meetingBlock.meetingNotes = notes
-                meetingBlock.meetingState = .complete
-                blocks.append(meetingBlock)
-=======
-                var transcriptLines: [String] = []
-                while i < lines.count {
-                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /meeting -->" {
-                        i += 1
-                        break
-                    }
-                    transcriptLines.append(lines[i])
-                    i += 1
-                }
-                blocks.append(makeBlock(type: .meeting, transcriptEntries: transcriptLines))
->>>>>>> worktree-agent-a64e714e
-                continue
-            }
-
             // Paragraph (including empty lines)
             blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             i += 1
@@ -505,7 +337,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle, block.type != .canvas {
+            if hasColor, block.type != .column, block.type != .toggle {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -570,51 +402,6 @@ enum MarkdownBlockParser {
                 }
                 lines.append("<!-- /toggle -->")
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-            case .headingToggle:
-                let level = max(1, min(3, block.headingLevel))
-                let collapsed = block.isExpanded ? "" : " collapsed"
-                lines.append("<!-- toggle-heading \(level)\(collapsed) -->")
-                lines.append(block.text)
-                if !block.children.isEmpty {
-                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
-                }
-                lines.append("<!-- /toggle-heading -->")
-
-            case .canvas:
-                lines.append("<!-- canvas -->")
-                if !block.text.isEmpty {
-                    lines.append(block.text)
-                }
-                lines.append("<!-- /canvas -->")
-=======
-            case .meeting:
-                lines.append("<!-- meeting -->")
-                for entry in block.transcriptEntries {
-                    lines.append(entry)
-                }
-                // Include any in-progress text as well
-                if !block.text.isEmpty {
-                    lines.append(block.text)
-                }
-                lines.append("<!-- /meeting -->")
->>>>>>> worktree-agent-a64e714e
-=======
-            case .meeting:
-                lines.append("<!-- meeting -->")
-                lines.append(block.text)
-                if !block.meetingTranscript.isEmpty {
-                    lines.append("<!-- transcript -->")
-                    lines.append(block.meetingTranscript)
-                }
-                if !block.meetingNotes.isEmpty {
-                    lines.append("<!-- notes -->")
-                    lines.append(block.meetingNotes)
-                }
-                lines.append("<!-- /meeting -->")
->>>>>>> worktree-agent-a923313b
-
             case .column:
                 lines.append("<!-- columns -->")
                 let maxCol = block.children.map(\.columnIndex).max() ?? 0
@@ -630,37 +417,7 @@ enum MarkdownBlockParser {
                 lines.append("<!-- /columns -->")
 
             case .meeting:
-<<<<<<< HEAD
-<<<<<<< HEAD
-                // Only serialize completed meetings; recording/processing blocks are transient
-                guard block.meetingState == .complete else { break }
-                lines.append("<!-- meeting -->")
-                if !block.meetingTitle.isEmpty {
-                    lines.append("<!-- meeting-title: \(block.meetingTitle) -->")
-                }
-                if !block.meetingSummary.isEmpty {
-                    lines.append("<!-- meeting-summary -->")
-                    lines.append(block.meetingSummary)
-                }
-                if !block.meetingActionItems.isEmpty {
-                    lines.append("<!-- meeting-actions -->")
-                    lines.append(block.meetingActionItems)
-                }
-                if !block.meetingNotes.isEmpty {
-                    lines.append("<!-- meeting-notes -->")
-                    lines.append(block.meetingNotes)
-                }
-                if !block.meetingTranscript.isEmpty {
-                    lines.append("<!-- meeting-transcript -->")
-                    lines.append(block.meetingTranscript)
-                }
-                lines.append("<!-- /meeting -->")
-=======
                 lines.append("<!-- meeting: \(block.meetingTitle) -->")
->>>>>>> worktree-agent-af890d65
-=======
-                lines.append("<!-- meeting: \(block.meetingTitle) -->")
->>>>>>> worktree-agent-a9737ffc
             }
         }
 
@@ -719,25 +476,12 @@ enum MarkdownBlockParser {
         if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
             return true
         }
-        if trimmed == "<!-- toggle -->"
+        return trimmed == "<!-- toggle -->"
             || trimmed == "<!-- toggle collapsed -->"
             || trimmed == "<!-- /toggle -->"
-            || trimmed == "<!-- /toggle-heading -->"
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
-            || trimmed == "<!-- canvas -->"
-            || trimmed == "<!-- /canvas -->"
-            || trimmed == "<!-- meeting -->"
-            || trimmed == "<!-- /meeting -->"
-            || trimmed == "<!-- meeting-notes -->"
-            || trimmed == "<!-- meeting-transcript -->"
-            || trimmed == "<!-- meeting-summary -->"
-            || trimmed == "<!-- meeting-actions -->" {
-            return true
-        }
-        if parseHeadingToggleComment(trimmed) != nil { return true }
-        return false
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {
@@ -891,18 +635,6 @@ enum MarkdownBlockParser {
         guard trimmed.hasPrefix("[["), trimmed.hasSuffix("]]") else { return nil }
         let name = String(trimmed.dropFirst(2).dropLast(2))
         return name.isEmpty ? nil : name
-    }
-
-    private static func parseHeadingToggleComment(_ trimmed: String) -> Int? {
-        guard trimmed.hasPrefix("<!-- toggle-heading"), trimmed.hasSuffix("-->") else { return nil }
-        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
-        // inner is like "toggle-heading 2" or "toggle-heading 2 collapsed"
-        guard inner.hasPrefix("toggle-heading") else { return nil }
-        let rest = inner.dropFirst("toggle-heading".count).trimmingCharacters(in: .whitespaces)
-        // rest is like "2" or "2 collapsed"
-        let parts = rest.split(separator: " ", maxSplits: 1)
-        guard let levelStr = parts.first, let level = Int(levelStr), level >= 1, level <= 3 else { return nil }
-        return level
     }
 
     private static func parsePageLinkComment(_ line: String) -> String? {
