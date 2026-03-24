@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SidebarView: View {
     enum LayoutMode {
@@ -286,17 +287,19 @@ struct SidebarView: View {
                 .padding(.vertical, treeVerticalPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .dropDestination(
-                for: SidebarReferenceDragPayload.self,
-                action: { items, _ in
-                    guard let payload = items.first else { return false }
-                    onAddSidebarReference(payload)
-                    return true
-                },
-                isTargeted: { isTargeted in
-                    isSidebarReferenceDropTargeted = isTargeted
+            .onDrop(of: [.json], isTargeted: Binding(
+                get: { isSidebarReferenceDropTargeted },
+                set: { isSidebarReferenceDropTargeted = $0 }
+            )) { providers in
+                guard let provider = providers.first else { return false }
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.json.identifier) { data, _ in
+                    guard let data, let payload = try? JSONDecoder().decode(SidebarReferenceDragPayload.self, from: data) else { return }
+                    DispatchQueue.main.async {
+                        onAddSidebarReference(payload)
+                    }
                 }
-            )
+                return true
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
                     .stroke(isSidebarReferenceDropTargeted ? Color.dragIndicator.opacity(0.8) : Color.clear, lineWidth: 1.5)
