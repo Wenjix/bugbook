@@ -111,7 +111,7 @@ struct DatabaseInlineEmbedView: View {
         HStack(spacing: 8) {
             // Title
             if isEditingTitle {
-                TextField("Untitled Database", text: $state.editingTitle)
+                TextField("New database", text: $state.editingTitle)
                     .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .textFieldStyle(.plain)
@@ -128,7 +128,7 @@ struct DatabaseInlineEmbedView: View {
                     }
             } else {
                 Button { isEditingTitle = true } label: {
-                    Text(state.editingTitle.isEmpty ? "Untitled Database" : state.editingTitle)
+                    Text(state.editingTitle.isEmpty ? "New database" : state.editingTitle)
                         .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
                         .foregroundStyle(.primary)
                 }

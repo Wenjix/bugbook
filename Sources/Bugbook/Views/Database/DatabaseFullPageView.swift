@@ -140,7 +140,7 @@ struct DatabaseFullPageView: View {
 
     private func dbHeader(schema: DatabaseSchema) -> some View {
         HStack(spacing: 8) {
-            TextField("Database Name", text: $state.editingTitle, axis: .vertical)
+            TextField("New database", text: $state.editingTitle, axis: .vertical)
                 .lineLimit(1...10)
                 .onSubmit { state.persistTitle() }
                 .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
