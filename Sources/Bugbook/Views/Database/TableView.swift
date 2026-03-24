@@ -99,6 +99,19 @@ struct TableView: View {
 
             rowsRegion
         }
+        .background(alignment: .topLeading) {
+            // Full-height column dividers that extend beyond scroll content
+            if showVerticalLines {
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: scaledRowControlsInset)
+                    Color.clear
+                        .padding(.horizontal, DatabaseZoomMetrics.size(4))
+                        .overlay { columnDividers().allowsHitTesting(false) }
+                }
+                .padding(.top, compactHeaderHeight + 1) // below header + divider
+                .allowsHitTesting(false)
+            }
+        }
         .overlay {
             if let draggingRow {
                 dragPreview(for: draggingRow)

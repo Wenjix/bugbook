@@ -70,7 +70,7 @@ struct MeetingBlockView: View {
             HStack(spacing: 10) {
                 TextField("New Meeting", text: $title)
                     .textFieldStyle(.plain)
-                    .font(.system(size: Typography.body, weight: .medium))
+                    .font(.system(size: Typography.title3, weight: .semibold))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .onChange(of: title) { _, newVal in
                         document.updateMeetingTitle(blockId: block.id, title: newVal)
@@ -96,8 +96,6 @@ struct MeetingBlockView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-
-            Divider()
 
             TextEditor(text: $notes)
                 .font(.system(size: Typography.body))
@@ -131,7 +129,7 @@ struct MeetingBlockView: View {
 
                 TextField("New Meeting", text: $title)
                     .textFieldStyle(.plain)
-                    .font(.system(size: Typography.body, weight: .medium))
+                    .font(.system(size: Typography.title3, weight: .semibold))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .onChange(of: title) { _, newVal in
                         document.updateMeetingTitle(blockId: block.id, title: newVal)
@@ -159,8 +157,6 @@ struct MeetingBlockView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-
-            Divider()
 
             TextEditor(text: $notes)
                 .font(.system(size: Typography.body))
@@ -199,15 +195,13 @@ struct MeetingBlockView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Text(block.meetingTitle.isEmpty ? "Meeting" : block.meetingTitle)
-                    .font(.system(size: Typography.body, weight: .medium))
+                    .font(.system(size: Typography.title3, weight: .semibold))
                     .foregroundStyle(Color.fallbackTextPrimary)
 
                 Spacer()
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-
-            Divider()
 
             HStack(spacing: 8) {
                 ProgressView()
@@ -227,7 +221,7 @@ struct MeetingBlockView: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(block.meetingTitle.isEmpty ? "Meeting" : block.meetingTitle)
-                        .font(.system(size: Typography.body, weight: .medium))
+                        .font(.system(size: Typography.title3, weight: .semibold))
                         .foregroundStyle(Color.fallbackTextPrimary)
                 }
 
@@ -275,8 +269,6 @@ struct MeetingBlockView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-
-            Divider()
 
             // Content area: Summary or Notes
             switch activeTab {
@@ -510,7 +502,7 @@ struct MeetingBlockView: View {
                 }
                 .padding(10)
             }
-            .frame(maxHeight: 200)
+            .frame(maxHeight: 400)
         }
         .transition(.asymmetric(
             insertion: .push(from: .bottom).combined(with: .opacity),
@@ -536,6 +528,9 @@ struct MeetingBlockView: View {
 
     private func startRecording() {
         document.updateMeetingState(blockId: block.id, state: .recording)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            isTranscriptOpen = true
+        }
     }
 
     private func stopRecording() {

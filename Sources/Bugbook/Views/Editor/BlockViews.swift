@@ -277,11 +277,7 @@ struct DatabaseEmbedBlockView: View {
     var body: some View {
         if let sidebarReferencePayload {
             databaseEmbedView
-                .onDrag {
-                    let encoder = JSONEncoder()
-                    let data = (try? encoder.encode(sidebarReferencePayload)) ?? Data()
-                    return NSItemProvider(item: data as NSData, typeIdentifier: UTType.json.identifier)
-                }
+                .draggable(sidebarReferencePayload)
         } else {
             databaseEmbedView
         }

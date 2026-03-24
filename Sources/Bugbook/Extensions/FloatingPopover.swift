@@ -79,6 +79,9 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
         if isPresented {
             if !context.coordinator.isVisible {
                 // Panel hidden or never created — show() handles both reuse and first-time creation.
+                // When the anchor is conditionally rendered (e.g. `if isTarget { ... }`),
+                // the NSView may not be in the window hierarchy on the first updateNSView call.
+                // Retry on the next run loop iteration if show() fails due to missing window.
                 context.coordinator.show(
                     anchor: nsView,
                     arrowEdge: arrowEdge,
@@ -87,6 +90,20 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
                     onDelete: onDelete,
                     dismiss: { isPresented = false }
                 )
+                if !context.coordinator.isVisible {
+                    // Anchor wasn't in window yet — retry once after layout completes
+                    DispatchQueue.main.async { [weak nsView] in
+                        guard let nsView, self.isPresented, !context.coordinator.isVisible else { return }
+                        context.coordinator.show(
+                            anchor: nsView,
+                            arrowEdge: self.arrowEdge,
+                            becomesKey: self.becomesKey,
+                            content: self.content(),
+                            onDelete: self.onDelete,
+                            dismiss: { self.isPresented = false }
+                        )
+                    }
+                }
             } else {
                 context.coordinator.updateContent(content(), dismiss: { isPresented = false })
             }
