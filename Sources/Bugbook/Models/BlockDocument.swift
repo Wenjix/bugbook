@@ -66,6 +66,8 @@ class BlockDocument {
     @ObservationIgnored var onOpenDatabaseTab: ((String) -> Void)?
     @ObservationIgnored var onSubmitAiPrompt: ((String) -> Void)?
     @ObservationIgnored var onCancelAiPrompt: (() -> Void)?
+    /// Opens the AI sidebar with pre-loaded context (transcript + notes)
+    @ObservationIgnored var onOpenAiPanelWithContext: ((String) -> Void)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
@@ -722,6 +724,34 @@ class BlockDocument {
 
     func updateImageWidth(blockId: UUID, width: Double) {
         updateBlockProperty(id: blockId) { $0.imageWidth = Int(width) }
+    }
+
+    // MARK: - Meeting Block Mutations
+
+    func updateMeetingTitle(blockId: UUID, title: String) {
+        updateBlockProperty(id: blockId) { $0.meetingTitle = title }
+    }
+
+    func updateMeetingNotes(blockId: UUID, notes: String) {
+        updateBlockProperty(id: blockId) { $0.meetingNotes = notes }
+    }
+
+    func updateMeetingState(blockId: UUID, state: MeetingState) {
+        saveUndo()
+        updateBlockProperty(id: blockId) { block in
+            if state == .during && block.meetingStartDate == nil {
+                block.meetingStartDate = Date()
+            }
+            block.meetingState = state
+        }
+    }
+
+    func toggleMeetingActionItem(blockId: UUID, itemId: UUID) {
+        updateBlockProperty(id: blockId) { block in
+            if let idx = block.meetingActionItems.firstIndex(where: { $0.id == itemId }) {
+                block.meetingActionItems[idx].isChecked.toggle()
+            }
+        }
     }
 
     func dismissBlockMenu() {

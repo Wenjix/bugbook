@@ -1143,6 +1143,11 @@ struct ContentView: View {
         doc.onCancelAiPrompt = { [weak doc] in
             doc?.dismissAiPrompt()
         }
+        doc.onOpenAiPanelWithContext = { [weak appState] context in
+            guard let appState else { return }
+            appState.aiSelectionContext = context
+            appState.openAiPanel()
+        }
     }
 
     // MARK: - Theme

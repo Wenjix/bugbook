@@ -415,6 +415,9 @@ enum MarkdownBlockParser {
                     }
                 }
                 lines.append("<!-- /columns -->")
+
+            case .meeting:
+                lines.append("<!-- meeting: \(block.meetingTitle) -->")
             }
         }
 
