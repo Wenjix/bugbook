@@ -1052,9 +1052,12 @@ struct ContentView: View {
                                 scheduleSave()
                             },
                             onTyping: { triggerFocusMode() },
+<<<<<<< HEAD
                             onPagePathDrop: { sourcePath, insertIndex in
                                 handleSidebarPageDrop(sourcePath: sourcePath, into: document, at: insertIndex)
                             },
+=======
+>>>>>>> worktree-agent-a6919ad7
                             contentColumnMaxWidth: document.fullWidth ? nil : 860
                         )
                     }
