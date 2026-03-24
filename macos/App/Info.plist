@@ -43,5 +43,9 @@
 			<dict/>
 		</dict>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Bugbook needs microphone access to record meeting audio for live transcription.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Bugbook uses speech recognition to transcribe meeting recordings in real-time.</string>
 </dict>
 </plist>
