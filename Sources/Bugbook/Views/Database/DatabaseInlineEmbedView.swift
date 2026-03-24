@@ -130,7 +130,7 @@ struct DatabaseInlineEmbedView: View {
                 Button { isEditingTitle = true } label: {
                     Text(state.editingTitle.isEmpty ? "New database" : state.editingTitle)
                         .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(state.editingTitle.isEmpty ? .secondary : .primary)
                 }
                 .buttonStyle(.plain)
             }

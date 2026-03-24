@@ -464,7 +464,7 @@ struct TableView: View {
                     HStack(spacing: 0) {
                         if isFirst {
                             Text("New page")
-                                .font(DatabaseZoomMetrics.font(17))
+                                .font(DatabaseZoomMetrics.font(15))
                                 .foregroundStyle(Color.primary.opacity(0.25))
                                 .allowsHitTesting(false)
                         }
@@ -479,7 +479,7 @@ struct TableView: View {
                     }
                 }
                 .padding(.horizontal, DatabaseZoomMetrics.size(4))
-                .padding(.vertical, DatabaseZoomMetrics.size(14))
+                .frame(height: compactHeaderHeight)
                 .overlay { columnDividers().allowsHitTesting(false) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
