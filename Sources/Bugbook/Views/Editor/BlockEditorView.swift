@@ -178,13 +178,13 @@ struct BlockEditorView: View {
                             return
                         }
                         document.clearMultiBlockTextSelection()
-                        // After an image block, always focus or insert an empty paragraph
-                        if block.type == .image {
+                        // After a non-editable block, always focus or insert an empty paragraph
+                        if block.type == .image || block.type == .pageLink || block.type == .databaseEmbed || block.type == .horizontalRule {
                             document.focusOrInsertParagraphAfter(blockId: block.id)
                         } else if index + 1 < document.blocks.count {
                             let next = document.blocks[index + 1]
-                            // If next block is non-editable (image, etc.), insert a paragraph between
-                            if next.type == .image || next.type == .databaseEmbed || next.type == .canvas {
+                            // If next block is non-editable, insert a paragraph between
+                            if next.type == .image || next.type == .databaseEmbed || next.type == .pageLink || next.type == .horizontalRule {
                                 document.focusOrInsertParagraphAfter(blockId: block.id)
                             } else {
                                 document.focusedBlockId = next.id
