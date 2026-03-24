@@ -191,7 +191,8 @@ struct ContentView: View {
                 if let info = notification.userInfo,
                    let sourcePath = info["sourcePath"] as? String,
                    let destDir = info["destDir"] as? String {
-                    performMovePage(from: sourcePath, toDirectory: destDir)
+                    let insertLink = info["insertLink"] as? Bool ?? true
+                    performMovePage(from: sourcePath, toDirectory: destDir, insertLink: insertLink)
                 }
             }
     }
@@ -568,7 +569,7 @@ struct ContentView: View {
         }
     }
 
-    private func performMovePage(from sourcePath: String, toDirectory destDir: String) {
+    private func performMovePage(from sourcePath: String, toDirectory destDir: String, insertLink: Bool = true) {
         do {
             let newPath = try fileSystem.movePage(at: sourcePath, toDirectory: destDir)
             let oldPath = sourcePath
@@ -610,9 +611,9 @@ struct ContentView: View {
                 }
             }
 
-            // Insert a page link in the parent page's content
+            // Insert a page link in the parent page's content (skip for sidebar drags)
             let parentPagePath = destDir + ".md"
-            if !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
+            if insertLink, !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
                 let pageName = (newPath as NSString).lastPathComponent
                     .replacingOccurrences(of: ".md", with: "")
                 let linkLine = "[[\(pageName)]]"

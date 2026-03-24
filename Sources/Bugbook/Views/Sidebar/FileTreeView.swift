@@ -211,22 +211,31 @@ struct FileTreeDropDelegate: DropDelegate {
                     NotificationCenter.default.post(
                         name: .movePageToDir,
                         object: nil,
-                        userInfo: ["sourcePath": draggedPath, "destDir": destDir]
+                        userInfo: ["sourcePath": draggedPath, "destDir": destDir, "insertLink": false]
                     )
 
                 case .above(let insertIndex):
                     let draggedName = (draggedPath as NSString).lastPathComponent
                     let draggedParent = (draggedPath as NSString).deletingLastPathComponent
-                    let entryParents = Set(entries.map { ($0.path as NSString).deletingLastPathComponent })
-                    guard entryParents.contains(draggedParent) || entries.contains(where: { $0.path == draggedPath }) else { return }
+                    let isSibling = entries.contains(where: { ($0.path as NSString).deletingLastPathComponent == draggedParent })
+                        || entries.contains(where: { $0.path == draggedPath })
 
-                    fileSystem.reorderEntry(
-                        named: draggedName,
-                        toIndex: insertIndex,
-                        inParent: parentPath,
-                        siblings: entries
-                    )
-                    onDidReorder()
+                    if isSibling {
+                        fileSystem.reorderEntry(
+                            named: draggedName,
+                            toIndex: insertIndex,
+                            inParent: parentPath,
+                            siblings: entries
+                        )
+                        onDidReorder()
+                    } else {
+                        // Cross-directory drag: move the page to this directory
+                        NotificationCenter.default.post(
+                            name: .movePageToDir,
+                            object: nil,
+                            userInfo: ["sourcePath": draggedPath, "destDir": parentPath, "insertLink": false]
+                        )
+                    }
 
                 case .none:
                     break
