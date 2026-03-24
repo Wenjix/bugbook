@@ -724,6 +724,10 @@ struct BlockTextView: NSViewRepresentable {
                 }
                 parent.document.slashMenuFilter = String(textView.string.dropFirst(1))
                 parent.document.slashMenuSelectedIndex = 0
+                // Dismiss if no commands match — let the user keep typing
+                if parent.document.filteredSlashCommands.isEmpty {
+                    parent.document.dismissSlashMenu()
+                }
             } else if parent.document.slashMenuBlockId == parent.blockId {
                 parent.document.dismissSlashMenu()
             }

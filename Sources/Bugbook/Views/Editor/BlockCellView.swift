@@ -81,7 +81,7 @@ struct BlockCellView: View {
         isRowHovering
             || isHandleHovering
             || isHandleDragging
-            || document.blockMenuBlockId == block.id
+            || showBlockMenu
     }
 
     private var isBlockHighlighted: Bool {

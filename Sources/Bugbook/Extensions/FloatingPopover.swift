@@ -16,6 +16,7 @@ extension View {
     func floatingPopover<Content: View>(
         isPresented: Binding<Bool>,
         arrowEdge: Edge = .top,
+        becomesKey: Bool = false,
         onDelete: (() -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
@@ -24,6 +25,7 @@ extension View {
             FloatingPopoverAnchor(
                 isPresented: isPresented,
                 arrowEdge: arrowEdge,
+                becomesKey: becomesKey,
                 onDelete: onDelete,
                 content: content
             )
@@ -67,6 +69,7 @@ private class PopoverPanel: NSPanel {
 private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable {
     @Binding var isPresented: Bool
     let arrowEdge: Edge
+    let becomesKey: Bool
     var onDelete: (() -> Void)?
     let content: () -> PopoverContent
 
@@ -78,6 +81,7 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
                 context.coordinator.show(
                     anchor: nsView,
                     arrowEdge: arrowEdge,
+                    becomesKey: becomesKey,
                     content: content(),
                     onDelete: onDelete,
                     dismiss: { isPresented = false }
@@ -103,16 +107,16 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
 
         deinit { cleanup() }
 
-        func show(anchor: NSView, arrowEdge: Edge = .top, content: some View, onDelete: (() -> Void)? = nil, dismiss: @escaping () -> Void) {
+        func show(anchor: NSView, arrowEdge: Edge = .top, becomesKey: Bool = false, content: some View, onDelete: (() -> Void)? = nil, dismiss: @escaping () -> Void) {
             if panel != nil { cleanup() }
             guard let window = anchor.window else { return }
 
             dismissClosure = dismiss
             let wrapped = AnyView(content.environment(\.popoverDismiss, dismiss))
             let hosting = NSHostingView(rootView: wrapped)
-            hosting.setFrameSize(hosting.fittingSize)
             let size = hosting.fittingSize
             guard size.width > 0, size.height > 0 else { return }
+            hosting.setFrameSize(size)
 
             let p = PopoverPanel(
                 contentRect: NSRect(origin: .zero, size: size),
@@ -164,7 +168,13 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
             }
 
             p.setFrameOrigin(origin)
-            p.orderFront(nil)
+            p.hidesOnDeactivate = true
+            window.addChildWindow(p, ordered: .above)
+            if becomesKey {
+                p.makeKeyAndOrderFront(nil)
+            } else {
+                p.orderFront(nil)
+            }
             PopoverPanel.activePanels.add(p)
             self.panel = p
             self.hostingView = hosting
@@ -247,7 +257,10 @@ private struct FloatingPopoverAnchor<PopoverContent: View>: NSViewRepresentable 
         func dismiss() { cleanup() }
 
         private func cleanup() {
-            if let p = panel { PopoverPanel.activePanels.remove(p) }
+            if let p = panel {
+                PopoverPanel.activePanels.remove(p)
+                p.parent?.removeChildWindow(p)
+            }
             panel?.close()
             panel = nil
             hostingView = nil

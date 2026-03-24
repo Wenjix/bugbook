@@ -11,6 +11,8 @@ struct AiSidePanelView: View {
     @State private var showPagePicker = false
     @State private var pagePickerSearch = ""
     @FocusState private var inputFocused: Bool
+    @FocusState private var pickerSearchFocused: Bool
+    @State private var pickerSelectedIndex: Int = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -114,7 +116,7 @@ struct AiSidePanelView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Reference a page")
-                    .floatingPopover(isPresented: $showPagePicker, arrowEdge: .top) {
+                    .floatingPopover(isPresented: $showPagePicker, arrowEdge: .top, becomesKey: true) {
                         pageReferencePickerView
                     }
 
@@ -214,50 +216,87 @@ struct AiSidePanelView: View {
 
     // MARK: - Page Reference Picker
 
-    private var pageReferencePickerView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Reference a page")
-                .font(.system(size: 14, weight: .semibold))
+    private var pickerVisiblePages: [FileEntry] {
+        Array(filteredPages.prefix(50))
+    }
 
-            TextField("Search pages...", text: $pagePickerSearch)
-                .textFieldStyle(.roundedBorder)
+    private var pageReferencePickerView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+
+                TextField("Search pages...", text: $pagePickerSearch)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: Typography.bodySmall))
+                    .focused($pickerSearchFocused)
+                    .onSubmit {
+                        let pages = pickerVisiblePages
+                        if !pages.isEmpty, pickerSelectedIndex < pages.count {
+                            addPageReference(pages[pickerSelectedIndex])
+                        }
+                    }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
 
             if filteredPages.isEmpty {
                 Text("No pages found")
-                    .font(.system(size: 13))
+                    .font(.system(size: Typography.caption))
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, 8)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(filteredPages.prefix(100), id: \.path) { entry in
-                            Button {
-                                addPageReference(entry)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(displayName(for: entry.name))
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
-                                    Text(relativePath(for: entry.path))
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(pickerVisiblePages.enumerated()), id: \.element.path) { index, entry in
+                                PageReferenceRow(
+                                    entry: entry,
+                                    displayName: displayName(for: entry.name),
+                                    index: index,
+                                    isSelected: index == pickerSelectedIndex,
+                                    onHoverIndex: { pickerSelectedIndex = $0 }
+                                ) {
+                                    addPageReference(entry)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 6)
+                                .id(entry.path)
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .onChange(of: pickerSelectedIndex) { _, newIndex in
+                        let pages = pickerVisiblePages
+                        if newIndex < pages.count {
+                            proxy.scrollTo(pages[newIndex].path, anchor: .center)
                         }
                     }
                 }
             }
         }
-        .padding(12)
-        .frame(width: 340, height: 280)
+        .frame(width: 280)
+        .frame(maxHeight: 300)
         .popoverSurface()
+        .onAppear {
+            pickerSearchFocused = true
+            pickerSelectedIndex = 0
+        }
+        .onDisappear { pagePickerSearch = "" }
+        .onChange(of: pagePickerSearch) { _, _ in
+            pickerSelectedIndex = 0
+        }
+        .onKeyPress(.upArrow) {
+            if pickerSelectedIndex > 0 { pickerSelectedIndex -= 1 }
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            let count = pickerVisiblePages.count
+            if pickerSelectedIndex < count - 1 { pickerSelectedIndex += 1 }
+            return .handled
+        }
     }
 
     // MARK: - Message Bubble
@@ -581,5 +620,56 @@ struct AiSidePanelView: View {
 
     private func displayName(for name: String) -> String {
         name.hasSuffix(".md") ? String(name.dropLast(3)) : name
+    }
+}
+
+// MARK: - Page Reference Row
+
+private struct PageReferenceRow: View {
+    let entry: FileEntry
+    let displayName: String
+    let index: Int
+    var isSelected: Bool = false
+    let onHoverIndex: (Int) -> Void
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                pageIcon
+                Text(displayName)
+                    .font(.system(size: Typography.bodySmall))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(isSelected || isHovered ? Color.primary.opacity(Opacity.light) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering { onHoverIndex(index) }
+        }
+    }
+
+    @ViewBuilder
+    private var pageIcon: some View {
+        if let icon = entry.icon, !icon.isEmpty {
+            if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 13))
+            } else {
+                Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
     }
 }
