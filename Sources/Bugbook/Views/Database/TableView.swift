@@ -463,9 +463,9 @@ struct TableView: View {
                 }
                 .padding(.horizontal, DatabaseZoomMetrics.size(4))
                 .padding(.vertical, DatabaseZoomMetrics.size(14))
+                .overlay { columnDividers().allowsHitTesting(false) }
             }
             .contentShape(Rectangle())
-            .overlay { columnDividers().allowsHitTesting(false) }
         }
         .buttonStyle(.plain)
     }
