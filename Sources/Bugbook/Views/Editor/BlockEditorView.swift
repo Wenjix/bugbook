@@ -392,7 +392,7 @@ struct BlockEditorView: View {
         }
 
         switch hitBlock.type {
-        case .image, .databaseEmbed:
+        case .image, .databaseEmbed, .meeting:
             return false
         default:
             return true

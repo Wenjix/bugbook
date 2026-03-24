@@ -108,7 +108,9 @@ enum MarkdownBlockParser {
             pageLinkName: String = "",
             children: [Block] = [],
             columnIndex: Int = 0,
-            isExpanded: Bool = true
+            isExpanded: Bool = true,
+            meetingTranscript: String = "",
+            meetingNotes: String = ""
         ) -> Block {
             let colors = pendingColors ?? (.default, .default)
             let block = Block(
@@ -128,7 +130,9 @@ enum MarkdownBlockParser {
                 backgroundColor: colors.1,
                 children: children,
                 columnIndex: columnIndex,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                meetingTranscript: meetingTranscript,
+                meetingNotes: meetingNotes
             )
             pendingBlockID = nil
             pendingColors = nil
@@ -270,6 +274,61 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Meeting block
+            if trimmed == "<!-- meeting -->" {
+                i += 1
+                var title = ""
+                var transcript = ""
+                var notes = ""
+                enum Section { case none, transcript, notes }
+                var section = Section.none
+                var sectionLines: [String] = []
+
+                func flushSection() {
+                    let content = sectionLines.joined(separator: "\n")
+                    switch section {
+                    case .transcript: transcript = content
+                    case .notes: notes = content
+                    case .none: break
+                    }
+                    sectionLines = []
+                }
+
+                // First line is the title
+                if i < lines.count {
+                    title = lines[i]
+                    i += 1
+                }
+
+                while i < lines.count {
+                    let meetLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if meetLine == "<!-- /meeting -->" {
+                        flushSection()
+                        i += 1
+                        break
+                    }
+                    if meetLine == "<!-- transcript -->" {
+                        flushSection()
+                        section = .transcript
+                        i += 1
+                        continue
+                    }
+                    if meetLine == "<!-- notes -->" {
+                        flushSection()
+                        section = .notes
+                        i += 1
+                        continue
+                    }
+                    sectionLines.append(lines[i])
+                    i += 1
+                }
+                blocks.append(makeBlock(
+                    type: .meeting, text: title,
+                    meetingTranscript: transcript, meetingNotes: notes
+                ))
+                continue
+            }
+
             // Column block
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
@@ -401,6 +460,19 @@ enum MarkdownBlockParser {
                     lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
                 }
                 lines.append("<!-- /toggle -->")
+
+            case .meeting:
+                lines.append("<!-- meeting -->")
+                lines.append(block.text)
+                if !block.meetingTranscript.isEmpty {
+                    lines.append("<!-- transcript -->")
+                    lines.append(block.meetingTranscript)
+                }
+                if !block.meetingNotes.isEmpty {
+                    lines.append("<!-- notes -->")
+                    lines.append(block.meetingNotes)
+                }
+                lines.append("<!-- /meeting -->")
 
             case .column:
                 lines.append("<!-- columns -->")
