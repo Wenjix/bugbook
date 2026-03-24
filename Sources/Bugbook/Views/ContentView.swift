@@ -1076,6 +1076,9 @@ struct ContentView: View {
                                 onCreateTemplate: {
                                     document.showTemplatePicker = false
                                     saveCurrentNoteAsTemplate(document: document)
+                                },
+                                onDelete: { template in
+                                    try? fileSystem.deleteFile(at: template.path)
                                 }
                             )
                             .onTapGesture { }
