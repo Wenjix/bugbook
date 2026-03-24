@@ -1,7 +1,7 @@
 import CoreTransferable
 import UniformTypeIdentifiers
 
-struct SidebarReferenceDragPayload: Codable, Transferable {
+struct SidebarReferenceDragPayload: Codable, Transferable, Equatable {
     let path: String
     let kind: String
 
@@ -14,10 +14,6 @@ struct SidebarReferenceDragPayload: Codable, Transferable {
     }
 
     static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .bugbookSidebarReference)
+        CodableRepresentation(contentType: .json)
     }
-}
-
-extension UTType {
-    static let bugbookSidebarReference = UTType(exportedAs: "com.bugbook.sidebar-reference")
 }

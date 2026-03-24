@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Horizontal rule block.
 struct HorizontalRuleView: View {
@@ -260,7 +261,11 @@ struct DatabaseEmbedBlockView: View {
     var body: some View {
         if let sidebarReferencePayload {
             databaseEmbedView
-                .draggable(sidebarReferencePayload)
+                .onDrag {
+                    let encoder = JSONEncoder()
+                    let data = (try? encoder.encode(sidebarReferencePayload)) ?? Data()
+                    return NSItemProvider(item: data as NSData, typeIdentifier: UTType.json.identifier)
+                }
         } else {
             databaseEmbedView
         }
