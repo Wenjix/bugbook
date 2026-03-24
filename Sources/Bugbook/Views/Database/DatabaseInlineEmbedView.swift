@@ -21,6 +21,7 @@ struct DatabaseInlineEmbedView: View {
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isSearchFocused: Bool
     @State private var newRowScrollId: String? = nil
+    @State private var tableContainerWidth: CGFloat = 0
 
     init(dbPath: String, onOpenRow: ((DatabaseRow) -> Void)? = nil, onOpenDatabase: (() -> Void)? = nil) {
         self.dbPath = dbPath
@@ -646,10 +647,17 @@ struct DatabaseInlineEmbedView: View {
                     onClearSorts: { state.clearSorts() },
                     onNewRow: { addNewRow() },
                     scrollToRowId: newRowScrollId,
-                    usesInnerScroll: false
+                    usesInnerScroll: false,
+                    containerWidth: tableContainerWidth
                 )
             }
             .scrollIndicators(.visible)
+            .background {
+                GeometryReader { geo in
+                    Color.clear.onAppear { tableContainerWidth = geo.size.width }
+                        .onChange(of: geo.size.width) { _, w in tableContainerWidth = w }
+                }
+            }
         case .kanban:
             KanbanView(
                 schema: schema,
