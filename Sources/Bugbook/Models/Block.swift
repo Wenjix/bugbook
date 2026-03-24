@@ -17,6 +17,7 @@ enum BlockType: Equatable {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     case headingToggle
     case canvas
     case meeting
@@ -72,6 +73,9 @@ struct ActionItem: Identifiable, Equatable {
 =======
     case meeting
 >>>>>>> worktree-agent-a64e714e
+=======
+    case meeting
+>>>>>>> worktree-agent-a923313b
 }
 
 struct Block: Identifiable, Equatable {
@@ -92,6 +96,7 @@ struct Block: Identifiable, Equatable {
     var children: [Block]
     var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
     var isExpanded: Bool
+<<<<<<< HEAD
     var transcriptEntries: [String]  // transcript lines for meeting blocks
 
     // Meeting block properties
@@ -120,6 +125,10 @@ struct Block: Identifiable, Equatable {
 >>>>>>> worktree-agent-af890d65
 =======
 >>>>>>> worktree-agent-a9737ffc
+=======
+    var meetingTranscript: String
+    var meetingNotes: String
+>>>>>>> worktree-agent-a923313b
 
     init(
         id: UUID = UUID(),
@@ -139,6 +148,7 @@ struct Block: Identifiable, Equatable {
         children: [Block] = [],
         columnIndex: Int = 0,
         isExpanded: Bool = true,
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -168,6 +178,10 @@ struct Block: Identifiable, Equatable {
 =======
         transcriptEntries: [String] = []
 >>>>>>> worktree-agent-a64e714e
+=======
+        meetingTranscript: String = "",
+        meetingNotes: String = ""
+>>>>>>> worktree-agent-a923313b
     ) {
         self.id = id
         self.type = type
@@ -186,6 +200,7 @@ struct Block: Identifiable, Equatable {
         self.children = children
         self.columnIndex = columnIndex
         self.isExpanded = isExpanded
+<<<<<<< HEAD
 <<<<<<< HEAD
         self.meetingState = meetingState
 <<<<<<< HEAD
@@ -214,5 +229,9 @@ struct Block: Identifiable, Equatable {
 =======
         self.transcriptEntries = transcriptEntries
 >>>>>>> worktree-agent-a64e714e
+=======
+        self.meetingTranscript = meetingTranscript
+        self.meetingNotes = meetingNotes
+>>>>>>> worktree-agent-a923313b
     }
 }

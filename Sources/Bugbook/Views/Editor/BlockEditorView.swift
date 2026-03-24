@@ -453,7 +453,11 @@ struct BlockEditorView: View {
         }
 
         switch hitBlock.type {
+<<<<<<< HEAD
         case .image, .databaseEmbed, .canvas:
+=======
+        case .image, .databaseEmbed, .meeting:
+>>>>>>> worktree-agent-a923313b
             return false
         default:
             return true
