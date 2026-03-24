@@ -8,6 +8,7 @@ struct MeetingBlockView: View {
 
     @State private var title: String
     @State private var notes: String
+    @State private var previousNotes: String
     @State private var isTranscriptOpen = false
     @State private var isSummaryExpanded = false
     @State private var activeTab: MeetingTab = .summary
@@ -25,6 +26,7 @@ struct MeetingBlockView: View {
         self.block = block
         _title = State(initialValue: block.meetingTitle)
         _notes = State(initialValue: block.meetingNotes)
+        _previousNotes = State(initialValue: block.meetingNotes)
     }
 
     var body: some View {
@@ -103,8 +105,11 @@ struct MeetingBlockView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .onChange(of: notes) { _, newVal in
-                    document.updateMeetingNotes(blockId: block.id, notes: newVal)
+                .onChange(of: notes) { _, _ in
+                    if !insertTimestampIfNeeded() {
+                        previousNotes = notes
+                        document.updateMeetingNotes(blockId: block.id, notes: notes)
+                    }
                 }
         }
     }
@@ -168,8 +173,11 @@ struct MeetingBlockView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .onChange(of: notes) { _, newVal in
-                    document.updateMeetingNotes(blockId: block.id, notes: newVal)
+                .onChange(of: notes) { _, _ in
+                    if !insertTimestampIfNeeded() {
+                        previousNotes = notes
+                        document.updateMeetingNotes(blockId: block.id, notes: notes)
+                    }
                 }
 
             Divider()
@@ -527,6 +535,50 @@ struct MeetingBlockView: View {
             }
         }
         document.onOpenAiPanelWithContext?(context)
+    }
+
+    // MARK: - Timestamp Helpers
+
+    private static let timestampFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "HH:mm"
+        return df
+    }()
+
+    /// Detects newline insertion and prepends `[HH:MM] ` to the new line.
+    /// Returns true if a timestamp was inserted (caller should skip its own persist).
+    @discardableResult
+    private func insertTimestampIfNeeded() -> Bool {
+        let old = previousNotes
+        let new = notes
+
+        // Only act when text grew and a newline was added
+        guard new.count > old.count, new.contains("\n") else {
+            return false
+        }
+
+        // Find the first position where old and new diverge
+        let oldChars = Array(old)
+        let newChars = Array(new)
+        var divergeIndex = 0
+        while divergeIndex < oldChars.count && divergeIndex < newChars.count
+                && oldChars[divergeIndex] == newChars[divergeIndex] {
+            divergeIndex += 1
+        }
+
+        // Check if the inserted character at the diverge point is a newline
+        guard divergeIndex < newChars.count, newChars[divergeIndex] == "\n" else {
+            return false
+        }
+
+        let stamp = "[\(Self.timestampFormatter.string(from: Date()))] "
+        let insertionPoint = new.index(new.startIndex, offsetBy: divergeIndex + 1)
+        var stamped = new
+        stamped.insert(contentsOf: stamp, at: insertionPoint)
+        notes = stamped
+        previousNotes = stamped
+        document.updateMeetingNotes(blockId: block.id, notes: stamped)
+        return true
     }
 
     // MARK: - Helpers

@@ -1195,6 +1195,7 @@ struct ContentView: View {
             doc?.dismissAiPrompt()
         }
 <<<<<<< HEAD
+<<<<<<< HEAD
         doc.transcriptionService = transcriptionService
         doc.onStartMeeting = { [weak doc] blockId in
             Task { await transcriptionService.startRecording() }
@@ -1313,11 +1314,16 @@ struct ContentView: View {
                 block.meetingActionItems = ""
             }
 =======
+=======
+>>>>>>> worktree-agent-a9737ffc
         doc.onOpenAiPanelWithContext = { [weak appState] context in
             guard let appState else { return }
             appState.aiSelectionContext = context
             appState.openAiPanel()
+<<<<<<< HEAD
 >>>>>>> worktree-agent-af890d65
+=======
+>>>>>>> worktree-agent-a9737ffc
         }
     }
 

@@ -523,6 +523,7 @@ enum MarkdownBlockParser {
 
             case .meeting:
 <<<<<<< HEAD
+<<<<<<< HEAD
                 // Only serialize completed meetings; recording/processing blocks are transient
                 guard block.meetingState == .complete else { break }
                 lines.append("<!-- meeting -->")
@@ -549,6 +550,9 @@ enum MarkdownBlockParser {
 =======
                 lines.append("<!-- meeting: \(block.meetingTitle) -->")
 >>>>>>> worktree-agent-af890d65
+=======
+                lines.append("<!-- meeting: \(block.meetingTitle) -->")
+>>>>>>> worktree-agent-a9737ffc
             }
         }
 

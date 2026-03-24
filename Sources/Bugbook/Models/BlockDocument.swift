@@ -808,6 +808,7 @@ class BlockDocument {
     }
 
     static let slashCommands: [SlashCommand] = [
+<<<<<<< HEAD
         // Suggested
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI, section: "Suggested", keywords: ["ai", "chat", "generate", "write"]),
         SlashCommand(name: "Image", icon: "photo", action: .imagePicker, section: "Suggested", keywords: ["photo", "picture", "media", "upload"]),
@@ -829,6 +830,26 @@ class BlockDocument {
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage, section: "Inline", keywords: ["subpage", "new page", "child"]),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage, section: "Inline", keywords: ["wiki", "reference", "mention"]),
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0), section: "Inline", keywords: ["table", "spreadsheet", "kanban", "board"]),
+=======
+        SlashCommand(name: "Text", icon: "text.alignleft", action: .blockType(.paragraph, headingLevel: 0)),
+        SlashCommand(name: "Heading 1", icon: "textformat.size.larger", action: .blockType(.heading, headingLevel: 1)),
+        SlashCommand(name: "Heading 2", icon: "textformat.size", action: .blockType(.heading, headingLevel: 2)),
+        SlashCommand(name: "Heading 3", icon: "textformat.size.smaller", action: .blockType(.heading, headingLevel: 3)),
+        SlashCommand(name: "Bullet List", icon: "list.bullet", action: .blockType(.bulletListItem, headingLevel: 0)),
+        SlashCommand(name: "Numbered List", icon: "list.number", action: .blockType(.numberedListItem, headingLevel: 0)),
+        SlashCommand(name: "To-do", icon: "checkmark.square", action: .blockType(.taskItem, headingLevel: 0)),
+        SlashCommand(name: "Quote", icon: "text.quote", action: .blockType(.blockquote, headingLevel: 0)),
+        SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0)),
+        SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0)),
+        SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0)),
+        SlashCommand(name: "Page", icon: "doc.text", action: .createPage),
+        SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage),
+        SlashCommand(name: "Image", icon: "photo", action: .imagePicker),
+        SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
+        SlashCommand(name: "Meeting", icon: "mic.fill", action: .blockType(.meeting, headingLevel: 0)),
+        SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
+        SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
+>>>>>>> worktree-agent-a9737ffc
     ]
 
     var filteredSlashCommands: [SlashCommand] {
