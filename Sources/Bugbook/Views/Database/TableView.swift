@@ -191,9 +191,6 @@ struct TableView: View {
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            Color.clear
-                .frame(width: scaledRowControlsInset)
-
             // Title column header
             TitleColumnHeaderCell(
                 name: schema.titleProperty?.name ?? "Name",
@@ -450,19 +447,12 @@ struct TableView: View {
     private func phantomRow(isFirst: Bool) -> some View {
         Button { onNewRow?() } label: {
             HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: scaledRowControlsInset)
-                    .overlay(alignment: .trailing) {
+                HStack(spacing: 0) {
+                    HStack(spacing: DatabaseZoomMetrics.size(4)) {
                         if isFirst {
                             Image(systemName: "plus")
                                 .font(DatabaseZoomMetrics.font(11))
                                 .foregroundStyle(Color.primary.opacity(0.25))
-                        }
-                    }
-
-                HStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        if isFirst {
                             Text("New page")
                                 .font(DatabaseZoomMetrics.font(15))
                                 .foregroundStyle(Color.primary.opacity(0.25))
@@ -585,10 +575,17 @@ struct TableView: View {
                 .buttonStyle(.plain)
             }
 
-            ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
-                phantomRow(isFirst: rows.isEmpty && i == 0)
-                tableDivider.opacity(0.5)
+            if rows.isEmpty {
+                // Show filler rows only when the table has no data
+                ForEach(0..<2, id: \.self) { _ in
+                    phantomRow(isFirst: false)
+                    tableDivider.opacity(0.5)
+                }
             }
+
+            // Always show "New page" row at the bottom
+            phantomRow(isFirst: true)
+            tableDivider.opacity(0.5)
         }
     }
 
