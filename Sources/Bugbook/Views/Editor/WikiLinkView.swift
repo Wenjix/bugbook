@@ -12,7 +12,7 @@ struct WikiLinkView: View {
             linkContent
                 .onDrag {
                     let data = (try? JSONEncoder().encode(sidebarReferencePayload)) ?? Data()
-                    return NSItemProvider(item: data as NSData, typeIdentifier: UTType.json.identifier)
+                    return NSItemProvider(item: data as NSData, typeIdentifier: UTType.sidebarReference.identifier)
                 }
         } else {
             linkContent

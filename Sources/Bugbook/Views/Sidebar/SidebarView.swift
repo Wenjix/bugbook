@@ -287,12 +287,12 @@ struct SidebarView: View {
                 .padding(.vertical, treeVerticalPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .onDrop(of: [.json], isTargeted: Binding(
+            .onDrop(of: [.sidebarReference], isTargeted: Binding(
                 get: { isSidebarReferenceDropTargeted },
                 set: { isSidebarReferenceDropTargeted = $0 }
             )) { providers in
                 guard let provider = providers.first else { return false }
-                provider.loadDataRepresentation(forTypeIdentifier: UTType.json.identifier) { data, _ in
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.sidebarReference.identifier) { data, _ in
                     guard let data, let payload = try? JSONDecoder().decode(SidebarReferenceDragPayload.self, from: data) else { return }
                     DispatchQueue.main.async {
                         onAddSidebarReference(payload)
