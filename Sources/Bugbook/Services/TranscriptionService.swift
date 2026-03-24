@@ -5,9 +5,9 @@ import Speech
 @MainActor
 @Observable
 class TranscriptionService {
-    var isRecording = false
-    var currentTranscript = ""
+    var currentTranscript: String = ""
     var audioLevel: Float = 0
+    var isRecording: Bool = false
     var error: String?
 
     @ObservationIgnored private var audioEngine: AVAudioEngine?
@@ -18,24 +18,23 @@ class TranscriptionService {
     // MARK: - Permissions
 
     func requestPermissions() async -> Bool {
-        let speechAuthorized = await withCheckedContinuation { continuation in
+        let micGranted = await withCheckedContinuation { continuation in
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+        guard micGranted else {
+            error = "Microphone access denied. Enable in System Settings > Privacy > Microphone."
+            return false
+        }
+
+        let speechGranted = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)
             }
         }
-        guard speechAuthorized else {
-            error = "Speech recognition permission denied"
-            return false
-        }
-
-        let micAuthorized: Bool
-        if #available(macOS 14.0, *) {
-            micAuthorized = await AVAudioApplication.requestRecordPermission()
-        } else {
-            micAuthorized = true  // Pre-14 macOS doesn't require explicit mic permission
-        }
-        guard micAuthorized else {
-            error = "Microphone permission denied"
+        guard speechGranted else {
+            error = "Speech recognition access denied. Enable in System Settings > Privacy > Speech Recognition."
             return false
         }
 
@@ -44,16 +43,20 @@ class TranscriptionService {
 
     // MARK: - Recording
 
-    func startRecording() {
+    func startRecording() async {
         guard !isRecording else { return }
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
-            error = "Speech recognizer not available"
+
+        let permitted = await requestPermissions()
+        guard permitted else { return }
+
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            error = "Speech recognizer not available."
             return
         }
 
+        error = nil
         currentTranscript = ""
         audioLevel = 0
-        error = nil
 
         let engine = AVAudioEngine()
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -64,30 +67,45 @@ class TranscriptionService {
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             request.append(buffer)
-            // Calculate RMS audio level from buffer
-            let level = Self.rmsLevel(from: buffer)
+
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+            let frameCount = Int(buffer.frameLength)
+            var sum: Float = 0
+            for i in 0..<frameCount {
+                sum += channelData[i] * channelData[i]
+            }
+            let rms = sqrtf(sum / Float(max(frameCount, 1)))
+            let normalized = min(1.0, rms * 10)
+
             Task { @MainActor [weak self] in
-                self?.audioLevel = level
+                self?.audioLevel = normalized
             }
         }
 
         do {
+            engine.prepare()
             try engine.start()
         } catch {
             self.error = "Failed to start audio engine: \(error.localizedDescription)"
+            inputNode.removeTap(onBus: 0)
             return
         }
 
-        recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+        let task = recognizer.recognitionTask(with: request) { [weak self] result, err in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let result {
                     self.currentTranscript = result.bestTranscription.formattedString
+                    if result.isFinal {
+                        self.recognitionTask = nil
+                        self.recognitionRequest = nil
+                    }
                 }
-                if let error {
-                    // Only surface errors that aren't just "recording stopped"
-                    if self.isRecording {
-                        self.error = error.localizedDescription
+                if let err {
+                    let nsError = err as NSError
+                    let isNoSpeechDetected = nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 1110
+                    if !isNoSpeechDetected {
+                        self.error = err.localizedDescription
                     }
                 }
             }
@@ -95,40 +113,21 @@ class TranscriptionService {
 
         self.audioEngine = engine
         self.recognitionRequest = request
+        self.recognitionTask = task
         self.isRecording = true
     }
 
-    func stopRecording() {
-        guard isRecording else { return }
+    func stopRecording() -> String {
+        guard isRecording else { return currentTranscript }
 
-        audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine?.stop()
         recognitionRequest?.endAudio()
 
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        recognitionRequest = nil
         audioEngine = nil
-
         isRecording = false
         audioLevel = 0
-    }
 
-    // MARK: - Audio Level
-
-    private static func rmsLevel(from buffer: AVAudioPCMBuffer) -> Float {
-        guard let channelData = buffer.floatChannelData else { return 0 }
-        let channelDataValue = channelData.pointee
-        let count = Int(buffer.frameLength)
-        guard count > 0 else { return 0 }
-
-        var sum: Float = 0
-        for i in 0..<count {
-            let sample = channelDataValue[i]
-            sum += sample * sample
-        }
-        let rms = sqrt(sum / Float(count))
-        // Normalize to 0...1 range (typical speech RMS is ~0.01-0.1)
-        return min(rms * 10, 1.0)
+        return currentTranscript
     }
 }
