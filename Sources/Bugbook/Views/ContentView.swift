@@ -2093,7 +2093,7 @@ struct ContentView: View {
 
     private func createNewDatabase() {
         do {
-            let path = try createDatabasePath(name: "Untitled Database")
+            let path = try createDatabasePath(name: "")
             let displayName = (path as NSString).lastPathComponent
             let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .database)
             appState.openFile(entry)

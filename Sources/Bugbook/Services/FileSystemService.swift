@@ -324,7 +324,7 @@ class FileSystemService {
 
         let defaultViewId = "view_table"
         let now = ISO8601DateFormatter().string(from: Date())
-        let schemaName = (folderPath as NSString).lastPathComponent
+        let schemaName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let dbId = "db_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
         let schema = DatabaseSchema(
             id: dbId,
@@ -934,9 +934,9 @@ class FileSystemService {
 
     private func sanitizeDatabaseFolderName(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = trimmed.isEmpty ? "Untitled Database" : trimmed
+        let fallback = trimmed.isEmpty ? "Database" : trimmed
         let sanitized = fallback.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-        return sanitized.isEmpty ? "Untitled Database" : sanitized
+        return sanitized.isEmpty ? "Database" : sanitized
     }
 
     // MARK: - App Data Directories (Icons & Covers)

@@ -898,7 +898,7 @@ class BlockDocument {
             if type == .databaseEmbed {
                 if blockLocation(for: blockId) != nil,
                    let createDb = onCreateDatabase,
-                   let dbPath = createDb("Untitled Database") {
+                   let dbPath = createDb("") {
                     updateBlockProperty(id: blockId) { block in
                         block.type = .databaseEmbed
                         block.databasePath = dbPath
