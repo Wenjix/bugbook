@@ -1,38 +1,79 @@
-# Long Run — 2026-03-23
+# Long Run — 2026-03-23 (night)
 
-Started: 4:15 PM
-Finished: 6:45 PM
-Duration: 2h 30m
+Started: 11:10 PM
+Finished: 12:30 AM (blocked on disk)
+Status: BLOCKED — disk full from accumulated worktrees
 
 ## Summary
-Workers launched: 18/18 tickets completed in isolation
-Merged to dev cleanly: search index, Block.swift, BlockDocument
-Merge conflicts: Most worker branches conflict with each other (multiple workers rewrote same files)
+Workers completed: 5/7 tickets
+Not started: 2 (disk full before batch 2)
+Skipped: 1 (Google OAuth)
+Builds: UNVERIFIED (disk full prevented swift build)
 
-## What's on dev
-- Search index: cache invalidated on every Cmd+K open
-- Block.swift: transcriptEntries property added
-- BlockDocument: meeting state fix
+## Action needed
+```bash
+# Free disk space by removing OLD worktrees (from prior /go run)
+rm -rf ~/Code/bugbook/.claude/worktrees/agent-a42c45ab \
+  ~/Code/bugbook/.claude/worktrees/agent-a688e61b \
+  ~/Code/bugbook/.claude/worktrees/agent-a6919ad7 \
+  ~/Code/bugbook/.claude/worktrees/agent-a3c362c4 \
+  ~/Code/bugbook/.claude/worktrees/agent-a023882d \
+  ~/Code/bugbook/.claude/worktrees/agent-a876125b \
+  ~/Code/bugbook/.claude/worktrees/agent-adbe6daa \
+  ~/Code/bugbook/.claude/worktrees/agent-a7e60d8f \
+  ~/Code/bugbook/.claude/worktrees/agent-a690675a \
+  ~/Code/bugbook/.claude/worktrees/agent-a2388abe \
+  ~/Code/bugbook/.claude/worktrees/agent-af890d65 \
+  ~/Code/bugbook/.claude/worktrees/agent-a9737ffc \
+  ~/Code/bugbook/.claude/worktrees/agent-a64e714e \
+  ~/Code/bugbook/.claude/worktrees/agent-a1459f47 \
+  ~/Code/bugbook/.claude/worktrees/agent-a923313b \
+  ~/Code/bugbook/.claude/worktrees/agent-a3422373 \
+  ~/Code/bugbook/.claude/worktrees/agent-acb1dc64 \
+  ~/Code/bugbook/.claude/worktrees/agent-afd3bf65
+cd ~/Code/bugbook && git worktree prune
+```
 
-## Worktree branches (completed but need sequential integration via /flow)
-- worktree-agent-af890d65 — Meeting 3-state redesign
-- worktree-agent-a9737ffc — Notes-first recording + timestamps
-- worktree-agent-a64e714e — TranscriptionService wiring
-- worktree-agent-a1459f47 — Floating recording pill
-- worktree-agent-a923313b — Ask Anything AI bar
-- worktree-agent-a3422373 — Post-meeting structured output
-- worktree-agent-a42c45ab — Click target audit (12pt zones)
-- worktree-agent-a688e61b — FloatingPopover panel reuse
-- worktree-agent-a6919ad7 — Marquee selection in padding
-- worktree-agent-a3c362c4 — Click below blocks
-- worktree-agent-a023882d — Hover dividers B4D7FF
-- worktree-agent-a876125b — Sidebar drag move
-- worktree-agent-adbe6daa — Drag embed to sidebar UTType
-- worktree-agent-a690675a — Template picker polish
-- worktree-agent-a2388abe — AI side panel redesign
+Then /catchup → /flow to merge the 5 completed branches to dev.
 
-## Recommendation
-Use /flow to integrate sequentially, starting with editor cluster (fewer conflicts), then meeting cluster.
+## Completed branches (ready to merge to dev)
 
-## Build Status
-dev: PASSING | main: PASSING
+### 1. Table vertical lines alignment
+Branch: worktree-agent-a34add35
+Fix: Moved columnDividers overlay in phantomRow to match dataRow coordinate space
+Smoke: Create table with 1-2 rows, verify separators align header/data/phantom
+
+### 2. AskAI progress + change summaries + edit quality
+Branch: worktree-agent-a441fa9c
+Fix: Phased status ("Reading..." → "Generating..." → "Applying..."), change summary in Done bubble, sanitizeResponse strips empty blocks, system instruction prohibits blank blocks
+Smoke: Ask AI to rewrite page → verify phased status → verify summary → no empty blocks
+
+### 3. Sidebar drag move (not link)
+Branch: worktree-agent-a1eb267f
+Root cause: Cross-directory .above drops silently ignored; moves inserted unwanted wiki links
+Fix: Cross-directory drop support + insertLink:false for sidebar drags
+Smoke: Drag page between folders in sidebar → moves (not links) → old location gone
+
+### 4. Drag embed to sidebar
+Branch: worktree-agent-a9fa58bb
+Root cause: Custom UTType not registered; .draggable conflicted with interactive views
+Fix: Switched to .json UTType + .onDrag instead of .draggable
+Smoke: Drag [[page link]] from editor toward sidebar → drop accepted
+Note: Info.plist may have trailing XML — run `git checkout -- macos/App/Info.plist`
+
+### 5. Search index refresh (7th attempt — finally found real root cause!)
+Branch: worktree-agent-a7a6aa10
+Root cause: 3 issues — (1) 1-second save debounce means disk file stale when Cmd+K opens, (2) qmd external index has its own stale cache, (3) in-memory tab content not synced before indexing
+Fix: Flush dirty tab content before Cmd+K, build index from memory for unsaved files, skip qmd when tabs dirty
+Smoke: Edit a page → add unique word → Cmd+K → search for it → should appear
+Note: SourceKit reports extraneous brace at line 861 — fix after merge
+
+## Not started
+- Database breadcrumb (row_kz9860) — blocked on disk
+- Database row templates (row_ti2v4r) — blocked on disk
+
+## Skipped
+- Google OAuth — external deps
+
+## Lesson learned
+Worktree cleanup (Phase 3.9) must run BEFORE launching new workers, not after. 18 worktrees from the prior /go run were never cleaned, filling the disk.

@@ -72,7 +72,7 @@ struct FileTreeView: View {
                     dropState.mode = nil
                     return NSItemProvider(object: entry.path as NSString)
                 }
-                .onDrop(of: [.text, .bugbookSidebarReference], delegate: FileTreeDropDelegate(
+                .onDrop(of: [.text, .sidebarReference], delegate: FileTreeDropDelegate(
                     targetIndex: index,
                     targetEntry: entry,
                     entries: cachedEntries,
@@ -96,7 +96,7 @@ struct FileTreeView: View {
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
                 }
-                .onDrop(of: [.text, .bugbookSidebarReference], delegate: FileTreeDropDelegate(
+                .onDrop(of: [.text, .sidebarReference], delegate: FileTreeDropDelegate(
                     targetIndex: cachedEntries.count,
                     targetEntry: nil,
                     entries: cachedEntries,
@@ -147,7 +147,7 @@ struct FileTreeDropDelegate: DropDelegate {
 
     /// Whether the drag contains a sidebar reference item (dragged from editor).
     private func isSidebarReferenceDrag(_ info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.bugbookSidebarReference])
+        info.hasItemsConforming(to: [.sidebarReference])
     }
 
     /// Whether the drag contains a file tree reorder item.
@@ -198,9 +198,9 @@ struct FileTreeDropDelegate: DropDelegate {
         // Handle sidebar reference drops (dragged from editor)
         if isSidebarReferenceDrag(info), let onAddSidebarReference {
             dropState.mode = nil
-            guard let provider = info.itemProviders(for: [.bugbookSidebarReference]).first else { return false }
+            guard let provider = info.itemProviders(for: [.sidebarReference]).first else { return false }
             let callback = onAddSidebarReference
-            provider.loadDataRepresentation(forTypeIdentifier: UTType.bugbookSidebarReference.identifier) { data, _ in
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.sidebarReference.identifier) { data, _ in
                 guard let data,
                       let payload = try? JSONDecoder().decode(SidebarReferenceDragPayload.self, from: data) else { return }
                 DispatchQueue.main.async {
