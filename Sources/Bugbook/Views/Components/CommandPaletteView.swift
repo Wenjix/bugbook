@@ -175,7 +175,7 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
-            // Always rebuild content index from disk so edits are found
+            // Invalidate cached content index so it rebuilds from disk on next search
             contentIndex = []
             contentIndexWorkspace = nil
             contentIndexTask?.cancel()
