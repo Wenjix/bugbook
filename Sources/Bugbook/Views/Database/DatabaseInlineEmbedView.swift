@@ -708,7 +708,7 @@ struct DatabaseInlineEmbedView: View {
                     state.hideKanbanColumn(propertyId: propId, optionId: optionId)
                 }
             )
-            .frame(height: 360)
+            .fixedSize(horizontal: false, vertical: true)
         case .list:
             ListView(
                 schema: schema,
