@@ -160,6 +160,11 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
+            // Invalidate cached content index so it rebuilds from disk on next search
+            contentIndex = []
+            contentIndexWorkspace = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
             Task { @MainActor in
                 await warmContentIndexIfNeeded()
             }
