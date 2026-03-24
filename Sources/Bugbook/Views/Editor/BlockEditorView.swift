@@ -202,7 +202,7 @@ struct BlockEditorView: View {
                 }
             }
 
-            // Click target after last block — always visible, focuses or creates trailing empty paragraph
+            // Click target after last block — always visible, focuses trailing empty paragraph
             Button {
                 if document.consumePendingEditorTapAfterBlockSelection() {
                     return
