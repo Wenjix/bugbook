@@ -191,7 +191,9 @@ struct ContentView: View {
                 if let info = notification.userInfo,
                    let sourcePath = info["sourcePath"] as? String,
                    let destDir = info["destDir"] as? String {
-                    performMovePage(from: sourcePath, toDirectory: destDir)
+                    let insertIndex = info["insertIndex"] as? Int
+                    let siblingNames = info["siblings"] as? [String]
+                    performMovePage(from: sourcePath, toDirectory: destDir, insertIndex: insertIndex, siblingNames: siblingNames)
                 }
             }
     }
@@ -568,11 +570,10 @@ struct ContentView: View {
         }
     }
 
-    private func performMovePage(from sourcePath: String, toDirectory destDir: String) {
+    private func performMovePage(from sourcePath: String, toDirectory destDir: String, insertIndex: Int? = nil, siblingNames: [String]? = nil) {
         do {
             let newPath = try fileSystem.movePage(at: sourcePath, toDirectory: destDir)
             let oldPath = sourcePath
-            let movingDatabase = fileSystem.isDatabaseFolder(at: newPath)
 
             // Update any open tabs pointing to the old path
             for tab in appState.openTabs {
@@ -610,26 +611,12 @@ struct ContentView: View {
                 }
             }
 
-            // Insert a page link in the parent page's content
-            let parentPagePath = destDir + ".md"
-            if !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
-                let pageName = (newPath as NSString).lastPathComponent
-                    .replacingOccurrences(of: ".md", with: "")
-                let linkLine = "[[\(pageName)]]"
-                if var parentContent = try? fileSystem.loadFile(at: parentPagePath) {
-                    // Only add if not already linked
-                    if !parentContent.contains(linkLine) {
-                        if !parentContent.hasSuffix("\n") { parentContent += "\n" }
-                        parentContent += "\n\(linkLine)\n"
-                        try? fileSystem.saveFile(at: parentPagePath, content: parentContent)
-
-                        // Reload the parent page if it's open
-                        if let parentTab = appState.openTabs.first(where: { $0.path == parentPagePath }),
-                           let parentDoc = blockDocuments[parentTab.id] {
-                            parentDoc.blocks = MarkdownBlockParser.parse(parentContent)
-                        }
-                    }
-                }
+            // Apply reorder if a target position was specified (cross-parent .above drop)
+            if let insertIndex, let siblingNames {
+                let movedName = (newPath as NSString).lastPathComponent
+                var names = siblingNames
+                names.insert(movedName, at: min(insertIndex, names.count))
+                fileSystem.saveCustomOrder(names, for: destDir)
             }
 
             appState.movePagePath = nil
@@ -659,22 +646,6 @@ struct ContentView: View {
                             } else if let fp = doc.filePath, fp.hasPrefix(newCompanion + "/") {
                                 let relative = String(fp.dropFirst(newCompanion.count))
                                 doc.filePath = restoredCompanion + relative
-                            }
-                        }
-
-                        // Remove the page link from the parent page
-                        let parentPagePath = destDir + ".md"
-                        if !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
-                            let pageName = (newPath as NSString).lastPathComponent
-                                .replacingOccurrences(of: ".md", with: "")
-                            let linkLine = "[[\(pageName)]]"
-                            if var parentContent = try? fs.loadFile(at: parentPagePath) {
-                                parentContent = parentContent.replacingOccurrences(of: "\n\(linkLine)\n", with: "\n")
-                                try? fs.saveFile(at: parentPagePath, content: parentContent)
-                                if let parentTab = self.appState.openTabs.first(where: { $0.path == parentPagePath }),
-                                   let parentDoc = self.blockDocuments[parentTab.id] {
-                                    parentDoc.blocks = MarkdownBlockParser.parse(parentContent)
-                                }
                             }
                         }
 

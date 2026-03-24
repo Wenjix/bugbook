@@ -217,16 +217,37 @@ struct FileTreeDropDelegate: DropDelegate {
                 case .above(let insertIndex):
                     let draggedName = (draggedPath as NSString).lastPathComponent
                     let draggedParent = (draggedPath as NSString).deletingLastPathComponent
-                    let entryParents = Set(entries.map { ($0.path as NSString).deletingLastPathComponent })
-                    guard entryParents.contains(draggedParent) || entries.contains(where: { $0.path == draggedPath }) else { return }
+                    let sameParent = entries.contains(where: { ($0.path as NSString).deletingLastPathComponent == draggedParent })
 
-                    fileSystem.reorderEntry(
-                        named: draggedName,
-                        toIndex: insertIndex,
-                        inParent: parentPath,
-                        siblings: entries
-                    )
-                    onDidReorder()
+                    if sameParent {
+                        // Same parent — just reorder
+                        fileSystem.reorderEntry(
+                            named: draggedName,
+                            toIndex: insertIndex,
+                            inParent: parentPath,
+                            siblings: entries
+                        )
+                        onDidReorder()
+                    } else {
+                        // Cross-parent — move file to this directory, then reorder
+                        // Don't drop into own descendant
+                        let draggedCompanion = draggedPath.hasSuffix(".md") ? String(draggedPath.dropLast(3)) : draggedPath
+                        guard !parentPath.hasPrefix(draggedCompanion + "/") else { return }
+
+                        // Determine destination directory from parentPath
+                        // parentPath is either a companion folder path or the workspace root
+                        let destDir = parentPath
+                        NotificationCenter.default.post(
+                            name: .movePageToDir,
+                            object: nil,
+                            userInfo: [
+                                "sourcePath": draggedPath,
+                                "destDir": destDir,
+                                "insertIndex": insertIndex,
+                                "siblings": entries.map(\.name)
+                            ]
+                        )
+                    }
 
                 case .none:
                     break
