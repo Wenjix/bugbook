@@ -772,7 +772,7 @@ final class EditorFrameReporterView: NSView {
     }
 }
 
-/// Thin drop zone between blocks that shows a blue line when a drag hovers over it.
+/// Thin drop zone between blocks that shows a line when a drag hovers over it.
 /// Height is constant to prevent layout shifts that cause flickering.
 /// Accepts both block UUID drops (reorder) and image URL drops (insert image).
 struct DropZoneView: View {
@@ -791,7 +791,7 @@ struct DropZoneView: View {
             .frame(maxWidth: .infinity)
             .overlay {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(height: 2)
                     .opacity(isActive || imageDropTargeted ? 1 : 0)
             }
@@ -821,7 +821,7 @@ struct DropZoneView: View {
     }
 }
 
-/// Right-edge drop zone that shows a vertical blue line for column creation.
+/// Right-edge drop zone that shows a vertical line for column creation.
 struct ColumnDropZoneView: View {
     let isActive: Bool
     let onDrop: ([UUID]) -> Void
@@ -834,7 +834,7 @@ struct ColumnDropZoneView: View {
             .frame(maxHeight: .infinity)
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(width: 2)
                     .opacity(isActive ? 1 : 0)
             }
