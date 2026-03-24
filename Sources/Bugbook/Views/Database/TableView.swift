@@ -513,10 +513,12 @@ struct TableView: View {
     @ViewBuilder
     private var rowsRegion: some View {
         if usesInnerScroll {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    rowsStack
-                }
+            GeometryReader { geo in
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        rowsStack
+                            .frame(minWidth: geo.size.width)
+                    }
                 .onAppear {
                     guard !didInitialScroll else { return }
                     didInitialScroll = true
@@ -529,6 +531,7 @@ struct TableView: View {
                         scrollToCurrentTarget(using: proxy, animated: true)
                     }
                 }
+            }
             }
         } else {
             rowsStack
