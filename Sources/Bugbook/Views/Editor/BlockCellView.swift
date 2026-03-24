@@ -254,10 +254,7 @@ struct BlockCellView: View {
             CanvasBlockView(document: document, block: block)
 
         case .meeting:
-            MeetingBlockView(
-                document: document,
-                block: block
-            )
+            MeetingBlockView(document: document, block: block)
         }
     }
 }

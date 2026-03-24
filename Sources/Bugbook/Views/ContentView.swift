@@ -1191,6 +1191,7 @@ struct ContentView: View {
         doc.onCancelAiPrompt = { [weak doc] in
             doc?.dismissAiPrompt()
         }
+<<<<<<< HEAD
         doc.transcriptionService = transcriptionService
         doc.onStartMeeting = { [weak doc] blockId in
             Task { await transcriptionService.startRecording() }
@@ -1308,6 +1309,12 @@ struct ContentView: View {
                 block.meetingSummary = "AI summary unavailable: \(error.localizedDescription)"
                 block.meetingActionItems = ""
             }
+=======
+        doc.onOpenAiPanelWithContext = { [weak appState] context in
+            guard let appState else { return }
+            appState.aiSelectionContext = context
+            appState.openAiPanel()
+>>>>>>> worktree-agent-af890d65
         }
     }
 

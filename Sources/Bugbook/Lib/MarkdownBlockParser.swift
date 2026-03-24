@@ -522,6 +522,7 @@ enum MarkdownBlockParser {
                 lines.append("<!-- /columns -->")
 
             case .meeting:
+<<<<<<< HEAD
                 // Only serialize completed meetings; recording/processing blocks are transient
                 guard block.meetingState == .complete else { break }
                 lines.append("<!-- meeting -->")
@@ -545,6 +546,9 @@ enum MarkdownBlockParser {
                     lines.append(block.meetingTranscript)
                 }
                 lines.append("<!-- /meeting -->")
+=======
+                lines.append("<!-- meeting: \(block.meetingTitle) -->")
+>>>>>>> worktree-agent-af890d65
             }
         }
 
