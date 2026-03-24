@@ -6,6 +6,7 @@ struct ChatMessage: Identifiable {
     let content: String
     let timestamp: Date
     var isReverted: Bool = false
+    var changeSummary: String?
 
     enum Role {
         case user

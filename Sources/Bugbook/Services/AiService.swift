@@ -48,7 +48,26 @@ Formatting rules:
 - For collapsed toggles: <!-- toggle collapsed --> instead of <!-- toggle -->
 
 NEVER use HTML tags like <details>, <summary>, <strong>, etc. This app does NOT render HTML.
+
+NEVER produce empty blocks or consecutive blank lines. Every block must contain visible content. Use at most one blank line between sections.
 """
+
+    /// Strip excessive blank lines and trailing whitespace from AI output.
+    static func sanitizeResponse(_ text: String) -> String {
+        var result = text
+        // Collapse 3+ consecutive newlines down to 2 (one blank line)
+        while result.contains("\n\n\n") {
+            result = result.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+        // Trim trailing whitespace per line
+        result = result
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
+            .joined(separator: "\n")
+        // Trim leading/trailing whitespace on the whole string
+        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result
+    }
 
     // MARK: - Engine Detection
 
