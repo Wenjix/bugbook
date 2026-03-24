@@ -775,6 +775,7 @@ class BlockDocument {
         SlashCommand(name: "Database", icon: "tablecells", action: .blockType(.databaseEmbed, headingLevel: 0)),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template),
         SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI),
+        SlashCommand(name: "Meeting", icon: "waveform", action: .blockType(.meeting, headingLevel: 0)),
     ]
 
     var filteredSlashCommands: [SlashCommand] {

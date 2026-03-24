@@ -108,7 +108,8 @@ enum MarkdownBlockParser {
             pageLinkName: String = "",
             children: [Block] = [],
             columnIndex: Int = 0,
-            isExpanded: Bool = true
+            isExpanded: Bool = true,
+            transcriptEntries: [String] = []
         ) -> Block {
             let colors = pendingColors ?? (.default, .default)
             let block = Block(
@@ -128,7 +129,8 @@ enum MarkdownBlockParser {
                 backgroundColor: colors.1,
                 children: children,
                 columnIndex: columnIndex,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                transcriptEntries: transcriptEntries
             )
             pendingBlockID = nil
             pendingColors = nil
@@ -313,6 +315,22 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Meeting block
+            if trimmed == "<!-- meeting -->" {
+                i += 1
+                var transcriptLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    transcriptLines.append(lines[i])
+                    i += 1
+                }
+                blocks.append(makeBlock(type: .meeting, transcriptEntries: transcriptLines))
+                continue
+            }
+
             // Paragraph (including empty lines)
             blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             i += 1
@@ -401,6 +419,17 @@ enum MarkdownBlockParser {
                     lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
                 }
                 lines.append("<!-- /toggle -->")
+
+            case .meeting:
+                lines.append("<!-- meeting -->")
+                for entry in block.transcriptEntries {
+                    lines.append(entry)
+                }
+                // Include any in-progress text as well
+                if !block.text.isEmpty {
+                    lines.append(block.text)
+                }
+                lines.append("<!-- /meeting -->")
 
             case .column:
                 lines.append("<!-- columns -->")
