@@ -102,31 +102,29 @@ struct AiSidePanelView: View {
     // MARK: - Command Suggestions
 
     private var commandSuggestions: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                suggestionChip("Summarize", prompt: "Summarize this page")
-                suggestionChip("Flashcards", prompt: "Generate flashcards from this page")
-                suggestionChip("Rewrite", prompt: "Rewrite this page for clarity")
-                suggestionChip("Connections", prompt: "Find connections between this page and my other notes")
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            suggestionRow("Summarize this page", prompt: "Summarize this page")
+            suggestionRow("Organize this page", prompt: "Organize this page into clear sections")
+            suggestionRow("Rewrite this section", prompt: "Rewrite this page for clarity")
+            suggestionRow("Create flashcards", prompt: "Generate flashcards from this page")
         }
-        .scrollIndicators(.hidden)
     }
 
     @State private var hoveredSuggestion: String?
 
-    private func suggestionChip(_ label: String, prompt: String) -> some View {
+    private func suggestionRow(_ label: String, prompt: String) -> some View {
         Button {
             inputText = prompt
             sendMessage()
         } label: {
             Text(label)
-                .font(.system(size: Typography.caption, weight: .medium))
-                .foregroundStyle(Color.fallbackTextSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(hoveredSuggestion == label ? Color.primary.opacity(Opacity.light) : Color.primary.opacity(Opacity.subtle))
-                .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(hoveredSuggestion == label ? Color.fallbackTextPrimary : Color.fallbackTextSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(hoveredSuggestion == label ? Color.primary.opacity(Opacity.subtle) : .clear)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in hoveredSuggestion = hovering ? label : nil }
