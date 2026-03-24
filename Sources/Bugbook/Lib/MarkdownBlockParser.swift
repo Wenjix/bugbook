@@ -15,7 +15,7 @@ enum MarkdownBlockParser {
     /// Returns the metadata and the remaining markdown content after metadata lines.
     static func parseMetadata(_ markdown: String) -> (Metadata, String) {
         var metadata = Metadata()
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
         var contentStartIndex = 0
 
         for line in lines {
@@ -57,8 +57,7 @@ enum MarkdownBlockParser {
             break
         }
 
-        let remainingLines = Array(lines.dropFirst(contentStartIndex))
-        let remaining = remainingLines.joined(separator: "\n")
+        let remaining = lines.dropFirst(contentStartIndex).joined(separator: "\n")
         return (metadata, remaining)
     }
 
@@ -85,7 +84,7 @@ enum MarkdownBlockParser {
             return [Block(type: .paragraph)]
         }
 
-        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
         if lines.count > 1, lines.last == "" {
             lines.removeLast()
         }
@@ -136,7 +135,7 @@ enum MarkdownBlockParser {
         }
 
         while i < lines.count {
-            let line = lines[i]
+            let line = String(lines[i])
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if let blockID = parseBlockIDComment(line) {
@@ -154,7 +153,7 @@ enum MarkdownBlockParser {
             // Code fence
             if line.hasPrefix("```") {
                 let language = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                var codeLines: [String] = []
+                var codeLines: [Substring] = []
                 i += 1
                 while i < lines.count {
                     if lines[i].hasPrefix("```") {
@@ -253,10 +252,10 @@ enum MarkdownBlockParser {
                 let collapsed = trimmed.contains("collapsed")
                 i += 1
                 // First line is the toggle title
-                let title = i < lines.count ? lines[i] : ""
+                let title = i < lines.count ? String(lines[i]) : ""
                 i += 1
                 // Remaining lines until <!-- /toggle --> are children
-                var childLines: [String] = []
+                var childLines: [Substring] = []
                 while i < lines.count {
                     if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle -->" {
                         i += 1
@@ -270,11 +269,48 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Heading toggle block
+            if let headingToggleLevel = parseHeadingToggleComment(trimmed) {
+                let collapsed = trimmed.contains("collapsed")
+                i += 1
+                let title = i < lines.count ? lines[i] : ""
+                i += 1
+                var childLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle-heading -->" {
+                        i += 1
+                        break
+                    }
+                    childLines.append(String(lines[i]))
+                    i += 1
+                }
+                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                blocks.append(makeBlock(type: .headingToggle, text: String(title), headingLevel: headingToggleLevel, children: children, isExpanded: !collapsed))
+                continue
+            }
+
+            // Canvas block
+            if trimmed == "<!-- canvas -->" {
+                i += 1
+                var jsonLines: [String] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /canvas -->" {
+                        i += 1
+                        break
+                    }
+                    jsonLines.append(String(lines[i]))
+                    i += 1
+                }
+                let json = jsonLines.joined(separator: "\n")
+                blocks.append(makeBlock(type: .canvas, text: json))
+                continue
+            }
+
             // Column block
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
                 var currentColumnIndex = 0
-                var currentColumnLines: [String] = []
+                var currentColumnLines: [Substring] = []
                 i += 1
                 while i < lines.count {
                     let colLine = lines[i]
@@ -313,6 +349,58 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Meeting block
+            if trimmed == "<!-- meeting -->" {
+                i += 1
+                var title = ""
+                var transcript = ""
+                var summary = ""
+                var actionItems = ""
+                var notes = ""
+                var section = ""
+                while i < lines.count {
+                    let mLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if mLine == "<!-- /meeting -->" {
+                        i += 1
+                        break
+                    }
+                    if mLine.hasPrefix("<!-- meeting-title:") && mLine.hasSuffix("-->") {
+                        title = String(mLine.dropFirst(19).dropLast(3)).trimmingCharacters(in: .whitespaces)
+                    } else if mLine == "<!-- meeting-summary -->" {
+                        section = "summary"
+                    } else if mLine == "<!-- meeting-actions -->" {
+                        section = "actions"
+                    } else if mLine == "<!-- meeting-transcript -->" {
+                        section = "transcript"
+                    } else if mLine == "<!-- meeting-notes -->" {
+                        section = "notes"
+                    } else {
+                        switch section {
+                        case "summary":
+                            summary += (summary.isEmpty ? "" : "\n") + lines[i]
+                        case "actions":
+                            actionItems += (actionItems.isEmpty ? "" : "\n") + lines[i]
+                        case "transcript":
+                            transcript += (transcript.isEmpty ? "" : "\n") + lines[i]
+                        case "notes":
+                            notes += (notes.isEmpty ? "" : "\n") + lines[i]
+                        default:
+                            break
+                        }
+                    }
+                    i += 1
+                }
+                var meetingBlock = makeBlock(type: .meeting)
+                meetingBlock.meetingTitle = title
+                meetingBlock.meetingTranscript = transcript
+                meetingBlock.meetingSummary = summary
+                meetingBlock.meetingActionItems = actionItems
+                meetingBlock.meetingNotes = notes
+                meetingBlock.meetingState = .complete
+                blocks.append(meetingBlock)
+                continue
+            }
+
             // Paragraph (including empty lines)
             blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             i += 1
@@ -337,7 +425,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle {
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle, block.type != .canvas {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -402,6 +490,23 @@ enum MarkdownBlockParser {
                 }
                 lines.append("<!-- /toggle -->")
 
+            case .headingToggle:
+                let level = max(1, min(3, block.headingLevel))
+                let collapsed = block.isExpanded ? "" : " collapsed"
+                lines.append("<!-- toggle-heading \(level)\(collapsed) -->")
+                lines.append(block.text)
+                if !block.children.isEmpty {
+                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
+                }
+                lines.append("<!-- /toggle-heading -->")
+
+            case .canvas:
+                lines.append("<!-- canvas -->")
+                if !block.text.isEmpty {
+                    lines.append(block.text)
+                }
+                lines.append("<!-- /canvas -->")
+
             case .column:
                 lines.append("<!-- columns -->")
                 let maxCol = block.children.map(\.columnIndex).max() ?? 0
@@ -417,14 +522,29 @@ enum MarkdownBlockParser {
                 lines.append("<!-- /columns -->")
 
             case .meeting:
-                lines.append("<!-- meeting: \(block.meetingTitle) -->")
-
-            case .canvas:
-                lines.append("<!-- canvas -->")
-
-            case .headingToggle:
-                let hashes = String(repeating: "#", count: max(1, min(6, block.headingLevel)))
-                lines.append("\(hashes) \(block.text)")
+                // Only serialize completed meetings; recording/processing blocks are transient
+                guard block.meetingState == .complete else { break }
+                lines.append("<!-- meeting -->")
+                if !block.meetingTitle.isEmpty {
+                    lines.append("<!-- meeting-title: \(block.meetingTitle) -->")
+                }
+                if !block.meetingSummary.isEmpty {
+                    lines.append("<!-- meeting-summary -->")
+                    lines.append(block.meetingSummary)
+                }
+                if !block.meetingActionItems.isEmpty {
+                    lines.append("<!-- meeting-actions -->")
+                    lines.append(block.meetingActionItems)
+                }
+                if !block.meetingNotes.isEmpty {
+                    lines.append("<!-- meeting-notes -->")
+                    lines.append(block.meetingNotes)
+                }
+                if !block.meetingTranscript.isEmpty {
+                    lines.append("<!-- meeting-transcript -->")
+                    lines.append(block.meetingTranscript)
+                }
+                lines.append("<!-- /meeting -->")
             }
         }
 
@@ -483,12 +603,25 @@ enum MarkdownBlockParser {
         if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
             return true
         }
-        return trimmed == "<!-- toggle -->"
+        if trimmed == "<!-- toggle -->"
             || trimmed == "<!-- toggle collapsed -->"
             || trimmed == "<!-- /toggle -->"
+            || trimmed == "<!-- /toggle-heading -->"
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
+            || trimmed == "<!-- canvas -->"
+            || trimmed == "<!-- /canvas -->"
+            || trimmed == "<!-- meeting -->"
+            || trimmed == "<!-- /meeting -->"
+            || trimmed == "<!-- meeting-notes -->"
+            || trimmed == "<!-- meeting-transcript -->"
+            || trimmed == "<!-- meeting-summary -->"
+            || trimmed == "<!-- meeting-actions -->" {
+            return true
+        }
+        if parseHeadingToggleComment(trimmed) != nil { return true }
+        return false
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {
@@ -642,6 +775,18 @@ enum MarkdownBlockParser {
         guard trimmed.hasPrefix("[["), trimmed.hasSuffix("]]") else { return nil }
         let name = String(trimmed.dropFirst(2).dropLast(2))
         return name.isEmpty ? nil : name
+    }
+
+    private static func parseHeadingToggleComment(_ trimmed: String) -> Int? {
+        guard trimmed.hasPrefix("<!-- toggle-heading"), trimmed.hasSuffix("-->") else { return nil }
+        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        // inner is like "toggle-heading 2" or "toggle-heading 2 collapsed"
+        guard inner.hasPrefix("toggle-heading") else { return nil }
+        let rest = inner.dropFirst("toggle-heading".count).trimmingCharacters(in: .whitespaces)
+        // rest is like "2" or "2 collapsed"
+        let parts = rest.split(separator: " ", maxSplits: 1)
+        guard let levelStr = parts.first, let level = Int(levelStr), level >= 1, level <= 3 else { return nil }
+        return level
     }
 
     private static func parsePageLinkComment(_ line: String) -> String? {
