@@ -177,6 +177,7 @@ struct BlockEditorView: View {
                         if document.consumePendingEditorTapAfterBlockSelection() {
                             return
                         }
+                        document.clearBlockSelection()
                         document.clearMultiBlockTextSelection()
                         // After a non-editable block, always focus or insert an empty paragraph
                         if block.type == .image || block.type == .pageLink || block.type == .databaseEmbed || block.type == .horizontalRule {
@@ -207,6 +208,7 @@ struct BlockEditorView: View {
                 if document.consumePendingEditorTapAfterBlockSelection() {
                     return
                 }
+                document.clearBlockSelection()
                 document.clearMultiBlockTextSelection()
                 document.ensureTrailingParagraph()
                 if let lastBlock = document.blocks.last {

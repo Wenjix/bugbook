@@ -616,7 +616,7 @@ struct TableView: View {
             } label: {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(DatabaseZoomMetrics.font(13))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? Color.dragIndicator : Color.secondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isSelected ? "Deselect row" : "Select row")
