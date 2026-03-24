@@ -36,6 +36,17 @@ enum ViewMode {
     var movePagePath: String?  // non-nil triggers move page picker
     var flashcardReviewOpen: Bool = false
     var isRecording: Bool = false
+    var recordingStartDate: Date?
+
+    func startRecording() {
+        recordingStartDate = Date()
+        isRecording = true
+    }
+
+    func stopRecording() {
+        isRecording = false
+        recordingStartDate = nil
+    }
 
     var activeTab: OpenFile? {
         guard activeTabIndex >= 0, activeTabIndex < openTabs.count else { return nil }
