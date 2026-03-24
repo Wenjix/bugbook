@@ -15,18 +15,22 @@ struct AiSidePanelView: View {
     @State private var pickerSelectedIndex: Int = 0
     @State private var hoveredMessageId: UUID?
 
+    private var threadLabel: String {
+        guard let first = messages.first(where: { $0.role == .user }) else { return "New AI Chat" }
+        let text = first.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.count > 30 ? String(text.prefix(30)) + "..." : text
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
 
             if messages.isEmpty {
-                welcomeState
+                Spacer()
             } else {
                 messageList
             }
 
-            Divider()
             inputArea
         }
         .frame(width: 380)
@@ -66,9 +70,10 @@ struct AiSidePanelView: View {
                 .frame(width: 22, height: 22)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
 
-            Text("New AI Chat")
+            Text(threadLabel)
                 .font(.system(size: Typography.body, weight: .semibold))
                 .foregroundStyle(Color.fallbackTextPrimary)
+                .lineLimit(1)
 
             Spacer()
 
@@ -94,95 +99,37 @@ struct AiSidePanelView: View {
         .padding(.vertical, 12)
     }
 
-    // MARK: - Welcome State
+    // MARK: - Command Suggestions
 
-    private var welcomeState: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Spacer(minLength: 40)
-
-                // Icon + heading
-                VStack(spacing: 8) {
-                    Image("BugbookAI")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 40, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    Text("Bugbook AI")
-                        .font(.system(size: Typography.title3, weight: .semibold))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-
-                    Text("Ask questions, generate content, or get help with your notes.")
-                        .font(.system(size: Typography.bodySmall))
-                        .foregroundStyle(Color.fallbackTextSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                }
-
-                // Shortcut cards
-                VStack(spacing: 8) {
-                    shortcutCard(
-                        icon: "text.justify.leading",
-                        label: "Summarize this page",
-                        description: "Get a concise summary of the current page",
-                        prompt: "Summarize this page"
-                    )
-                    shortcutCard(
-                        icon: "rectangle.on.rectangle.angled",
-                        label: "Generate flashcards",
-                        description: "Create study cards from your notes",
-                        prompt: "Generate flashcards from this page"
-                    )
-                    shortcutCard(
-                        icon: "arrow.triangle.2.circlepath",
-                        label: "Rewrite for clarity",
-                        description: "Improve readability and flow",
-                        prompt: "Rewrite this page for clarity"
-                    )
-                    shortcutCard(
-                        icon: "link",
-                        label: "Find connections",
-                        description: "Discover links to other notes",
-                        prompt: "Find connections between this page and my other notes"
-                    )
-                }
-                .padding(.horizontal, 16)
-
-                Spacer(minLength: 20)
+    private var commandSuggestions: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                suggestionChip("Summarize", prompt: "Summarize this page")
+                suggestionChip("Flashcards", prompt: "Generate flashcards from this page")
+                suggestionChip("Rewrite", prompt: "Rewrite this page for clarity")
+                suggestionChip("Connections", prompt: "Find connections between this page and my other notes")
             }
         }
+        .scrollIndicators(.hidden)
     }
 
-    private func shortcutCard(icon: String, label: String, description: String, prompt: String) -> some View {
+    @State private var hoveredSuggestion: String?
+
+    private func suggestionChip(_ label: String, prompt: String) -> some View {
         Button {
             inputText = prompt
             sendMessage()
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.fallbackTextSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.primary.opacity(Opacity.subtle))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label)
-                        .font(.system(size: Typography.body, weight: .medium))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-                    Text(description)
-                        .font(.system(size: Typography.caption2))
-                        .foregroundStyle(Color.fallbackTextSecondary)
-                }
-
-                Spacer()
-            }
-            .padding(10)
-            .background(Color.primary.opacity(Opacity.subtle))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            Text(label)
+                .font(.system(size: Typography.caption, weight: .medium))
+                .foregroundStyle(Color.fallbackTextSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(hoveredSuggestion == label ? Color.primary.opacity(Opacity.light) : Color.primary.opacity(Opacity.subtle))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
         }
         .buttonStyle(.plain)
+        .onHover { hovering in hoveredSuggestion = hovering ? label : nil }
     }
 
     // MARK: - Message List
@@ -454,91 +401,108 @@ struct AiSidePanelView: View {
     // MARK: - Input Area
 
     private var inputArea: some View {
-        VStack(spacing: 0) {
-            if !referencedItems.isEmpty {
-                contextChipsView
+        VStack(spacing: 6) {
+            // Command suggestions (shown when no messages or always above input)
+            if messages.isEmpty {
+                commandSuggestions
+                    .padding(.horizontal, 12)
+            }
+
+            VStack(spacing: 0) {
+                if !referencedItems.isEmpty {
+                    contextChipsView
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
+                }
+
+                // Context chips (page context)
+                if let doc = activeDocument, let path = doc.filePath {
+                    let pageName = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+                    HStack(spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 10))
+                            Text(pageName)
+                                .font(.system(size: Typography.caption2))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(Color.fallbackTextSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(Opacity.subtle))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+
+                        Spacer()
+                    }
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
                     .padding(.bottom, 4)
-            }
+                }
 
-            // Context chips (page context)
-            if let doc = activeDocument, let path = doc.filePath {
-                let pageName = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-                HStack(spacing: 6) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 10))
-                        Text(pageName)
-                            .font(.system(size: Typography.caption2))
-                            .lineLimit(1)
+                // Text field + buttons
+                HStack(alignment: .bottom, spacing: 8) {
+                    Button {
+                        showPagePicker.toggle()
+                    } label: {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.fallbackTextSecondary)
                     }
-                    .foregroundStyle(Color.fallbackTextSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(Opacity.subtle))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+                    .buttonStyle(.borderless)
+                    .help("Reference a page")
+                    .floatingPopover(isPresented: $showPagePicker, arrowEdge: .top, becomesKey: true) {
+                        pageReferencePickerView
+                    }
 
-                    Spacer()
+                    TextField("Ask about your notes...", text: $inputText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: Typography.body))
+                        .lineLimit(1...20)
+                        .frame(minHeight: 24)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .focused($inputFocused)
+                        .onChange(of: inputText) { _, value in
+                            if value.hasSuffix("@") {
+                                showPagePicker = true
+                            }
+                        }
+                        .onSubmit {
+                            sendMessage()
+                        }
+
+                    if aiService.isRunning {
+                        Button(action: cancelGeneration) {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.borderless)
+                    } else {
+                        Button(action: sendMessage) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(
+                                    canSend
+                                        ? Color.fallbackTextPrimary
+                                        : Color.fallbackTextMuted
+                                )
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!canSend)
+                    }
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
+                .padding(.vertical, 10)
             }
-
-            // Text field + buttons
-            HStack(alignment: .bottom, spacing: 8) {
-                Button {
-                    showPagePicker.toggle()
-                } label: {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.fallbackTextSecondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Reference a page")
-                .floatingPopover(isPresented: $showPagePicker, arrowEdge: .top, becomesKey: true) {
-                    pageReferencePickerView
-                }
-
-                TextField("Ask about your notes...", text: $inputText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: Typography.body))
-                    .lineLimit(1...20)
-                    .frame(minHeight: 24)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .focused($inputFocused)
-                    .onChange(of: inputText) { _, value in
-                        if value.hasSuffix("@") {
-                            showPagePicker = true
-                        }
-                    }
-                    .onSubmit {
-                        sendMessage()
-                    }
-
-                Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(
-                            canSend
-                                ? Color.fallbackTextPrimary
-                                : Color.fallbackTextMuted
-                        )
-                }
-                .buttonStyle(.borderless)
-                .disabled(!canSend)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        inputFocused ? Color(hex: "6366f1") : Color.fallbackBorderColor,
+                        lineWidth: inputFocused ? 2 : 1
+                    )
+            )
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(
-                    inputFocused ? Color(hex: "6366f1") : Color.fallbackBorderColor,
-                    lineWidth: inputFocused ? 2 : 1
-                )
-        )
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
     }
