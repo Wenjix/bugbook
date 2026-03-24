@@ -279,7 +279,8 @@ struct SidebarView: View {
                         fileSystem: fileSystem,
                         workspacePath: appState.workspacePath,
                         onSelectFile: onSelectFile,
-                        onRefreshTree: refreshTree
+                        onRefreshTree: refreshTree,
+                        onAddSidebarReference: onAddSidebarReference
                     )
                 }
                 .padding(.horizontal, sectionHorizontalPadding)

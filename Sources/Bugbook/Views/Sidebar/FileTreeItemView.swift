@@ -8,6 +8,7 @@ struct FileTreeItemView: View {
     var workspacePath: String?
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
+    var onAddSidebarReference: ((SidebarReferenceDragPayload) -> Void)?
     var isSidebarReference: Bool = false
 
     @State private var isExpanded: Bool = false
@@ -45,7 +46,8 @@ struct FileTreeItemView: View {
                     workspacePath: workspacePath,
                     parentPath: childParentPath,
                     onSelectFile: onSelectFile,
-                    onRefreshTree: onRefreshTree
+                    onRefreshTree: onRefreshTree,
+                    onAddSidebarReference: onAddSidebarReference
                 )
                 .padding(.leading, ShellZoomMetrics.size(12))
             }
