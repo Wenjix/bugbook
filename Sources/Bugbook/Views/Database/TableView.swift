@@ -237,6 +237,7 @@ struct TableView: View {
             .fixedSize()
         }
         .padding(.horizontal, DatabaseZoomMetrics.size(4))
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: compactHeaderHeight)
     }
 
@@ -333,6 +334,7 @@ struct TableView: View {
                 )
                 .overlay { columnDividers().allowsHitTesting(false) }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .topLeading) {
                 if draggingRowId != nil,
                    showsInsertionIndicator(for: row.wrappedValue.id, placement: .before) {
@@ -465,6 +467,7 @@ struct TableView: View {
                 .padding(.vertical, DatabaseZoomMetrics.size(14))
                 .overlay { columnDividers().allowsHitTesting(false) }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
