@@ -26,6 +26,8 @@ struct DatabaseInlineEmbedView: View {
     @State private var draggedViewTabId: String?
     @State private var viewTabDropTargetId: String?
     @State private var tableContainerWidth: CGFloat = 0
+    @State private var showTemplatePicker = false
+    @State private var editingTemplate: DatabaseTemplate? = nil
 
     init(dbPath: String, onOpenRow: ((DatabaseRow) -> Void)? = nil, onOpenDatabase: (() -> Void)? = nil) {
         self.dbPath = dbPath
@@ -81,6 +83,59 @@ struct DatabaseInlineEmbedView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(8)
+            }
+        }
+        .overlay {
+            if showTemplatePicker {
+                Color.black.opacity(0.2)
+                    .ignoresSafeArea()
+                    .onTapGesture { showTemplatePicker = false }
+
+                DatabaseTemplatePickerView(
+                    templates: state.templates,
+                    onSelectEmpty: {
+                        showTemplatePicker = false
+                        addEmptyRow()
+                    },
+                    onSelectTemplate: { template in
+                        showTemplatePicker = false
+                        addRowFromTemplate(template)
+                    },
+                    onNewTemplate: {
+                        showTemplatePicker = false
+                        let newTemplate = state.createTemplate(name: "Untitled")
+                        editingTemplate = newTemplate
+                    },
+                    onDismiss: { showTemplatePicker = false }
+                )
+            }
+        }
+        .overlay {
+            if editingTemplate != nil, let schema = state.schema {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
+
+                DatabaseTemplateEditorModal(
+                    dbPath: dbPath,
+                    schema: schema,
+                    template: Binding(
+                        get: { editingTemplate! },
+                        set: { editingTemplate = $0 }
+                    ),
+                    onSave: { updated in state.updateTemplate(updated) },
+                    onDelete: { templateId in
+                        state.deleteTemplate(templateId)
+                        editingTemplate = nil
+                    },
+                    onClose: {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
+                )
             }
         }
         .task {
@@ -745,8 +800,25 @@ struct DatabaseInlineEmbedView: View {
     // MARK: - View-Specific Operations
 
     private func addNewRow() {
+        if !state.templates.isEmpty {
+            showTemplatePicker = true
+        } else {
+            addEmptyRow()
+        }
+    }
+
+    private func addEmptyRow() {
         do {
             let newRow = try state.createRow()
+            newRowScrollId = newRow.id
+        } catch {
+            state.error = error.localizedDescription
+        }
+    }
+
+    private func addRowFromTemplate(_ template: DatabaseTemplate) {
+        do {
+            let newRow = try state.createRowFromTemplate(template)
             newRowScrollId = newRow.id
         } catch {
             state.error = error.localizedDescription

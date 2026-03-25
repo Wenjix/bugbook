@@ -85,6 +85,29 @@ public struct PropertyDefinition: Identifiable, Codable, Sendable {
     }
 }
 
+// MARK: - Database Template
+
+public struct DatabaseTemplate: Identifiable, Codable, Sendable {
+    public let id: String
+    public var name: String
+    public var icon: String
+    public var defaultProperties: [String: PropertyValue]
+    public var body: String
+
+    public init(id: String, name: String, icon: String = "doc.text", defaultProperties: [String: PropertyValue] = [:], body: String = "") {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.defaultProperties = defaultProperties
+        self.body = body
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, icon, body
+        case defaultProperties = "default_properties"
+    }
+}
+
 // MARK: - Database Schema
 
 public struct DatabaseSchema: Codable, Identifiable, Sendable {
@@ -95,9 +118,11 @@ public struct DatabaseSchema: Codable, Identifiable, Sendable {
     public var views: [ViewConfig]
     public var defaultView: String
     public var createdAt: String
+    public var templates: [DatabaseTemplate]?
 
     public init(id: String, name: String, version: Int = 1, properties: [PropertyDefinition],
-                views: [ViewConfig], defaultView: String, createdAt: String) {
+                views: [ViewConfig], defaultView: String, createdAt: String,
+                templates: [DatabaseTemplate]? = nil) {
         self.id = id
         self.name = name
         self.version = version
@@ -105,10 +130,11 @@ public struct DatabaseSchema: Codable, Identifiable, Sendable {
         self.views = views
         self.defaultView = defaultView
         self.createdAt = createdAt
+        self.templates = templates
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, version, properties, views
+        case id, name, version, properties, views, templates
         case defaultView = "default_view"
         case createdAt = "created_at"
     }

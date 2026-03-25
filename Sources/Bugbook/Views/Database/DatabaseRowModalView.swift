@@ -51,7 +51,15 @@ struct DatabaseRowModalView: View {
             if let error = vm.error {
                 RowLoadErrorView(message: error, buttonLabel: "Close") { onClose() }
             } else if vm.schema != nil, vm.row != nil {
-                vm.rowPageView(onBack: { onClose() }, autoFocusTitle: autoFocusTitle, workspacePath: workspacePath)
+                vm.rowPageView(
+                    onBack: { onClose() },
+                    autoFocusTitle: autoFocusTitle,
+                    workspacePath: workspacePath,
+                    templates: vm.schema?.templates ?? [],
+                    onApplyTemplate: { template in
+                        applyTemplate(template)
+                    }
+                )
             } else {
                 VStack {
                     Spacer()
@@ -89,5 +97,14 @@ struct DatabaseRowModalView: View {
                 vm.postChangeNotification()
             }
         }
+    }
+
+    private func applyTemplate(_ template: DatabaseTemplate) {
+        guard var currentRow = vm.row, let schema = vm.schema else { return }
+        for (key, value) in template.defaultProperties {
+            currentRow.properties[key] = value
+        }
+        currentRow.body = template.body
+        vm.debouncedSave(currentRow, schema: schema)
     }
 }

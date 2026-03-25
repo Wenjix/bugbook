@@ -42,6 +42,8 @@ struct DatabaseFullPageView: View {
     @State private var initialPeekHandled = false
     @State private var draggedViewTabId: String?
     @State private var viewTabDropTargetId: String?
+    @State private var showTemplatePicker = false
+    @State private var editingTemplate: DatabaseTemplate? = nil
 
     init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
@@ -112,6 +114,59 @@ struct DatabaseFullPageView: View {
                         renamingPropertyId = nil
                     },
                     onCancel: { renamingPropertyId = nil }
+                )
+            }
+        }
+        .overlay {
+            if showTemplatePicker {
+                Color.black.opacity(0.2)
+                    .ignoresSafeArea()
+                    .onTapGesture { showTemplatePicker = false }
+
+                DatabaseTemplatePickerView(
+                    templates: state.templates,
+                    onSelectEmpty: {
+                        showTemplatePicker = false
+                        createEmptyRow()
+                    },
+                    onSelectTemplate: { template in
+                        showTemplatePicker = false
+                        createRowFromTemplate(template)
+                    },
+                    onNewTemplate: {
+                        showTemplatePicker = false
+                        let newTemplate = state.createTemplate(name: "Untitled")
+                        editingTemplate = newTemplate
+                    },
+                    onDismiss: { showTemplatePicker = false }
+                )
+            }
+        }
+        .overlay {
+            if editingTemplate != nil, let schema = state.schema {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
+
+                DatabaseTemplateEditorModal(
+                    dbPath: dbPath,
+                    schema: schema,
+                    template: Binding(
+                        get: { editingTemplate! },
+                        set: { editingTemplate = $0 }
+                    ),
+                    onSave: { updated in state.updateTemplate(updated) },
+                    onDelete: { templateId in
+                        state.deleteTemplate(templateId)
+                        editingTemplate = nil
+                    },
+                    onClose: {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
                 )
             }
         }
@@ -728,6 +783,14 @@ struct DatabaseFullPageView: View {
     // MARK: - View-Specific Operations
 
     private func createNewRow() {
+        if !state.templates.isEmpty {
+            showTemplatePicker = true
+        } else {
+            createEmptyRow()
+        }
+    }
+
+    private func createEmptyRow() {
         Task {
             do {
                 let newRow = try state.createRow()
@@ -735,6 +798,15 @@ struct DatabaseFullPageView: View {
             } catch {
                 state.error = error.localizedDescription
             }
+        }
+    }
+
+    private func createRowFromTemplate(_ template: DatabaseTemplate) {
+        do {
+            let newRow = try state.createRowFromTemplate(template)
+            openRow(newRow)
+        } catch {
+            state.error = error.localizedDescription
         }
     }
 
