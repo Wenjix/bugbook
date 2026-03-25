@@ -277,7 +277,7 @@ struct TableView: View {
 
     // MARK: - Data Row
 
-    private func dataRow(_ row: Binding<DatabaseRow>) -> some View {
+    private func dataRow(_ row: Binding<DatabaseRow>, visibleProps: [PropertyDefinition]) -> some View {
         HoverRow { isHovered in
             HStack(alignment: .center, spacing: 0) {
                 rowControls(for: row.wrappedValue, isHovered: isHovered)
@@ -291,7 +291,7 @@ struct TableView: View {
                         .contentShape(Rectangle())
                         .databasePointerCursor()
 
-                    ForEach(visibleProperties) { prop in
+                    ForEach(visibleProps) { prop in
                         PropertyEditorView(
                             definition: prop,
                             value: propertyBinding(row: row, propertyId: prop.id),
@@ -316,7 +316,7 @@ struct TableView: View {
                     RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(4))
                         .fill(isHovered ? Color.primary.opacity(0.04) : Color.clear)
                 )
-                .overlay { columnDividers().allowsHitTesting(false) }
+                .overlay { columnDividers(visibleProps: visibleProps).allowsHitTesting(false) }
             }
             .overlay(alignment: .topLeading) {
                 if showsInsertionIndicator(for: row.wrappedValue.id, placement: .before) {
@@ -342,12 +342,12 @@ struct TableView: View {
     // MARK: - Column Dividers (row-level overlay)
 
     @ViewBuilder
-    private func columnDividers() -> some View {
+    private func columnDividers(visibleProps: [PropertyDefinition]) -> some View {
         if showVerticalLines {
             HStack(spacing: 0) {
                 Color.clear.frame(width: DatabaseZoomMetrics.size(4) + titleColumnWidth)
                 Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
-                ForEach(visibleProperties) { prop in
+                ForEach(visibleProps) { prop in
                     Color.clear.frame(width: columnWidth(for: prop))
                     Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
                 }
@@ -398,7 +398,7 @@ struct TableView: View {
 
     // MARK: - Phantom Row
 
-    private func phantomRow(isFirst: Bool) -> some View {
+    private func phantomRow(isFirst: Bool, visibleProps: [PropertyDefinition]) -> some View {
         Button { onNewRow?() } label: {
             HStack(spacing: 0) {
                 Color.clear
@@ -421,7 +421,7 @@ struct TableView: View {
                         .padding(.horizontal, DatabaseZoomMetrics.size(8))
                         .frame(width: titleColumnWidth, alignment: .leading)
 
-                    ForEach(visibleProperties) { prop in
+                    ForEach(visibleProps) { prop in
                         TextField("", text: .constant(""))
                             .textFieldStyle(.plain)
                             .disabled(true)
@@ -434,7 +434,7 @@ struct TableView: View {
                 .padding(.vertical, DatabaseZoomMetrics.size(14))
             }
             .contentShape(Rectangle())
-            .overlay { columnDividers().allowsHitTesting(false) }
+            .overlay { columnDividers(visibleProps: visibleProps).allowsHitTesting(false) }
         }
         .buttonStyle(.plain)
     }
@@ -504,6 +504,7 @@ struct TableView: View {
     private var rowsStack: some View {
         let totalCount = rows.count
         let visibleCount = min(displayedRowCount, totalCount)
+        let visibleProps = visibleProperties
 
         return LazyVStack(alignment: .leading, spacing: 0) {
             Color.clear
@@ -511,7 +512,7 @@ struct TableView: View {
                 .id(topAnchorKey)
 
             ForEach($rows.prefix(visibleCount)) { $row in
-                dataRow($row)
+                dataRow($row, visibleProps: visibleProps)
                     .id($row.wrappedValue.id)
                 tableDivider.opacity(0.5)
             }
@@ -534,7 +535,7 @@ struct TableView: View {
             }
 
             ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
-                phantomRow(isFirst: rows.isEmpty && i == 0)
+                phantomRow(isFirst: rows.isEmpty && i == 0, visibleProps: visibleProps)
                 tableDivider.opacity(0.5)
             }
         }
