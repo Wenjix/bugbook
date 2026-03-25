@@ -443,7 +443,13 @@ struct SidebarView: View {
 
     private func refreshTree() {
         guard let workspace = appState.workspacePath else { return }
-        appState.fileTree = fileSystem.buildFileTree(at: workspace)
+        let fileSystem = self.fileSystem
+        Task.detached {
+            let tree = fileSystem.buildFileTree(at: workspace)
+            await MainActor.run {
+                self.appState.fileTree = tree
+            }
+        }
     }
 
     private func invokeAction(_ action: () -> Void) {

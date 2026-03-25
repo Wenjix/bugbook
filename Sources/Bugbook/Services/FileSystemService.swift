@@ -49,7 +49,7 @@ class FileSystemService {
 
     // MARK: - File Tree Building
 
-    func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
+    nonisolated func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
         let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
         defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
 
@@ -808,21 +808,21 @@ class FileSystemService {
         return fileManager.fileExists(atPath: path) ? path : nil
     }
 
-    private func companionFolderPath(for mdPath: String) -> String {
+    nonisolated private func companionFolderPath(for mdPath: String) -> String {
         guard mdPath.hasSuffix(".md") else { return mdPath }
         return String(mdPath.dropLast(3))
     }
 
-    private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {
+    nonisolated private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {
         siblings.contains("\(folderName).md")
     }
 
-    func isDatabaseFolder(at path: String) -> Bool {
+    nonisolated func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return fileManager.fileExists(atPath: schemaPath)
     }
 
-    func isCanvasFolder(at path: String) -> Bool {
+    nonisolated func isCanvasFolder(at path: String) -> Bool {
         let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
         return fileManager.fileExists(atPath: canvasPath)
     }
@@ -876,9 +876,17 @@ class FileSystemService {
         return folderPath
     }
 
-    private func parseIconFromFile(at path: String) -> String? {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        return parseIcon(from: content)
+    nonisolated private func parseIconFromFile(at path: String) -> String? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { fh.closeFile() }
+        let data = fh.readData(ofLength: 256)
+        guard let head = String(data: data, encoding: .utf8) else { return nil }
+        guard let range = head.range(of: "<!-- icon:(.*?) -->", options: .regularExpression) else {
+            return nil
+        }
+        let match = String(head[range])
+        let inner = match.dropFirst(10).dropLast(4).trimmingCharacters(in: .whitespaces)
+        return inner.isEmpty ? nil : inner
     }
 
     private func loadRecentWorkspaces() {

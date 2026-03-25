@@ -1433,10 +1433,12 @@ struct ContentView: View {
         let watcher = WorkspaceWatcher { [weak appState] in
             guard let appState = appState,
                   let workspace = appState.workspacePath else { return }
-            let tree = fileSystem.buildFileTree(at: workspace)
-            Task { @MainActor in
-                self.appState.fileTree = tree
-                refreshSidebarReferences(using: tree)
+            Task.detached {
+                let tree = fileSystem.buildFileTree(at: workspace)
+                await MainActor.run {
+                    appState.fileTree = tree
+                    self.refreshSidebarReferences(using: tree)
+                }
             }
         }
         watcher.watch(path: path)
@@ -1445,9 +1447,14 @@ struct ContentView: View {
 
     private func refreshFileTree() {
         guard let path = appState.workspacePath else { return }
-        let tree = fileSystem.buildFileTree(at: path)
-        appState.fileTree = tree
-        refreshSidebarReferences(using: tree)
+        let fileSystem = self.fileSystem
+        Task.detached {
+            let tree = fileSystem.buildFileTree(at: path)
+            await MainActor.run {
+                self.appState.fileTree = tree
+                self.refreshSidebarReferences(using: tree)
+            }
+        }
     }
 
     private func syncAvailablePages(_ pages: [FileEntry]) {
