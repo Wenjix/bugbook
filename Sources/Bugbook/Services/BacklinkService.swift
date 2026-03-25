@@ -14,6 +14,8 @@ struct Backlink: Identifiable {
 class BacklinkService {
     /// Maps page name (lowercased) → list of backlinks
     private var index: [String: [Backlink]] = [:]
+    /// Reverse index: source path → set of keys it contributed to
+    @ObservationIgnored private var sourceToKeys: [String: Set<String>] = [:]
     @ObservationIgnored private var indexedWorkspace: String?
     @ObservationIgnored private var rebuildingWorkspace: String?
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
@@ -29,6 +31,7 @@ class BacklinkService {
         rebuildTask?.cancel()
         if indexedWorkspace != workspace {
             index = [:]
+            sourceToKeys = [:]
             indexedWorkspace = nil
         }
 
@@ -40,6 +43,7 @@ class BacklinkService {
 
             guard !Task.isCancelled else { return }
             index = newIndex
+            sourceToKeys = Self.buildReverseIndex(from: newIndex)
             indexedWorkspace = workspace
             rebuildingWorkspace = nil
             rebuildTask = nil
@@ -64,11 +68,13 @@ class BacklinkService {
         guard filename.hasSuffix(".md") else { return }
         let sourceName = String(filename.dropLast(3))
 
-        // Remove old entries from this source
-        for key in index.keys {
-            index[key]?.removeAll { $0.sourcePath == path }
-            if index[key]?.isEmpty == true {
-                index.removeValue(forKey: key)
+        // Remove old entries using reverse index (O(affected keys) instead of O(all keys))
+        if let oldKeys = sourceToKeys.removeValue(forKey: path) {
+            for key in oldKeys {
+                index[key]?.removeAll { $0.sourcePath == path }
+                if index[key]?.isEmpty == true {
+                    index.removeValue(forKey: key)
+                }
             }
         }
 
@@ -80,16 +86,21 @@ class BacklinkService {
         let range = NSRange(content.startIndex..., in: content)
         let matches = regex.matches(in: content, range: range)
 
+        var newKeys = Set<String>()
         for match in matches {
             if let linkRange = Range(match.range(at: 1), in: content) {
                 let linkedPage = String(content[linkRange])
                 let key = linkedPage.lowercased()
+                newKeys.insert(key)
                 var existing = index[key] ?? []
                 if !existing.contains(where: { $0.sourcePath == path }) {
                     existing.append(Backlink(sourcePath: path, sourceName: sourceName))
                 }
                 index[key] = existing
             }
+        }
+        if !newKeys.isEmpty {
+            sourceToKeys[path] = newKeys
         }
     }
 
@@ -129,5 +140,15 @@ class BacklinkService {
         }
 
         return newIndex
+    }
+
+    private static func buildReverseIndex(from index: [String: [Backlink]]) -> [String: Set<String>] {
+        var reverse: [String: Set<String>] = [:]
+        for (key, backlinks) in index {
+            for backlink in backlinks {
+                reverse[backlink.sourcePath, default: []].insert(key)
+            }
+        }
+        return reverse
     }
 }

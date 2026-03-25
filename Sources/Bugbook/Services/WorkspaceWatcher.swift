@@ -12,6 +12,7 @@ final class WorkspaceWatcher {
     private var debounceItem: DispatchWorkItem?
     private let debounceInterval: TimeInterval = 2.0
     private let onChange: () -> Void
+    private let eventQueue = DispatchQueue(label: "com.bugbook.fsevent-watcher")
 
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
@@ -45,7 +46,7 @@ final class WorkspaceWatcher {
         }
 
         self.stream = stream
-        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamSetDispatchQueue(stream, eventQueue)
         FSEventStreamStart(stream)
     }
 
@@ -68,7 +69,7 @@ final class WorkspaceWatcher {
             }
         }
         debounceItem = item
-        DispatchQueue.main.asyncAfter(
+        eventQueue.asyncAfter(
             deadline: .now() + debounceInterval,
             execute: item
         )
