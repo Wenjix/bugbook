@@ -1,24 +1,28 @@
-# Long Run — 2026-03-24
+# Performance /go Run — 2026-03-24
 
-Started: 5:15 PM
-Status: Working (batches 3+4 running)
+Started: 7:00 PM
+Status: Working (batch 1/4)
+Focus: Performance improvements across the app
+
+## Plan
+- Batch 1 (parallel): buildFileTree async, graph simulation, content index, table props
+- Batch 2 (after batch 1): sidebar expanded-state
+- Batch 3 (after batch 2): async image loading
+- Batch 4 (parallel): backlink reverse index + FSEvents queue
 
 ## Completed
-- [x] Fix table row grip dots (.fixedSize on GripDotsView) — committed to dev
-- [x] Search content index refresh (invalidate on open, in-memory dirty tabs) — committed to dev
-- [x] AskAI sidebar (phased status, change summary, sanitize) — committed to dev
-- [x] Database breadcrumb (default "New database" name, fallback to folder) — committed to dev
-- [x] Match AI chat design (NotesChatView matches side panel) — committed to dev
+(none yet)
 
 ## In Progress
-- [ ] Database row templates — worker running (batch 3)
-- [ ] Meetings tab — worker running (batch 4)
+- [ ] Move buildFileTree off main thread + truncate icon reads
+- [ ] Move graph force simulation off main thread
+- [ ] Single-pass content index + O(1) globalIndex
+- [ ] Cache table computed properties per render
 
 ## Remaining
-(none — all batches launched)
-
-## Blocked / Skipped
-- Google OAuth — requires external credentials
+- [ ] Hoist sidebar expanded-state
+- [ ] Async image loading + downsampling
+- [ ] BacklinkService reverse index + FSEvents background queue
 
 ## Build Status
-All green after 5 completed tickets.
+Pending first batch.

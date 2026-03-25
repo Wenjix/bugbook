@@ -82,6 +82,11 @@ struct CommandPaletteView: View {
     var onSelectContentMatch: ((FileEntry, String) -> Void)?
 
     var body: some View {
+        let items = allItems
+        let indexMap = Dictionary(items.enumerated().map { ($0.element.id, $0.offset) },
+                                  uniquingKeysWith: { first, _ in first })
+        let sections = groupedSections(items)
+
         VStack(spacing: 0) {
             // Search field
             HStack {
@@ -101,9 +106,6 @@ struct CommandPaletteView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 1) {
-                        let items = allItems
-                        let sections = groupedSections(items)
-
                         if items.isEmpty && !searchText.isEmpty {
                             Text("No results")
                                 .foregroundStyle(.secondary)
@@ -115,7 +117,7 @@ struct CommandPaletteView: View {
                         ForEach(sections, id: \.title) { section in
                             SectionHeader(title: section.title)
                             ForEach(section.items.enumerated(), id: \.element.id) { _, item in
-                                let idx = globalIndex(of: item, in: items)
+                                let idx = indexMap[item.id] ?? 0
                                 paletteRow(item: item, index: idx)
                                     .id(item.id)
                             }
@@ -125,7 +127,6 @@ struct CommandPaletteView: View {
                 }
                 .frame(maxHeight: 350)
                 .onChange(of: selectedIndex) { _, newIndex in
-                    let items = allItems
                     if newIndex >= 0, newIndex < items.count {
                         proxy.scrollTo(items[newIndex].id, anchor: .center)
                     }
@@ -139,7 +140,7 @@ struct CommandPaletteView: View {
             return .handled
         }
         .onKeyPress(.downArrow) {
-            selectedIndex = min(allItems.count - 1, selectedIndex + 1)
+            selectedIndex = min(items.count - 1, selectedIndex + 1)
             return .handled
         }
         .onKeyPress(.escape) {
@@ -160,11 +161,6 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
-            // Always invalidate content index so we pick up file changes and unsaved edits
-            contentIndex = []
-            contentIndexWorkspace = nil
-            contentIndexTask?.cancel()
-            contentIndexTask = nil
             Task { @MainActor in
                 await warmContentIndexIfNeeded()
             }
@@ -494,12 +490,8 @@ struct CommandPaletteView: View {
         }
 
         contentIndexTask?.cancel()
-        // Capture in-memory content from dirty open tabs so unsaved edits are searchable
-        let dirtyTabContent: [(path: String, content: String)] = appState.openTabs
-            .filter { $0.isDirty && !$0.content.isEmpty }
-            .map { (path: $0.path, content: $0.content) }
         let buildTask = Task<[IndexedContentLine], Never> {
-            await buildContentIndex(workspace: workspace, dirtyTabContent: dirtyTabContent)
+            await buildContentIndex(workspace: workspace)
         }
         contentIndexTask = buildTask
 
@@ -515,54 +507,48 @@ struct CommandPaletteView: View {
         return indexed
     }
 
-    private func buildContentIndex(workspace: String, dirtyTabContent: [(path: String, content: String)] = []) async -> [IndexedContentLine] {
+    private func buildContentIndex(workspace: String) async -> [IndexedContentLine] {
         await Task.detached(priority: .utility) {
             let fm = FileManager.default
             guard let enumerator = fm.enumerator(atPath: workspace) else { return [IndexedContentLine]() }
 
-            // Build a lookup of dirty tab content keyed by absolute path
-            let dirtyContentByPath = Dictionary(dirtyTabContent.map { ($0.path, $0.content) }, uniquingKeysWith: { _, last in last })
-
+            // Single pass: collect all relative paths, building excludedDirs on the fly
             var excludedDirs: Set<String> = []
-            if let scanner = fm.enumerator(atPath: workspace) {
-                while let rel = scanner.nextObject() as? String {
-                    guard !Task.isCancelled else { return [] }
-                    let filename = (rel as NSString).lastPathComponent
-                    if filename == "_schema.json" || filename == "_canvas.json" {
-                        let dir = (rel as NSString).deletingLastPathComponent
-                        excludedDirs.insert(dir)
-                    }
-                }
-            }
-
-            var indexed: [IndexedContentLine] = []
-            let maxLineLength = 160
-            var indexedPaths: Set<String> = []
+            var mdFiles: [(relativePath: String, filename: String)] = []
 
             while let relativePath = enumerator.nextObject() as? String {
-                guard !Task.isCancelled else { break }
+                guard !Task.isCancelled else { return [] }
                 if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) { continue }
                 let components = relativePath.components(separatedBy: "/")
                 if components.contains(where: { $0.hasPrefix(".") }) { continue }
 
                 let filename = (relativePath as NSString).lastPathComponent
-                guard filename.hasSuffix(".md") else { continue }
+
+                // Track database/canvas directories
+                if filename == "_schema.json" || filename == "_canvas.json" {
+                    let dir = (relativePath as NSString).deletingLastPathComponent
+                    excludedDirs.insert(dir)
+                    continue
+                }
+
+                if filename.hasSuffix(".md") {
+                    mdFiles.append((relativePath, filename))
+                }
+            }
+
+            guard !Task.isCancelled else { return [] }
+
+            var indexed: [IndexedContentLine] = []
+            let maxLineLength = 160
+
+            for (relativePath, filename) in mdFiles {
+                guard !Task.isCancelled else { break }
 
                 let parentDir = (relativePath as NSString).deletingLastPathComponent
                 if excludedDirs.contains(parentDir) { continue }
 
                 let fullPath = (workspace as NSString).appendingPathComponent(relativePath)
-                indexedPaths.insert(fullPath)
-
-                // Prefer in-memory content for dirty tabs over stale disk content
-                let content: String
-                if let dirtyContent = dirtyContentByPath[fullPath] {
-                    content = dirtyContent
-                } else if let diskContent = try? String(contentsOfFile: fullPath, encoding: .utf8) {
-                    content = diskContent
-                } else {
-                    continue
-                }
+                guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
 
                 let lines = content.components(separatedBy: .newlines)
                 for (lineIndex, line) in lines.enumerated() {
@@ -573,31 +559,6 @@ struct CommandPaletteView: View {
                     indexed.append(
                         IndexedContentLine(
                             filePath: fullPath,
-                            fileName: filename,
-                            lineNumber: lineIndex + 1,
-                            lineText: String(trimmed.prefix(maxLineLength)),
-                            lowercasedLine: trimmed.lowercased()
-                        )
-                    )
-                }
-            }
-
-            // Index dirty tabs whose files don't exist on disk yet (newly created, unsaved)
-            for (path, content) in dirtyContentByPath where !indexedPaths.contains(path) {
-                guard !Task.isCancelled else { break }
-                guard path.hasPrefix(workspace) else { continue }
-                let filename = (path as NSString).lastPathComponent
-                guard filename.hasSuffix(".md") else { continue }
-
-                let lines = content.components(separatedBy: .newlines)
-                for (lineIndex, line) in lines.enumerated() {
-                    guard !Task.isCancelled else { break }
-                    let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    guard trimmed.count > 2 else { continue }
-
-                    indexed.append(
-                        IndexedContentLine(
-                            filePath: path,
                             fileName: filename,
                             lineNumber: lineIndex + 1,
                             lineText: String(trimmed.prefix(maxLineLength)),
@@ -644,9 +605,7 @@ struct CommandPaletteView: View {
         guard let workspace = appState.workspacePath else { return [] }
 
         // Use qmd when available — faster and ranking-aware
-        // Skip qmd when any open tab is dirty, since qmd's external index won't have unsaved edits
-        let hasDirtyTabs = appState.openTabs.contains(where: { $0.isDirty })
-        if !hasDirtyTabs, let binary = qmdBinaryPath, !binary.isEmpty {
+        if let binary = qmdBinaryPath, !binary.isEmpty {
             if let results = await searchWithQmd(query: query, workspace: workspace, binary: binary) {
                 return results
             }
@@ -750,10 +709,6 @@ struct CommandPaletteView: View {
     }
 
     // MARK: - Selection
-
-    private func globalIndex(of item: PaletteItem, in items: [PaletteItem]) -> Int {
-        items.firstIndex(where: { $0.id == item.id }) ?? 0
-    }
 
     private func selectCurrent() {
         let items = allItems
