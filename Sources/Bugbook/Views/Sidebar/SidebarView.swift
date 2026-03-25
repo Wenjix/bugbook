@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct SidebarView: View {
     enum LayoutMode {
@@ -19,6 +18,10 @@ struct SidebarView: View {
     @State private var isFullScreen: Bool = false
     @State private var localTrashPopoverPresented: Bool = false
     @State private var isSidebarReferenceDropTargeted = false
+    @State private var expandedFolders: Set<String> = {
+        let arr = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
+        return Set(arr)
+    }()
 
     private let settingsTabs: [(id: String, label: String, icon: String)] = [
         ("general", "General", "gearshape"),
@@ -161,7 +164,7 @@ struct SidebarView: View {
 
                 Button(action: { invokeAction { NotificationCenter.default.post(name: .openAIPanel, object: nil) } }) {
                     HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "ladybug")
+                        Image(systemName: "sparkles")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Text("Ask AI")
@@ -240,25 +243,6 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "calendar" : nil }
-
-                Button(action: { invokeAction { NotificationCenter.default.post(name: .openMeetings, object: nil) } }) {
-                    HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "person.2")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Text("Meetings")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, rowHorizontalPadding)
-                    .padding(.vertical, rowVerticalPadding)
-                    .background(hoveredButton == "meetings" ? Color.primary.opacity(0.06) : Color.clear)
-                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in hoveredButton = hovering ? "meetings" : nil }
             }
             .padding(.horizontal, sectionHorizontalPadding)
             }
@@ -287,7 +271,8 @@ struct SidebarView: View {
                                     workspacePath: appState.workspacePath,
                                     onSelectFile: onSelectFile,
                                     onRefreshTree: refreshTree,
-                                    isSidebarReference: true
+                                    isSidebarReference: true,
+                                    expandedFolders: $expandedFolders
                                 )
                             }
                         }
@@ -300,37 +285,54 @@ struct SidebarView: View {
                         workspacePath: appState.workspacePath,
                         onSelectFile: onSelectFile,
                         onRefreshTree: refreshTree,
-                        onAddSidebarReference: onAddSidebarReference
+                        expandedFolders: $expandedFolders
                     )
                 }
                 .padding(.horizontal, sectionHorizontalPadding)
                 .padding(.vertical, treeVerticalPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .onDrop(of: [.sidebarReference], isTargeted: Binding(
-                get: { isSidebarReferenceDropTargeted },
-                set: { isSidebarReferenceDropTargeted = $0 }
-            )) { providers in
-                guard let provider = providers.first else { return false }
-                provider.loadDataRepresentation(forTypeIdentifier: UTType.sidebarReference.identifier) { data, _ in
-                    guard let data, let payload = try? JSONDecoder().decode(SidebarReferenceDragPayload.self, from: data) else { return }
-                    DispatchQueue.main.async {
-                        onAddSidebarReference(payload)
-                    }
+            .dropDestination(
+                for: SidebarReferenceDragPayload.self,
+                action: { items, _ in
+                    guard let payload = items.first else { return false }
+                    onAddSidebarReference(payload)
+                    return true
+                },
+                isTargeted: { isTargeted in
+                    isSidebarReferenceDropTargeted = isTargeted
                 }
-                return true
-            }
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                    .stroke(isSidebarReferenceDropTargeted ? Color.dragIndicator.opacity(0.8) : Color.clear, lineWidth: 1.5)
+                    .stroke(isSidebarReferenceDropTargeted ? Color.accentColor.opacity(0.8) : Color.clear, lineWidth: 1.5)
                     .padding(.horizontal, sectionHorizontalPadding)
                     .padding(.vertical, treeVerticalPadding)
                     .allowsHitTesting(false)
             }
             .accessibilityIdentifier("sidebar-file-tree")
 
-            // Bottom bar with trash and settings
+            // Bottom bar with settings, trash, and chat
             VStack(spacing: sectionSpacing) {
+                Button(action: openSettings) {
+                    HStack(spacing: chromeButtonSpacing) {
+                        Image(systemName: "gearshape")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Text("Settings")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
+                    .background(hoveredButton == "settings" ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "settings" : nil }
+
                 Button(action: { trashPopoverPresented.wrappedValue.toggle() }) {
                     HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "trash")
@@ -359,24 +361,28 @@ struct SidebarView: View {
                     )
                 }
 
-                Button(action: openSettings) {
+                Button(action: {
+                    invokeAction {
+                        appState.openNotesChat()
+                    }
+                }) {
                     HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "gearshape")
+                        Image(systemName: "bubble.left.and.text.bubble.right")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
-                        Text("Settings")
+                        Text("Chat with Notes")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
                     .padding(.horizontal, rowHorizontalPadding)
                     .padding(.vertical, rowVerticalPadding)
-                    .background(hoveredButton == "settings" ? Color.primary.opacity(0.06) : Color.clear)
+                    .background(hoveredButton == "chat" ? Color.primary.opacity(0.06) : Color.clear)
                     .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in hoveredButton = hovering ? "settings" : nil }
+                .onHover { hovering in hoveredButton = hovering ? "chat" : nil }
             }
             .padding(.horizontal, sectionHorizontalPadding)
             .padding(.vertical, sectionVerticalPadding)
@@ -443,13 +449,7 @@ struct SidebarView: View {
 
     private func refreshTree() {
         guard let workspace = appState.workspacePath else { return }
-        let fileSystem = self.fileSystem
-        Task.detached {
-            let tree = fileSystem.buildFileTree(at: workspace)
-            await MainActor.run {
-                self.appState.fileTree = tree
-            }
-        }
+        appState.fileTree = fileSystem.buildFileTree(at: workspace)
     }
 
     private func invokeAction(_ action: () -> Void) {
@@ -463,16 +463,35 @@ struct SidebarView: View {
         }
     }
 
+    private func createCanvas() {
+        invokeAction {
+            NotificationCenter.default.post(name: .newCanvas, object: nil)
+        }
+    }
+
     private var newPageMenuButton: some View {
-        Button {
-            createFile()
+        Menu {
+            Button {
+                createFile()
+            } label: {
+                Label("New Page", systemImage: "doc")
+            }
+            Button {
+                createCanvas()
+            } label: {
+                Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
+            }
         } label: {
             Image(systemName: "square.and.pencil")
                 .font(ShellZoomMetrics.font(Typography.body, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: ShellZoomMetrics.size(24), height: ShellZoomMetrics.size(24))
+        } primaryAction: {
+            createFile()
         }
-        .buttonStyle(.borderless)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .help("New Page")
     }
 
@@ -481,6 +500,7 @@ struct SidebarView: View {
             NotificationCenter.default.post(name: .openSettings, object: nil)
         }
     }
+
 
     @ViewBuilder
     private func chromeButton(

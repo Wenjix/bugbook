@@ -1,6 +1,5 @@
 import SwiftUI
 import Combine
-import UniformTypeIdentifiers
 
 /// Describes how the current drag is targeting a sidebar row.
 enum DropMode: Equatable {
@@ -37,7 +36,7 @@ struct FileTreeView: View {
     var parentPath: String?
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
-    var onAddSidebarReference: ((SidebarReferenceDragPayload) -> Void)?
+    @Binding var expandedFolders: Set<String>
 
     @StateObject private var dropState = DropIndicatorState()
     @State private var cachedEntries: [FileEntry] = []
@@ -52,7 +51,7 @@ struct FileTreeView: View {
                     workspacePath: workspacePath,
                     onSelectFile: onSelectFile,
                     onRefreshTree: onRefreshTree,
-                    onAddSidebarReference: onAddSidebarReference
+                    expandedFolders: $expandedFolders
                 )
                 // Use overlays instead of conditional views to avoid layout shifts
                 .overlay(alignment: .top) {
@@ -72,7 +71,7 @@ struct FileTreeView: View {
                     dropState.mode = nil
                     return NSItemProvider(object: entry.path as NSString)
                 }
-                .onDrop(of: [.text, .sidebarReference], delegate: FileTreeDropDelegate(
+                .onDrop(of: [.text], delegate: FileTreeDropDelegate(
                     targetIndex: index,
                     targetEntry: entry,
                     entries: cachedEntries,
@@ -80,8 +79,7 @@ struct FileTreeView: View {
                     fileSystem: fileSystem,
                     dropState: dropState,
                     onDidReorder: { recomputeEntries() },
-                    onRefreshTree: onRefreshTree,
-                    onAddSidebarReference: onAddSidebarReference
+                    onRefreshTree: onRefreshTree
                 ))
             }
 
@@ -96,7 +94,7 @@ struct FileTreeView: View {
                             .padding(.horizontal, ShellZoomMetrics.size(8))
                     }
                 }
-                .onDrop(of: [.text, .sidebarReference], delegate: FileTreeDropDelegate(
+                .onDrop(of: [.text], delegate: FileTreeDropDelegate(
                     targetIndex: cachedEntries.count,
                     targetEntry: nil,
                     entries: cachedEntries,
@@ -104,8 +102,7 @@ struct FileTreeView: View {
                     fileSystem: fileSystem,
                     dropState: dropState,
                     onDidReorder: { recomputeEntries() },
-                    onRefreshTree: onRefreshTree,
-                    onAddSidebarReference: onAddSidebarReference
+                    onRefreshTree: onRefreshTree
                 ))
         }
         .onAppear { recomputeEntries() }
@@ -136,7 +133,6 @@ struct FileTreeDropDelegate: DropDelegate {
     let dropState: DropIndicatorState
     var onDidReorder: () -> Void
     let onRefreshTree: () -> Void
-    var onAddSidebarReference: ((SidebarReferenceDragPayload) -> Void)?
 
     /// Whether the target entry can accept children (pages can, databases/canvases cannot).
     private var targetAcceptsChildren: Bool {
@@ -145,18 +141,7 @@ struct FileTreeDropDelegate: DropDelegate {
         return entry.name.hasSuffix(".md") || entry.isDirectory
     }
 
-    /// Whether the drag contains a sidebar reference item (dragged from editor).
-    private func isSidebarReferenceDrag(_ info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.sidebarReference])
-    }
-
-    /// Whether the drag contains a file tree reorder item.
-    private func isFileTreeDrag(_ info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.text])
-    }
-
     func dropEntered(info: DropInfo) {
-        if isSidebarReferenceDrag(info) { return }
         updateDropMode(info: info)
     }
 
@@ -165,9 +150,6 @@ struct FileTreeDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        if isSidebarReferenceDrag(info) {
-            return DropProposal(operation: .copy)
-        }
         updateDropMode(info: info)
         return DropProposal(operation: .move)
     }
@@ -195,21 +177,6 @@ struct FileTreeDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        // Handle sidebar reference drops (dragged from editor)
-        if isSidebarReferenceDrag(info), let onAddSidebarReference {
-            dropState.mode = nil
-            guard let provider = info.itemProviders(for: [.sidebarReference]).first else { return false }
-            let callback = onAddSidebarReference
-            provider.loadDataRepresentation(forTypeIdentifier: UTType.sidebarReference.identifier) { data, _ in
-                guard let data,
-                      let payload = try? JSONDecoder().decode(SidebarReferenceDragPayload.self, from: data) else { return }
-                DispatchQueue.main.async {
-                    callback(payload)
-                }
-            }
-            return true
-        }
-
         let currentMode = dropState.mode
         dropState.mode = nil
 
@@ -252,37 +219,16 @@ struct FileTreeDropDelegate: DropDelegate {
                 case .above(let insertIndex):
                     let draggedName = (draggedPath as NSString).lastPathComponent
                     let draggedParent = (draggedPath as NSString).deletingLastPathComponent
-                    let sameParent = entries.contains(where: { ($0.path as NSString).deletingLastPathComponent == draggedParent })
+                    let entryParents = Set(entries.map { ($0.path as NSString).deletingLastPathComponent })
+                    guard entryParents.contains(draggedParent) || entries.contains(where: { $0.path == draggedPath }) else { return }
 
-                    if sameParent {
-                        // Same parent — just reorder
-                        fileSystem.reorderEntry(
-                            named: draggedName,
-                            toIndex: insertIndex,
-                            inParent: parentPath,
-                            siblings: entries
-                        )
-                        onDidReorder()
-                    } else {
-                        // Cross-parent — move file to this directory, then reorder
-                        // Don't drop into own descendant
-                        let draggedCompanion = draggedPath.hasSuffix(".md") ? String(draggedPath.dropLast(3)) : draggedPath
-                        guard !parentPath.hasPrefix(draggedCompanion + "/") else { return }
-
-                        // Determine destination directory from parentPath
-                        // parentPath is either a companion folder path or the workspace root
-                        let destDir = parentPath
-                        NotificationCenter.default.post(
-                            name: .movePageToDir,
-                            object: nil,
-                            userInfo: [
-                                "sourcePath": draggedPath,
-                                "destDir": destDir,
-                                "insertIndex": insertIndex,
-                                "siblings": entries.map(\.name)
-                            ]
-                        )
-                    }
+                    fileSystem.reorderEntry(
+                        named: draggedName,
+                        toIndex: insertIndex,
+                        inParent: parentPath,
+                        siblings: entries
+                    )
+                    onDidReorder()
 
                 case .none:
                     break

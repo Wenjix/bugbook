@@ -8,10 +8,9 @@ struct FileTreeItemView: View {
     var workspacePath: String?
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
-    var onAddSidebarReference: ((SidebarReferenceDragPayload) -> Void)?
     var isSidebarReference: Bool = false
+    @Binding var expandedFolders: Set<String>
 
-    @State private var isExpanded: Bool = false
     @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
     @State private var renameName: String = ""
@@ -20,6 +19,10 @@ struct FileTreeItemView: View {
     @State private var hoveredMenuItem: String?
 
     private static let expandedFoldersKey = "expandedFolders"
+
+    private var isExpanded: Bool {
+        expandedFolders.contains(entry.path)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,12 +50,11 @@ struct FileTreeItemView: View {
                     parentPath: childParentPath,
                     onSelectFile: onSelectFile,
                     onRefreshTree: onRefreshTree,
-                    onAddSidebarReference: onAddSidebarReference
+                    expandedFolders: $expandedFolders
                 )
                 .padding(.leading, ShellZoomMetrics.size(12))
             }
         }
-        .onAppear { loadExpandedState() }
         .alert("Delete \"\(displayName)\"?", isPresented: $showDeleteConfirmation) {
             Button("Move to Trash", role: .destructive) { performDelete() }
             Button("Cancel", role: .cancel) {}
@@ -209,29 +211,12 @@ struct FileTreeItemView: View {
     // MARK: - Expanded State Persistence
 
     private func toggleExpanded() {
-        isExpanded.toggle()
-        saveExpandedState()
-    }
-
-    private func loadExpandedState() {
-        guard isExpandable else { return }
-        let expanded = expandedFolders()
-        isExpanded = expanded.contains(entry.path)
-    }
-
-    private func saveExpandedState() {
-        var expanded = expandedFolders()
         if isExpanded {
-            expanded.insert(entry.path)
+            expandedFolders.remove(entry.path)
         } else {
-            expanded.remove(entry.path)
+            expandedFolders.insert(entry.path)
         }
-        UserDefaults.standard.set(Array(expanded), forKey: Self.expandedFoldersKey)
-    }
-
-    private func expandedFolders() -> Set<String> {
-        let arr = UserDefaults.standard.stringArray(forKey: Self.expandedFoldersKey) ?? []
-        return Set(arr)
+        UserDefaults.standard.set(Array(expandedFolders), forKey: Self.expandedFoldersKey)
     }
 
     // MARK: - Context Menu
@@ -243,6 +228,9 @@ struct FileTreeItemView: View {
             }
             ctxButton(id: "new-db", icon: "tablecells", label: "New Database") {
                 showContextMenu = false; performCreateDatabase()
+            }
+            ctxButton(id: "new-canvas", icon: "rectangle.on.rectangle.angled", label: "New Canvas") {
+                showContextMenu = false; performCreateCanvas()
             }
 
             ctxDivider
@@ -397,10 +385,10 @@ struct FileTreeItemView: View {
     private func performCreateDatabase() {
         let path: String?
         if entry.kind == .page, !entry.isDirectory, entry.path.hasSuffix(".md") {
-            path = try? fileSystem.createDatabase(underPage: entry.path, name: "")
+            path = try? fileSystem.createDatabase(underPage: entry.path, name: "Untitled Database")
         } else {
             let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
-            path = try? fileSystem.createDatabase(in: dir, name: "")
+            path = try? fileSystem.createDatabase(in: dir, name: "Untitled Database")
         }
 
         if let path {
@@ -416,5 +404,18 @@ struct FileTreeItemView: View {
 
     private func requestMovePage() {
         NotificationCenter.default.post(name: .movePage, object: entry.path)
+    }
+
+    private func performCreateCanvas() {
+        let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
+        if let path = try? fileSystem.createCanvas(in: dir, name: "Untitled Canvas") {
+            onRefreshTree()
+            let displayName = "Untitled Canvas"
+            let canvas = FileEntry(
+                id: path, name: displayName,
+                path: path, isDirectory: false, kind: .canvas
+            )
+            onSelectFile(canvas)
+        }
     }
 }
