@@ -16,10 +16,6 @@ class FileSystemService {
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
 
-    /// Cache for display names parsed from JSON metadata files (_schema.json, _canvas.json).
-    /// Keyed by file path; stores the parsed name and the file's modification date at parse time.
-    private var displayNameCache: [String: (name: String, mtime: Date)] = [:]
-
     init() {
         loadRecentWorkspaces()
     }
@@ -53,7 +49,7 @@ class FileSystemService {
 
     // MARK: - File Tree Building
 
-    func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
+    nonisolated func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
         let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
         defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
 
@@ -81,9 +77,14 @@ class FileSystemService {
 
             if isDir.boolValue {
                 if isDatabaseFolder(at: fullPath) {
-                    // Database folder - read display name from _schema.json (cached)
+                    // Database folder - read display name from _schema.json
+                    var dbName = name
                     let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
-                    let dbName = cachedDisplayName(for: schemaPath, key: "name") ?? name
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let schemaName = json["name"] as? String {
+                        dbName = schemaName
+                    }
                     // Treat database as a non-expandable item (like TS version)
                     folders.append(FileEntry(
                         id: fullPath,
@@ -93,9 +94,14 @@ class FileSystemService {
                         kind: .database
                     ))
                 } else if isCanvasFolder(at: fullPath) {
-                    // Canvas folder - read display name from _canvas.json (cached)
+                    // Canvas folder - read display name from _canvas.json
+                    var canvasName = name
                     let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    let canvasName = cachedDisplayName(for: metaPath, key: "name") ?? name
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let n = json["name"] as? String {
+                        canvasName = n
+                    }
                     folders.append(FileEntry(
                         id: fullPath,
                         name: canvasName,
@@ -317,24 +323,23 @@ class FileSystemService {
         return try createDatabase(in: companion, name: name)
     }
 
-    func createDatabase(in directory: String, name: String, properties: [PropertyDefinition]? = nil, views: [ViewConfig]? = nil) throws -> String {
+    func createDatabase(in directory: String, name: String) throws -> String {
         let sanitizedName = sanitizeDatabaseFolderName(name)
         let folderPath = uniqueDirectoryPath(in: directory, base: sanitizedName)
         try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
 
         let defaultViewId = "view_table"
         let now = ISO8601DateFormatter().string(from: Date())
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let schemaName = trimmedName.isEmpty ? "New database" : trimmedName
+        let schemaName = (folderPath as NSString).lastPathComponent
         let dbId = "db_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
         let schema = DatabaseSchema(
             id: dbId,
             name: schemaName,
             version: 1,
-            properties: properties ?? [
+            properties: [
                 PropertyDefinition(id: "prop_title", name: "Name", type: .title),
             ],
-            views: views ?? [
+            views: [
                 ViewConfig(id: defaultViewId, name: "Table", type: .table, sorts: [], filters: [])
             ],
             defaultView: defaultViewId,
@@ -489,8 +494,7 @@ class FileSystemService {
                     let schemaPath = (currentPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String,
-                       !schemaName.isEmpty {
+                       let schemaName = json["name"] as? String {
                         segmentName = schemaName
                     }
                     segmentPath = currentPath
@@ -513,8 +517,7 @@ class FileSystemService {
                     let schemaPath = (currentPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String,
-                       !schemaName.isEmpty {
+                       let schemaName = json["name"] as? String {
                         displayName = schemaName
                     }
                 }
@@ -805,43 +808,21 @@ class FileSystemService {
         return fileManager.fileExists(atPath: path) ? path : nil
     }
 
-    private func companionFolderPath(for mdPath: String) -> String {
+    nonisolated private func companionFolderPath(for mdPath: String) -> String {
         guard mdPath.hasSuffix(".md") else { return mdPath }
         return String(mdPath.dropLast(3))
     }
 
-    private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {
+    nonisolated private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {
         siblings.contains("\(folderName).md")
     }
 
-    /// Return a cached display name for a JSON metadata file, re-parsing only when the file's
-    /// modification date has changed.
-    private func cachedDisplayName(for filePath: String, key: String) -> String? {
-        let attrs = try? fileManager.attributesOfItem(atPath: filePath)
-        let mtime = attrs?[.modificationDate] as? Date
-
-        if let mtime, let cached = displayNameCache[filePath], cached.mtime == mtime {
-            return cached.name
-        }
-
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let name = json[key] as? String else {
-            return nil
-        }
-
-        if let mtime {
-            displayNameCache[filePath] = (name, mtime)
-        }
-        return name
-    }
-
-    func isDatabaseFolder(at path: String) -> Bool {
+    nonisolated func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return fileManager.fileExists(atPath: schemaPath)
     }
 
-    func isCanvasFolder(at path: String) -> Bool {
+    nonisolated func isCanvasFolder(at path: String) -> Bool {
         let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
         return fileManager.fileExists(atPath: canvasPath)
     }
@@ -895,9 +876,17 @@ class FileSystemService {
         return folderPath
     }
 
-    private func parseIconFromFile(at path: String) -> String? {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        return parseIcon(from: content)
+    nonisolated private func parseIconFromFile(at path: String) -> String? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { fh.closeFile() }
+        let data = fh.readData(ofLength: 256)
+        guard let head = String(data: data, encoding: .utf8) else { return nil }
+        guard let range = head.range(of: "<!-- icon:(.*?) -->", options: .regularExpression) else {
+            return nil
+        }
+        let match = String(head[range])
+        let inner = match.dropFirst(10).dropLast(4).trimmingCharacters(in: .whitespaces)
+        return inner.isEmpty ? nil : inner
     }
 
     private func loadRecentWorkspaces() {
@@ -937,9 +926,9 @@ class FileSystemService {
 
     private func sanitizeDatabaseFolderName(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = trimmed.isEmpty ? "Database" : trimmed
+        let fallback = trimmed.isEmpty ? "Untitled Database" : trimmed
         let sanitized = fallback.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-        return sanitized.isEmpty ? "Database" : sanitized
+        return sanitized.isEmpty ? "Untitled Database" : sanitized
     }
 
     // MARK: - App Data Directories (Icons & Covers)
