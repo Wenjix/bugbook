@@ -52,10 +52,11 @@ class FileSystemService {
     nonisolated func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
         let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
         defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
+        let fm = FileManager.default
 
         guard depth < 5 else { return [] }
 
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
+        guard let contents = try? fm.contentsOfDirectory(atPath: path) else {
             return []
         }
 
@@ -73,7 +74,7 @@ class FileSystemService {
             let fullPath = (path as NSString).appendingPathComponent(name)
             if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }
             var isDir: ObjCBool = false
-            guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
                 if isDatabaseFolder(at: fullPath) {
@@ -130,7 +131,7 @@ class FileSystemService {
                 // Check for companion folder children
                 let companionPath = companionFolderPath(for: fullPath)
                 var children: [FileEntry]?
-                if fileManager.fileExists(atPath: companionPath) {
+                if fm.fileExists(atPath: companionPath) {
                     children = buildFileTree(at: companionPath, depth: depth + 1)
                 }
 

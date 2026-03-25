@@ -2154,23 +2154,6 @@ struct ContentView: View {
             }
         }
 
-        // Create a new Meetings database with the right schema
-        let properties: [PropertyDefinition] = [
-            PropertyDefinition(id: "prop_title", name: "Title", type: .title),
-            PropertyDefinition(id: "prop_date", name: "Date", type: .date),
-            PropertyDefinition(id: "prop_attendees", name: "Attendees", type: .text),
-            PropertyDefinition(id: "prop_status", name: "Status", type: .select, config: PropertyConfig(options: [
-                SelectOption(id: "opt_scheduled", name: "Scheduled", color: "gray"),
-                SelectOption(id: "opt_recorded", name: "Recorded", color: "blue"),
-                SelectOption(id: "opt_summarized", name: "Summarized", color: "green"),
-            ])),
-            PropertyDefinition(id: "prop_action_items", name: "Action Items", type: .text),
-        ]
-        let views: [ViewConfig] = [
-            ViewConfig(id: "view_table", name: "All Meetings", type: .table, sorts: [
-                SortConfig(property: "prop_date", direction: "desc")
-            ]),
-        ]
         return try? fileSystem.createDatabase(in: workspace, name: "Meetings")
     }
 
