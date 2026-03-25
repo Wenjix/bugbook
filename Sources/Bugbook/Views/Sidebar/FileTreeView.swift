@@ -36,6 +36,7 @@ struct FileTreeView: View {
     var parentPath: String?
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
+    @Binding var expandedFolders: Set<String>
 
     @StateObject private var dropState = DropIndicatorState()
     @State private var cachedEntries: [FileEntry] = []
@@ -49,7 +50,8 @@ struct FileTreeView: View {
                     fileSystem: fileSystem,
                     workspacePath: workspacePath,
                     onSelectFile: onSelectFile,
-                    onRefreshTree: onRefreshTree
+                    onRefreshTree: onRefreshTree,
+                    expandedFolders: $expandedFolders
                 )
                 // Use overlays instead of conditional views to avoid layout shifts
                 .overlay(alignment: .top) {

@@ -18,6 +18,10 @@ struct SidebarView: View {
     @State private var isFullScreen: Bool = false
     @State private var localTrashPopoverPresented: Bool = false
     @State private var isSidebarReferenceDropTargeted = false
+    @State private var expandedFolders: Set<String> = {
+        let arr = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
+        return Set(arr)
+    }()
 
     private let settingsTabs: [(id: String, label: String, icon: String)] = [
         ("general", "General", "gearshape"),
@@ -267,7 +271,8 @@ struct SidebarView: View {
                                     workspacePath: appState.workspacePath,
                                     onSelectFile: onSelectFile,
                                     onRefreshTree: refreshTree,
-                                    isSidebarReference: true
+                                    isSidebarReference: true,
+                                    expandedFolders: $expandedFolders
                                 )
                             }
                         }
@@ -279,7 +284,8 @@ struct SidebarView: View {
                         fileSystem: fileSystem,
                         workspacePath: appState.workspacePath,
                         onSelectFile: onSelectFile,
-                        onRefreshTree: refreshTree
+                        onRefreshTree: refreshTree,
+                        expandedFolders: $expandedFolders
                     )
                 }
                 .padding(.horizontal, sectionHorizontalPadding)

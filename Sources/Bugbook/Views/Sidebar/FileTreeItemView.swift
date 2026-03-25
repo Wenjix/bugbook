@@ -9,8 +9,8 @@ struct FileTreeItemView: View {
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
     var isSidebarReference: Bool = false
+    @Binding var expandedFolders: Set<String>
 
-    @State private var isExpanded: Bool = false
     @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
     @State private var renameName: String = ""
@@ -19,6 +19,10 @@ struct FileTreeItemView: View {
     @State private var hoveredMenuItem: String?
 
     private static let expandedFoldersKey = "expandedFolders"
+
+    private var isExpanded: Bool {
+        expandedFolders.contains(entry.path)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,12 +49,12 @@ struct FileTreeItemView: View {
                     workspacePath: workspacePath,
                     parentPath: childParentPath,
                     onSelectFile: onSelectFile,
-                    onRefreshTree: onRefreshTree
+                    onRefreshTree: onRefreshTree,
+                    expandedFolders: $expandedFolders
                 )
                 .padding(.leading, ShellZoomMetrics.size(12))
             }
         }
-        .onAppear { loadExpandedState() }
         .alert("Delete \"\(displayName)\"?", isPresented: $showDeleteConfirmation) {
             Button("Move to Trash", role: .destructive) { performDelete() }
             Button("Cancel", role: .cancel) {}
@@ -207,29 +211,12 @@ struct FileTreeItemView: View {
     // MARK: - Expanded State Persistence
 
     private func toggleExpanded() {
-        isExpanded.toggle()
-        saveExpandedState()
-    }
-
-    private func loadExpandedState() {
-        guard isExpandable else { return }
-        let expanded = expandedFolders()
-        isExpanded = expanded.contains(entry.path)
-    }
-
-    private func saveExpandedState() {
-        var expanded = expandedFolders()
         if isExpanded {
-            expanded.insert(entry.path)
+            expandedFolders.remove(entry.path)
         } else {
-            expanded.remove(entry.path)
+            expandedFolders.insert(entry.path)
         }
-        UserDefaults.standard.set(Array(expanded), forKey: Self.expandedFoldersKey)
-    }
-
-    private func expandedFolders() -> Set<String> {
-        let arr = UserDefaults.standard.stringArray(forKey: Self.expandedFoldersKey) ?? []
-        return Set(arr)
+        UserDefaults.standard.set(Array(expandedFolders), forKey: Self.expandedFoldersKey)
     }
 
     // MARK: - Context Menu
