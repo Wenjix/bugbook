@@ -160,6 +160,11 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
+            // Always invalidate content index so we pick up file changes and unsaved edits
+            contentIndex = []
+            contentIndexWorkspace = nil
+            contentIndexTask?.cancel()
+            contentIndexTask = nil
             Task { @MainActor in
                 await warmContentIndexIfNeeded()
             }
@@ -489,8 +494,12 @@ struct CommandPaletteView: View {
         }
 
         contentIndexTask?.cancel()
+        // Capture in-memory content from dirty open tabs so unsaved edits are searchable
+        let dirtyTabContent: [(path: String, content: String)] = appState.openTabs
+            .filter { $0.isDirty && !$0.content.isEmpty }
+            .map { (path: $0.path, content: $0.content) }
         let buildTask = Task<[IndexedContentLine], Never> {
-            await buildContentIndex(workspace: workspace)
+            await buildContentIndex(workspace: workspace, dirtyTabContent: dirtyTabContent)
         }
         contentIndexTask = buildTask
 
@@ -506,10 +515,13 @@ struct CommandPaletteView: View {
         return indexed
     }
 
-    private func buildContentIndex(workspace: String) async -> [IndexedContentLine] {
+    private func buildContentIndex(workspace: String, dirtyTabContent: [(path: String, content: String)] = []) async -> [IndexedContentLine] {
         await Task.detached(priority: .utility) {
             let fm = FileManager.default
             guard let enumerator = fm.enumerator(atPath: workspace) else { return [IndexedContentLine]() }
+
+            // Build a lookup of dirty tab content keyed by absolute path
+            let dirtyContentByPath = Dictionary(dirtyTabContent.map { ($0.path, $0.content) }, uniquingKeysWith: { _, last in last })
 
             var excludedDirs: Set<String> = []
             if let scanner = fm.enumerator(atPath: workspace) {
@@ -525,6 +537,7 @@ struct CommandPaletteView: View {
 
             var indexed: [IndexedContentLine] = []
             let maxLineLength = 160
+            var indexedPaths: Set<String> = []
 
             while let relativePath = enumerator.nextObject() as? String {
                 guard !Task.isCancelled else { break }
@@ -539,7 +552,17 @@ struct CommandPaletteView: View {
                 if excludedDirs.contains(parentDir) { continue }
 
                 let fullPath = (workspace as NSString).appendingPathComponent(relativePath)
-                guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
+                indexedPaths.insert(fullPath)
+
+                // Prefer in-memory content for dirty tabs over stale disk content
+                let content: String
+                if let dirtyContent = dirtyContentByPath[fullPath] {
+                    content = dirtyContent
+                } else if let diskContent = try? String(contentsOfFile: fullPath, encoding: .utf8) {
+                    content = diskContent
+                } else {
+                    continue
+                }
 
                 let lines = content.components(separatedBy: .newlines)
                 for (lineIndex, line) in lines.enumerated() {
@@ -550,6 +573,31 @@ struct CommandPaletteView: View {
                     indexed.append(
                         IndexedContentLine(
                             filePath: fullPath,
+                            fileName: filename,
+                            lineNumber: lineIndex + 1,
+                            lineText: String(trimmed.prefix(maxLineLength)),
+                            lowercasedLine: trimmed.lowercased()
+                        )
+                    )
+                }
+            }
+
+            // Index dirty tabs whose files don't exist on disk yet (newly created, unsaved)
+            for (path, content) in dirtyContentByPath where !indexedPaths.contains(path) {
+                guard !Task.isCancelled else { break }
+                guard path.hasPrefix(workspace) else { continue }
+                let filename = (path as NSString).lastPathComponent
+                guard filename.hasSuffix(".md") else { continue }
+
+                let lines = content.components(separatedBy: .newlines)
+                for (lineIndex, line) in lines.enumerated() {
+                    guard !Task.isCancelled else { break }
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    guard trimmed.count > 2 else { continue }
+
+                    indexed.append(
+                        IndexedContentLine(
+                            filePath: path,
                             fileName: filename,
                             lineNumber: lineIndex + 1,
                             lineText: String(trimmed.prefix(maxLineLength)),
@@ -596,7 +644,9 @@ struct CommandPaletteView: View {
         guard let workspace = appState.workspacePath else { return [] }
 
         // Use qmd when available — faster and ranking-aware
-        if let binary = qmdBinaryPath, !binary.isEmpty {
+        // Skip qmd when any open tab is dirty, since qmd's external index won't have unsaved edits
+        let hasDirtyTabs = appState.openTabs.contains(where: { $0.isDirty })
+        if !hasDirtyTabs, let binary = qmdBinaryPath, !binary.isEmpty {
             if let results = await searchWithQmd(query: query, workspace: workspace, binary: binary) {
                 return results
             }
