@@ -1,10 +1,6 @@
 import SwiftUI
 import BugbookCore
 
-private enum TableViewLayoutMetrics {
-    static let compactHeaderHeight: CGFloat = 32
-}
-
 struct TableView: View {
     static let rowControlsInset: CGFloat = 32
     private static let reorderCoordinateSpace = "table-reorder"
@@ -33,7 +29,6 @@ struct TableView: View {
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
     var usesInnerScroll: Bool = true
-    var containerWidth: CGFloat? = nil
 
     @State private var dragWidths: [String: CGFloat] = [:]
     @State private var hoveredResizeKey: String?
@@ -48,8 +43,6 @@ struct TableView: View {
     @State private var dragLocation: CGPoint = .zero
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var reorderTarget: TableReorderTarget?
-    @State private var hoveredEmptyRow: Int?
-    @State private var focusedCellId: String?
 
     private let titleColumnKey = "__title__"
     private let topAnchorKey = "__table_top__"
@@ -64,32 +57,15 @@ struct TableView: View {
     }
 
     private var titleColumnWidth: CGFloat {
-        dragWidths[titleColumnKey] ?? viewConfig.columnWidths?[titleColumnKey] ?? DatabaseZoomMetrics.size(240)
+        dragWidths[titleColumnKey] ?? viewConfig.columnWidths?[titleColumnKey] ?? DatabaseZoomMetrics.size(320)
     }
 
     private var wrapCellText: Bool {
         viewConfig.wrapCellText ?? false
     }
 
-    /// Minimum width the table content needs (columns + controls + padding).
-    private var contentMinWidth: CGFloat {
-        let columnsWidth = titleColumnWidth + visibleProperties.reduce(0) { $0 + columnWidth(for: $1) }
-        // row controls + horizontal padding on row HStack + approx "Add property" button
-        let extras = scaledRowControlsInset + DatabaseZoomMetrics.size(8) + DatabaseZoomMetrics.size(120)
-        return columnsWidth + extras
-    }
-
-    /// The effective minimum width: at least as wide as column content OR the container.
-    private var effectiveMinWidth: CGFloat {
-        max(contentMinWidth, containerWidth ?? 0)
-    }
-
     private var canReorderRows: Bool {
         viewConfig.sorts.isEmpty
-    }
-
-    private var compactHeaderHeight: CGFloat {
-        DatabaseZoomMetrics.size(TableViewLayoutMetrics.compactHeaderHeight)
     }
 
     private var draggingRow: DatabaseRow? {
@@ -103,14 +79,15 @@ struct TableView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header with selection bar overlay
+            // Header
             headerRow
-                .overlay(alignment: .leading) {
-                    if !selectedRowIds.isEmpty {
-                        selectionBar
-                    }
-                }
             tableDivider
+
+            // Selection toolbar
+            if !selectedRowIds.isEmpty {
+                selectionBar
+                tableDivider
+            }
 
             rowsRegion
         }
@@ -122,7 +99,6 @@ struct TableView: View {
             }
         }
         .frame(
-            minWidth: effectiveMinWidth,
             maxWidth: .infinity,
             maxHeight: usesInnerScroll ? .infinity : nil,
             alignment: .topLeading
@@ -139,65 +115,77 @@ struct TableView: View {
     // MARK: - Selection Bar
 
     private var selectionBar: some View {
-        HStack(spacing: 12) {
-            Button {
-                selectedRowIds.removeAll()
-            } label: {
+        HStack(spacing: 0) {
+            HStack(spacing: 16) {
                 Text("\(selectedRowIds.count) selected")
-                    .font(DatabaseZoomMetrics.font(13))
+                    .font(DatabaseZoomMetrics.font(15))
                     .fontWeight(.medium)
                     .foregroundStyle(Color.accentColor)
-            }
-            .buttonStyle(.plain)
 
-            Button {
-                let toDelete = rows.filter { selectedRowIds.contains($0.id) }
-                selectedRowIds.removeAll()
-                toDelete.forEach { onDelete?($0) }
-            } label: {
-                Image(systemName: "trash")
-                    .font(DatabaseZoomMetrics.font(13))
+                Button {
+                    let toDelete = rows.filter { selectedRowIds.contains($0.id) }
+                    selectedRowIds.removeAll()
+                    toDelete.forEach { onDelete?($0) }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                            .font(DatabaseZoomMetrics.font(11))
+                        Text("Delete")
+                            .font(DatabaseZoomMetrics.font(15))
+                    }
                     .foregroundStyle(.red)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(10))
+                    .padding(.vertical, DatabaseZoomMetrics.size(4))
+                    .background(
+                        RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(6))
+                            .fill(Color.red.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(6))
+                                    .stroke(Color.red.opacity(0.15), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    selectedRowIds.removeAll()
+                } label: {
+                    Text("Deselect all")
+                        .font(DatabaseZoomMetrics.font(15))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
         }
-        .padding(.horizontal, DatabaseZoomMetrics.size(10))
-        .padding(.vertical, DatabaseZoomMetrics.size(4))
-        .background(
-            RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(6))
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(6))
-                        .stroke(Color.fallbackBorderColor.opacity(0.9), lineWidth: 1)
-                )
-        )
-        .padding(.leading, scaledRowControlsInset + DatabaseZoomMetrics.size(4))
+        .padding(.vertical, DatabaseZoomMetrics.size(8))
+        .background(Color.accentColor.opacity(0.03))
     }
 
     // MARK: - Header
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            // Leading spacer matching row controls width
-            Color.clear.frame(width: scaledRowControlsInset, height: 1)
+            Color.clear
+                .frame(width: scaledRowControlsInset)
 
             // Title column header
             TitleColumnHeaderCell(
                 name: schema.titleProperty?.name ?? "Name",
                 propertyId: schema.titleProperty?.id,
-                height: compactHeaderHeight,
                 onRename: onRenameProperty
             )
             .frame(width: titleColumnWidth)
             .overlay(alignment: .trailing) {
-                resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 240)
+                resizeHandle(key: titleColumnKey, baseWidth: viewConfig.columnWidths?[titleColumnKey] ?? 320)
             }
 
             // Property column headers
             ForEach(visibleProperties) { prop in
                 ColumnHeaderCell(
                     prop: prop,
-                    height: compactHeaderHeight,
                     onRename: onRenameProperty,
                     onChangeType: onChangePropertyType,
                     onToggleColumn: onToggleColumn,
@@ -225,48 +213,17 @@ struct TableView: View {
                     Image(systemName: "plus")
                         .font(DatabaseZoomMetrics.font(11))
                     Text("Add property")
-                        .font(DatabaseZoomMetrics.font(13))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .font(DatabaseZoomMetrics.font(15))
                 }
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, DatabaseZoomMetrics.size(8))
                 .padding(.vertical, DatabaseZoomMetrics.size(4))
-                .frame(height: compactHeaderHeight)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }
         .padding(.horizontal, DatabaseZoomMetrics.size(4))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: compactHeaderHeight)
-        .overlay(alignment: .leading) {
-            if !selectedRowIds.isEmpty {
-                headerCheckbox
-                    .offset(x: -scaledRowControlsInset + rowHandleWidth + rowControlsSpacing)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var headerCheckbox: some View {
-        let visibleCount = min(displayedRowCount, rows.count)
-        let allSelected = !rows.isEmpty && selectedRowIds.count == visibleCount
-        let someSelected = !selectedRowIds.isEmpty && !allSelected
-
-        Button {
-            if allSelected {
-                selectedRowIds.removeAll()
-            } else {
-                selectedRowIds = Set(rows.prefix(visibleCount).map(\.id))
-            }
-        } label: {
-            Image(systemName: allSelected ? "checkmark.square.fill" : someSelected ? "minus.square.fill" : "square")
-                .font(DatabaseZoomMetrics.font(13))
-                .foregroundStyle(allSelected || someSelected ? Color.dragIndicator : .secondary)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Resize Handle (overlaid on column trailing edge)
@@ -278,7 +235,7 @@ struct TableView: View {
             .frame(width: hitWidth)
             .overlay {
                 Rectangle()
-                    .fill(isActive ? Color.dragIndicator : Color.clear)
+                    .fill(isActive ? Color.accentColor : Color.clear)
                     .frame(width: isActive ? 2 : 1)
                     .padding(.vertical, -8)
             }
@@ -311,7 +268,6 @@ struct TableView: View {
                         dragStartWidths.removeValue(forKey: key)
                         dragStartX.removeValue(forKey: key)
                         draggingResizeKey = nil
-                        hoveredResizeKey = nil
                         NSCursor.pop()
                     }
             )
@@ -321,27 +277,21 @@ struct TableView: View {
 
     // MARK: - Data Row
 
-    private func dataRow(_ row: Binding<DatabaseRow>) -> some View {
-        let isSelected = selectedRowIds.contains(row.wrappedValue.id)
-        return HoverRow { isHovered in
+    private func dataRow(_ row: Binding<DatabaseRow>, visibleProps: [PropertyDefinition]) -> some View {
+        HoverRow { isHovered in
             HStack(alignment: .center, spacing: 0) {
-                // Controls in gutter — no hover background
                 rowControls(for: row.wrappedValue, isHovered: isHovered)
-                    .frame(width: scaledRowControlsInset, alignment: .center)
+                    .frame(width: scaledRowControlsInset, alignment: .trailing)
 
-                // Content cells — hover/selection background only here
-                HStack(alignment: .center, spacing: 0) {
-                    let titleCellId = "\(row.wrappedValue.id)__title"
+                HStack(alignment: .top, spacing: 0) {
                     titleCell(row, isHovered: isHovered)
                         .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                        .padding(.vertical, DatabaseZoomMetrics.size(14))
                         .frame(width: titleColumnWidth, alignment: .leading)
-                        .background(focusedCellId == titleCellId ? Color.accentColor.opacity(0.06) : Color.clear)
                         .contentShape(Rectangle())
                         .databasePointerCursor()
-                        .simultaneousGesture(TapGesture().onEnded { focusedCellId = titleCellId })
 
-                    ForEach(visibleProperties) { prop in
-                        let cellId = "\(row.wrappedValue.id)_\(prop.id)"
+                    ForEach(visibleProps) { prop in
                         PropertyEditorView(
                             definition: prop,
                             value: propertyBinding(row: row, propertyId: prop.id),
@@ -355,46 +305,35 @@ struct TableView: View {
                             onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil
                         )
                         .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                        .padding(.vertical, DatabaseZoomMetrics.size(14))
                         .frame(width: columnWidth(for: prop), alignment: .leading)
-                        .background(focusedCellId == cellId ? Color.accentColor.opacity(0.06) : Color.clear)
                         .contentShape(Rectangle())
                         .databasePointerCursor()
-                        .simultaneousGesture(TapGesture().onEnded { focusedCellId = cellId })
                     }
                 }
-                .frame(height: compactHeaderHeight)
                 .padding(.horizontal, DatabaseZoomMetrics.size(4))
                 .background(
                     RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(4))
-                        .fill(
-                            isSelected
-                                ? Color.accentColor.opacity(0.08)
-                                : isHovered ? Color.primary.opacity(0.04) : Color.clear
-                        )
+                        .fill(isHovered ? Color.primary.opacity(0.04) : Color.clear)
                 )
-                .overlay { columnDividers().allowsHitTesting(false) }
+                .overlay { columnDividers(visibleProps: visibleProps).allowsHitTesting(false) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .topLeading) {
-                if draggingRowId != nil,
-                   showsInsertionIndicator(for: row.wrappedValue.id, placement: .before) {
+                if showsInsertionIndicator(for: row.wrappedValue.id, placement: .before) {
                     insertionIndicator
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if draggingRowId != nil,
-                   showsInsertionIndicator(for: row.wrappedValue.id, placement: .after) {
+                if showsInsertionIndicator(for: row.wrappedValue.id, placement: .after) {
                     insertionIndicator
                 }
             }
             .background {
-                if draggingRowId != nil {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: TableRowFramePreferenceKey.self,
-                            value: [row.wrappedValue.id: proxy.frame(in: .named(Self.reorderCoordinateSpace))]
-                        )
-                    }
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: TableRowFramePreferenceKey.self,
+                        value: [row.wrappedValue.id: proxy.frame(in: .named(Self.reorderCoordinateSpace))]
+                    )
                 }
             }
         }
@@ -402,30 +341,17 @@ struct TableView: View {
 
     // MARK: - Column Dividers (row-level overlay)
 
-    /// Pre-compute divider x-offsets so each row draws a single Canvas instead of N+1 view pairs.
-    private var columnDividerOffsets: [CGFloat] {
-        guard showVerticalLines else { return [] }
-        var offsets: [CGFloat] = []
-        var x = DatabaseZoomMetrics.size(4) + titleColumnWidth
-        offsets.append(x)
-        for prop in visibleProperties {
-            x += columnWidth(for: prop)
-            offsets.append(x)
-        }
-        return offsets
-    }
-
     @ViewBuilder
-    private func columnDividers() -> some View {
+    private func columnDividers(visibleProps: [PropertyDefinition]) -> some View {
         if showVerticalLines {
-            let offsets = columnDividerOffsets
-            Canvas { context, size in
-                for x in offsets {
-                    context.fill(
-                        Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
-                        with: .color(.gray.opacity(0.15))
-                    )
+            HStack(spacing: 0) {
+                Color.clear.frame(width: DatabaseZoomMetrics.size(4) + titleColumnWidth)
+                Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
+                ForEach(visibleProps) { prop in
+                    Color.clear.frame(width: columnWidth(for: prop))
+                    Rectangle().fill(Color.gray.opacity(0.15)).frame(width: 1)
                 }
+                Spacer(minLength: 0)
             }
         }
     }
@@ -433,11 +359,11 @@ struct TableView: View {
     // MARK: - Title Cell
 
     private func titleCell(_ row: Binding<DatabaseRow>, isHovered: Bool) -> some View {
-        let openPillSize = CGSize(width: DatabaseZoomMetrics.size(60), height: DatabaseZoomMetrics.size(20))
+        let openPillSize = CGSize(width: DatabaseZoomMetrics.size(74), height: DatabaseZoomMetrics.size(24))
         let titleBinding = titleBinding(row: row)
 
         return titleTextField(titleBinding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .databasePointerCursor()
             .overlay(alignment: .trailing) {
                 if isHovered {
@@ -462,7 +388,7 @@ struct TableView: View {
                                 )
                         )
                     }
-                    .buttonStyle(NoFeedbackButtonStyle())
+                    .buttonStyle(.plain)
                     .fixedSize()
                     .help("Open in side peek")
                     .padding(.trailing, DatabaseZoomMetrics.size(4))
@@ -470,72 +396,45 @@ struct TableView: View {
             }
     }
 
-    // MARK: - Filler Row & New Page Button
+    // MARK: - Phantom Row
 
-    private var fillerRow: some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: scaledRowControlsInset + titleColumnWidth)
-            ForEach(visibleProperties) { prop in
-                Color.clear.frame(width: columnWidth(for: prop))
-            }
-        }
-        .padding(.horizontal, DatabaseZoomMetrics.size(4))
-        .frame(height: compactHeaderHeight)
-        .overlay { columnDividers().allowsHitTesting(false) }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func emptyTableRow(index: Int) -> some View {
-        let isHovered = hoveredEmptyRow == index
-        // Show "+ New page" on the hovered row, or on row 0 if nothing is hovered
-        let showLabel = isHovered || (hoveredEmptyRow == nil && index == 0)
-
-        return Button { onNewRow?() } label: {
-            HStack(spacing: 0) {
-                Color.clear.frame(width: scaledRowControlsInset, height: 1)
-                HStack(spacing: DatabaseZoomMetrics.size(4)) {
-                    if showLabel {
-                        Image(systemName: "plus")
-                            .font(DatabaseZoomMetrics.font(11))
-                            .foregroundStyle(Color.primary.opacity(0.25))
-                        Text("New page")
-                            .font(DatabaseZoomMetrics.font(13))
-                            .foregroundStyle(Color.primary.opacity(0.25))
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                .frame(width: titleColumnWidth, alignment: .leading)
-
-                ForEach(visibleProperties) { prop in
-                    Color.clear.frame(width: columnWidth(for: prop))
-                }
-            }
-            .padding(.horizontal, DatabaseZoomMetrics.size(4))
-            .frame(height: compactHeaderHeight)
-            .overlay { columnDividers().allowsHitTesting(false) }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isHovered ? Color.primary.opacity(0.04) : Color.clear)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in
-            hoveredEmptyRow = inside ? index : nil
-        }
-    }
-
-    private var newPageButton: some View {
+    private func phantomRow(isFirst: Bool, visibleProps: [PropertyDefinition]) -> some View {
         Button { onNewRow?() } label: {
-            HStack(spacing: DatabaseZoomMetrics.size(4)) {
-                Image(systemName: "plus")
-                    .font(DatabaseZoomMetrics.font(11))
-                Text("New page")
-                    .font(DatabaseZoomMetrics.font(13))
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: scaledRowControlsInset)
+                    .overlay(alignment: .trailing) {
+                        if isFirst {
+                            Image(systemName: "plus")
+                                .font(DatabaseZoomMetrics.font(11))
+                                .foregroundStyle(Color.primary.opacity(0.25))
+                        }
+                    }
+
+                HStack(spacing: 0) {
+                    TextField(isFirst ? "New page" : "", text: .constant(""))
+                        .textFieldStyle(.plain)
+                        .font(DatabaseZoomMetrics.font(17))
+                        .foregroundStyle(Color.primary.opacity(0.25))
+                        .disabled(true)
+                        .allowsHitTesting(false)
+                        .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                        .frame(width: titleColumnWidth, alignment: .leading)
+
+                    ForEach(visibleProps) { prop in
+                        TextField("", text: .constant(""))
+                            .textFieldStyle(.plain)
+                            .disabled(true)
+                            .allowsHitTesting(false)
+                            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                            .frame(width: columnWidth(for: prop), alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, DatabaseZoomMetrics.size(4))
+                .padding(.vertical, DatabaseZoomMetrics.size(14))
             }
-            .foregroundStyle(Color.primary.opacity(0.25))
-            .padding(.leading, scaledRowControlsInset + DatabaseZoomMetrics.size(8))
-            .padding(.trailing, DatabaseZoomMetrics.size(8))
-            .padding(.vertical, DatabaseZoomMetrics.size(6))
+            .contentShape(Rectangle())
+            .overlay { columnDividers(visibleProps: visibleProps).allowsHitTesting(false) }
         }
         .buttonStyle(.plain)
     }
@@ -580,12 +479,10 @@ struct TableView: View {
     @ViewBuilder
     private var rowsRegion: some View {
         if usesInnerScroll {
-            GeometryReader { geo in
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        rowsStack
-                            .frame(minWidth: geo.size.width)
-                    }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    rowsStack
+                }
                 .onAppear {
                     guard !didInitialScroll else { return }
                     didInitialScroll = true
@@ -599,7 +496,6 @@ struct TableView: View {
                     }
                 }
             }
-            }
         } else {
             rowsStack
         }
@@ -608,6 +504,7 @@ struct TableView: View {
     private var rowsStack: some View {
         let totalCount = rows.count
         let visibleCount = min(displayedRowCount, totalCount)
+        let visibleProps = visibleProperties
 
         return LazyVStack(alignment: .leading, spacing: 0) {
             Color.clear
@@ -615,7 +512,7 @@ struct TableView: View {
                 .id(topAnchorKey)
 
             ForEach($rows.prefix(visibleCount)) { $row in
-                dataRow($row)
+                dataRow($row, visibleProps: visibleProps)
                     .id($row.wrappedValue.id)
                 tableDivider.opacity(0.5)
             }
@@ -637,17 +534,9 @@ struct TableView: View {
                 .buttonStyle(.plain)
             }
 
-            if rows.isEmpty {
-                // All empty rows are clickable; "+ New page" follows hover
-                emptyTableRow(index: 0)
+            ForEach(0..<max(0, 3 - rows.count), id: \.self) { i in
+                phantomRow(isFirst: rows.isEmpty && i == 0, visibleProps: visibleProps)
                 tableDivider.opacity(0.5)
-                emptyTableRow(index: 1)
-                tableDivider.opacity(0.5)
-                emptyTableRow(index: 2)
-                tableDivider.opacity(0.5)
-            } else {
-                // When data exists, simple button below
-                newPageButton
             }
         }
     }
@@ -672,13 +561,13 @@ struct TableView: View {
 
     private var tableDivider: some View {
         Divider()
-            .padding(.leading, scaledRowControlsInset + DatabaseZoomMetrics.size(4))
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, DatabaseZoomMetrics.size(4))
     }
 
     private func rowControls(for row: DatabaseRow, isHovered: Bool) -> some View {
         HStack(spacing: rowControlsSpacing) {
             dragHandle(for: row, isHovered: isHovered)
+                .frame(width: rowHandleWidth, height: DatabaseZoomMetrics.size(18))
 
             checkbox(for: row.id, isHovered: isHovered)
                 .frame(width: checkboxWidth, height: DatabaseZoomMetrics.size(18))
@@ -697,7 +586,7 @@ struct TableView: View {
             } label: {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(DatabaseZoomMetrics.font(13))
-                    .foregroundStyle(isSelected ? Color.dragIndicator : Color.secondary)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isSelected ? "Deselect row" : "Select row")
@@ -710,7 +599,7 @@ struct TableView: View {
         let isVisible = isHovered || selectedRowIds.contains(row.id) || draggingRowId == row.id
 
         return RowDragHandleDots()
-            .opacity(isVisible ? 1 : 0)
+            .foregroundStyle(Color.secondary.opacity(isVisible ? 0.8 : 0))
             .contentShape(Rectangle())
             .allowsHitTesting(isVisible)
             .help(canReorderRows ? "Drag to reorder row" : "Drag to reorder (will clear sort)")
@@ -752,7 +641,7 @@ struct TableView: View {
         if wrapCellText {
             TextField("New Page", text: text, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(DatabaseZoomMetrics.font(14))
+                .font(DatabaseZoomMetrics.font(17))
                 .foregroundStyle(.primary)
                 .lineLimit(1...4)
                 .multilineTextAlignment(.leading)
@@ -761,7 +650,7 @@ struct TableView: View {
         } else {
             TextField("New Page", text: text)
                 .textFieldStyle(.plain)
-                .font(DatabaseZoomMetrics.font(14))
+                .font(DatabaseZoomMetrics.font(17))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -771,7 +660,7 @@ struct TableView: View {
 
     private var insertionIndicator: some View {
         Rectangle()
-            .fill(Color.dragIndicator)
+            .fill(Color.accentColor.opacity(0.9))
             .frame(height: 2)
     }
 
@@ -876,7 +765,7 @@ private struct HoverRow<Content: View>: View {
 private struct RowDragHandleDots: View {
     var body: some View {
         GripDotsView()
-            .fixedSize()
+            .frame(width: DatabaseZoomMetrics.size(12), height: DatabaseZoomMetrics.size(20))
     }
 }
 
@@ -902,7 +791,6 @@ private struct TableRowFramePreferenceKey: PreferenceKey {
 
 private struct ColumnHeaderCell: View {
     let prop: PropertyDefinition
-    let height: CGFloat
     var onRename: ((String, String) -> Void)?
     var onChangeType: ((String, PropertyType) -> Void)?
     var onToggleColumn: ((String) -> Void)?
@@ -922,21 +810,19 @@ private struct ColumnHeaderCell: View {
                     .font(DatabaseZoomMetrics.font(11))
                     .foregroundStyle(.secondary)
                 Text(prop.name)
-                    .font(DatabaseZoomMetrics.font(13))
+                    .font(DatabaseZoomMetrics.font(15))
                     .fontWeight(.medium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
-            .padding(.vertical, DatabaseZoomMetrics.size(6))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: height, alignment: .leading)
+            .padding(.vertical, DatabaseZoomMetrics.size(10))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(height: height)
+        .frame(maxHeight: .infinity)
         .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
         .contentShape(Rectangle())
         .onHover { inside in
@@ -951,7 +837,7 @@ private struct ColumnHeaderCell: View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Property name", text: $editingName)
                 .textFieldStyle(.roundedBorder)
-                .font(DatabaseZoomMetrics.font(13))
+                .font(DatabaseZoomMetrics.font(15))
                 .focusEffectDisabled()
                 .onSubmit {
                     let trimmed = editingName.trimmingCharacters(in: .whitespaces)
@@ -1034,7 +920,6 @@ private struct ColumnHeaderCell: View {
 private struct TitleColumnHeaderCell: View {
     let name: String
     let propertyId: String?
-    let height: CGFloat
     var onRename: ((String, String) -> Void)?
 
     @State private var isHovered = false
@@ -1051,21 +936,19 @@ private struct TitleColumnHeaderCell: View {
                     .font(DatabaseZoomMetrics.font(11))
                     .foregroundStyle(.secondary)
                 Text(name)
-                    .font(DatabaseZoomMetrics.font(13))
+                    .font(DatabaseZoomMetrics.font(15))
                     .fontWeight(.medium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DatabaseZoomMetrics.size(8))
-            .padding(.vertical, DatabaseZoomMetrics.size(6))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: height, alignment: .leading)
+            .padding(.vertical, DatabaseZoomMetrics.size(10))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(height: height)
+        .frame(maxHeight: .infinity)
         .background(isHovered || showPopover ? Color.gray.opacity(0.08) : Color.clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
@@ -1073,7 +956,7 @@ private struct TitleColumnHeaderCell: View {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Column name", text: $editingName)
                     .textFieldStyle(.roundedBorder)
-                    .font(DatabaseZoomMetrics.font(13))
+                    .font(DatabaseZoomMetrics.font(15))
                     .focusEffectDisabled()
                     .onSubmit {
                         let trimmed = editingName.trimmingCharacters(in: .whitespaces)
@@ -1111,11 +994,5 @@ private extension View {
             if inside { cursor.push() }
             else { NSCursor.pop() }
         }
-    }
-}
-
-private struct NoFeedbackButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
     }
 }
