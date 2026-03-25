@@ -6,7 +6,7 @@ private enum TableViewLayoutMetrics {
 }
 
 struct TableView: View {
-    static let rowControlsInset: CGFloat = 44
+    static let rowControlsInset: CGFloat = 32
     private static let reorderCoordinateSpace = "table-reorder"
 
     let schema: DatabaseSchema
@@ -876,6 +876,7 @@ private struct HoverRow<Content: View>: View {
 private struct RowDragHandleDots: View {
     var body: some View {
         GripDotsView()
+            .fixedSize()
     }
 }
 
