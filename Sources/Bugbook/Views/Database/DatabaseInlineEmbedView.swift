@@ -111,8 +111,8 @@ struct DatabaseInlineEmbedView: View {
         HStack(spacing: 8) {
             // Title
             if isEditingTitle {
-                TextField("New database", text: $state.editingTitle)
-                    .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
+                TextField("", text: $state.editingTitle)
+                    .font(.system(size: EditorTypography.scaled(20), weight: .semibold))
                     .foregroundStyle(.primary)
                     .textFieldStyle(.plain)
                     .focused($isTitleFocused)
@@ -129,8 +129,8 @@ struct DatabaseInlineEmbedView: View {
             } else {
                 Button { isEditingTitle = true } label: {
                     Text(state.editingTitle.isEmpty ? "New database" : state.editingTitle)
-                        .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
-                        .foregroundStyle(state.editingTitle.isEmpty ? .secondary : .primary)
+                        .font(.system(size: EditorTypography.scaled(20), weight: .semibold))
+                        .foregroundStyle(state.editingTitle.isEmpty ? .tertiary : .primary)
                 }
                 .buttonStyle(.plain)
             }
@@ -653,6 +653,7 @@ struct DatabaseInlineEmbedView: View {
             // can be truly lazy instead of forcing all rows to lay out for the
             // parent page's ScrollView. Small databases keep the flat layout.
             let useInnerScroll = filtered.count > 20
+            let controlsInset = DatabaseZoomMetrics.size(TableView.rowControlsInset)
             ScrollView(.horizontal) {
                 TableView(
                     schema: schema,
@@ -683,7 +684,9 @@ struct DatabaseInlineEmbedView: View {
                     containerWidth: tableContainerWidth
                 )
             }
+            .scrollClipDisabled()
             .scrollIndicators(.visible)
+            .padding(.leading, -controlsInset)
             .frame(height: useInnerScroll ? 400 : nil)
             .background {
                 GeometryReader { geo in

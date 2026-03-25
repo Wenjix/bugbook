@@ -29,8 +29,8 @@ struct PropertyEditorView: View {
     /// Callback to set the target database for a relation property.
     var onSetRelationTarget: ((String, String) -> Void)?  // (propertyId, targetDbPath)
 
-    /// Consistent cell font matching editor body text (17pt scaled).
-    private var cellFont: Font { DatabaseZoomMetrics.font(17) }
+    /// Consistent cell font matching table text (14pt scaled).
+    private var cellFont: Font { DatabaseZoomMetrics.font(14) }
 
     /// Whether this property type uses option editing popovers (select/multiSelect only).
     private var usesOptionEditing: Bool {
