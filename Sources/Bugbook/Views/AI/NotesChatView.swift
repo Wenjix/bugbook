@@ -202,7 +202,7 @@ struct NotesChatView: View {
                         .font(.system(size: 22))
                         .foregroundStyle(
                             canSend
-                                ? Brand.primary
+                                ? Color.accentColor
                                 : Color.fallbackTextMuted
                         )
                 }
