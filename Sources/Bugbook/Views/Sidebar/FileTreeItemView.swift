@@ -10,8 +10,10 @@ struct FileTreeItemView: View {
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
     var isSidebarReference: Bool = false
+    @Binding var expandedFolders: Set<String>
+    var parentPath: String = ""
 
-    @State private var isExpanded: Bool = false
+    private var isExpanded: Bool { expandedFolders.contains(entry.path) }
     @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
     @State private var renameName: String = ""
@@ -47,7 +49,8 @@ struct FileTreeItemView: View {
                     workspacePath: workspacePath,
                     parentPath: childParentPath,
                     onSelectFile: onSelectFile,
-                    onRefreshTree: onRefreshTree
+                    onRefreshTree: onRefreshTree,
+                    expandedFolders: $expandedFolders
                 )
                 .padding(.leading, ShellZoomMetrics.size(12))
             }
@@ -239,18 +242,19 @@ struct FileTreeItemView: View {
     // MARK: - Expanded State Persistence
 
     private func toggleExpanded() {
-        isExpanded.toggle()
-        saveExpandedState()
+        if expandedFolders.contains(entry.path) {
+            expandedFolders.remove(entry.path)
+        } else {
+            expandedFolders.insert(entry.path)
+        }
+        UserDefaults.standard.set(Array(expandedFolders), forKey: Self.expandedFoldersKey)
     }
 
-    private func loadExpandedState() {
-        guard isExpandable else { return }
-        let expanded = expandedFolders()
-        isExpanded = expanded.contains(entry.path)
-    }
+    // Legacy stubs kept for compatibility
+    private func loadExpandedState() {}
 
     private func saveExpandedState() {
-        var expanded = expandedFolders()
+        var expanded = Self.readExpandedFolders()
         if isExpanded {
             expanded.insert(entry.path)
         } else {
@@ -259,8 +263,8 @@ struct FileTreeItemView: View {
         UserDefaults.standard.set(Array(expanded), forKey: Self.expandedFoldersKey)
     }
 
-    private func expandedFolders() -> Set<String> {
-        let arr = UserDefaults.standard.stringArray(forKey: Self.expandedFoldersKey) ?? []
+    private static func readExpandedFolders() -> Set<String> {
+        let arr = UserDefaults.standard.stringArray(forKey: expandedFoldersKey) ?? []
         return Set(arr)
     }
 
