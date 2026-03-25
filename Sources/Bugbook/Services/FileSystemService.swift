@@ -820,12 +820,12 @@ class FileSystemService {
 
     nonisolated func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
-        return fileManager.fileExists(atPath: schemaPath)
+        return FileManager.default.fileExists(atPath: schemaPath)
     }
 
     nonisolated func isCanvasFolder(at path: String) -> Bool {
         let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        return fileManager.fileExists(atPath: canvasPath)
+        return FileManager.default.fileExists(atPath: canvasPath)
     }
 
     func updateDatabaseDisplayName(at path: String, name: String) throws {
