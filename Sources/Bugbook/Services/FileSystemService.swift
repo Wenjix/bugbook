@@ -324,7 +324,8 @@ class FileSystemService {
 
         let defaultViewId = "view_table"
         let now = ISO8601DateFormatter().string(from: Date())
-        let schemaName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let schemaName = trimmedName.isEmpty ? "New database" : trimmedName
         let dbId = "db_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
         let schema = DatabaseSchema(
             id: dbId,
@@ -488,7 +489,8 @@ class FileSystemService {
                     let schemaPath = (currentPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String {
+                       let schemaName = json["name"] as? String,
+                       !schemaName.isEmpty {
                         segmentName = schemaName
                     }
                     segmentPath = currentPath
@@ -511,7 +513,8 @@ class FileSystemService {
                     let schemaPath = (currentPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String {
+                       let schemaName = json["name"] as? String,
+                       !schemaName.isEmpty {
                         displayName = schemaName
                     }
                 }

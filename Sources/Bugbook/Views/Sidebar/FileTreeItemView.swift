@@ -397,10 +397,10 @@ struct FileTreeItemView: View {
     private func performCreateDatabase() {
         let path: String?
         if entry.kind == .page, !entry.isDirectory, entry.path.hasSuffix(".md") {
-            path = try? fileSystem.createDatabase(underPage: entry.path, name: "Untitled Database")
+            path = try? fileSystem.createDatabase(underPage: entry.path, name: "")
         } else {
             let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
-            path = try? fileSystem.createDatabase(in: dir, name: "Untitled Database")
+            path = try? fileSystem.createDatabase(in: dir, name: "")
         }
 
         if let path {
