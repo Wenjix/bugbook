@@ -2171,7 +2171,7 @@ struct ContentView: View {
                 SortConfig(property: "prop_date", direction: "desc")
             ]),
         ]
-        return try? fileSystem.createDatabase(in: workspace, name: "Meetings", properties: properties, views: views)
+        return try? fileSystem.createDatabase(in: workspace, name: "Meetings")
     }
 
     private func activePagePathForDatabaseCreation() -> String? {
