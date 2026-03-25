@@ -5,11 +5,13 @@ enum TabKind: Equatable, Hashable {
     case database
     case canvas
     case calendar
+    case meetings
     case databaseRow(dbPath: String, rowId: String)
 
     var isDatabase: Bool { self == .database }
     var isCanvas: Bool { self == .canvas }
     var isCalendar: Bool { self == .calendar }
+    var isMeetings: Bool { self == .meetings }
     var isDatabaseRow: Bool { if case .databaseRow = self { return true }; return false }
     var databasePath: String? { if case .databaseRow(let p, _) = self { return p }; return nil }
     var databaseRowId: String? { if case .databaseRow(_, let r) = self { return r }; return nil }
