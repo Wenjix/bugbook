@@ -7,6 +7,7 @@ struct AiSidePanelView: View {
     @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var activeTask: Task<Void, Never>?
+    @State private var statusPhase: String = "Thinking..."
     @State private var referencedItems: [AiContextItem] = []
     @State private var showPagePicker = false
     @State private var pagePickerSearch = ""
@@ -145,7 +146,7 @@ struct AiSidePanelView: View {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Thinking...")
+                            Text(statusPhase)
                                 .font(.system(size: Typography.bodySmall))
                                 .foregroundStyle(Color.fallbackTextSecondary)
                             Spacer()
@@ -353,13 +354,20 @@ struct AiSidePanelView: View {
     @ViewBuilder
     private func appliedBubble(_ message: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.green)
-                Text("Done — what do you think?")
-                    .font(.system(size: Typography.body))
-                    .foregroundStyle(Color.fallbackTextPrimary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.green)
+                    Text("Done — what do you think?")
+                        .font(.system(size: Typography.body))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                }
+                if let summary = message.changeSummary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -554,6 +562,9 @@ struct AiSidePanelView: View {
         let blockRange = activeDocument?.selectedBlockPathRange()
         let pagePath = activeDocument?.filePath
 
+        statusPhase = "Reading page..."
+        let blockCountBefore = activeDocument?.blocks.count ?? 0
+
         let task = Task {
             // Build context off main thread (contextMarkdown may read files)
             let pageContext = buildContext(
@@ -561,6 +572,7 @@ struct AiSidePanelView: View {
                 selectionContext: selectionContext
             )
             do {
+                statusPhase = "Generating..."
                 let workspacePath = appState.workspacePath ?? ""
                 let response: String
                 if activeDocument != nil {
@@ -582,12 +594,16 @@ struct AiSidePanelView: View {
 
                 guard !Task.isCancelled else { return }
 
+                // Sanitize AI output: strip empty blocks and excessive whitespace
+                let sanitized = AiService.sanitizeResponse(response)
+
+                statusPhase = "Applying changes..."
                 // Apply changes via CLI for precision, fallback to in-memory
                 if let pagePath, let doc = activeDocument {
                     let pageName = ((pagePath as NSString).lastPathComponent as NSString).deletingPathExtension
                     let applied = await applyViaCLI(
                         pageName: pageName,
-                        response: response,
+                        response: sanitized,
                         hasSelection: hasSelection,
                         blockRange: blockRange
                     )
@@ -595,13 +611,24 @@ struct AiSidePanelView: View {
                         doc.reloadFromDisk()
                     } else {
                         if hasSelection {
-                            doc.replaceSelectedBlocks(markdown: response)
+                            doc.replaceSelectedBlocks(markdown: sanitized)
                         } else {
-                            doc.applyAiResponse(markdown: response)
+                            doc.applyAiResponse(markdown: sanitized)
                         }
                     }
-                    // Show clean confirmation instead of raw markdown
-                    let appliedMessage = ChatMessage(role: .applied, content: response, timestamp: Date())
+                    // Build change summary
+                    let blockCountAfter = doc.blocks.count
+                    let blockDelta = blockCountAfter - blockCountBefore
+                    let summary: String
+                    if blockDelta > 0 {
+                        summary = "Added \(blockDelta) block\(blockDelta == 1 ? "" : "s"), ~\(response.count) chars"
+                    } else if blockDelta < 0 {
+                        summary = "Removed \(abs(blockDelta)) block\(abs(blockDelta) == 1 ? "" : "s"), ~\(response.count) chars"
+                    } else {
+                        summary = "Modified content, ~\(response.count) chars"
+                    }
+                    var appliedMessage = ChatMessage(role: .applied, content: response, timestamp: Date())
+                    appliedMessage.changeSummary = summary
                     messages.append(appliedMessage)
                 } else {
                     // No active doc — show the response as plain chat
