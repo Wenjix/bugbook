@@ -35,7 +35,17 @@ struct NotesChatView: View {
     // MARK: - Sections
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            Image("BugbookAI")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+
+            Text("Chat with Notes")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.fallbackTextPrimary)
+
             Spacer()
 
             enginePicker
@@ -43,7 +53,7 @@ struct NotesChatView: View {
             Button(action: clearChat) {
                 Label("Clear Chat", systemImage: "trash")
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 14))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
@@ -53,32 +63,43 @@ struct NotesChatView: View {
             Button(action: closeChat) {
                 Label("Close", systemImage: "xmark")
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("Close chat")
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     @ViewBuilder
     private var messageArea: some View {
         if messages.isEmpty && !aiService.isRunning {
             Spacer()
-            Text("Ask anything about your workspace")
-                .font(.system(size: 14))
-                .foregroundStyle(.tertiary)
+            VStack(spacing: 16) {
+                Image("BugbookAI")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .opacity(0.85)
+                VStack(spacing: 6) {
+                    Text("Chat with your notes")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                    Text("Ask anything about your workspace")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                }
+            }
             Spacer()
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(messages) { message in
-                            messageRow(message)
+                            messageBubble(message)
                                 .id(message.id)
                         }
 
@@ -87,15 +108,15 @@ struct NotesChatView: View {
                                 ProgressView()
                                     .controlSize(.small)
                                 Text("Thinking...")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.fallbackTextSecondary)
+                                Spacer()
                             }
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, 16)
                             .id("loading")
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 20)
+                    .padding(.vertical, 12)
                     .frame(maxWidth: 980)
                     .frame(maxWidth: .infinity)
                 }
@@ -143,14 +164,14 @@ struct NotesChatView: View {
                 .scrollIndicators(.hidden)
             }
 
-            HStack(alignment: .bottom, spacing: 12) {
+            HStack(alignment: .bottom, spacing: 10) {
                 Button {
                     showFileReferencePicker.toggle()
                 } label: {
                     Image(systemName: "at")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 26, height: 26)
                         .background(Color.fallbackBadgeBg)
                         .clipShape(Circle())
                 }
@@ -162,8 +183,10 @@ struct NotesChatView: View {
 
                 TextField("Ask about your notes...", text: $inputText, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16))
-                    .lineLimit(1...8)
+                    .font(.system(size: 14))
+                    .lineLimit(1...20)
+                    .frame(minHeight: 24)
+                    .fixedSize(horizontal: false, vertical: true)
                     .focused($inputFocused)
                     .onChange(of: inputText) { _, value in
                         if value.last == "@" {
@@ -175,26 +198,19 @@ struct NotesChatView: View {
                     }
 
                 Button(action: sendMessage) {
-                    Label("Send", systemImage: "arrow.up.circle.fill")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 28))
-                        .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(
+                            canSend
+                                ? Brand.primary
+                                : Color.fallbackTextMuted
+                        )
                 }
                 .buttonStyle(.borderless)
                 .disabled(!canSend)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.fallbackSurfaceSubtle)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.fallbackBorderColor, lineWidth: 1)
-            )
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 16)
         .padding(.vertical, 14)
     }
 
@@ -282,85 +298,52 @@ struct NotesChatView: View {
         }
     }
 
-    // MARK: - Message Row
+    // MARK: - Message Bubble
 
     @ViewBuilder
-    private func messageRow(_ message: ChatMessage) -> some View {
-        switch message.role {
-        case .user:
+    private func messageBubble(_ message: ChatMessage) -> some View {
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
             HStack {
-                Spacer(minLength: 80)
-                Text(message.content)
-                    .font(.system(size: 16))
-                    .lineSpacing(3)
-                    .foregroundStyle(Color.fallbackAccentFg)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(Color.fallbackAccent)
-                    )
-                    .frame(maxWidth: 720, alignment: .leading)
-            }
+                if message.role == .user { Spacer(minLength: 40) }
 
-        case .assistant:
-            HStack {
-                Text(message.content)
-                    .font(.system(size: 16))
-                    .lineSpacing(4)
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.fallbackSurfaceSubtle)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.fallbackBorderColor.opacity(0.8), lineWidth: 1)
-                    )
-                    .frame(maxWidth: 760, alignment: .leading)
-                Spacer(minLength: 80)
-            }
-
-        case .error:
-            HStack {
-                Text(message.content)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.red.opacity(0.1))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.red.opacity(0.25), lineWidth: 1)
-                    )
-                Spacer(minLength: 80)
-            }
-
-        case .applied:
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text("Done — what do you think?")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.primary)
+                if message.role == .applied {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.green)
+                        Text("Done — what do you think?")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.fallbackTextPrimary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.primary.opacity(Opacity.subtle))
+                    .clipShape(.rect(cornerRadius: Radius.lg))
+                } else {
+                    Text(message.content)
+                        .font(.system(size: 14))
+                        .foregroundStyle(message.role == .error ? .red : Color.fallbackTextPrimary)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(bubbleBackground(for: message.role))
+                        .clipShape(.rect(cornerRadius: Radius.lg))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.fallbackSurfaceSubtle)
-                )
-                Spacer(minLength: 80)
+
+                if message.role != .user { Spacer(minLength: 40) }
             }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func bubbleBackground(for role: ChatMessage.Role) -> Color {
+        switch role {
+        case .user:
+            return Color.fallbackAccent.opacity(Opacity.medium)
+        case .assistant, .applied:
+            return Color.primary.opacity(Opacity.subtle)
+        case .error:
+            return Color.red.opacity(0.1)
         }
     }
 
