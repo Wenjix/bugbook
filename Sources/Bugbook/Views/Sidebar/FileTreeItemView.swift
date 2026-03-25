@@ -250,24 +250,6 @@ struct FileTreeItemView: View {
         UserDefaults.standard.set(Array(expandedFolders), forKey: Self.expandedFoldersKey)
     }
 
-    // Legacy stubs kept for compatibility
-    private func loadExpandedState() {}
-
-    private func saveExpandedState() {
-        var expanded = Self.readExpandedFolders()
-        if isExpanded {
-            expanded.insert(entry.path)
-        } else {
-            expanded.remove(entry.path)
-        }
-        UserDefaults.standard.set(Array(expanded), forKey: Self.expandedFoldersKey)
-    }
-
-    private static func readExpandedFolders() -> Set<String> {
-        let arr = UserDefaults.standard.stringArray(forKey: expandedFoldersKey) ?? []
-        return Set(arr)
-    }
-
     // MARK: - Context Menu
 
     private var sidebarContextMenu: some View {

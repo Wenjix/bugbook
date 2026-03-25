@@ -2,6 +2,7 @@ import Foundation
 import BugbookCore
 
 private let backlinkLinkPattern = #"\[\[([^\]]+)\]\]"#
+private let backlinkRegex = try? NSRegularExpression(pattern: backlinkLinkPattern)
 
 struct Backlink: Identifiable {
     let sourcePath: String
@@ -82,7 +83,7 @@ class BacklinkService {
         guard FileManager.default.fileExists(atPath: path),
               let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
 
-        guard let regex = try? NSRegularExpression(pattern: backlinkLinkPattern) else { return }
+        guard let regex = backlinkRegex else { return }
         let range = NSRange(content.startIndex..., in: content)
         let matches = regex.matches(in: content, range: range)
 
@@ -109,7 +110,7 @@ class BacklinkService {
     private nonisolated static func buildIndex(workspace: String) -> [String: [Backlink]] {
         let fm = FileManager.default
         var newIndex: [String: [Backlink]] = [:]
-        guard let regex = try? NSRegularExpression(pattern: backlinkLinkPattern) else { return [:] }
+        guard let regex = backlinkRegex else { return [:] }
         guard let enumerator = fm.enumerator(atPath: workspace) else { return [:] }
 
         while let relativePath = enumerator.nextObject() as? String {
