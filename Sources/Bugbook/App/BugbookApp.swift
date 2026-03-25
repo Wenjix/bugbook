@@ -320,6 +320,7 @@ extension Notification.Name {
     static let editorZoomOut = Notification.Name("editorZoomOut")
     static let editorZoomReset = Notification.Name("editorZoomReset")
     static let openCalendar = Notification.Name("openCalendar")
+    static let openMeetings = Notification.Name("openMeetings")
     static let fileDeleted = Notification.Name("fileDeleted")
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")

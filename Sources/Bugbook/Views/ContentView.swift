@@ -259,6 +259,9 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
                 appState.openCalendar()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
+                appState.openMeetings()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .reviewFlashcards)) { _ in
                 flashcardCards = collectFlashcards()
                 appState.flashcardReviewOpen = true
@@ -785,7 +788,8 @@ struct ContentView: View {
 
     private var activeTabLeadingPadding: CGFloat {
         let isCalendar = appState.activeTab?.isCalendar ?? false
-        if isCalendar { return 0 }
+        let isMeetings = appState.activeTab?.isMeetings ?? false
+        if isCalendar || isMeetings { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -801,7 +805,7 @@ struct ContentView: View {
             .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
 
         VStack(spacing: 0) {
-            if let tab = appState.activeTab, !tab.isEmptyTab, !tab.isCalendar {
+            if let tab = appState.activeTab, !tab.isEmptyTab, !tab.isCalendar, !tab.isMeetings {
                 HStack {
                     BreadcrumbView(
                         items: breadcrumbs(for: tab),
@@ -943,6 +947,15 @@ struct ContentView: View {
                     calendarService: calendarService,
                     calendarVM: calendarVM,
                     meetingNoteService: meetingNoteService,
+                    aiService: aiService,
+                    onNavigateToFile: { path in
+                        navigateToFilePath(path)
+                    }
+                )
+            } else if tab.isMeetings {
+                MeetingsView(
+                    appState: appState,
+                    calendarService: calendarService,
                     aiService: aiService,
                     onNavigateToFile: { path in
                         navigateToFilePath(path)
