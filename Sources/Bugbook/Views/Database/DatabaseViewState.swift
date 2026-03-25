@@ -659,6 +659,70 @@ final class DatabaseViewState {
         }
     }
 
+    // MARK: - Templates
+
+    var templates: [DatabaseTemplate] {
+        schema?.templates ?? []
+    }
+
+    func createTemplate(name: String) -> DatabaseTemplate {
+        let template = DatabaseTemplate(
+            id: "tmpl_\(UUID().uuidString.prefix(8).lowercased())",
+            name: name,
+            icon: "doc.text"
+        )
+        if schema?.templates == nil {
+            schema?.templates = []
+        }
+        schema?.templates?.append(template)
+        persistSchema()
+        return template
+    }
+
+    func updateTemplate(_ template: DatabaseTemplate) {
+        guard let idx = schema?.templates?.firstIndex(where: { $0.id == template.id }) else { return }
+        schema?.templates?[idx] = template
+        persistSchema()
+    }
+
+    func deleteTemplate(_ templateId: String) {
+        schema?.templates?.removeAll { $0.id == templateId }
+        if schema?.templates?.isEmpty == true {
+            schema?.templates = nil
+        }
+        persistSchema()
+    }
+
+    @discardableResult
+    func createRowFromTemplate(_ template: DatabaseTemplate) throws -> DatabaseRow {
+        guard let s = schema else {
+            throw NSError(domain: "Bugbook.Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "Schema unavailable"])
+        }
+        var newRow = try dbService.createRow(in: dbPath, schema: s)
+        // Apply template default properties
+        for (key, value) in template.defaultProperties {
+            newRow.properties[key] = value
+        }
+        // Apply template body
+        newRow.body = template.body
+        try dbService.saveRow(newRow, schema: s, at: dbPath)
+        if let idx = rows.firstIndex(where: { $0.id == newRow.id }) {
+            rows[idx] = newRow
+        } else {
+            rows.append(newRow)
+        }
+        postChangeNotification()
+        return newRow
+    }
+
+    private func persistSchema() {
+        guard let s = schema else { return }
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
     // MARK: - Lifecycle
 
     func cancelAll() {

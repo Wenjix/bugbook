@@ -23,7 +23,14 @@ struct DatabaseRowFullPageView: View {
             if let error = vm.error {
                 RowLoadErrorView(message: error) { vm.loadData(rowId: rowId) }
             } else if vm.schema != nil, vm.row != nil {
-                vm.rowPageView(fullWidth: fullWidth, workspacePath: workspacePath)
+                vm.rowPageView(
+                    fullWidth: fullWidth,
+                    workspacePath: workspacePath,
+                    templates: vm.schema?.templates ?? [],
+                    onApplyTemplate: { template in
+                        applyTemplate(template)
+                    }
+                )
             } else {
                 ProgressView("Loading row...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -43,5 +50,14 @@ struct DatabaseRowFullPageView: View {
                 onTitleChange(newRow.title(schema: schema))
             }
         }
+    }
+
+    private func applyTemplate(_ template: DatabaseTemplate) {
+        guard var currentRow = vm.row, let schema = vm.schema else { return }
+        for (key, value) in template.defaultProperties {
+            currentRow.properties[key] = value
+        }
+        currentRow.body = template.body
+        vm.debouncedSave(currentRow, schema: schema)
     }
 }

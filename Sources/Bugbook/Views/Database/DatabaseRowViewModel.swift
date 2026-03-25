@@ -311,7 +311,7 @@ final class DatabaseRowViewModel {
     }
 
     @ViewBuilder
-    func rowPageView(onBack: @escaping () -> Void = {}, autoFocusTitle: Bool = false, fullWidth: Bool = false, workspacePath: String? = nil) -> some View {
+    func rowPageView(onBack: @escaping () -> Void = {}, autoFocusTitle: Bool = false, fullWidth: Bool = false, workspacePath: String? = nil, templates: [DatabaseTemplate] = [], onApplyTemplate: ((DatabaseTemplate) -> Void)? = nil, onNewTemplate: (() -> Void)? = nil) -> some View {
         if let schema = schema, row != nil {
             RowPageView(
                 schema: schema,
@@ -334,7 +334,10 @@ final class DatabaseRowViewModel {
                 showBreadcrumb: false,
                 autoFocusTitle: autoFocusTitle,
                 fullWidth: fullWidth,
-                dbPath: dbPath
+                dbPath: dbPath,
+                templates: templates,
+                onApplyTemplate: onApplyTemplate,
+                onNewTemplate: onNewTemplate
             )
         }
     }
