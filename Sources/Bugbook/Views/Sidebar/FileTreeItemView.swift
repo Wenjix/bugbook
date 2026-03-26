@@ -55,7 +55,6 @@ struct FileTreeItemView: View {
                 .padding(.leading, ShellZoomMetrics.size(12))
             }
         }
-        .onAppear { loadExpandedState() }
         .task(id: entry.icon) { await loadIconImage() }
         .alert("Delete \"\(displayName)\"?", isPresented: $showDeleteConfirmation) {
             Button("Move to Trash", role: .destructive) { performDelete() }
