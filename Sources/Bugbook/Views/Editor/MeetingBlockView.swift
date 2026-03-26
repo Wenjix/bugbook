@@ -47,12 +47,15 @@ struct MeetingBlockView: View {
                 afterStateView
             }
         }
-        .background(Color.fallbackCardBg)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .fill(Color.fallbackCardBg)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg)
                 .strokeBorder(Color.fallbackBorderColor, lineWidth: 1)
         )
+        .contentShape(RoundedRectangle(cornerRadius: Radius.lg))
         .onHover { isHovered = $0 }
         .padding(.vertical, 4)
         .sheet(isPresented: $showTranscriptSheet) {
@@ -462,7 +465,13 @@ struct MeetingBlockView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(Color.primary.opacity(Opacity.subtle))
+        .background(
+            Color.primary.opacity(Opacity.subtle),
+            in: UnevenRoundedRectangle(
+                bottomLeadingRadius: isTranscriptOpen ? 0 : Radius.lg,
+                bottomTrailingRadius: isTranscriptOpen ? 0 : Radius.lg
+            )
+        )
     }
 
     // MARK: - Transcript Drawer
