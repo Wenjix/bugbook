@@ -24,6 +24,19 @@ struct AISettingsView: View {
             }
 
             if appState.settings.preferredAIEngine == .claudeAPI {
+                SettingsSection("AI Model") {
+                    Picker("Model", selection: $appState.settings.anthropicModel) {
+                        ForEach(AnthropicModel.allCases, id: \.self) { model in
+                            Text(model.displayName).tag(model)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    Text("Sonnet produces higher-quality summaries. Haiku is faster and cheaper.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 SettingsSection("Anthropic API Key") {
                     HStack(spacing: 8) {
                         Group {

@@ -936,6 +936,7 @@ struct ContentView: View {
                     calendarService: calendarService,
                     calendarVM: calendarVM,
                     meetingNoteService: meetingNoteService,
+                    aiService: aiService,
                     onNavigateToFile: { path in
                         navigateToFilePath(path)
                     }

@@ -1,12 +1,17 @@
 import SwiftUI
 import BugbookCore
+import UniformTypeIdentifiers
 
 struct WorkspaceCalendarView: View {
     var appState: AppState
     var calendarService: CalendarService
     @Bindable var calendarVM: CalendarViewModel
     var meetingNoteService: MeetingNoteService
+    var aiService: AiService
     var onNavigateToFile: (String) -> Void
+
+    @State private var transcriptionService = TranscriptionService()
+    @State private var showImportRecording = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -140,6 +145,28 @@ struct WorkspaceCalendarView: View {
                 )
             }
 
+            // Import recording button
+            Button(action: { showImportRecording = true }) {
+                Image(systemName: "waveform.badge.plus")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Import audio recording")
+            .disabled(transcriptionService.isTranscribing)
+            .fileImporter(
+                isPresented: $showImportRecording,
+                allowedContentTypes: [
+                    UTType.audio,
+                    UTType(filenameExtension: "m4a") ?? .audio,
+                    UTType(filenameExtension: "mp3") ?? .audio,
+                    UTType.wav,
+                ],
+                allowsMultipleSelection: false
+            ) { result in
+                handleImportedRecording(result)
+            }
+
             // Sync button
             Button(action: syncCalendar) {
                 Image(systemName: "arrow.clockwise")
@@ -180,6 +207,28 @@ struct WorkspaceCalendarView: View {
     private func handleDatabaseItemTapped(_ item: CalendarDatabaseItem) {
         let path = DatabaseRowNavigationPath.make(dbPath: item.databasePath, rowId: item.rowId)
         onNavigateToFile(path)
+    }
+
+    private func handleImportedRecording(_ result: Result<[URL], Error>) {
+        guard let workspace = appState.workspacePath else { return }
+        guard case .success(let urls) = result, let fileURL = urls.first else { return }
+
+        // Ensure we have access to the file
+        guard fileURL.startAccessingSecurityScopedResource() else { return }
+        defer { fileURL.stopAccessingSecurityScopedResource() }
+
+        Task {
+            if let pagePath = await meetingNoteService.importRecording(
+                fileURL: fileURL,
+                workspace: workspace,
+                transcriptionService: transcriptionService,
+                aiService: aiService,
+                apiKey: appState.settings.anthropicApiKey,
+                model: appState.settings.anthropicModel
+            ) {
+                onNavigateToFile(pagePath)
+            }
+        }
     }
 
     private func syncCalendar() {
