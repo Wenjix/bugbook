@@ -581,14 +581,16 @@ struct AiSidePanelView: View {
                         workspacePath: workspacePath,
                         prompt: trimmed,
                         pageContext: pageContext,
-                        apiKey: appState.settings.anthropicApiKey
+                        apiKey: appState.settings.anthropicApiKey,
+                        model: appState.settings.anthropicModel
                     )
                 } else {
                     response = try await aiService.chatWithNotes(
                         engine: appState.settings.preferredAIEngine,
                         workspacePath: workspacePath,
                         question: trimmed,
-                        apiKey: appState.settings.anthropicApiKey
+                        apiKey: appState.settings.anthropicApiKey,
+                        model: appState.settings.anthropicModel
                     )
                 }
 

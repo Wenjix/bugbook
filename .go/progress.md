@@ -1,28 +1,24 @@
-# Performance /go Run — 2026-03-24
+# Long Run — 2026-03-25
 
-Started: 7:00 PM
-Status: Working (batch 1/4)
-Focus: Performance improvements across the app
+Started: 7:15 PM
+Status: Working (batch 1/2)
 
 ## Plan
-- Batch 1 (parallel): buildFileTree async, graph simulation, content index, table props
-- Batch 2 (after batch 1): sidebar expanded-state
-- Batch 3 (after batch 2): async image loading
-- Batch 4 (parallel): backlink reverse index + FSEvents queue
+- Batch 1: [High] Meeting recording view clipped
+- Batch 2 (sequential): [Medium] Improve AI meeting notes
 
 ## Completed
-(none yet)
+- [x] Meeting recording view clipped — merged to dev (removed clipShape, shaped background)
+- [x] Fixed stale loadExpandedState() call in FileTreeItemView
 
 ## In Progress
-- [ ] Move buildFileTree off main thread + truncate icon reads
-- [ ] Move graph force simulation off main thread
-- [ ] Single-pass content index + O(1) globalIndex
-- [ ] Cache table computed properties per render
+- [ ] Improve AI meeting notes — worker running (6 sub-features)
 
 ## Remaining
-- [ ] Hoist sidebar expanded-state
-- [ ] Async image loading + downsampling
-- [ ] BacklinkService reverse index + FSEvents background queue
+(none)
+
+## Blocked / Skipped
+- Google OAuth — requires external credentials
 
 ## Build Status
-Pending first batch.
+Pending.

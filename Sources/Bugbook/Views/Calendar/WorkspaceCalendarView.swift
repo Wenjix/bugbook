@@ -1,31 +1,26 @@
 import SwiftUI
 import BugbookCore
+import UniformTypeIdentifiers
 
 struct WorkspaceCalendarView: View {
-    @Bindable var appState: AppState
+    var appState: AppState
     var calendarService: CalendarService
     @Bindable var calendarVM: CalendarViewModel
     var meetingNoteService: MeetingNoteService
     var aiService: AiService
     var onNavigateToFile: (String) -> Void
 
-    @State private var isSigningIn = false
-    @State private var signInError: String?
-
-    private var isConnected: Bool {
-        !appState.settings.googleCalendarRefreshToken.isEmpty
-    }
+    @State private var transcriptionService = TranscriptionService()
+    @State private var showImportRecording = false
 
     var body: some View {
         VStack(spacing: 0) {
             calendarHeader
-            if !isConnected && !appState.settings.googleCalendarBannerDismissed {
-                googleSignInBanner
-            }
             calendarContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea(.container, edges: .top)
         .background(Color.fallbackEditorBg)
         .animation(.easeInOut(duration: 0.15), value: calendarVM.viewMode)
         .onAppear {
@@ -150,27 +145,26 @@ struct WorkspaceCalendarView: View {
                 )
             }
 
-            // Record meeting button
-            Button(action: { calendarVM.showRecordMeetingPopover = true }) {
-                HStack(spacing: 4) {
-                    Image(systemName: meetingNoteService.isProcessingTranscript ? "waveform" : "record.circle")
-                        .font(.system(size: 12))
-                        .foregroundStyle(meetingNoteService.isProcessingTranscript ? .red : .secondary)
-                    Text("Record")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
+            // Import recording button
+            Button(action: { showImportRecording = true }) {
+                Image(systemName: "waveform.badge.plus")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .disabled(meetingNoteService.isProcessingTranscript)
-            .popover(isPresented: $calendarVM.showRecordMeetingPopover) {
-                RecordMeetingPopover(
-                    events: currentDayEvents,
-                    onRecord: { event, transcription in
-                        calendarVM.showRecordMeetingPopover = false
-                        handleRecordMeeting(event: event, transcription: transcription)
-                    }
-                )
+            .help("Import audio recording")
+            .disabled(transcriptionService.isTranscribing)
+            .fileImporter(
+                isPresented: $showImportRecording,
+                allowedContentTypes: [
+                    UTType.audio,
+                    UTType(filenameExtension: "m4a") ?? .audio,
+                    UTType(filenameExtension: "mp3") ?? .audio,
+                    UTType.wav,
+                ],
+                allowsMultipleSelection: false
+            ) { result in
+                handleImportedRecording(result)
             }
 
             // Sync button
@@ -186,73 +180,6 @@ struct WorkspaceCalendarView: View {
         .padding(.vertical, 6)
     }
 
-    // MARK: - Google Sign-In Banner
-
-    private var googleSignInBanner: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "calendar.badge.plus")
-                .font(.system(size: 20))
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Connect Google Calendar?")
-                    .font(.system(size: 13, weight: .medium))
-                Text("See your events alongside database dates, or keep using the calendar without it.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            if isSigningIn {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Button("Sign in with Google") {
-                    Task { await signInWithGoogle() }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-
-            Button(action: { appState.settings.googleCalendarBannerDismissed = true }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.primary.opacity(0.03))
-        .overlay(alignment: .bottom) {
-            if let signInError {
-                Text(signInError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(.bottom, 2)
-            }
-        }
-    }
-
-    private func signInWithGoogle() async {
-        isSigningIn = true
-        signInError = nil
-        defer { isSigningIn = false }
-
-        do {
-            let result = try await GoogleOAuthFlow.signIn()
-            appState.settings.googleCalendarAccessToken = result.accessToken
-            appState.settings.googleCalendarRefreshToken = result.refreshToken
-            appState.settings.googleCalendarTokenExpiry = result.expiresAt.timeIntervalSince1970
-            appState.settings.googleCalendarConnectedEmail = result.email
-            // Auto-sync after connecting
-            syncCalendar()
-        } catch {
-            signInError = error.localizedDescription
-        }
-    }
-
     // MARK: - Data
 
     private var visibleSourceIds: Set<String> {
@@ -265,28 +192,7 @@ struct WorkspaceCalendarView: View {
         }
     }
 
-    private var currentDayEvents: [CalendarEvent] {
-        calendarVM.events(for: calendarVM.selectedDate, from: visibleEvents)
-    }
-
     // MARK: - Actions
-
-    private func handleRecordMeeting(event: CalendarEvent?, transcription: TranscriptionResult) {
-        guard let workspace = appState.workspacePath else { return }
-        let apiKey = appState.settings.anthropicApiKey
-        Task {
-            if let pagePath = await meetingNoteService.createMeetingNoteWithTranscript(
-                transcription: transcription,
-                event: event,
-                workspace: workspace,
-                aiService: aiService,
-                apiKey: apiKey
-            ) {
-                calendarService.loadCachedData(workspace: workspace)
-                onNavigateToFile(pagePath)
-            }
-        }
-    }
 
     private func handleEventTapped(_ event: CalendarEvent) {
         guard let workspace = appState.workspacePath else { return }
@@ -303,9 +209,35 @@ struct WorkspaceCalendarView: View {
         onNavigateToFile(path)
     }
 
+    private func handleImportedRecording(_ result: Result<[URL], Error>) {
+        guard let workspace = appState.workspacePath else { return }
+        guard case .success(let urls) = result, let fileURL = urls.first else { return }
+
+        // Ensure we have access to the file
+        guard fileURL.startAccessingSecurityScopedResource() else { return }
+        defer { fileURL.stopAccessingSecurityScopedResource() }
+
+        Task {
+            if let pagePath = await meetingNoteService.importRecording(
+                fileURL: fileURL,
+                workspace: workspace,
+                transcriptionService: transcriptionService,
+                aiService: aiService,
+                apiKey: appState.settings.anthropicApiKey,
+                model: appState.settings.anthropicModel
+            ) {
+                onNavigateToFile(pagePath)
+            }
+        }
+    }
+
     private func syncCalendar() {
         guard let workspace = appState.workspacePath else { return }
-        guard let token = loadGoogleToken() else { return }
+        let token = loadGoogleToken()
+        guard let token else {
+            calendarService.error = "No Google Calendar credentials configured. Go to Settings > Calendar."
+            return
+        }
         Task {
             await calendarService.syncGoogleCalendar(workspace: workspace, token: token)
             await calendarService.loadDatabaseOverlayItems(workspace: workspace)
@@ -314,11 +246,14 @@ struct WorkspaceCalendarView: View {
 
     private func loadGoogleToken() -> GoogleOAuthToken? {
         let settings = appState.settings
-        guard !settings.googleCalendarRefreshToken.isEmpty else { return nil }
+        guard !settings.googleCalendarClientId.isEmpty,
+              !settings.googleCalendarRefreshToken.isEmpty else { return nil }
         return GoogleOAuthToken(
             accessToken: settings.googleCalendarAccessToken,
             refreshToken: settings.googleCalendarRefreshToken,
-            expiresAt: Date(timeIntervalSince1970: settings.googleCalendarTokenExpiry)
+            expiresAt: Date(timeIntervalSince1970: settings.googleCalendarTokenExpiry),
+            clientId: settings.googleCalendarClientId,
+            clientSecret: settings.googleCalendarClientSecret
         )
     }
 }
@@ -398,70 +333,5 @@ struct CalendarSourcePicker: View {
             return Color(hex: String(hex.dropFirst()))
         }
         return TagColor.color(for: hex)
-    }
-}
-
-// MARK: - Record Meeting Popover
-
-struct RecordMeetingPopover: View {
-    let events: [CalendarEvent]
-    var onRecord: (CalendarEvent?, TranscriptionResult) -> Void
-
-    @State private var selectedEventId: String?
-    @State private var transcriptText = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Record Meeting")
-                .font(.system(size: Typography.caption, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            if !events.isEmpty {
-                Text("Link to event (optional)")
-                    .font(.system(size: Typography.bodySmall))
-                    .foregroundStyle(.secondary)
-
-                Picker("Event", selection: $selectedEventId) {
-                    Text("No event").tag(String?.none)
-                    ForEach(events) { event in
-                        Text(event.title).tag(Optional(event.id))
-                    }
-                }
-                .labelsHidden()
-            }
-
-            Text("Paste transcript")
-                .font(.system(size: Typography.bodySmall))
-                .foregroundStyle(.secondary)
-
-            TextEditor(text: $transcriptText)
-                .font(.system(size: Typography.body))
-                .frame(height: 160)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.sm)
-                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                )
-
-            Button(action: submit) {
-                Text("Create Meeting Note")
-                    .font(.system(size: Typography.body, weight: .medium))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(transcriptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .padding(16)
-        .frame(width: 320)
-    }
-
-    private func submit() {
-        let selectedEvent = events.first { $0.id == selectedEventId }
-        let text = transcriptText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let result = TranscriptionResult(fullText: text, timestampedText: text)
-        onRecord(selectedEvent, result)
     }
 }

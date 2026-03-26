@@ -13,6 +13,18 @@ enum PreferredAIEngine: String, Codable, CaseIterable {
     case claudeAPI = "API Key"
 }
 
+enum AnthropicModel: String, Codable, CaseIterable {
+    case haiku = "claude-haiku-4-5-20251001"
+    case sonnet = "claude-sonnet-4-20250514"
+
+    var displayName: String {
+        switch self {
+        case .haiku: return "Haiku (fast)"
+        case .sonnet: return "Sonnet (quality)"
+        }
+    }
+}
+
 enum ExecutionPolicy: String, Codable, CaseIterable {
     case ask = "Ask Before Running"
     case autoApprove = "Auto-Approve"
@@ -28,6 +40,7 @@ struct AppSettings: Codable {
     var agentsMdContent: String
     var qmdSearchMode: QmdSearchMode
     var anthropicApiKey: String
+    var anthropicModel: AnthropicModel
     /// Path to the page opened for new/empty tabs. Empty string = default Bugbook landing page.
     var defaultNewTabPage: String
 
@@ -47,6 +60,7 @@ struct AppSettings: Codable {
         agentsMdContent: "",
         qmdSearchMode: .bm25,
         anthropicApiKey: "",
+        anthropicModel: .sonnet,
         defaultNewTabPage: "",
         googleCalendarRefreshToken: "",
         googleCalendarAccessToken: "",
@@ -66,6 +80,7 @@ struct AppSettings: Codable {
         agentsMdContent = try container.decodeIfPresent(String.self, forKey: .agentsMdContent) ?? ""
         qmdSearchMode = try container.decodeIfPresent(QmdSearchMode.self, forKey: .qmdSearchMode) ?? .bm25
         anthropicApiKey = try container.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
+        anthropicModel = try container.decodeIfPresent(AnthropicModel.self, forKey: .anthropicModel) ?? .sonnet
         defaultNewTabPage = try container.decodeIfPresent(String.self, forKey: .defaultNewTabPage) ?? ""
         googleCalendarRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarRefreshToken) ?? ""
         googleCalendarAccessToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarAccessToken) ?? ""
@@ -83,6 +98,7 @@ struct AppSettings: Codable {
         agentsMdContent: String,
         qmdSearchMode: QmdSearchMode,
         anthropicApiKey: String,
+        anthropicModel: AnthropicModel = .sonnet,
         defaultNewTabPage: String,
         googleCalendarRefreshToken: String = "",
         googleCalendarAccessToken: String = "",
@@ -98,6 +114,7 @@ struct AppSettings: Codable {
         self.agentsMdContent = agentsMdContent
         self.qmdSearchMode = qmdSearchMode
         self.anthropicApiKey = anthropicApiKey
+        self.anthropicModel = anthropicModel
         self.defaultNewTabPage = defaultNewTabPage
         self.googleCalendarRefreshToken = googleCalendarRefreshToken
         self.googleCalendarAccessToken = googleCalendarAccessToken

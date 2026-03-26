@@ -382,7 +382,8 @@ struct NotesChatView: View {
                     engine: selectedEngine,
                     workspacePath: workspacePath,
                     question: prompt,
-                    apiKey: appState.settings.anthropicApiKey
+                    apiKey: appState.settings.anthropicApiKey,
+                    model: appState.settings.anthropicModel
                 )
                 SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "ai.receive"))
                 let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())

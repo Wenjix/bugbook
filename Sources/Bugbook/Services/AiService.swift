@@ -99,14 +99,14 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
 
     // MARK: - Chat
 
-    func chatWithNotes(engine: PreferredAIEngine, workspacePath: String, question: String, apiKey: String = "") async throws -> String {
+    func chatWithNotes(engine: PreferredAIEngine, workspacePath: String, question: String, apiKey: String = "", model: AnthropicModel = .sonnet) async throws -> String {
         if engine == .claudeAPI {
             guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
             isRunning = true
             error = nil
             defer { isRunning = false }
             do {
-                return try await callAPI(apiKey: apiKey, userPrompt: question)
+                return try await callAPI(apiKey: apiKey, userPrompt: question, model: model)
             } catch {
                 self.error = error.localizedDescription
                 throw error
@@ -149,7 +149,7 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         }
     }
 
-    private func callAPI(apiKey: String, systemPrompt: String? = nil, userPrompt: String, maxTokens: Int = 1024) async throws -> String {
+    private func callAPI(apiKey: String, systemPrompt: String? = nil, userPrompt: String, maxTokens: Int = 1024, model: AnthropicModel = .sonnet) async throws -> String {
         let url = URL(string: "https://api.anthropic.com/v1/messages")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -158,7 +158,7 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
         var body: [String: Any] = [
-            "model": "claude-haiku-4-5-20251001",
+            "model": model.rawValue,
             "max_tokens": maxTokens,
             "messages": [["role": "user", "content": userPrompt]]
         ]
@@ -228,7 +228,7 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
 
     // MARK: - Content Generation
 
-    func generateContent(engine: PreferredAIEngine, workspacePath: String, prompt: String, pageContext: String = "", apiKey: String = "") async throws -> String {
+    func generateContent(engine: PreferredAIEngine, workspacePath: String, prompt: String, pageContext: String = "", apiKey: String = "", model: AnthropicModel = .sonnet) async throws -> String {
         var fullPrompt = Self.systemInstruction + "\n\n"
         if !pageContext.isEmpty {
             fullPrompt += "Current page context:\n\(pageContext)\n\n"
@@ -241,7 +241,7 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
             error = nil
             defer { isRunning = false }
             do {
-                return try await callAPI(apiKey: apiKey, systemPrompt: Self.systemInstruction, userPrompt: pageContext.isEmpty ? prompt : "Current page context:\n\(pageContext)\n\nUser request: \(prompt)", maxTokens: 2048)
+                return try await callAPI(apiKey: apiKey, systemPrompt: Self.systemInstruction, userPrompt: pageContext.isEmpty ? prompt : "Current page context:\n\(pageContext)\n\nUser request: \(prompt)", maxTokens: 2048, model: model)
             } catch {
                 self.error = error.localizedDescription
                 throw error
@@ -287,6 +287,34 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
     /// Execute a bugbook CLI command and return the output.
     func executeBugbookCommand(_ command: String) async throws -> String {
         try await runCommand("bugbook \(command)")
+    }
+
+    // MARK: - Transcript Summarization
+
+    func summarizeTranscript(_ transcript: String, apiKey: String, model: AnthropicModel = .sonnet) async throws -> String {
+        guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
+        isRunning = true
+        error = nil
+        defer { isRunning = false }
+        let systemPrompt = """
+        You are a meeting assistant. Given a transcript, produce a concise meeting summary in markdown with these sections:
+        ## Summary
+        A brief overview of what was discussed.
+
+        ## Key Points
+        - Bullet list of main topics and decisions
+
+        ## Action Items
+        - [ ] Task items identified in the meeting
+
+        Return ONLY the markdown. No explanations or code fences.
+        """
+        do {
+            return try await callAPI(apiKey: apiKey, systemPrompt: systemPrompt, userPrompt: transcript, maxTokens: 2048, model: model)
+        } catch {
+            self.error = error.localizedDescription
+            throw error
+        }
     }
 
     // MARK: - Pre-warming
