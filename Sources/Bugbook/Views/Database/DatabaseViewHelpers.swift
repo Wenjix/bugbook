@@ -38,6 +38,29 @@ func reorderedManualRowOrder(
 }
 
 func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
+    // Checkbox-specific operators
+    if case .checkbox(let checked) = value {
+        switch filter.op {
+        case "is_checked": return checked
+        case "is_not_checked": return !checked
+        default: break
+        }
+    }
+
+    // Date comparisons use sortable keys for correct ordering
+    if case .date(let raw) = value {
+        let sortKey = DatabaseDateValue.decode(from: raw)?.sortKey ?? raw
+        switch filter.op {
+        case "equals": return sortKey == filter.value
+        case "not_equals": return sortKey != filter.value
+        case "greater_than": return sortKey > filter.value
+        case "less_than": return sortKey < filter.value
+        case "greater_than_or_equal": return sortKey >= filter.value
+        case "less_than_or_equal": return sortKey <= filter.value
+        default: break
+        }
+    }
+
     let stringVal = stringFromValue(value)
     switch filter.op {
     case "equals": return stringVal == filter.value
@@ -52,6 +75,9 @@ func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
     case "less_than":
         if let lhs = Double(stringVal), let rhs = Double(filter.value) { return lhs < rhs }
         return stringVal < filter.value
+    case "less_than_or_equal":
+        if let lhs = Double(stringVal), let rhs = Double(filter.value) { return lhs <= rhs }
+        return stringVal <= filter.value
     default: return true
     }
 }
