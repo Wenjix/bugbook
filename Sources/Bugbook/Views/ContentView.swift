@@ -263,11 +263,6 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
                 appState.openMeetings()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .reviewFlashcards)) { _ in
-                flashcardCards = collectFlashcards()
-                appState.flashcardReviewOpen = true
-            }
-
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
             }
@@ -930,15 +925,6 @@ struct ContentView: View {
                     calendarService: calendarService,
                     calendarVM: calendarVM,
                     meetingNoteService: meetingNoteService,
-                    aiService: aiService,
-                    onNavigateToFile: { path in
-                        navigateToFilePath(path)
-                    }
-                )
-            } else if tab.isMeetings {
-                MeetingsView(
-                    appState: appState,
-                    calendarService: calendarService,
                     aiService: aiService,
                     onNavigateToFile: { path in
                         navigateToFilePath(path)
