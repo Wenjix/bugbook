@@ -390,7 +390,20 @@ private struct PropertyRowView: View {
                     onSave(row)
                 }
             )
-            PropertyEditorView(definition: prop, value: propValue, compact: false, onAddOption: onAddOption, onUpdateOption: onUpdateOption, onDeleteOption: onDeleteOption, onLoadRelationRows: prop.type == .relation ? { onLoadRelationRows?(prop) ?? [] } : nil, onListDatabases: prop.type == .relation ? { onListDatabases?() ?? [] } : nil, onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil)
+            PropertyEditorView(
+                definition: prop,
+                value: propValue,
+                compact: false,
+                onAddOption: onAddOption,
+                onUpdateOption: onUpdateOption,
+                onDeleteOption: onDeleteOption,
+                onLoadRelationRows: prop.type == .relation
+                    ? { onLoadRelationRows?(prop) ?? [] } : nil,
+                onListDatabases: prop.type == .relation
+                    ? { onListDatabases?() ?? [] } : nil,
+                onSetRelationTarget: prop.type == .relation
+                    ? onSetRelationTarget : nil
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 7)

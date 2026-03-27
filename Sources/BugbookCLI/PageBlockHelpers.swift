@@ -793,12 +793,6 @@ private enum PageBlockParser {
                 }
             }
 
-        case .meeting:
-            lines.append("<!-- meeting -->")
-            if !block.text.isEmpty {
-                lines.append(block.text)
-            }
-            lines.append("<!-- /meeting -->")
         }
 
         return lines
