@@ -15,6 +15,7 @@
 		0D60BAED04EE7FA14331418C /* MeetingBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38503CD6DD60C57D352CA45A /* MeetingBlockView.swift */; };
 		5E8D2F63A1C04B79D2370E18 /* MeetingNotesEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A7E91B3F5D82A0E6B10C47 /* MeetingNotesEditor.swift */; };
 		0ECCD65D875F55E2148FF871 /* EditorDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727128AD995E5A86B60ADCBE /* EditorDraftStore.swift */; };
+		A1B2C3D4E5F60718A2B3C4D5 /* AiThreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E5D4C3B2A1908172635445 /* AiThreadStore.swift */; };
 		0FF49E848A57B76FEB3FF655 /* SlashCommandMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14D46F5252C474875D2AE94 /* SlashCommandMenu.swift */; };
 		10C4018F30AC23F772A1ACC8 /* CalendarSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCBC4202AE20197A13962CD /* CalendarSettingsView.swift */; };
 		1364B73C31B34B4A59420743 /* Row.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47EF03A6E9A932800D5A95E /* Row.swift */; };
@@ -235,6 +236,7 @@
 		70DE6960E273C11B104C1DD9 /* IndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexManager.swift; sourceTree = "<group>"; };
 		71023CB4011C219BC7514109 /* InlineStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineStyle.swift; sourceTree = "<group>"; };
 		727128AD995E5A86B60ADCBE /* EditorDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorDraftStore.swift; sourceTree = "<group>"; };
+		F6E5D4C3B2A1908172635445 /* AiThreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiThreadStore.swift; sourceTree = "<group>"; };
 		746E6FCF54D009487CB47D71 /* ShellZoomMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellZoomMetrics.swift; sourceTree = "<group>"; };
 		74D38DE480A02B3136213525 /* BlockEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockEditorView.swift; sourceTree = "<group>"; };
 		753ED053F39EBB80B7270496 /* CodeBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeBlockView.swift; sourceTree = "<group>"; };
@@ -566,6 +568,7 @@
 				E071A97E9E6B0892FA767898 /* BacklinkService.swift */,
 				59394152B4415173A37EE498 /* CalendarService.swift */,
 				A5E14D6DCB62FFAE7B309EF8 /* DatabaseService.swift */,
+				F6E5D4C3B2A1908172635445 /* AiThreadStore.swift */,
 				727128AD995E5A86B60ADCBE /* EditorDraftStore.swift */,
 				E2B315BD3D01519D8E6333A3 /* FileSystemService.swift */,
 				4CF3076E2CD78CCA495DCDCB /* Logger.swift */,
@@ -905,6 +908,7 @@
 				A86D81D4F21E32011176CB04 /* DatabaseViewState.swift in Sources */,
 				55300AEF3CA2B3AABA0FF66D /* DatabaseZoomMetrics.swift in Sources */,
 				70A9F55EB761E74043D75928 /* DesignTokens.swift in Sources */,
+				A1B2C3D4E5F60718A2B3C4D5 /* AiThreadStore.swift in Sources */,
 				0ECCD65D875F55E2148FF871 /* EditorDraftStore.swift in Sources */,
 				AAACB1E47FC69E8DFD7D3D27 /* EditorUIState.swift in Sources */,
 				55AED705FAC0BD8F729640FD /* FileEntry.swift in Sources */,
