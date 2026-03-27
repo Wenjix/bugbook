@@ -1,28 +1,11 @@
 import SwiftUI
 
-/// Collapsible heading toggle block — heading-sized title with a chevron and nested child blocks.
+/// Collapsible heading toggle block — same as ToggleBlockView but with heading-level font sizing.
 struct HeadingToggleBlockView: View {
     var document: BlockDocument
     let block: Block
     var onTyping: (() -> Void)? = nil
-    @State private var textHeight: CGFloat = 30
-
-    private var headingFont: NSFont {
-        switch block.headingLevel {
-        case 1: return .systemFont(ofSize: EditorTypography.scaled(30), weight: .bold)
-        case 2: return .systemFont(ofSize: EditorTypography.scaled(24), weight: .semibold)
-        case 3: return .systemFont(ofSize: EditorTypography.scaled(20), weight: .semibold)
-        default: return .systemFont(ofSize: EditorTypography.scaled(20), weight: .semibold)
-        }
-    }
-
-    private var chevronSize: CGFloat {
-        switch block.headingLevel {
-        case 1: return 14
-        case 2: return 13
-        default: return 12
-        }
-    }
+    @State private var textHeight: CGFloat = 24
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,10 +19,10 @@ struct HeadingToggleBlockView: View {
                     }
                 }
                 .labelStyle(.iconOnly)
-                .font(.system(size: chevronSize, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .rotationEffect(.degrees(block.isExpanded ? 90 : 0))
-                .frame(width: 20, height: textHeight > 0 ? min(textHeight, 36) : 30)
+                .frame(width: 20, height: 24)
                 .contentShape(Rectangle())
                 .buttonStyle(.plain)
 
@@ -47,9 +30,9 @@ struct HeadingToggleBlockView: View {
                     document: document,
                     blockId: block.id,
                     selectionVersion: document.selectionVersion,
-                    font: headingFont,
+                    font: nsFont,
                     textColor: .labelColor,
-                    placeholder: "Heading",
+                    placeholder: "Toggle heading \(block.headingLevel)",
                     onTextChange: onTyping,
                     textHeight: $textHeight
                 )
@@ -77,6 +60,15 @@ struct HeadingToggleBlockView: View {
                 }
                 .padding(.leading, 0)
             }
+        }
+    }
+
+    private var nsFont: NSFont {
+        switch block.headingLevel {
+        case 1: return .systemFont(ofSize: EditorTypography.scaled(30), weight: .bold)
+        case 2: return .systemFont(ofSize: EditorTypography.scaled(24), weight: .semibold)
+        case 3: return .systemFont(ofSize: EditorTypography.scaled(20), weight: .semibold)
+        default: return .systemFont(ofSize: EditorTypography.bodyFontSize, weight: .semibold)
         }
     }
 

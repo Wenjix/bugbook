@@ -195,18 +195,8 @@ struct DatabaseFullPageView: View {
 
     private func dbHeader(schema: DatabaseSchema) -> some View {
         HStack(spacing: 8) {
-<<<<<<< HEAD
-            TextField("New database", text: $state.editingTitle, axis: .vertical)
-                .lineLimit(1...10)
-                .onSubmit { state.persistTitle() }
-                .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
-                .font(DatabaseZoomMetrics.font(17, weight: .semibold))
-                .foregroundStyle(.primary)
-                .textFieldStyle(.plain)
-                .databasePointerCursor()
-=======
             if state.activeView?.hideTitle != true {
-                TextField("Database Name", text: $state.editingTitle, axis: .vertical)
+                TextField("New database", text: $state.editingTitle, axis: .vertical)
                     .lineLimit(1...10)
                     .onSubmit { state.persistTitle() }
                     .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
@@ -215,7 +205,6 @@ struct DatabaseFullPageView: View {
                     .textFieldStyle(.plain)
                     .databasePointerCursor()
             }
->>>>>>> worktree-agent-ade7b52b
 
             Spacer()
 

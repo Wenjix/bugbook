@@ -582,6 +582,7 @@ enum MarkdownBlockParser {
         if trimmed == "<!-- toggle -->"
             || trimmed == "<!-- toggle collapsed -->"
             || trimmed == "<!-- /toggle -->"
+            || parseToggleHeadingComment(trimmed) != nil
             || trimmed == "<!-- /toggle-heading -->"
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
@@ -596,6 +597,17 @@ enum MarkdownBlockParser {
         }
         if parseHeadingToggleComment(trimmed) != nil { return true }
         return false
+    }
+
+    /// Parses `<!-- toggle-heading N -->` or `<!-- toggle-heading N collapsed -->`, returning the heading level.
+    private static func parseToggleHeadingComment(_ trimmed: String) -> Int? {
+        // Match: <!-- toggle-heading 1 --> or <!-- toggle-heading 2 collapsed -->
+        guard trimmed.hasPrefix("<!-- toggle-heading ") else { return nil }
+        let inner = trimmed.dropFirst("<!-- toggle-heading ".count)
+        guard let digitChar = inner.first, let level = Int(String(digitChar)), (1...3).contains(level) else { return nil }
+        let rest = inner.dropFirst()
+        if rest == " -->" || rest == " collapsed -->" { return level }
+        return nil
     }
 
     private static func isHorizontalRule(_ line: String) -> Bool {

@@ -260,6 +260,9 @@ struct BlockCellView: View {
         case .toggle:
             ToggleBlockView(document: document, block: block, onTyping: onTyping)
 
+        case .headingToggle:
+            HeadingToggleBlockView(document: document, block: block, onTyping: onTyping)
+
         case .column:
             ColumnBlockView(document: document, block: block, onTyping: onTyping)
 
