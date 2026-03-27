@@ -354,12 +354,12 @@ struct GraphView: View {
         let filePaths: [String] = await Task.detached {
             let fm = FileManager.default
             guard let enumerator = fm.enumerator(atPath: workspace) else { return [String]() }
-            // Pre-scan for database folders (contain _schema.json) and canvas folders (contain _canvas.json)
+            // Pre-scan for database folders (contain _schema.json)
             var excludedDirs: Set<String> = []
             if let scanner = fm.enumerator(atPath: workspace) {
                 while let rel = scanner.nextObject() as? String {
                     let filename = (rel as NSString).lastPathComponent
-                    if filename == "_schema.json" || filename == "_canvas.json" {
+                    if filename == "_schema.json" {
                         let dir = (workspace as NSString).appendingPathComponent(
                             (rel as NSString).deletingLastPathComponent
                         )
@@ -377,7 +377,7 @@ struct GraphView: View {
                 let filename = (relativePath as NSString).lastPathComponent
                 guard filename.hasSuffix(".md") else { continue }
                 let fullPath = (workspace as NSString).appendingPathComponent(relativePath)
-                // Skip database row files and canvas node files
+                // Skip database row files
                 let parentDir = (fullPath as NSString).deletingLastPathComponent
                 if excludedDirs.contains(parentDir) { continue }
                 paths.append(fullPath)

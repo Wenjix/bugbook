@@ -101,12 +101,6 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
 
-                Button("Review Flashcards") {
-                    NotificationCenter.default.post(name: .reviewFlashcards, object: nil)
-                }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
-
-                Divider()
 
                 Button("Zoom In") {
                     NotificationCenter.default.post(name: .editorZoomIn, object: nil)
@@ -315,7 +309,6 @@ extension Notification.Name {
     static let navigateForward = Notification.Name("navigateForward")
     static let openDailyNote = Notification.Name("openDailyNote")
     static let openGraphView = Notification.Name("openGraphView")
-    static let newCanvas = Notification.Name("newCanvas")
     static let editorZoomIn = Notification.Name("editorZoomIn")
     static let editorZoomOut = Notification.Name("editorZoomOut")
     static let editorZoomReset = Notification.Name("editorZoomReset")
@@ -325,5 +318,5 @@ extension Notification.Name {
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")
     static let movePageToDir = Notification.Name("movePageToDir")
-    static let reviewFlashcards = Notification.Name("reviewFlashcards")
+
 }

@@ -107,7 +107,7 @@ struct AiSidePanelView: View {
             suggestionRow("Summarize this page", prompt: "Summarize this page")
             suggestionRow("Organize this page", prompt: "Organize this page into clear sections")
             suggestionRow("Rewrite this section", prompt: "Rewrite this page for clarity")
-            suggestionRow("Create flashcards", prompt: "Generate flashcards from this page")
+            suggestionRow("Extract action items", prompt: "Extract action items from this page")
         }
     }
 

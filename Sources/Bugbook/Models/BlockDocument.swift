@@ -71,6 +71,8 @@ class BlockDocument {
     /// Called when a page is dropped from the sidebar into the editor.
     /// Parameters: (sourcePath, insertionIndex). Should move the file and refresh tree.
     @ObservationIgnored var onDropPageFromSidebar: ((String, Int) -> Void)?
+    var meetingAudioLevel: Float = 0
+    var meetingVolatileText: String = ""
     @ObservationIgnored var onStartMeeting: ((UUID) -> Void)?
     @ObservationIgnored var onStopMeeting: ((UUID) -> Void)?
     @ObservationIgnored var transcriptionService: TranscriptionService?
@@ -890,7 +892,6 @@ class BlockDocument {
                 block.meetingNotes = ""
             }
             dismissSlashMenu()
-            onStartMeeting?(blockId)
             return
 
         case let .blockType(type, headingLevel):

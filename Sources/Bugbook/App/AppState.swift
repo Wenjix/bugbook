@@ -34,7 +34,7 @@ enum ViewMode {
     var aiReferencedItems: [AiContextItem] = []
     var currentView: ViewMode = .editor
     var movePagePath: String?  // non-nil triggers move page picker
-    var flashcardReviewOpen: Bool = false
+
     var isRecording: Bool = false
 
     var activeTab: OpenFile? {
@@ -245,14 +245,12 @@ enum ViewMode {
         }
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         return FileEntry(
             id: path,
             name: (path as NSString).lastPathComponent,
             path: path,
-            isDirectory: isDatabase || isCanvas,
+            isDirectory: isDatabase,
             kind: kind
         )
     }

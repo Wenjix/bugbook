@@ -104,8 +104,8 @@ enum AttributedStringConverter {
                 continue
             }
 
-            // Flashcard separator: " == " → arrow indicator
-            if let end = parseFlashcardSeparator(markdown, from: i) {
+            // Double-equals separator: " == " → arrow indicator
+            if let end = parseDoubleEqualsSeparator(markdown, from: i) {
                 var attrs = baseAttributes
                 attrs[.foregroundColor] = NSColor.secondaryLabelColor
                 attrs[Self.markdownSourceKey] = " == "
@@ -234,8 +234,8 @@ enum AttributedStringConverter {
         return nil
     }
 
-    /// Parse flashcard separator: " == " (with spaces on both sides)
-    private static func parseFlashcardSeparator(
+    /// Parse double-equals separator: " == " (with spaces on both sides)
+    private static func parseDoubleEqualsSeparator(
         _ str: String,
         from start: String.Index
     ) -> String.Index? {

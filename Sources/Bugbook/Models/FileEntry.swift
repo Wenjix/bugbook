@@ -3,13 +3,11 @@ import Foundation
 enum TabKind: Equatable, Hashable {
     case page
     case database
-    case canvas
     case calendar
     case meetings
     case databaseRow(dbPath: String, rowId: String)
 
     var isDatabase: Bool { self == .database }
-    var isCanvas: Bool { self == .canvas }
     var isCalendar: Bool { self == .calendar }
     var isMeetings: Bool { self == .meetings }
     var isDatabaseRow: Bool { if case .databaseRow = self { return true }; return false }
@@ -29,7 +27,6 @@ struct FileEntry: Identifiable, Hashable {
 
     // Shims forwarding to kind for incremental migration
     var isDatabase: Bool { kind.isDatabase }
-    var isCanvas: Bool { kind.isCanvas }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }

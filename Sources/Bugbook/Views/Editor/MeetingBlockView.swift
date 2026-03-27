@@ -14,13 +14,8 @@ struct MeetingBlockView: View {
     @State private var isSummaryExpanded = false
     @State private var activeTab: MeetingTab = .summary
     @State private var isHovered = false
-    @State private var waveformPhase: CGFloat = 0
-    @State private var hasVoiceActivity = false
 
-    // Dev's AI processing state
-    @State private var isProcessing = false
     @State private var processingStatus = ""
-    @State private var showTranscriptSheet = false
 
     enum MeetingTab {
         case summary
@@ -47,23 +42,16 @@ struct MeetingBlockView: View {
                 afterStateView
             }
         }
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: Radius.lg)
                 .fill(Color.fallbackCardBg)
-        )
-        .overlay(
+        }
+        .overlay {
             RoundedRectangle(cornerRadius: Radius.lg)
                 .strokeBorder(Color.fallbackBorderColor, lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
         .onHover { isHovered = $0 }
         .padding(.vertical, 4)
-        .sheet(isPresented: $showTranscriptSheet) {
-            TranscriptBubbleView(
-                transcript: block.meetingTranscript,
-                meetingNotes: block.meetingNotes
-            )
-        }
     }
 
     // MARK: - Before State (Ready)
@@ -83,16 +71,15 @@ struct MeetingBlockView: View {
 
                 Button(action: startRecording) {
                     HStack(spacing: 5) {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 8, height: 8)
-                        Text("Record")
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10))
+                        Text("Start Transcribing")
                             .font(.system(size: Typography.bodySmall, weight: .medium))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.red.opacity(Opacity.medium))
-                    .foregroundStyle(Color.red)
+                    .background(Color.accentColor.opacity(Opacity.medium))
+                    .foregroundStyle(Color.accentColor)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
@@ -100,23 +87,10 @@ struct MeetingBlockView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
 
-            TextEditor(text: $notes)
-                .font(.system(size: Typography.body))
-                .foregroundStyle(Color.fallbackTextPrimary)
-                .scrollContentBackground(.hidden)
+            MeetingNotesEditor(text: $notes)
                 .frame(minHeight: 80)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .overlay(alignment: .topLeading) {
-                    if notes.isEmpty {
-                        Text("Write notes...")
-                            .font(.system(size: Typography.body))
-                            .foregroundStyle(Color.fallbackTextMuted)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
                 .onChange(of: notes) { _, newVal in
                     document.updateMeetingNotes(blockId: block.id, notes: newVal)
                 }
@@ -152,7 +126,7 @@ struct MeetingBlockView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.red)
+                    .background(Color.accentColor)
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
@@ -161,23 +135,10 @@ struct MeetingBlockView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
 
-            TextEditor(text: $notes)
-                .font(.system(size: Typography.body))
-                .foregroundStyle(Color.fallbackTextPrimary)
-                .scrollContentBackground(.hidden)
+            MeetingNotesEditor(text: $notes)
                 .frame(minHeight: 160)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .overlay(alignment: .topLeading) {
-                    if notes.isEmpty {
-                        Text("Write notes...")
-                            .font(.system(size: Typography.body))
-                            .foregroundStyle(Color.fallbackTextMuted)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
                 .onChange(of: notes) { _, newVal in
                     document.updateMeetingNotes(blockId: block.id, notes: newVal)
                 }
@@ -232,6 +193,25 @@ struct MeetingBlockView: View {
 
                 ladybugButton
 
+                // Generate summary button (only when no summary exists)
+                if parseSections(block.language).isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty && (!block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty) {
+                    Button {
+                        Task { await generateSummary() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 10))
+                            Text("Generate")
+                                .font(.system(size: Typography.caption, weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(Opacity.subtle))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+                    }
+                    .buttonStyle(.borderless)
+                }
+
                 // Expand button (hover only)
                 if isHovered {
                     Button(action: { withAnimation(.easeInOut(duration: 0.25)) { isSummaryExpanded.toggle() } }) {
@@ -256,16 +236,15 @@ struct MeetingBlockView: View {
 
                 Button(action: resumeRecording) {
                     HStack(spacing: 5) {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 8, height: 8)
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10))
                         Text("Resume")
                             .font(.system(size: Typography.bodySmall, weight: .medium))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.red.opacity(Opacity.medium))
-                    .foregroundStyle(Color.red)
+                    .background(Color.accentColor.opacity(Opacity.medium))
+                    .foregroundStyle(Color.accentColor)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
@@ -342,8 +321,8 @@ struct MeetingBlockView: View {
                         }
                     }
 
-                    // Action items from dedicated field
-                    if !block.meetingActionItems.isEmpty {
+                    // Show dedicated action items only when there's no structured content
+                    if sections.isEmpty && !block.meetingActionItems.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Action Items")
                                 .font(.system(size: Typography.bodySmall, weight: .semibold))
@@ -364,32 +343,11 @@ struct MeetingBlockView: View {
                     }
 
                     if sections.isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty {
-                        // Generate button when no summary exists yet
-                        if !block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty {
-                            Button {
-                                Task { await generateSummary() }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "ladybug.fill")
-                                        .font(.system(size: 12))
-                                    Text("Generate Summary")
-                                        .font(.system(size: Typography.bodySmall, weight: .medium))
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor))
-                            }
-                            .buttonStyle(.plain)
+                        Text("No summary yet")
+                            .font(.system(size: Typography.bodySmall))
+                            .foregroundStyle(Color.fallbackTextMuted)
                             .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 12)
-                        } else {
-                            Text("No summary generated yet.")
-                                .font(.system(size: Typography.bodySmall))
-                                .foregroundStyle(Color.fallbackTextMuted)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 20)
-                        }
+                            .padding(.vertical, 20)
                     }
                 }
                 .padding(14)
@@ -440,7 +398,7 @@ struct MeetingBlockView: View {
         }) {
             HStack(spacing: 8) {
                 if showWaveform {
-                    WaveformView(isActive: hasVoiceActivity, phase: waveformPhase)
+                    WaveformView(audioLevel: document.meetingAudioLevel)
                         .frame(width: 40, height: 16)
                 } else {
                     Text("Transcript")
@@ -450,11 +408,6 @@ struct MeetingBlockView: View {
 
                 Spacer()
 
-                if !showWaveform && !block.meetingTranscript.isEmpty {
-                    Text("\(block.meetingTranscript.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count) words")
-                        .font(.system(size: Typography.caption))
-                        .foregroundStyle(Color.fallbackTextMuted)
-                }
 
                 Image(systemName: isTranscriptOpen ? "chevron.down" : "chevron.up")
                     .font(.system(size: 10, weight: .semibold))
@@ -465,58 +418,83 @@ struct MeetingBlockView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(
-            Color.primary.opacity(Opacity.subtle),
-            in: UnevenRoundedRectangle(
-                bottomLeadingRadius: isTranscriptOpen ? 0 : Radius.lg,
-                bottomTrailingRadius: isTranscriptOpen ? 0 : Radius.lg
-            )
-        )
+        .background(Color.primary.opacity(Opacity.subtle))
     }
 
     // MARK: - Transcript Drawer
+
+    private static let transcriptTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm"
+        return f
+    }()
 
     private var transcriptDrawer: some View {
         VStack(spacing: 0) {
             Divider()
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    // Use transcriptEntries if available, otherwise split transcript string
-                    let entries = !block.transcriptEntries.isEmpty
-                        ? block.transcriptEntries
-                        : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        let entries = !block.transcriptEntries.isEmpty
+                            ? block.transcriptEntries
+                            : splitTranscriptIntoBubbles(block.meetingTranscript)
 
-                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                        Text(entry)
-                            .font(.system(size: Typography.caption2))
-                            .foregroundStyle(Color.fallbackTextPrimary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.primary.opacity(Opacity.light))
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-                    }
-
-                    if block.meetingState == .recording {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .controlSize(.mini)
-                            Text("Listening...")
-                                .font(.system(size: Typography.caption2))
-                                .foregroundStyle(Color.fallbackTextMuted)
+                        ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                            HStack {
+                                Spacer()
+                                Text(entry)
+                                    .font(.system(size: Typography.bodySmall))
+                                    .foregroundStyle(Color.fallbackTextPrimary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.primary.opacity(Opacity.light))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .textSelection(.enabled)
+                            }
+                            .id(index)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+
+                        // Volatile (in-progress) text with pulsing dot
+                        if block.meetingState == .recording {
+                            let volatile = document.meetingVolatileText
+                            if !volatile.isEmpty {
+                                HStack {
+                                    Spacer()
+                                    HStack(spacing: 4) {
+                                        Text(volatile)
+                                            .font(.system(size: Typography.bodySmall))
+                                            .foregroundStyle(.secondary)
+                                        Circle()
+                                            .fill(Color.accentColor)
+                                            .frame(width: 4, height: 4)
+                                            .opacity(0.6)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.primary.opacity(0.03))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                                .id("volatile")
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
+                .frame(maxHeight: 800)
+                .onChange(of: block.transcriptEntries.count) { _, count in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo(count - 1, anchor: .bottom)
                     }
                 }
-                .padding(10)
+                .onChange(of: document.meetingVolatileText) { _, _ in
+                    if block.meetingState == .recording {
+                        proxy.scrollTo("volatile", anchor: .bottom)
+                    }
+                }
             }
-            .frame(maxHeight: 400)
         }
-        .transition(.asymmetric(
-            insertion: .push(from: .bottom).combined(with: .opacity),
-            removal: .push(from: .top).combined(with: .opacity)
-        ))
     }
 
     // MARK: - Ladybug AI Button
@@ -537,17 +515,16 @@ struct MeetingBlockView: View {
 
     private func startRecording() {
         document.updateMeetingState(blockId: block.id, state: .recording)
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isTranscriptOpen = true
-        }
+        document.onStartMeeting?(block.id)
     }
 
     private func stopRecording() {
-        document.updateMeetingState(blockId: block.id, state: .complete)
+        document.onStopMeeting?(block.id)
     }
 
     private func resumeRecording() {
         document.updateMeetingState(blockId: block.id, state: .recording)
+        document.onStartMeeting?(block.id)
     }
 
     private func openAiWithContext() {
@@ -555,6 +532,38 @@ struct MeetingBlockView: View {
     }
 
     // MARK: - Helpers
+
+    /// Splits a continuous transcript string into sentence-grouped bubbles (2-3 sentences each).
+    /// Falls back to newline splitting if the text already has line breaks.
+    private func splitTranscriptIntoBubbles(_ text: String) -> [String] {
+        let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
+        // If transcript already has multiple lines, use them
+        if lines.count > 1 { return lines }
+        // Otherwise split on sentence-ending punctuation followed by a space
+        guard !text.isEmpty else { return [] }
+        var sentences: [String] = []
+        var current = ""
+        let chars = Array(text)
+        for (i, char) in chars.enumerated() {
+            current.append(char)
+            if (char == "." || char == "?" || char == "!"),
+               i + 1 < chars.count, chars[i + 1] == " " {
+                let trimmed = current.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty { sentences.append(trimmed) }
+                current = ""
+            }
+        }
+        let remainder = current.trimmingCharacters(in: .whitespaces)
+        if !remainder.isEmpty { sentences.append(remainder) }
+        // Group into bubbles of 2-3 sentences
+        var bubbles: [String] = []
+        let chunkSize = 2
+        for i in stride(from: 0, to: sentences.count, by: chunkSize) {
+            let end = min(i + chunkSize, sentences.count)
+            bubbles.append(sentences[i..<end].joined(separator: " "))
+        }
+        return bubbles.isEmpty ? [text] : bubbles
+    }
 
     private func parseActionItems(_ raw: String) -> [String] {
         raw.components(separatedBy: "\n")
@@ -576,7 +585,6 @@ struct MeetingBlockView: View {
         let userNotes = block.meetingNotes
 
         document.updateMeetingState(blockId: block.id, state: .processing)
-        isProcessing = true
 
         if !transcript.isEmpty {
             processingStatus = "Cleaning transcript..."
@@ -597,7 +605,6 @@ struct MeetingBlockView: View {
             }
         }
 
-        isProcessing = false
         processingStatus = ""
         document.updateMeetingState(blockId: block.id, state: .complete)
     }
@@ -609,39 +616,48 @@ struct MeetingBlockView: View {
 
     private func extractStructuredSections(transcript: String, notes: String) async -> String? {
         var prompt = """
-        Given this meeting content, extract a structured meeting summary. Format your response EXACTLY like this:
+        You are a meeting notes assistant. Produce structured, concise meeting notes.
 
-        ## Title
-        <auto-generated title from content>
+        Output format (use EXACTLY):
 
-        ## Key Topics
-        ### <topic name>
-        - bullet point
-        - bullet point
+        TITLE: <short descriptive title based on content, NOT "Meeting" or a date>
+
+        ## <Topic Name>
+        - Key point as a concise bullet
+          - Supporting detail if needed
+        - Another key point
 
         ## Action Items
-        - [ ] action item 1
-        - [ ] action item 2
+        - [ ] Specific action item with owner if mentioned
+
+        Rules:
+        - Title should reflect actual content (e.g. "Q2 Planning Review", "Design Sprint Kickoff")
+        - Group by topic, not "Summary" — use what was actually discussed as headings
+        - Bullets: specific facts, decisions, details. No meta-commentary ("participants discussed...")
+        - Sub-bullets only when they add real information
+        - If nothing actionable, omit Action Items entirely
         """
 
         if !notes.isEmpty {
-            prompt += """
-
-            The user took these notes during the meeting. Integrate them inline under the relevant topics, prefixed with [NOTE]:
-
-            \(notes)
-            """
+            prompt += "\n\nUser's notes during the meeting:\n\(notes)"
         }
 
         if !transcript.isEmpty {
-            prompt += """
-
-        Transcript:
-        \(transcript)
-        """
+            prompt += "\n\nTranscript:\n\(transcript)"
         }
 
-        return await runClaude(prompt: prompt)
+        guard let result = await runClaude(prompt: prompt) else { return nil }
+
+        // Extract title and update it
+        if let titleLine = result.components(separatedBy: "\n").first,
+           titleLine.hasPrefix("TITLE:") {
+            let title = titleLine.replacingOccurrences(of: "TITLE:", with: "").trimmingCharacters(in: .whitespaces)
+            if !title.isEmpty {
+                document.updateMeetingTitle(blockId: block.id, title: title)
+            }
+            return result.components(separatedBy: "\n").dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return result
     }
 
     private func runClaude(prompt: String) async -> String? {
@@ -735,7 +751,7 @@ private struct PulsingDot: View {
 
     var body: some View {
         Circle()
-            .fill(Color.red)
+            .fill(Color.accentColor)
             .frame(width: 8, height: 8)
             .opacity(isPulsing ? 0.4 : 1.0)
             .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
@@ -746,41 +762,27 @@ private struct PulsingDot: View {
 // MARK: - Waveform Animation
 
 private struct WaveformView: View {
-    var isActive: Bool
-    var phase: CGFloat
-
-    @State private var animating = false
+    var audioLevel: Float
     private let barCount = 5
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<barCount, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(isActive ? Color.red : Color.fallbackTextMuted)
+                    .fill(audioLevel > 0.02 ? Color.accentColor : Color.fallbackTextMuted)
                     .frame(width: 3, height: barHeight(for: i))
-                    .animation(
-                        isActive
-                            ? .easeInOut(duration: 0.4 + Double(i) * 0.1)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(i) * 0.08)
-                            : .easeOut(duration: 0.3),
-                        value: animating
-                    )
+                    .animation(.easeOut(duration: 0.15), value: audioLevel)
             }
-        }
-        .onAppear {
-            if isActive { animating = true }
-        }
-        .onChange(of: isActive) { _, active in
-            animating = active
         }
     }
 
     private func barHeight(for index: Int) -> CGFloat {
-        if !isActive { return 3 }
-        let base: CGFloat = animating ? 14 : 3
-        let variance: CGFloat = animating ? CGFloat(index % 3) * 3 : 0
-        return max(3, base - variance)
+        let level = CGFloat(audioLevel)
+        guard level > 0.02 else { return 3 }
+        // Each bar gets a slightly different height for visual variety
+        let offsets: [CGFloat] = [0.7, 1.0, 0.5, 0.85, 0.6]
+        let scale = offsets[index] * level
+        return max(3, 3 + scale * 13)
     }
 }
 

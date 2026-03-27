@@ -1186,16 +1186,13 @@ struct ContentView: View {
                 doc?.meetingVolatileText = ""
             }
         }
-        doc.onStopMeeting = { [weak doc, weak appState] blockId in
+        doc.onStopMeeting = { [weak doc] blockId in
             _ = ts.stopRecording()
             guard let doc else { return }
             let transcript = ts.currentTranscript
             doc.updateBlockProperty(id: blockId) { block in
-                block.meetingState = .processing
+                block.meetingState = .complete
                 block.meetingTranscript = transcript
-            }
-            Task { @MainActor in
-                await finalizeMeeting(doc: doc, blockId: blockId, transcript: transcript, appState: appState)
             }
         }
         doc.onDropPageFromSidebar = { [weak appState, weak doc] sourcePath, insertionIndex in

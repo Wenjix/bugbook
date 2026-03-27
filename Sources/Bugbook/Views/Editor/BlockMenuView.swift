@@ -476,7 +476,7 @@ struct BlockMenuView: View {
         BlockDocument.slashCommands.compactMap { command in
             guard case let .blockType(type, headingLevel) = command.action else { return nil }
             switch type {
-            case .image, .databaseEmbed, .pageLink, .column, .canvas:
+            case .image, .databaseEmbed, .pageLink, .column:
                 return nil
             default:
                 return TurnIntoItem(name: command.name, icon: command.icon, blockType: type, headingLevel: headingLevel)

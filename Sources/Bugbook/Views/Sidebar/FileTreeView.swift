@@ -134,10 +134,10 @@ struct FileTreeDropDelegate: DropDelegate {
     var onDidReorder: () -> Void
     let onRefreshTree: () -> Void
 
-    /// Whether the target entry can accept children (pages can, databases/canvases cannot).
+    /// Whether the target entry can accept children (pages can, databases cannot).
     private var targetAcceptsChildren: Bool {
         guard let entry = targetEntry else { return false }
-        if entry.isDatabase || entry.isCanvas { return false }
+        if entry.isDatabase { return false }
         return entry.name.hasSuffix(".md") || entry.isDirectory
     }
 
@@ -156,7 +156,7 @@ struct FileTreeDropDelegate: DropDelegate {
 
     private func updateDropMode(info: DropInfo) {
         guard targetAcceptsChildren else {
-            // Split into top/bottom halves so items can be placed below canvas/database
+            // Split into top/bottom halves so items can be placed below database
             let y = info.location.y
             let rowHeight = ShellZoomMetrics.size(28)
             let fraction = y / rowHeight

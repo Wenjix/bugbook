@@ -116,7 +116,7 @@ struct CommandPaletteView: View {
 
                         ForEach(sections, id: \.title) { section in
                             SectionHeader(title: section.title)
-                            ForEach(section.items.enumerated(), id: \.element.id) { _, item in
+                            ForEach(section.items) { item in
                                 let idx = indexMap[item.id] ?? 0
                                 paletteRow(item: item, index: idx)
                                     .id(item.id)
@@ -414,9 +414,6 @@ struct CommandPaletteView: View {
             PaletteCommand(id: "new_database", name: "New Database", icon: "tablecells.badge.ellipsis", shortcut: nil) {
                 NotificationCenter.default.post(name: .newDatabase, object: nil)
             },
-            PaletteCommand(id: "new_canvas", name: "New Canvas", icon: "rectangle.on.rectangle.angled", shortcut: nil) {
-                NotificationCenter.default.post(name: .newCanvas, object: nil)
-            },
             PaletteCommand(id: "open_settings", name: "Open Settings", icon: "gear", shortcut: "Cmd+,") {
                 NotificationCenter.default.post(name: .openSettings, object: nil)
             },
@@ -438,7 +435,7 @@ struct CommandPaletteView: View {
     private func flattenFileTree(_ entries: [FileEntry]) -> [FileEntry] {
         var result: [FileEntry] = []
         for entry in entries {
-            if (!entry.isDirectory || entry.isDatabase || entry.isCanvas) {
+            if (!entry.isDirectory || entry.isDatabase) {
                 result.append(entry)
             }
             if let children = entry.children {
@@ -524,8 +521,8 @@ struct CommandPaletteView: View {
 
                 let filename = (relativePath as NSString).lastPathComponent
 
-                // Track database/canvas directories
-                if filename == "_schema.json" || filename == "_canvas.json" {
+                // Track database directories
+                if filename == "_schema.json" {
                     let dir = (relativePath as NSString).deletingLastPathComponent
                     excludedDirs.insert(dir)
                     continue
@@ -790,14 +787,8 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private func defaultFileIcon(for entry: FileEntry) -> some View {
-        if entry.isCanvas {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        } else {
-            Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        }
+        Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
     }
 }

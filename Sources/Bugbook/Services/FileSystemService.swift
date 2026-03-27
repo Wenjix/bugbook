@@ -94,22 +94,6 @@ class FileSystemService {
                         isDirectory: false,
                         kind: .database
                     ))
-                } else if isCanvasFolder(at: fullPath) {
-                    // Canvas folder - read display name from _canvas.json
-                    var canvasName = name
-                    let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let n = json["name"] as? String {
-                        canvasName = n
-                    }
-                    folders.append(FileEntry(
-                        id: fullPath,
-                        name: canvasName,
-                        path: fullPath,
-                        isDirectory: false,
-                        kind: .canvas
-                    ))
                 } else if isCompanionFolder(name, siblings: siblingNames) {
                     // Companion folder - skip, its contents are handled by the parent .md file
                     continue
@@ -239,8 +223,6 @@ class FileSystemService {
             let displayName = (newPath as NSString).lastPathComponent
             if isDatabaseFolder(at: newPath) {
                 try? updateDatabaseDisplayName(at: newPath, name: displayName)
-            } else if isCanvasFolder(at: newPath) {
-                try? updateCanvasDisplayName(at: newPath, name: displayName)
             }
             return newPath
         }
@@ -581,7 +563,8 @@ class FileSystemService {
             return defaultSortedEntries(entries)
         }
 
-        let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        // Use last occurrence to handle duplicate names in saved order (prevents crash)
+        let orderMap = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { _, last in last })
         return entries.sorted { a, b in
             let idxA = orderMap[a.name] ?? Int.max
             let idxB = orderMap[b.name] ?? Int.max
@@ -705,7 +688,7 @@ class FileSystemService {
             let fullPath = (trashDir as NSString).appendingPathComponent(name)
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue,
-               !isDatabaseFolder(at: fullPath), !isCanvasFolder(at: fullPath) {
+               !isDatabaseFolder(at: fullPath) {
                 return nil
             }
 
@@ -823,11 +806,6 @@ class FileSystemService {
         return FileManager.default.fileExists(atPath: schemaPath)
     }
 
-    nonisolated func isCanvasFolder(at path: String) -> Bool {
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        return FileManager.default.fileExists(atPath: canvasPath)
-    }
-
     func updateDatabaseDisplayName(at path: String, name: String) throws {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let data = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
@@ -838,43 +816,6 @@ class FileSystemService {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let updated = try encoder.encode(schema)
         try updated.write(to: URL(fileURLWithPath: schemaPath), options: .atomic)
-    }
-
-    func updateCanvasDisplayName(at path: String, name: String) throws {
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        let data = try Data(contentsOf: URL(fileURLWithPath: canvasPath))
-        var meta = try JSONDecoder().decode(CanvasFileMeta.self, from: data)
-        meta.name = name
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let updated = try encoder.encode(meta)
-        try updated.write(to: URL(fileURLWithPath: canvasPath), options: .atomic)
-    }
-
-    func createCanvas(in directory: String, name: String) throws -> String {
-        let sanitized = name.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-        let folderName = sanitized.isEmpty ? "Untitled Canvas" : sanitized
-        let folderPath = uniqueDirectoryPath(in: directory, base: folderName)
-        try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
-
-        let canvasId = "canvas_\(UUID().uuidString.prefix(8).lowercased())"
-        let meta = CanvasFileMeta(
-            id: canvasId,
-            name: folderName,
-            version: 1,
-            viewport: CanvasViewport(x: 0, y: 0, zoom: 1.0),
-            nodes: [],
-            edges: []
-        )
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(meta)
-        let metaPath = (folderPath as NSString).appendingPathComponent("_canvas.json")
-        try data.write(to: URL(fileURLWithPath: metaPath), options: .atomic)
-
-        return folderPath
     }
 
     nonisolated private func parseIconFromFile(at path: String) -> String? {

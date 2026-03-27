@@ -15,7 +15,6 @@ enum BlockType: Equatable {
     case column
     case toggle
     case headingToggle
-    case canvas
     case meeting
 }
 

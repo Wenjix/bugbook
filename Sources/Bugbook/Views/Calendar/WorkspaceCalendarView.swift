@@ -246,14 +246,11 @@ struct WorkspaceCalendarView: View {
 
     private func loadGoogleToken() -> GoogleOAuthToken? {
         let settings = appState.settings
-        guard !settings.googleCalendarClientId.isEmpty,
-              !settings.googleCalendarRefreshToken.isEmpty else { return nil }
+        guard !settings.googleCalendarRefreshToken.isEmpty else { return nil }
         return GoogleOAuthToken(
             accessToken: settings.googleCalendarAccessToken,
             refreshToken: settings.googleCalendarRefreshToken,
-            expiresAt: Date(timeIntervalSince1970: settings.googleCalendarTokenExpiry),
-            clientId: settings.googleCalendarClientId,
-            clientSecret: settings.googleCalendarClientSecret
+            expiresAt: Date(timeIntervalSince1970: settings.googleCalendarTokenExpiry)
         )
     }
 }

@@ -138,7 +138,7 @@ struct FileTreeItemView: View {
         }
     }
 
-    private static func downsampledImage(at path: String, maxPixelSize: Int) -> NSImage? {
+    nonisolated private static func downsampledImage(at path: String, maxPixelSize: Int) -> NSImage? {
         let url = URL(fileURLWithPath: path)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
@@ -188,12 +188,7 @@ struct FileTreeItemView: View {
 
     @ViewBuilder
     private var defaultIcon: some View {
-        if entry.isCanvas {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(ShellZoomMetrics.font(Typography.bodySmall))
-                .foregroundStyle(.secondary)
-                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-        } else if entry.isDatabase {
+        if entry.isDatabase {
             Image(systemName: "tablecells")
                 .font(ShellZoomMetrics.font(Typography.bodySmall))
                 .foregroundStyle(.secondary)
@@ -259,10 +254,6 @@ struct FileTreeItemView: View {
             ctxButton(id: "new-db", icon: "tablecells", label: "New Database") {
                 showContextMenu = false; performCreateDatabase()
             }
-            ctxButton(id: "new-canvas", icon: "rectangle.on.rectangle.angled", label: "New Canvas") {
-                showContextMenu = false; performCreateCanvas()
-            }
-
             ctxDivider
 
             ctxButton(id: "rename", icon: "pencil", label: "Rename") {
@@ -339,14 +330,12 @@ struct FileTreeItemView: View {
         guard !trimmed.isEmpty, trimmed != displayName else { return }
 
         let dir = (entry.path as NSString).deletingLastPathComponent
-        let ext = (entry.isDatabase || entry.isCanvas || entry.isDirectory) ? "" : ".md"
+        let ext = (entry.isDatabase || entry.isDirectory) ? "" : ".md"
         let newPath = (dir as NSString).appendingPathComponent("\(trimmed)\(ext)")
 
         try? fileSystem.renameFile(from: entry.path, to: newPath)
         if entry.isDatabase {
             try? fileSystem.updateDatabaseDisplayName(at: newPath, name: trimmed)
-        } else if entry.isCanvas {
-            try? fileSystem.updateCanvasDisplayName(at: newPath, name: trimmed)
         }
         onRefreshTree()
     }
@@ -436,16 +425,4 @@ struct FileTreeItemView: View {
         NotificationCenter.default.post(name: .movePage, object: entry.path)
     }
 
-    private func performCreateCanvas() {
-        let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
-        if let path = try? fileSystem.createCanvas(in: dir, name: "Untitled Canvas") {
-            onRefreshTree()
-            let displayName = "Untitled Canvas"
-            let canvas = FileEntry(
-                id: path, name: displayName,
-                path: path, isDirectory: false, kind: .canvas
-            )
-            onSelectFile(canvas)
-        }
-    }
 }

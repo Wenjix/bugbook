@@ -289,23 +289,6 @@ enum MarkdownBlockParser {
                 continue
             }
 
-            // Canvas block
-            if trimmed == "<!-- canvas -->" {
-                i += 1
-                var jsonLines: [String] = []
-                while i < lines.count {
-                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /canvas -->" {
-                        i += 1
-                        break
-                    }
-                    jsonLines.append(String(lines[i]))
-                    i += 1
-                }
-                let json = jsonLines.joined(separator: "\n")
-                blocks.append(makeBlock(type: .canvas, text: json))
-                continue
-            }
-
             // Column block
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
@@ -425,7 +408,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle, block.type != .canvas {
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -499,13 +482,6 @@ enum MarkdownBlockParser {
                     lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
                 }
                 lines.append("<!-- /toggle-heading -->")
-
-            case .canvas:
-                lines.append("<!-- canvas -->")
-                if !block.text.isEmpty {
-                    lines.append(block.text)
-                }
-                lines.append("<!-- /canvas -->")
 
             case .column:
                 lines.append("<!-- columns -->")
@@ -610,8 +586,6 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
-            || trimmed == "<!-- canvas -->"
-            || trimmed == "<!-- /canvas -->"
             || trimmed == "<!-- meeting -->"
             || trimmed == "<!-- /meeting -->"
             || trimmed == "<!-- meeting-notes -->"

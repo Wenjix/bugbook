@@ -213,8 +213,6 @@ struct MovePagePickerView: View {
                 ))
             } else if entry.isDatabase {
                 // Skip databases as move targets
-            } else if entry.isCanvas {
-                // Skip canvases as move targets
             }
 
             if let children = entry.children {
