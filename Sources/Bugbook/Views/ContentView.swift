@@ -1160,8 +1160,13 @@ struct ContentView: View {
                 // Poll confirmed segments and audio level after recording starts
                 var lastSegmentCount = 0
                 var lastVolatile = ""
+                var lastLevel: Float = -1
                 while ts.isRecording {
-                    doc?.meetingAudioLevel = ts.audioLevel
+                    let level = ts.audioLevel
+                    if level != lastLevel {
+                        lastLevel = level
+                        doc?.meetingAudioLevel = level
+                    }
 
                     let segments = ts.confirmedSegments
                     let volatile = ts.volatileText
@@ -1170,15 +1175,14 @@ struct ContentView: View {
                     if segmentsChanged || volatileChanged {
                         lastSegmentCount = segments.count
                         lastVolatile = volatile
-                        // Include volatile text as a live entry so the UI shows it
                         var entries = segments
                         if !volatile.isEmpty { entries.append(volatile) }
                         doc?.updateBlockProperty(id: blockId) { block in
                             block.transcriptEntries = entries
                             block.meetingTranscript = entries.joined(separator: " ")
                         }
+                        doc?.meetingVolatileText = volatile
                     }
-                    doc?.meetingVolatileText = volatile
 
                     try? await Task.sleep(for: .milliseconds(100))
                 }

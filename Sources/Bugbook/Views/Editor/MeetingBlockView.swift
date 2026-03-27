@@ -181,7 +181,8 @@ struct MeetingBlockView: View {
     // MARK: - After State (Complete)
 
     private var afterStateView: some View {
-        VStack(spacing: 0) {
+        let sections = parseSections(block.language)
+        return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(block.meetingTitle.isEmpty ? "Meeting" : block.meetingTitle)
@@ -194,7 +195,7 @@ struct MeetingBlockView: View {
                 ladybugButton
 
                 // Generate summary button (only when no summary exists)
-                if parseSections(block.language).isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty && (!block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty) {
+                if sections.isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty && (!block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty) {
                     Button {
                         Task { await generateSummary() }
                     } label: {
@@ -255,7 +256,7 @@ struct MeetingBlockView: View {
             // Content area: Summary or Notes
             switch activeTab {
             case .summary:
-                summaryView
+                summaryContent(sections: sections)
             case .notes:
                 notesView
             }
@@ -272,13 +273,10 @@ struct MeetingBlockView: View {
 
     // MARK: - Summary View
 
-    private var summaryView: some View {
+    private func summaryContent(sections: [ParsedSection]) -> some View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    // Parse structured summary from the language field (dev convention)
-                    let sections = parseSections(block.language)
-
                     if !sections.isEmpty {
                         ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
                             VStack(alignment: .leading, spacing: 4) {
