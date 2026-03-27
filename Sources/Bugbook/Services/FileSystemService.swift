@@ -558,29 +558,38 @@ class FileSystemService {
 
     /// Sort entries using custom order if available, falling back to directories-first then alphabetical.
     /// This is called from computed properties during rendering — it must be side-effect-free.
-    /// Only applies custom order when it covers ALL current entries to prevent partial/stale orders
-    /// from causing items to jump around.
+    /// Known entries are sorted by their saved order; unknown entries (e.g. newly created files)
+    /// are appended at the end in default sort order. Deleted entries in the saved order are ignored.
     func sortedEntries(_ entries: [FileEntry], parentPath: String) -> [FileEntry] {
         guard let order = customOrder(for: parentPath), !order.isEmpty else {
             return defaultSortedEntries(entries)
         }
 
-        let entryNames = Set(entries.map(\.name))
-
-        // Only use custom order if it covers every current entry.
-        // A partial/stale order causes unrecognized items to jump to the bottom.
-        let coversAll = entryNames.allSatisfy { order.contains($0) }
-        guard coversAll else {
-            return defaultSortedEntries(entries)
-        }
-
-        // Use uniquingKeysWith to handle duplicate names in saved order without crashing
+        let orderSet = Set(order)
+        // Use uniquingKeysWith to handle potential duplicate names in saved order
         let orderMap = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        return entries.sorted { a, b in
-            let idxA = orderMap[a.name] ?? Int.max
-            let idxB = orderMap[b.name] ?? Int.max
-            return idxA < idxB
+
+        var known: [FileEntry] = []
+        var unknown: [FileEntry] = []
+        for entry in entries {
+            if orderSet.contains(entry.name) {
+                known.append(entry)
+            } else {
+                unknown.append(entry)
+            }
         }
+
+        known.sort { (orderMap[$0.name] ?? Int.max) < (orderMap[$1.name] ?? Int.max) }
+        unknown.sort { defaultCompare($0, $1) }
+
+        return known + unknown
+    }
+
+    /// Update the saved custom order to include new entries and prune deleted ones.
+    /// Call after sortedEntries() to keep the persisted order in sync with current entries.
+    func reconcileCustomOrder(for sortedEntries: [FileEntry], parentPath: String) {
+        guard customOrder(for: parentPath) != nil else { return }
+        saveCustomOrder(sortedEntries.map(\.name), for: parentPath)
     }
 
     /// Default sort: directories first, then alphabetical.
