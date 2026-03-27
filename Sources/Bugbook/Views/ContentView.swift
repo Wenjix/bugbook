@@ -18,7 +18,7 @@ struct ContentView: View {
     @State private var transcriptionService = TranscriptionService()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
-    @State private var flashcardCards: [FlashcardItem] = []
+
     @State private var saveTask: Task<Void, Never>?
     @State private var sidebarPeek = SidebarPeekState()
     @State private var editorUI = EditorUIState()
@@ -66,7 +66,7 @@ struct ContentView: View {
             sidebarToggleOverlay
             sidebarPeekOverlay
             commandPaletteOverlay
-            flashcardReviewOverlay
+
             movePageOverlay
             themeToastOverlay
             editorZoomOverlay
@@ -262,10 +262,7 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
                 appState.openMeetings()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .reviewFlashcards)) { _ in
-                flashcardCards = collectFlashcards()
-                appState.flashcardReviewOpen = true
-            }
+
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
             }
@@ -483,23 +480,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var flashcardReviewOverlay: some View {
-        if appState.flashcardReviewOpen {
-            FlashcardReviewView(
-                cards: flashcardCards,
-                onDismiss: { appState.flashcardReviewOpen = false }
-            )
-            .zIndex(100)
-        }
-    }
-
-    private func collectFlashcards() -> [FlashcardItem] {
-        guard let tab = appState.activeTab,
-              let doc = blockDocuments[tab.id] else { return [] }
-        let name = tab.displayName ?? (tab.path as NSString).lastPathComponent
-        return FlashcardScanner.scan(document: doc, pageName: name)
-    }
 
     @ViewBuilder
     private func sidebarChromeButton(
@@ -815,7 +795,7 @@ struct ContentView: View {
 
                     Spacer()
 
-                    if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase {
+                    if !tab.isEmptyTab && !tab.isDatabase {
                         Button {
                             showPageOptionsMenu.toggle()
                         } label: {
@@ -929,8 +909,6 @@ struct ContentView: View {
                     onOpenFolder: { Task { await openWorkspace() } }
                 )
                 .onAppear { openDefaultPageIfConfigured() }
-            } else if tab.isCanvas {
-                canvasDisabledPlaceholder
             } else if tab.isDatabaseRow, let dbPath = tab.databasePath, let rowId = tab.databaseRowId {
                 DatabaseRowFullPageView(
                     dbPath: dbPath,
@@ -1174,28 +1152,44 @@ struct ContentView: View {
         doc.onCancelAiPrompt = { [weak doc] in
             doc?.dismissAiPrompt()
         }
-        doc.transcriptionService = transcriptionService
+        let ts = transcriptionService
+        doc.transcriptionService = ts
         doc.onStartMeeting = { [weak doc] blockId in
-            Task { await transcriptionService.startRecording() }
-            // Update live transcript into the block as it streams
-            Task { @MainActor in
-                var lastTranscript = ""
-                while transcriptionService.isRecording {
-                    let current = transcriptionService.currentTranscript
-                    if current != lastTranscript {
-                        lastTranscript = current
+            Task {
+                await ts.startRecording()
+                // Poll confirmed segments and audio level after recording starts
+                var lastSegmentCount = 0
+                var lastVolatile = ""
+                while ts.isRecording {
+                    doc?.meetingAudioLevel = ts.audioLevel
+
+                    let segments = ts.confirmedSegments
+                    let volatile = ts.volatileText
+                    let segmentsChanged = segments.count != lastSegmentCount
+                    let volatileChanged = volatile != lastVolatile
+                    if segmentsChanged || volatileChanged {
+                        lastSegmentCount = segments.count
+                        lastVolatile = volatile
+                        // Include volatile text as a live entry so the UI shows it
+                        var entries = segments
+                        if !volatile.isEmpty { entries.append(volatile) }
                         doc?.updateBlockProperty(id: blockId) { block in
-                            block.meetingTranscript = current
+                            block.transcriptEntries = entries
+                            block.meetingTranscript = entries.joined(separator: " ")
                         }
                     }
-                    try? await Task.sleep(for: .milliseconds(500))
+                    doc?.meetingVolatileText = volatile
+
+                    try? await Task.sleep(for: .milliseconds(100))
                 }
+                doc?.meetingAudioLevel = 0
+                doc?.meetingVolatileText = ""
             }
         }
         doc.onStopMeeting = { [weak doc, weak appState] blockId in
-            transcriptionService.stopRecording()
+            _ = ts.stopRecording()
             guard let doc else { return }
-            let transcript = transcriptionService.currentTranscript
+            let transcript = ts.currentTranscript
             doc.updateBlockProperty(id: blockId) { block in
                 block.meetingState = .processing
                 block.meetingTranscript = transcript
@@ -1238,24 +1232,48 @@ struct ContentView: View {
     }()
 
     private func finalizeMeeting(doc: BlockDocument, blockId: UUID, transcript: String, appState: AppState?) async {
-        let title = "Meeting \(Self.meetingTitleDateFormatter.string(from: Date()))"
+        let fallbackTitle = "Meeting \(Self.meetingTitleDateFormatter.string(from: Date()))"
 
         guard !transcript.isEmpty else {
             doc.updateBlockProperty(id: blockId) { block in
                 block.meetingState = .complete
-                block.meetingTitle = title
+                if block.meetingTitle.isEmpty { block.meetingTitle = fallbackTitle }
                 block.meetingSummary = "No audio was captured."
                 block.meetingActionItems = ""
             }
             return
         }
 
-        // Use AiService to summarize
-        let prompt = """
-        Summarize this meeting transcript. Return ONLY two sections separated by a blank line:
-        1. A concise summary (2-4 sentences)
-        2. Action items as a bulleted list (- [ ] each item)
+        // Include user notes if they wrote any during the meeting
+        let userNotes = doc.blocks.first(where: { $0.id == blockId })?.meetingNotes ?? ""
 
+        let prompt = """
+        You are a meeting notes assistant. Produce clean, structured notes like a skilled executive assistant would.
+
+        Output format (use EXACTLY):
+
+        TITLE: <descriptive title from content — e.g. "Q2 Planning & AutoLoRA Demo", NOT "Meeting" or a date>
+
+        ### <Topic or Presenter Name>
+        - **Bold key entity** followed by concise detail
+          - Supporting specifics (numbers, names, decisions) as sub-bullets
+        - Another key point
+          1. Use numbered sub-items for sequential steps or features
+
+        ### Action Items
+        - [ ] Owner: specific action item with deadline if mentioned
+
+        Style rules:
+        - **Bold** speaker names, project names, and key terms on first mention
+        - ### for section headings (topic-based, not "Summary")
+        - Top-level bullets: one key point each, specific and factual
+        - Sub-bullets: only for supporting details that add real information
+        - Numbered sub-lists for features, steps, or ordered items
+        - NO meta-commentary ("participants discussed", "the team talked about") — state facts directly
+        - NO filler or padding — every bullet should carry information
+        - Keep total output under 30 bullet points. For long meetings, prioritize: decisions > action items > key facts > discussion details
+        - If nothing actionable, omit Action Items entirely
+        \(userNotes.isEmpty ? "" : "\nUser's notes during the meeting (integrate into relevant sections):\n\(userNotes)\n")
         Transcript:
         \(transcript)
         """
@@ -1272,22 +1290,29 @@ struct ContentView: View {
                 apiKey: apiKey
             )
 
-            // Split result into summary and action items
-            let parts = result.components(separatedBy: "\n\n")
-            let summary = parts.first ?? result
-            let actions = parts.count > 1 ? parts.dropFirst().joined(separator: "\n\n") : ""
+            // Extract title from first line if present
+            var title = fallbackTitle
+            var body = result
+            if let titleLine = result.components(separatedBy: "\n").first,
+               titleLine.hasPrefix("TITLE:") {
+                title = titleLine.replacingOccurrences(of: "TITLE:", with: "").trimmingCharacters(in: .whitespaces)
+                body = result.components(separatedBy: "\n").dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
 
             doc.updateBlockProperty(id: blockId) { block in
                 block.meetingState = .complete
-                block.meetingTitle = title
-                block.meetingSummary = summary
-                block.meetingActionItems = actions
+                // Only override title if user didn't set one manually
+                if block.meetingTitle.isEmpty || block.meetingTitle == "New Meeting" {
+                    block.meetingTitle = title
+                }
+                block.meetingSummary = body
+                // Store full structured output for the summary view parser
+                block.language = body
             }
         } catch {
-            // On AI failure, still complete with just the transcript
             doc.updateBlockProperty(id: blockId) { block in
                 block.meetingState = .complete
-                block.meetingTitle = title
+                if block.meetingTitle.isEmpty { block.meetingTitle = fallbackTitle }
                 block.meetingSummary = "AI summary unavailable: \(error.localizedDescription)"
                 block.meetingActionItems = ""
             }
@@ -1462,14 +1487,12 @@ struct ContentView: View {
         let name = (defaultPage as NSString).lastPathComponent
         let schemaPath = (defaultPage as NSString).appendingPathComponent("_schema.json")
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
-        let canvasPath = (defaultPage as NSString).appendingPathComponent("_canvas.json")
-        let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(
             id: defaultPage,
             name: name,
             path: defaultPage,
-            isDirectory: isDatabase || isCanvas,
+            isDirectory: isDatabase,
             kind: kind
         )
         navigateToEntry(entry, preferExistingTab: false)
@@ -1506,13 +1529,12 @@ struct ContentView: View {
         }
 
         let isDatabase = isDatabaseFolderPath(targetPath)
-        let isCanvas = isCanvasFolderPath(targetPath)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(
             id: targetPath,
             name: item.name,
             path: targetPath,
-            isDirectory: isDatabase || isCanvas,
+            isDirectory: isDatabase,
             kind: kind,
             icon: item.icon
         )
@@ -1521,7 +1543,6 @@ struct ContentView: View {
 
     private func isOpenableBreadcrumbPath(_ path: String) -> Bool {
         if isDatabaseFolderPath(path) { return true }
-        if isCanvasFolderPath(path) { return true }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
         return !isDir.boolValue
@@ -1530,11 +1551,6 @@ struct ContentView: View {
     private func isDatabaseFolderPath(_ path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return FileManager.default.fileExists(atPath: schemaPath)
-    }
-
-    private func isCanvasFolderPath(_ path: String) -> Bool {
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        return FileManager.default.fileExists(atPath: canvasPath)
     }
 
     private func initializeWorkspace() {
@@ -1653,9 +1669,6 @@ struct ContentView: View {
         if isDatabaseFolderPath(path) {
             kind = .database
             name = databaseDisplayName(at: path) ?? (path as NSString).lastPathComponent
-        } else if isCanvasFolderPath(path) {
-            kind = .canvas
-            name = (path as NSString).lastPathComponent
         } else {
             kind = .page
             name = (path as NSString).lastPathComponent
@@ -1716,7 +1729,7 @@ struct ContentView: View {
     }
 
     private func loadFileContent(for entry: FileEntry) {
-        guard !entry.isDatabase, !entry.isCanvas, !entry.isDatabaseRow else { return }
+        guard !entry.isDatabase, !entry.isDatabaseRow else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
@@ -2096,21 +2109,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Canvas (disabled)
-
-    private var canvasDisabledPlaceholder: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(.system(size: 32))
-                .foregroundStyle(.secondary)
-            Text("Canvas (coming soon)")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.fallbackEditorBg)
-    }
-
     private func createNewDatabase() {
         do {
             let path = try createDatabasePath(name: "")
@@ -2334,7 +2332,6 @@ struct ContentView: View {
             .filter {
                 $0.isDirty
                     && !$0.path.isEmpty
-                    && !$0.isCanvas
                     && !$0.isDatabase
                     && !$0.isDatabaseRow
             }
@@ -2787,8 +2784,7 @@ struct ContentView: View {
         }
         let name = (path as NSString).lastPathComponent
         let isDatabase = isDatabaseFolderPath(path)
-        let isCanvas = isCanvasFolderPath(path)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
         navigateToEntry(entry, preferExistingTab: true)
     }
