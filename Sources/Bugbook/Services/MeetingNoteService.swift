@@ -70,7 +70,6 @@ class MeetingNoteService {
         }
     }
 
-<<<<<<< HEAD
     // MARK: - Create Meeting Note with Transcript
 
     /// Creates a meeting note page enriched with a transcript, AI-generated summary, and action items.
@@ -143,7 +142,13 @@ class MeetingNoteService {
                 }.value
             }
 
-=======
+            return pagePath
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+
     // MARK: - Import Recording
 
     /// Create a meeting note from an imported audio recording.
@@ -186,7 +191,6 @@ class MeetingNoteService {
             }
 
             try content.write(toFile: pagePath, atomically: true, encoding: .utf8)
->>>>>>> worktree-agent-a7254eb0
             return pagePath
         } catch {
             self.error = error.localizedDescription
@@ -194,8 +198,6 @@ class MeetingNoteService {
         }
     }
 
-<<<<<<< HEAD
-=======
     /// Append a transcript from an imported recording to an existing meeting note file.
     func appendTranscriptToNote(
         filePath: String,
@@ -255,8 +257,6 @@ class MeetingNoteService {
 
         return lines.joined(separator: "\n")
     }
-
->>>>>>> worktree-agent-a7254eb0
     // MARK: - Cached Formatters
 
     private static let longDateFormatter: DateFormatter = {
