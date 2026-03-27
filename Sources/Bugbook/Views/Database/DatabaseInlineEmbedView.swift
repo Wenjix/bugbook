@@ -348,6 +348,15 @@ struct DatabaseInlineEmbedView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
 
+                // Group by (table and kanban)
+                if state.activeView?.type == .table || state.activeView?.type == .kanban {
+                    Divider()
+                    popoverSectionHeader("Group by")
+                    groupByPicker(schema: schema)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                }
+
                 Divider()
 
                 // Properties visibility
@@ -593,6 +602,44 @@ struct DatabaseInlineEmbedView: View {
 
     private func opNeedsValue(_ op: String) -> Bool {
         op != "is_empty" && op != "is_not_empty" && op != "is_checked" && op != "is_not_checked"
+    }
+
+    // MARK: - Group By
+
+    private var groupableProperties: [PropertyDefinition] {
+        state.schema?.properties.filter { $0.type == .select || $0.type == .multiSelect } ?? []
+    }
+
+    private func groupByPicker(schema: DatabaseSchema) -> some View {
+        let currentGroupId = state.activeView?.groupBy ?? ""
+        let currentProp = groupableProperties.first(where: { $0.id == currentGroupId })
+
+        return Menu {
+            Button("None") { state.updateGroupBy("") }
+            Divider()
+            ForEach(groupableProperties) { prop in
+                Button {
+                    state.updateGroupBy(prop.id)
+                } label: {
+                    HStack {
+                        Text(prop.name)
+                        if prop.id == currentGroupId {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(currentProp?.name ?? "None")
+                    .font(.caption)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     // MARK: - View Content
