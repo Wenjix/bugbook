@@ -4,13 +4,19 @@ import Sentry
 struct NotesChatView: View {
     var appState: AppState
     var aiService: AiService
-    @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var selectedEngine: PreferredAIEngine = .auto
     @State private var referencedFiles: [ChatReferencedFile] = []
     @State private var showFileReferencePicker = false
     @State private var fileReferenceSearch = ""
+    @State private var showThreadPicker = false
     @FocusState private var inputFocused: Bool
+
+    private var threadStore: AiThreadStore { appState.aiThreadStore }
+
+    private var messages: [ChatMessage] {
+        threadStore.activeThread?.messages ?? []
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,31 +35,45 @@ struct NotesChatView: View {
         .task {
             selectedEngine = appState.settings.preferredAIEngine
             inputFocused = true
+            ensureActiveThread()
         }
     }
 
     // MARK: - Sections
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image("BugbookAI")
+        HStack(spacing: 12) {
+            Image("BugbookLogo")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 22, height: 22)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
 
-            Text("Chat with Notes")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.fallbackTextPrimary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Bugbook")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                threadTitleButton
+            }
 
             Spacer()
 
             enginePicker
 
+            Button(action: { threadStore.createThread() }) {
+                Label("New Thread", systemImage: "plus.message")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("New thread")
+
             Button(action: clearChat) {
                 Label("Clear Chat", systemImage: "trash")
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
@@ -63,14 +83,109 @@ struct NotesChatView: View {
             Button(action: closeChat) {
                 Label("Close", systemImage: "xmark")
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 12))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("Close chat")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 14)
+    }
+
+    private var threadTitleButton: some View {
+        Button {
+            showThreadPicker.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Text(threadStore.activeThread?.title ?? "Chat with Notes")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.fallbackTextPrimary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.borderless)
+        .popover(isPresented: $showThreadPicker, arrowEdge: .bottom) {
+            threadPickerContent
+        }
+    }
+
+    private var threadPickerContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                threadStore.createThread()
+                showThreadPicker = false
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.accentColor)
+                    Text("New Thread")
+                        .font(.system(size: Typography.bodySmall, weight: .medium))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .padding(.horizontal, 8)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(threadStore.sortedThreads) { thread in
+                        threadRow(thread)
+                    }
+                }
+            }
+            .frame(maxHeight: 400)
+        }
+        .padding(.vertical, 6)
+        .frame(width: 320)
+    }
+
+    private func threadRow(_ thread: AiThread) -> some View {
+        Button {
+            threadStore.switchTo(thread.id)
+            showThreadPicker = false
+        } label: {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(thread.title)
+                        .font(.system(size: Typography.bodySmall, weight: thread.id == threadStore.activeThreadId ? .semibold : .regular))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                        .lineLimit(1)
+                    Text(relativeTimestamp(thread.updatedAt))
+                        .font(.system(size: Typography.caption2))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if thread.id == threadStore.activeThreadId {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                threadStore.deleteThread(thread.id)
+            } label: {
+                Label("Delete Thread", systemImage: "trash")
+            }
+        }
     }
 
     @ViewBuilder
@@ -78,7 +193,7 @@ struct NotesChatView: View {
         if messages.isEmpty && !aiService.isRunning {
             Spacer()
             VStack(spacing: 16) {
-                Image("BugbookAI")
+                Image("BugbookLogo")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 56, height: 56)
@@ -97,9 +212,9 @@ struct NotesChatView: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
                         ForEach(messages) { message in
-                            messageBubble(message)
+                            messageRow(message)
                                 .id(message.id)
                         }
 
@@ -108,15 +223,15 @@ struct NotesChatView: View {
                                 ProgressView()
                                     .controlSize(.small)
                                 Text("Thinking...")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Color.fallbackTextSecondary)
-                                Spacer()
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.secondary)
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 24)
                             .id("loading")
                         }
                     }
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 20)
                     .frame(maxWidth: 980)
                     .frame(maxWidth: .infinity)
                 }
@@ -164,14 +279,14 @@ struct NotesChatView: View {
                 .scrollIndicators(.hidden)
             }
 
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: 12) {
                 Button {
                     showFileReferencePicker.toggle()
                 } label: {
                     Image(systemName: "at")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 30, height: 30)
                         .background(Color.fallbackBadgeBg)
                         .clipShape(Circle())
                 }
@@ -183,10 +298,8 @@ struct NotesChatView: View {
 
                 TextField("Ask about your notes...", text: $inputText, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .lineLimit(1...20)
-                    .frame(minHeight: 24)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 16))
+                    .lineLimit(1...8)
                     .focused($inputFocused)
                     .onChange(of: inputText) { _, value in
                         if value.last == "@" {
@@ -198,19 +311,26 @@ struct NotesChatView: View {
                     }
 
                 Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(
-                            canSend
-                                ? Color.accentColor
-                                : Color.fallbackTextMuted
-                        )
+                    Label("Send", systemImage: "arrow.up.circle.fill")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 28))
+                        .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!canSend)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.fallbackSurfaceSubtle)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.fallbackBorderColor, lineWidth: 1)
+            )
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 24)
         .padding(.vertical, 14)
     }
 
@@ -298,56 +418,95 @@ struct NotesChatView: View {
         }
     }
 
-    // MARK: - Message Bubble
+    // MARK: - Message Row
 
     @ViewBuilder
-    private func messageBubble(_ message: ChatMessage) -> some View {
-        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
-            HStack {
-                if message.role == .user { Spacer(minLength: 40) }
-
-                if message.role == .applied {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.green)
-                        Text("Done — what do you think?")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.fallbackTextPrimary)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.primary.opacity(Opacity.subtle))
-                    .clipShape(.rect(cornerRadius: Radius.lg))
-                } else {
-                    Text(message.content)
-                        .font(.system(size: 14))
-                        .foregroundStyle(message.role == .error ? .red : Color.fallbackTextPrimary)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(bubbleBackground(for: message.role))
-                        .clipShape(.rect(cornerRadius: Radius.lg))
-                }
-
-                if message.role != .user { Spacer(minLength: 40) }
-            }
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private func bubbleBackground(for role: ChatMessage.Role) -> Color {
-        switch role {
+    private func messageRow(_ message: ChatMessage) -> some View {
+        switch message.role {
         case .user:
-            return Color.fallbackAccent.opacity(Opacity.medium)
-        case .assistant, .applied:
-            return Color.primary.opacity(Opacity.subtle)
+            HStack {
+                Spacer(minLength: 80)
+                Text(message.content)
+                    .font(.system(size: 16))
+                    .lineSpacing(3)
+                    .foregroundStyle(.white)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color.fallbackAccent)
+                    )
+                    .frame(maxWidth: 720, alignment: .leading)
+            }
+
+        case .assistant:
+            HStack {
+                Text(message.content)
+                    .font(.system(size: 16))
+                    .lineSpacing(4)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.fallbackSurfaceSubtle)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.fallbackBorderColor.opacity(0.8), lineWidth: 1)
+                    )
+                    .frame(maxWidth: 760, alignment: .leading)
+                Spacer(minLength: 80)
+            }
+
         case .error:
-            return Color.red.opacity(0.1)
+            HStack {
+                Text(message.content)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.red.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.red.opacity(0.25), lineWidth: 1)
+                    )
+                Spacer(minLength: 80)
+            }
+
+        case .applied:
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Done — what do you think?")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.fallbackSurfaceSubtle)
+                )
+                Spacer(minLength: 80)
+            }
         }
     }
 
     // MARK: - Actions
+
+    private func ensureActiveThread() {
+        if threadStore.activeThreadId == nil || threadStore.activeThread == nil {
+            threadStore.createThread()
+        }
+    }
 
     private var canSend: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !aiService.isRunning
@@ -358,12 +517,15 @@ struct NotesChatView: View {
         guard !trimmed.isEmpty, !aiService.isRunning else { return }
         let selectedReferences = referencedFiles
 
+        ensureActiveThread()
+        guard let threadId = threadStore.activeThreadId else { return }
+
         let userMessage = ChatMessage(
             role: .user,
             content: displayUserMessage(question: trimmed, references: selectedReferences),
             timestamp: Date()
         )
-        messages.append(userMessage)
+        threadStore.appendMessage(userMessage, to: threadId)
         inputText = ""
         referencedFiles.removeAll()
         showFileReferencePicker = false
@@ -382,22 +544,23 @@ struct NotesChatView: View {
                     engine: selectedEngine,
                     workspacePath: workspacePath,
                     question: prompt,
-                    apiKey: appState.settings.anthropicApiKey,
-                    model: appState.settings.anthropicModel
+                    apiKey: appState.settings.anthropicApiKey
                 )
                 SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "ai.receive"))
                 let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())
-                messages.append(assistantMessage)
+                threadStore.appendMessage(assistantMessage, to: threadId)
             } catch {
                 SentrySDK.addBreadcrumb(Breadcrumb(level: .error, category: "ai.error"))
                 let errorMessage = ChatMessage(role: .error, content: error.localizedDescription, timestamp: Date())
-                messages.append(errorMessage)
+                threadStore.appendMessage(errorMessage, to: threadId)
             }
         }
     }
 
     private func clearChat() {
-        messages.removeAll()
+        guard let threadId = threadStore.activeThreadId else { return }
+        threadStore.deleteThread(threadId)
+        threadStore.createThread()
     }
 
     private func closeChat() {
@@ -502,6 +665,14 @@ struct NotesChatView: View {
 
         \(sections.joined(separator: "\n\n"))
         """
+    }
+
+    // MARK: - Helpers
+
+    private func relativeTimestamp(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
