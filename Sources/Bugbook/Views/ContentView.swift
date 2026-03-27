@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var calendarVM = CalendarViewModel()
     @State private var meetingNoteService = MeetingNoteService()
     @State private var transcriptionService = TranscriptionService()
+    @State private var meetingsVM = MeetingsViewModel()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
 
@@ -261,6 +262,10 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
                 appState.openMeetings()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reviewFlashcards)) { _ in
+                flashcardCards = collectFlashcards()
+                appState.flashcardReviewOpen = true
             }
 
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
@@ -935,6 +940,14 @@ struct ContentView: View {
                     appState: appState,
                     calendarService: calendarService,
                     aiService: aiService,
+                    onNavigateToFile: { path in
+                        navigateToFilePath(path)
+                    }
+                )
+            } else if tab.isMeetings {
+                MeetingsView(
+                    appState: appState,
+                    viewModel: meetingsVM,
                     onNavigateToFile: { path in
                         navigateToFilePath(path)
                     }
