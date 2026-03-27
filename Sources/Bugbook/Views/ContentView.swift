@@ -17,7 +17,6 @@ struct ContentView: View {
     @State private var meetingNoteService = MeetingNoteService()
     @State private var transcriptionService = TranscriptionService()
     @State private var meetingsVM = MeetingsViewModel()
-    @State private var knowledgeService = WorkspaceKnowledgeService()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
 
@@ -1023,11 +1022,6 @@ struct ContentView: View {
                             contentColumnMaxWidth: document.fullWidth ? nil : 860
                         )
 
-                        MeetingKnowledgeView(
-                            knowledgeService: knowledgeService,
-                            sourceText: recentBlockText(from: document),
-                            onNavigate: { path in navigateToFilePath(path) }
-                        )
                     }
                 }
                 .background(Color.fallbackEditorBg)
@@ -1084,11 +1078,6 @@ struct ContentView: View {
         } else {
             Color.fallbackEditorBg
         }
-    }
-
-    /// Extracts plain text from the most recent blocks for knowledge queries.
-    private func recentBlockText(from document: BlockDocument) -> String {
-        document.blocks.suffix(20).map(\.text).filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     private func wireUpDocumentCallbacks(_ doc: BlockDocument) {
@@ -1589,9 +1578,6 @@ struct ContentView: View {
 
         // Register workspace as a qmd collection in the background (no-op if qmd not installed)
         QmdService.registerCollectionInBackground(workspace: workspacePath)
-
-        // Index workspace for live knowledge retrieval
-        Task { await knowledgeService.index(workspacePath: workspacePath) }
 
         // Create onboarding file for empty workspaces before building the file tree
         if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: workspacePath) {
@@ -2281,7 +2267,6 @@ struct ContentView: View {
             appState.workspacePath = path
             refreshFileTree()
             startWorkspaceWatcher(path: path)
-            Task { await knowledgeService.index(workspacePath: path) }
         }
     }
 
