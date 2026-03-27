@@ -50,6 +50,7 @@ struct TableView: View {
     @State private var reorderTarget: TableReorderTarget?
     @State private var hoveredEmptyRow: Int?
     @State private var focusedCellId: String?
+    @State private var collapsedGroups: Set<String> = []
 
     private let titleColumnKey = "__title__"
     private let topAnchorKey = "__table_top__"
@@ -99,6 +100,63 @@ struct TableView: View {
 
     private var visibleRowIds: [String] {
         Array(rows.prefix(min(displayedRowCount, rows.count)).map(\.id))
+    }
+
+    // MARK: - Grouping
+
+    private var groupProperty: PropertyDefinition? {
+        guard let groupId = viewConfig.groupBy, !groupId.isEmpty else { return nil }
+        return schema.properties.first(where: { $0.id == groupId && ($0.type == .select || $0.type == .multiSelect) })
+    }
+
+    /// Returns ordered groups: each defined option, then "No value" for rows without a value.
+    private var groupedRows: [(key: String, label: String, color: String, rows: [DatabaseRow])]? {
+        guard let prop = groupProperty else { return nil }
+        let options = prop.options ?? []
+
+        // Bucket rows by their property value
+        var buckets: [String: [DatabaseRow]] = [:]
+        for row in rows {
+            let val = row.properties[prop.id] ?? .empty
+            switch val {
+            case .select(let optionId) where !optionId.isEmpty:
+                buckets[optionId, default: []].append(row)
+            case .multiSelect(let ids) where !ids.isEmpty:
+                for optId in ids {
+                    buckets[optId, default: []].append(row)
+                }
+            default:
+                buckets["__none__", default: []].append(row)
+            }
+        }
+
+        var result: [(key: String, label: String, color: String, rows: [DatabaseRow])] = []
+        for option in options {
+            let groupRows = buckets[option.id] ?? []
+            result.append((key: option.id, label: option.name, color: option.color, rows: groupRows))
+        }
+
+        // "No value" group at the bottom
+        let noValueRows = buckets["__none__"] ?? []
+        if !noValueRows.isEmpty {
+            result.append((key: "__none__", label: "No value", color: "gray", rows: noValueRows))
+        }
+
+        return result
+    }
+
+    private func colorForName(_ name: String) -> Color {
+        switch name {
+        case "blue": return .blue
+        case "green": return .green
+        case "red": return .red
+        case "yellow": return .yellow
+        case "purple": return .purple
+        case "pink": return .pink
+        case "orange": return .orange
+        case "teal": return .teal
+        default: return .gray
+        }
     }
 
     var body: some View {
@@ -606,35 +664,17 @@ struct TableView: View {
     }
 
     private var rowsStack: some View {
-        let totalCount = rows.count
-        let visibleCount = min(displayedRowCount, totalCount)
-
-        return LazyVStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .frame(height: 0)
                 .id(topAnchorKey)
 
-            ForEach($rows.prefix(visibleCount)) { $row in
-                dataRow($row)
-                    .id($row.wrappedValue.id)
-                tableDivider.opacity(0.5)
-            }
-
-            if visibleCount < totalCount {
-                Button {
-                    displayedRowCount += 20
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.down")
-                            .font(DatabaseZoomMetrics.font(11))
-                        Text("Load more (\(totalCount - visibleCount) remaining)")
-                            .font(DatabaseZoomMetrics.font(15))
-                    }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, DatabaseZoomMetrics.size(10))
+            if let groups = groupedRows {
+                ForEach(Array(groups.enumerated()), id: \.element.key) { _, group in
+                    groupSection(group)
                 }
-                .buttonStyle(.plain)
+            } else {
+                ungroupedRows
             }
 
             if rows.isEmpty {
@@ -650,6 +690,94 @@ struct TableView: View {
                 newPageButton
             }
         }
+    }
+
+    @ViewBuilder
+    private var ungroupedRows: some View {
+        let totalCount = rows.count
+        let visibleCount = min(displayedRowCount, totalCount)
+
+        ForEach($rows.prefix(visibleCount)) { $row in
+            dataRow($row)
+                .id($row.wrappedValue.id)
+            tableDivider.opacity(0.5)
+        }
+
+        if visibleCount < totalCount {
+            loadMoreButton(remaining: totalCount - visibleCount)
+        }
+    }
+
+    @ViewBuilder
+    private func groupSection(_ group: (key: String, label: String, color: String, rows: [DatabaseRow])) -> some View {
+        let isCollapsed = collapsedGroups.contains(group.key)
+        let groupColor = colorForName(group.color)
+
+        // Group header
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                if isCollapsed {
+                    collapsedGroups.remove(group.key)
+                } else {
+                    collapsedGroups.insert(group.key)
+                }
+            }
+        } label: {
+            HStack(spacing: DatabaseZoomMetrics.size(6)) {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(DatabaseZoomMetrics.font(11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: DatabaseZoomMetrics.size(14))
+
+                Text(group.label)
+                    .font(DatabaseZoomMetrics.font(13, weight: .semibold))
+                    .foregroundStyle(groupColor)
+
+                Text("\(group.rows.count)")
+                    .font(DatabaseZoomMetrics.font(11))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.vertical, DatabaseZoomMetrics.size(1))
+                    .background(Color.primary.opacity(0.06))
+                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(12))
+            .padding(.vertical, DatabaseZoomMetrics.size(8))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+
+        tableDivider.opacity(0.5)
+
+        // Group rows
+        if !isCollapsed {
+            let groupRowIds = Set(group.rows.map(\.id))
+            ForEach($rows) { $row in
+                if groupRowIds.contains(row.id) {
+                    dataRow($row)
+                        .id($row.wrappedValue.id)
+                    tableDivider.opacity(0.5)
+                }
+            }
+        }
+    }
+
+    private func loadMoreButton(remaining: Int) -> some View {
+        Button {
+            displayedRowCount += 20
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down")
+                    .font(DatabaseZoomMetrics.font(11))
+                Text("Load more (\(remaining) remaining)")
+                    .font(DatabaseZoomMetrics.font(15))
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, DatabaseZoomMetrics.size(10))
+        }
+        .buttonStyle(.plain)
     }
 
     private func scrollToCurrentTarget(using proxy: ScrollViewProxy, animated: Bool) {
