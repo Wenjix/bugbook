@@ -872,7 +872,7 @@ final class BlockModelTests: XCTestCase {
         let types: [BlockType] = [
             .paragraph, .heading, .bulletListItem, .numberedListItem,
             .taskItem, .codeBlock, .blockquote, .horizontalRule,
-            .image, .databaseEmbed, .pageLink, .column, .toggle
+            .image, .databaseEmbed, .pageLink, .column, .toggle, .meeting
         ]
         // Verify all types can be used in Block init
         for type in types {

@@ -91,6 +91,7 @@ private enum ParsedPageBlockType: String {
     case pageLink = "page_link"
     case column
     case toggle
+    case meeting
 }
 
 private struct ParsedPageBlock {
@@ -374,6 +375,12 @@ private enum PageBlockParser {
 
             if let name = parsePageLinkComment(line) {
                 blocks.append(makeBlock(type: .pageLink, pageLinkName: name))
+                index += 1
+                continue
+            }
+
+            if let title = parseMeetingBlock(line) {
+                blocks.append(makeBlock(type: .meeting, text: title))
                 index += 1
                 continue
             }
@@ -742,6 +749,9 @@ private enum PageBlockParser {
                     emittedColumn = true
                 }
             }
+
+        case .meeting:
+            lines.append("<!-- meeting: \(block.text) -->")
         }
 
         return lines
@@ -837,7 +847,7 @@ private enum PageBlockParser {
         if parseTaskItem(line) != nil || parseBulletItem(line) != nil || parseNumberedItem(line) != nil {
             return true
         }
-        if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
+        if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseMeetingBlock(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
             return true
         }
         return trimmed == "<!-- toggle -->"
@@ -846,6 +856,18 @@ private enum PageBlockParser {
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
+    }
+
+    private static func parseMeetingBlock(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("<!--"),
+              trimmed.hasSuffix("-->"),
+              let colonRange = trimmed.range(of: "meeting:") else { return nil }
+        let titleStart = colonRange.upperBound
+        let titleEnd = trimmed.index(trimmed.endIndex, offsetBy: -3)
+        guard titleStart < titleEnd else { return nil }
+        let title = String(trimmed[titleStart..<titleEnd]).trimmingCharacters(in: .whitespaces)
+        return title
     }
 
     private static func parseHeading(_ line: String) -> (Int, String)? {
@@ -1821,7 +1843,7 @@ private func parsedPageBlockSupportsTextMutation(_ block: ParsedPageBlock) -> Bo
     switch block.type {
     case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .codeBlock, .blockquote, .toggle:
         return true
-    case .horizontalRule, .image, .databaseEmbed, .pageLink, .column:
+    case .horizontalRule, .image, .databaseEmbed, .pageLink, .column, .meeting:
         return false
     }
 }

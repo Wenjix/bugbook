@@ -248,6 +248,13 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Meeting block
+            if let title = parseMeetingBlock(line) {
+                blocks.append(makeBlock(type: .meeting, text: title))
+                i += 1
+                continue
+            }
+
             // Toggle block
             if trimmed == "<!-- toggle -->" || trimmed == "<!-- toggle collapsed -->" {
                 let collapsed = trimmed.contains("collapsed")
@@ -402,6 +409,9 @@ enum MarkdownBlockParser {
                 }
                 lines.append("<!-- /toggle -->")
 
+            case .meeting:
+                lines.append("<!-- meeting: \(block.text) -->")
+
             case .column:
                 lines.append("<!-- columns -->")
                 let maxCol = block.children.map(\.columnIndex).max() ?? 0
@@ -470,7 +480,7 @@ enum MarkdownBlockParser {
         if parseTaskItem(line) != nil || parseBulletItem(line) != nil || parseNumberedItem(line) != nil {
             return true
         }
-        if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
+        if line.hasPrefix(">") || parseImage(line) != nil || parseDatabaseEmbed(line) != nil || parseMeetingBlock(line) != nil || parseWikiLink(line) != nil || parsePageLinkComment(line) != nil {
             return true
         }
         return trimmed == "<!-- toggle -->"
@@ -568,6 +578,18 @@ enum MarkdownBlockParser {
             }
         }
         return (alt, src, width)
+    }
+
+    private static func parseMeetingBlock(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("<!--"),
+              trimmed.hasSuffix("-->"),
+              let colonRange = trimmed.range(of: "meeting:") else { return nil }
+        let titleStart = colonRange.upperBound
+        let titleEnd = trimmed.index(trimmed.endIndex, offsetBy: -3)
+        guard titleStart < titleEnd else { return nil }
+        let title = String(trimmed[titleStart..<titleEnd]).trimmingCharacters(in: .whitespaces)
+        return title
     }
 
     private static func parseDatabaseEmbed(_ line: String) -> String? {

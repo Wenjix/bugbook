@@ -392,7 +392,7 @@ struct BlockEditorView: View {
         }
 
         switch hitBlock.type {
-        case .image, .databaseEmbed:
+        case .image, .databaseEmbed, .meeting:
             return false
         default:
             return true
@@ -655,6 +655,8 @@ private extension Block {
             return "Divider"
         case .column:
             return "Column"
+        case .meeting:
+            return text.isEmpty ? "Meeting" : text
         default:
             let plainText = AttributedStringConverter.plainText(from: text).trimmingCharacters(in: .whitespacesAndNewlines)
             return plainText.isEmpty ? "Empty block" : plainText
@@ -685,6 +687,8 @@ private extension Block {
             return "minus"
         case .column:
             return "rectangle.split.2x1"
+        case .meeting:
+            return "mic.fill"
         default:
             return "line.3.horizontal"
         }
