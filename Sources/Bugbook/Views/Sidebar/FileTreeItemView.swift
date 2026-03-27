@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 import os
 
 struct FileTreeItemView: View {
@@ -9,14 +10,17 @@ struct FileTreeItemView: View {
     var onSelectFile: (FileEntry) -> Void
     var onRefreshTree: () -> Void
     var isSidebarReference: Bool = false
+    @Binding var expandedFolders: Set<String>
+    var parentPath: String = ""
 
-    @State private var isExpanded: Bool = false
+    private var isExpanded: Bool { expandedFolders.contains(entry.path) }
     @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
     @State private var renameName: String = ""
     @State private var showDeleteConfirmation: Bool = false
     @State private var showContextMenu: Bool = false
     @State private var hoveredMenuItem: String?
+    @State private var cachedIconImage: NSImage?
 
     private static let expandedFoldersKey = "expandedFolders"
 
@@ -45,12 +49,13 @@ struct FileTreeItemView: View {
                     workspacePath: workspacePath,
                     parentPath: childParentPath,
                     onSelectFile: onSelectFile,
-                    onRefreshTree: onRefreshTree
+                    onRefreshTree: onRefreshTree,
+                    expandedFolders: $expandedFolders
                 )
                 .padding(.leading, ShellZoomMetrics.size(12))
             }
         }
-        .onAppear { loadExpandedState() }
+        .task(id: entry.icon) { await loadIconImage() }
         .alert("Delete \"\(displayName)\"?", isPresented: $showDeleteConfirmation) {
             Button("Move to Trash", role: .destructive) { performDelete() }
             Button("Cancel", role: .cancel) {}
@@ -107,14 +112,54 @@ struct FileTreeItemView: View {
         .onHover { hovering in isHovering = hovering }
     }
 
+    /// Path to load as a file-based icon, or nil if the icon is not a file path.
+    private var iconFilePath: String? {
+        guard let icon = entry.icon, !icon.isEmpty else { return nil }
+        if icon.hasPrefix("custom:") {
+            return String(icon.dropFirst(7))
+        } else if icon.hasPrefix("sf:") || icon.unicodeScalars.first?.properties.isEmoji == true {
+            return nil
+        } else if FileManager.default.fileExists(atPath: icon) {
+            return icon
+        }
+        return nil
+    }
+
+    private func loadIconImage() async {
+        guard let path = iconFilePath else {
+            cachedIconImage = nil
+            return
+        }
+        let loaded = await Task.detached(priority: .utility) {
+            Self.downsampledImage(at: path, maxPixelSize: 32)
+        }.value
+        if !Task.isCancelled {
+            cachedIconImage = loaded
+        }
+    }
+
+    nonisolated private static func downsampledImage(at path: String, maxPixelSize: Int) -> NSImage? {
+        let url = URL(fileURLWithPath: path)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+
     @ViewBuilder
     private var iconView: some View {
         if let icon = entry.icon, !icon.isEmpty {
-            if icon.hasPrefix("custom:") {
-                // Custom uploaded icon image (custom:/path/to/image)
-                let path = String(icon.dropFirst(7))
-                if let nsImage = NSImage(contentsOfFile: path) {
-                    Image(nsImage: nsImage)
+            if icon.hasPrefix("custom:") || iconFilePath != nil {
+                // File-based icon — uses async-loaded cachedIconImage
+                if let cached = cachedIconImage {
+                    Image(nsImage: cached)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
@@ -133,17 +178,6 @@ struct FileTreeItemView: View {
                     .font(ShellZoomMetrics.font(13))
                     .minimumScaleFactor(0.5)
                     .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-            } else if FileManager.default.fileExists(atPath: icon) {
-                // Raw file path (legacy)
-                if let nsImage = NSImage(contentsOfFile: icon) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
-                } else {
-                    defaultIcon
-                }
             } else {
                 defaultIcon
             }
@@ -154,12 +188,7 @@ struct FileTreeItemView: View {
 
     @ViewBuilder
     private var defaultIcon: some View {
-        if entry.isCanvas {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(ShellZoomMetrics.font(Typography.bodySmall))
-                .foregroundStyle(.secondary)
-                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-        } else if entry.isDatabase {
+        if entry.isDatabase {
             Image(systemName: "tablecells")
                 .font(ShellZoomMetrics.font(Typography.bodySmall))
                 .foregroundStyle(.secondary)
@@ -207,29 +236,12 @@ struct FileTreeItemView: View {
     // MARK: - Expanded State Persistence
 
     private func toggleExpanded() {
-        isExpanded.toggle()
-        saveExpandedState()
-    }
-
-    private func loadExpandedState() {
-        guard isExpandable else { return }
-        let expanded = expandedFolders()
-        isExpanded = expanded.contains(entry.path)
-    }
-
-    private func saveExpandedState() {
-        var expanded = expandedFolders()
-        if isExpanded {
-            expanded.insert(entry.path)
+        if expandedFolders.contains(entry.path) {
+            expandedFolders.remove(entry.path)
         } else {
-            expanded.remove(entry.path)
+            expandedFolders.insert(entry.path)
         }
-        UserDefaults.standard.set(Array(expanded), forKey: Self.expandedFoldersKey)
-    }
-
-    private func expandedFolders() -> Set<String> {
-        let arr = UserDefaults.standard.stringArray(forKey: Self.expandedFoldersKey) ?? []
-        return Set(arr)
+        UserDefaults.standard.set(Array(expandedFolders), forKey: Self.expandedFoldersKey)
     }
 
     // MARK: - Context Menu
@@ -242,10 +254,6 @@ struct FileTreeItemView: View {
             ctxButton(id: "new-db", icon: "tablecells", label: "New Database") {
                 showContextMenu = false; performCreateDatabase()
             }
-            ctxButton(id: "new-canvas", icon: "rectangle.on.rectangle.angled", label: "New Canvas") {
-                showContextMenu = false; performCreateCanvas()
-            }
-
             ctxDivider
 
             ctxButton(id: "rename", icon: "pencil", label: "Rename") {
@@ -322,14 +330,12 @@ struct FileTreeItemView: View {
         guard !trimmed.isEmpty, trimmed != displayName else { return }
 
         let dir = (entry.path as NSString).deletingLastPathComponent
-        let ext = (entry.isDatabase || entry.isCanvas || entry.isDirectory) ? "" : ".md"
+        let ext = (entry.isDatabase || entry.isDirectory) ? "" : ".md"
         let newPath = (dir as NSString).appendingPathComponent("\(trimmed)\(ext)")
 
         try? fileSystem.renameFile(from: entry.path, to: newPath)
         if entry.isDatabase {
             try? fileSystem.updateDatabaseDisplayName(at: newPath, name: trimmed)
-        } else if entry.isCanvas {
-            try? fileSystem.updateCanvasDisplayName(at: newPath, name: trimmed)
         }
         onRefreshTree()
     }
@@ -419,16 +425,4 @@ struct FileTreeItemView: View {
         NotificationCenter.default.post(name: .movePage, object: entry.path)
     }
 
-    private func performCreateCanvas() {
-        let dir = entry.isDirectory ? entry.path : (entry.path as NSString).deletingLastPathComponent
-        if let path = try? fileSystem.createCanvas(in: dir, name: "Untitled Canvas") {
-            onRefreshTree()
-            let displayName = "Untitled Canvas"
-            let canvas = FileEntry(
-                id: path, name: displayName,
-                path: path, isDirectory: false, kind: .canvas
-            )
-            onSelectFile(canvas)
-        }
-    }
 }

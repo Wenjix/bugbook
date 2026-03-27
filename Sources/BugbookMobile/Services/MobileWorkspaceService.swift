@@ -9,6 +9,7 @@ import BugbookCore
     var isICloudAvailable: Bool = false
 
     private let fileManager = FileManager.default
+    private let maxTreeDepth = 10
 
     init() {
         let path = resolveWorkspacePath()
@@ -51,7 +52,7 @@ import BugbookCore
     }
 
     private func buildTree(at path: String, preserveFolders: Bool, depth: Int) -> [MobileNoteFile] {
-        guard depth < 5 else { return [] }
+        guard depth < maxTreeDepth else { return [] }
         guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else { return [] }
 
         let siblingNames = Set(contents)
@@ -83,19 +84,6 @@ import BugbookCore
                         name: dbName,
                         isDatabase: true
                     ))
-                } else if isCanvasFolder(at: fullPath) {
-                    var canvasName = name
-                    let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let n = json["name"] as? String {
-                        canvasName = n
-                    }
-                    folders.append(MobileNoteFile(
-                        path: fullPath,
-                        name: canvasName,
-                        isCanvas: true
-                    ))
                 } else if isCompanionFolder(name, siblings: siblingNames) {
                     continue
                 } else {
@@ -109,7 +97,7 @@ import BugbookCore
                         ))
                     } else {
                         for child in children {
-                            if child.isDatabase || child.isCanvas {
+                            if child.isDatabase {
                                 folders.append(child)
                             } else {
                                 noteFiles.append(child)
@@ -252,11 +240,6 @@ import BugbookCore
     private func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return fileManager.fileExists(atPath: schemaPath)
-    }
-
-    private func isCanvasFolder(at path: String) -> Bool {
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        return fileManager.fileExists(atPath: canvasPath)
     }
 
     private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {

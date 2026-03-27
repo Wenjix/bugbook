@@ -170,6 +170,7 @@ final class DatabaseViewState {
         Task { [weak self] in
             for row in rowsToPersist {
                 try? service.saveRow(row, schema: currentSchema, at: path)
+                try? service.incrementalIndexUpdate(row: row, schema: currentSchema, at: path)
             }
             self?.postChangeNotification()
         }
@@ -184,6 +185,7 @@ final class DatabaseViewState {
         guard !rowsToPersist.isEmpty else { return }
         for row in rowsToPersist {
             try? dbService.saveRow(row, schema: currentSchema, at: dbPath)
+            try? dbService.incrementalIndexUpdate(row: row, schema: currentSchema, at: dbPath)
         }
         postChangeNotification()
     }
@@ -195,7 +197,7 @@ final class DatabaseViewState {
         rows.removeAll { $0.id == row.id }
         // Synchronous to prevent race with loadData reintroducing deleted rows
         try? dbService.deleteRow(row.id, in: dbPath)
-        try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+        try? dbService.incrementalIndexDelete(rowId: row.id, schema: schema, at: dbPath)
         // Notify all views so stale saves for this row are cancelled
         NotificationCenter.default.post(
             name: .databaseRowDeleted,
@@ -378,6 +380,19 @@ final class DatabaseViewState {
     func updateGroupBy(_ propertyId: String) {
         guard var s = schema, var view = activeView else { return }
         view.groupBy = propertyId
+        // Clear sub-group if it now matches the primary group
+        if view.subGroupBy == propertyId {
+            view.subGroupBy = nil
+        }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func updateSubGroupBy(_ propertyId: String?) {
+        guard var s = schema, var view = activeView else { return }
+        view.subGroupBy = propertyId
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -449,6 +464,21 @@ final class DatabaseViewState {
         var counter = 2
         while existingNames.contains("\(baseName) \(counter)") { counter += 1 }
         return "\(baseName) \(counter)"
+    }
+
+    func reorderViews(sourceId: String, beforeId: String?) {
+        guard var s = schema else { return }
+        guard let sourceIdx = s.views.firstIndex(where: { $0.id == sourceId }) else { return }
+        let view = s.views.remove(at: sourceIdx)
+        if let beforeId, let targetIdx = s.views.firstIndex(where: { $0.id == beforeId }) {
+            s.views.insert(view, at: targetIdx)
+        } else {
+            s.views.append(view)
+        }
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+        }
     }
 
     func deleteView(_ view: ViewConfig) {
@@ -653,6 +683,70 @@ final class DatabaseViewState {
         }
 
         schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
+    // MARK: - Templates
+
+    var templates: [DatabaseTemplate] {
+        schema?.templates ?? []
+    }
+
+    func createTemplate(name: String) -> DatabaseTemplate {
+        let template = DatabaseTemplate(
+            id: "tmpl_\(UUID().uuidString.prefix(8).lowercased())",
+            name: name,
+            icon: "doc.text"
+        )
+        if schema?.templates == nil {
+            schema?.templates = []
+        }
+        schema?.templates?.append(template)
+        persistSchema()
+        return template
+    }
+
+    func updateTemplate(_ template: DatabaseTemplate) {
+        guard let idx = schema?.templates?.firstIndex(where: { $0.id == template.id }) else { return }
+        schema?.templates?[idx] = template
+        persistSchema()
+    }
+
+    func deleteTemplate(_ templateId: String) {
+        schema?.templates?.removeAll { $0.id == templateId }
+        if schema?.templates?.isEmpty == true {
+            schema?.templates = nil
+        }
+        persistSchema()
+    }
+
+    @discardableResult
+    func createRowFromTemplate(_ template: DatabaseTemplate) throws -> DatabaseRow {
+        guard let s = schema else {
+            throw NSError(domain: "Bugbook.Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "Schema unavailable"])
+        }
+        var newRow = try dbService.createRow(in: dbPath, schema: s)
+        // Apply template default properties
+        for (key, value) in template.defaultProperties {
+            newRow.properties[key] = value
+        }
+        // Apply template body
+        newRow.body = template.body
+        try dbService.saveRow(newRow, schema: s, at: dbPath)
+        if let idx = rows.firstIndex(where: { $0.id == newRow.id }) {
+            rows[idx] = newRow
+        } else {
+            rows.append(newRow)
+        }
+        postChangeNotification()
+        return newRow
+    }
+
+    private func persistSchema() {
+        guard let s = schema else { return }
         Task {
             try? dbService.saveSchema(s, at: dbPath)
             postChangeNotification()

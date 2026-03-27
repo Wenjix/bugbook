@@ -20,6 +20,9 @@ struct RowPageView: View {
     var autoFocusTitle: Bool = false
     var fullWidth: Bool = false
     var dbPath: String = ""
+    var templates: [DatabaseTemplate] = []
+    var onApplyTemplate: ((DatabaseTemplate) -> Void)?
+    var onNewTemplate: (() -> Void)?
 
     @Environment(\.workspacePath) private var workspacePath
     @State private var editingTitle: String = ""
@@ -50,6 +53,20 @@ struct RowPageView: View {
 
     private var titleFont: Font {
         .system(size: EditorTypography.scaled(34), weight: .bold)
+    }
+
+    /// Whether the row is empty (no title, no non-empty properties, no body).
+    private var isRowEmpty: Bool {
+        let titleEmpty = storedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let bodyEmpty = row.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let propsEmpty = row.properties.values.allSatisfy { val in
+            switch val {
+            case .empty: return true
+            case .text(let s): return s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            default: return false
+            }
+        }
+        return titleEmpty && bodyEmpty && propsEmpty
     }
 
     var body: some View {
@@ -120,6 +137,10 @@ struct RowPageView: View {
 
                             if onAddProperty != nil {
                                 addPropertyRow
+                            }
+
+                            if !templates.isEmpty, isRowEmpty {
+                                templateSection
                             }
                         }
                         .padding(.vertical, 8)
@@ -253,6 +274,63 @@ struct RowPageView: View {
             .popoverSurface()
         }
     }
+
+    @State private var templateHoveredId: String?
+
+    private var templateSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Press \u{23CE} to continue with an empty page, or pick a template")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
+
+            ForEach(templates) { template in
+                Button {
+                    onApplyTemplate?(template)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: template.icon)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text(template.name)
+                            .font(.callout)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(templateHoveredId == template.id ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: Radius.xs))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in templateHoveredId = hovering ? template.id : nil }
+            }
+
+            if onNewTemplate != nil {
+                Button {
+                    onNewTemplate?()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .medium))
+                        Text("New template")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(templateHoveredId == "_new" ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: Radius.xs))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in templateHoveredId = hovering ? "_new" : nil }
+            }
+        }
+    }
 }
 
 // MARK: - Property Row with split hover zones
@@ -312,7 +390,20 @@ private struct PropertyRowView: View {
                     onSave(row)
                 }
             )
-            PropertyEditorView(definition: prop, value: propValue, compact: false, onAddOption: onAddOption, onUpdateOption: onUpdateOption, onDeleteOption: onDeleteOption, onLoadRelationRows: prop.type == .relation ? { onLoadRelationRows?(prop) ?? [] } : nil, onListDatabases: prop.type == .relation ? { onListDatabases?() ?? [] } : nil, onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil)
+            PropertyEditorView(
+                definition: prop,
+                value: propValue,
+                compact: false,
+                onAddOption: onAddOption,
+                onUpdateOption: onUpdateOption,
+                onDeleteOption: onDeleteOption,
+                onLoadRelationRows: prop.type == .relation
+                    ? { onLoadRelationRows?(prop) ?? [] } : nil,
+                onListDatabases: prop.type == .relation
+                    ? { onListDatabases?() ?? [] } : nil,
+                onSetRelationTarget: prop.type == .relation
+                    ? onSetRelationTarget : nil
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 7)

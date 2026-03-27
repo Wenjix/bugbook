@@ -21,6 +21,8 @@ struct BlockEditorView: View {
     var document: BlockDocument
     var onTextChange: (() -> Void)?
     var onTyping: (() -> Void)?
+    /// Called when a page file path is dropped from the sidebar. Parameters: (filePath, insertIndex).
+    var onPagePathDrop: ((String, Int) -> Void)?
     var contentColumnMaxWidth: CGFloat? = nil
     var horizontalPadding: CGFloat = 48
     @State private var activeDropIndex: Int?
@@ -32,6 +34,8 @@ struct BlockEditorView: View {
     @State private var marqueeDragState: MarqueeDragState?
     @State private var blockMoveDragState: BlockMoveDragState?
     @State private var autoScrollTimer: Timer?
+    @State private var autoScrollSpeed: CGFloat = 0
+    @FocusState private var isEditorFocused: Bool
 
     var body: some View {
         // Skip the title block (first heading-1) — it's rendered separately above
@@ -58,9 +62,37 @@ struct BlockEditorView: View {
             EditorFrameReporter(frameInWindow: $editorFrameInWindow, window: $editorWindow)
         )
         .simultaneousGesture(marqueeSelectionGesture)
+        .onTapGesture {
+            if !document.selectedBlockIds.isEmpty {
+                document.clearBlockSelection()
+                document.clearMultiBlockTextSelection()
+            }
+        }
         .editorTextCursor()
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isEditorFocused)
+        .onKeyPress(.delete) {
+            guard !document.selectedBlockIds.isEmpty,
+                  document.focusedBlockId == nil else { return .ignored }
+            document.deleteSelectedBlocks()
+            return .handled
+        }
+        .onKeyPress(.init(Character(UnicodeScalar(127)))) { // backspace
+            guard !document.selectedBlockIds.isEmpty,
+                  document.focusedBlockId == nil else { return .ignored }
+            document.deleteSelectedBlocks()
+            return .handled
+        }
         .dropDestination(for: URL.self) { urls, _ in
             handleImageFileDrop(urls)
+        } isTargeted: { _ in }
+        .dropDestination(for: String.self) { items, _ in
+            guard let payload = items.first else { return false }
+            // Only handle file paths from sidebar drag (not block UUIDs)
+            guard payload.hasPrefix("/") && payload.hasSuffix(".md") else { return false }
+            handlePagePathDrop(payload, at: insertionIndexAtFocus)
+            return true
         } isTargeted: { _ in }
         .onDisappear { stopAutoScroll() }
         .onChange(of: document.contentVersion) { _, _ in
@@ -70,7 +102,16 @@ struct BlockEditorView: View {
 
     @ViewBuilder
     private func editorSurface(startIndex: Int) -> some View {
-        editorContent(startIndex: startIndex)
+        if let maxWidth = contentColumnMaxWidth {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                editorContent(startIndex: startIndex)
+                    .frame(maxWidth: maxWidth)
+                Spacer(minLength: 0)
+            }
+        } else {
+            editorContent(startIndex: startIndex)
+        }
     }
 
     private func editorContent(startIndex: Int) -> some View {
@@ -82,6 +123,8 @@ struct BlockEditorView: View {
                 activeDropIndex = targeted ? startIndex : (activeDropIndex == startIndex ? nil : activeDropIndex)
             } onImageDrop: { urls in
                 handleImageDrop(urls, at: startIndex)
+            } onPagePathDrop: { path in
+                handlePagePathDrop(path, at: startIndex)
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
@@ -93,7 +136,7 @@ struct BlockEditorView: View {
                 // After an image block use a slimmer drop zone since ImageBlockView
                 // already provides a generous 44pt tap region internally.
                 let dropZoneAfterImage = block.type == .image
-                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 6)
+                let dropZoneHeight: CGFloat = dropZoneAfterImage ? 4 : (useTallDropZone ? 24 : 12)
 
                 BlockCellView(
                     document: document,
@@ -131,20 +174,23 @@ struct BlockEditorView: View {
                     activeDropIndex = targeted ? idx : (activeDropIndex == idx ? nil : activeDropIndex)
                 } onImageDrop: { urls in
                     handleImageDrop(urls, at: index + 1)
+                } onPagePathDrop: { path in
+                    handlePagePathDrop(path, at: index + 1)
                 }
                 .overlay {
                     Button {
                         if document.consumePendingEditorTapAfterBlockSelection() {
                             return
                         }
+                        document.clearBlockSelection()
                         document.clearMultiBlockTextSelection()
-                        // After an image block, always focus or insert an empty paragraph
-                        if block.type == .image {
+                        // After a non-editable block, always focus or insert an empty paragraph
+                        if block.type == .image || block.type == .pageLink || block.type == .databaseEmbed || block.type == .horizontalRule {
                             document.focusOrInsertParagraphAfter(blockId: block.id)
                         } else if index + 1 < document.blocks.count {
                             let next = document.blocks[index + 1]
-                            // If next block is non-editable (image, etc.), insert a paragraph between
-                            if next.type == .image || next.type == .databaseEmbed {
+                            // If next block is non-editable, insert a paragraph between
+                            if next.type == .image || next.type == .databaseEmbed || next.type == .pageLink || next.type == .horizontalRule {
                                 document.focusOrInsertParagraphAfter(blockId: block.id)
                             } else {
                                 document.focusedBlockId = next.id
@@ -162,29 +208,35 @@ struct BlockEditorView: View {
                 }
             }
 
-            // Click target after last block — always visible, creates new block
+            // Click target after last block — focuses trailing empty paragraph
             Button {
                 if document.consumePendingEditorTapAfterBlockSelection() {
                     return
                 }
+                document.clearBlockSelection()
                 document.clearMultiBlockTextSelection()
-                if let lastBlock = document.blocks.last,
-                   lastBlock.text.isEmpty,
-                   lastBlock.type != .databaseEmbed {
+                document.ensureTrailingParagraph()
+                if let lastBlock = document.blocks.last {
                     document.focusedBlockId = lastBlock.id
                     document.cursorPosition = 0
-                } else {
-                    document.appendEmptyBlock()
                 }
             } label: {
-                Rectangle()
-                    .fill(Color.white.opacity(0.001))
+                Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 300)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .editorTextCursor()
+            .dropDestination(for: String.self) { items, _ in
+                guard let payload = items.first else { return false }
+                let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.hasPrefix("/"), trimmed.hasSuffix(".md") else { return false }
+                let filename = (trimmed as NSString).lastPathComponent
+                let pageName = String(filename.dropLast(3))
+                document.insertPageLinkBlock(at: document.blocks.count, name: pageName)
+                return true
+            } isTargeted: { _ in }
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 20)
@@ -224,14 +276,26 @@ struct BlockEditorView: View {
         return true
     }
 
-    /// Fallback for drops that land on blocks (not between them).
-    private func handleImageFileDrop(_ urls: [URL]) -> Bool {
-        var insertIndex = document.blocks.count
+    @discardableResult
+    private func handlePagePathDrop(_ path: String, at index: Int) -> Bool {
+        guard onPagePathDrop != nil else { return false }
+        onPagePathDrop?(path, index)
+        activeDropIndex = nil
+        return true
+    }
+
+    /// Index after the focused block, or end of document.
+    private var insertionIndexAtFocus: Int {
         if let focusedId = document.focusedBlockId,
            let idx = document.blocks.firstIndex(where: { $0.id == focusedId }) {
-            insertIndex = idx + 1
+            return idx + 1
         }
-        return handleImageDrop(urls, at: insertIndex)
+        return document.blocks.count
+    }
+
+    /// Fallback for drops that land on blocks (not between them).
+    private func handleImageFileDrop(_ urls: [URL]) -> Bool {
+        handleImageDrop(urls, at: insertionIndexAtFocus)
     }
 
     private var marqueeSelectionGesture: some Gesture {
@@ -305,6 +369,9 @@ struct BlockEditorView: View {
 
         if marqueeDragState?.isActive == true {
             document.endMarqueeBlockSelection()
+            if !document.selectedBlockIds.isEmpty {
+                isEditorFocused = true
+            }
         }
     }
 
@@ -328,14 +395,15 @@ struct BlockEditorView: View {
     }
 
     private func startAutoScroll(speed: CGFloat) {
-        // Only start if not already running
+        autoScrollSpeed = speed
+        // If timer is already running, speed update above is sufficient
         guard autoScrollTimer == nil else { return }
         autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [self] _ in
             guard let sv = marqueeDragState?.scrollView,
                   let docView = sv.documentView else { return }
             let clipView = sv.contentView
             var origin = clipView.bounds.origin
-            origin.y += speed
+            origin.y += autoScrollSpeed
             origin.y = max(0, min(origin.y, docView.frame.height - clipView.bounds.height))
             clipView.setBoundsOrigin(origin)
             sv.reflectScrolledClipView(clipView)
@@ -551,10 +619,10 @@ private struct MarqueeSelectionOverlay: View {
 
     var body: some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(0.14))
+            .fill(Color.selectionHighlight.opacity(0.5))
             .overlay {
                 Rectangle()
-                    .stroke(Color.accentColor.opacity(0.9), lineWidth: 1)
+                    .stroke(Color(hex: "B4D7FF"), lineWidth: 1)
             }
             .frame(width: max(rect.width, 1), height: max(rect.height, 1))
             .offset(x: rect.minX, y: rect.minY)
@@ -651,7 +719,7 @@ private extension Block {
             return "Image"
         case .databaseEmbed:
             return "Database"
-        case .horizontalRule:
+case .horizontalRule:
             return "Divider"
         case .column:
             return "Column"
@@ -681,7 +749,7 @@ private extension Block {
             return "tablecells"
         case .toggle:
             return "chevron.right"
-        case .horizontalRule:
+case .horizontalRule:
             return "minus"
         case .column:
             return "rectangle.split.2x1"
@@ -772,15 +840,17 @@ final class EditorFrameReporterView: NSView {
     }
 }
 
-/// Thin drop zone between blocks that shows a blue line when a drag hovers over it.
+/// Thin drop zone between blocks that shows a line when a drag hovers over it.
 /// Height is constant to prevent layout shifts that cause flickering.
-/// Accepts both block UUID drops (reorder) and image URL drops (insert image).
+/// Accepts block UUID drops (reorder), image URL drops (insert image),
+/// and sidebar page drops (file path strings that create page links).
 struct DropZoneView: View {
     let isActive: Bool
-    var height: CGFloat = 4
+    var height: CGFloat = 12
     let onDrop: ([UUID]) -> Void
     let onTargetChanged: (Bool) -> Void
     var onImageDrop: (([URL]) -> Bool)?
+    var onPagePathDrop: ((String) -> Bool)?
 
     @State private var imageDropTargeted = false
 
@@ -791,7 +861,7 @@ struct DropZoneView: View {
             .frame(maxWidth: .infinity)
             .overlay {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(height: 2)
                     .opacity(isActive || imageDropTargeted ? 1 : 0)
             }
@@ -799,9 +869,15 @@ struct DropZoneView: View {
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first else { return false }
                 let droppedIds = BlockDocument.draggedBlockIds(from: payload)
-                guard !droppedIds.isEmpty else { return false }
-                onDrop(droppedIds)
-                return true
+                if !droppedIds.isEmpty {
+                    onDrop(droppedIds)
+                    return true
+                }
+                // Not block UUIDs — check if it's a page file path from the sidebar
+                if payload.hasSuffix(".md"), FileManager.default.fileExists(atPath: payload) {
+                    return onPagePathDrop?(payload) ?? false
+                }
+                return false
             } isTargeted: { targeted in
                 onTargetChanged(targeted)
             }
@@ -821,7 +897,7 @@ struct DropZoneView: View {
     }
 }
 
-/// Right-edge drop zone that shows a vertical blue line for column creation.
+/// Right-edge drop zone that shows a vertical line for column creation.
 struct ColumnDropZoneView: View {
     let isActive: Bool
     let onDrop: ([UUID]) -> Void
@@ -834,7 +910,7 @@ struct ColumnDropZoneView: View {
             .frame(maxHeight: .infinity)
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(Color.dragIndicator)
                     .frame(width: 2)
                     .opacity(isActive ? 1 : 0)
             }
@@ -850,3 +926,4 @@ struct ColumnDropZoneView: View {
             }
     }
 }
+

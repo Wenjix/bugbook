@@ -1071,7 +1071,7 @@ private func excludedContentDirectories(in workspace: String, fileManager: FileM
     while let relativePath = enumerator.nextObject() as? String {
         if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) { continue }
         let filename = (relativePath as NSString).lastPathComponent
-        if filename == "_schema.json" || filename == "_canvas.json" {
+        if filename == "_schema.json" {
             excluded.insert((relativePath as NSString).deletingLastPathComponent)
         }
     }

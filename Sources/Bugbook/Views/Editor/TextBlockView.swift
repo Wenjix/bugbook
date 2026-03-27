@@ -24,6 +24,7 @@ struct TextBlockView: View {
                     isMultiline: false,
                     font: nsFont,
                     textColor: nsTextColor,
+                    strikethrough: block.type == .taskItem && block.isChecked,
                     placeholder: nil,
                     onTextChange: onTyping,
                     textHeight: $textHeight
@@ -66,7 +67,7 @@ struct TextBlockView: View {
             } label: {
                 Image(systemName: block.isChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: 15))
-                    .foregroundStyle(block.isChecked ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(block.isChecked ? Color.dragIndicator : Color.secondary)
             }
             .buttonStyle(.plain)
             .frame(width: 20)

@@ -18,6 +18,10 @@ struct SidebarView: View {
     @State private var isFullScreen: Bool = false
     @State private var localTrashPopoverPresented: Bool = false
     @State private var isSidebarReferenceDropTargeted = false
+    @State private var expandedFolders: Set<String> = {
+        let arr = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
+        return Set(arr)
+    }()
 
     private let settingsTabs: [(id: String, label: String, icon: String)] = [
         ("general", "General", "gearshape"),
@@ -239,6 +243,25 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "calendar" : nil }
+
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openMeetings, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
+                        Image(systemName: "waveform")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Text("Meetings")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
+                    .background(hoveredButton == "meetings" ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "meetings" : nil }
             }
             .padding(.horizontal, sectionHorizontalPadding)
             }
@@ -267,7 +290,8 @@ struct SidebarView: View {
                                     workspacePath: appState.workspacePath,
                                     onSelectFile: onSelectFile,
                                     onRefreshTree: refreshTree,
-                                    isSidebarReference: true
+                                    isSidebarReference: true,
+                                    expandedFolders: $expandedFolders
                                 )
                             }
                         }
@@ -279,7 +303,8 @@ struct SidebarView: View {
                         fileSystem: fileSystem,
                         workspacePath: appState.workspacePath,
                         onSelectFile: onSelectFile,
-                        onRefreshTree: refreshTree
+                        onRefreshTree: refreshTree,
+                        expandedFolders: $expandedFolders
                     )
                 }
                 .padding(.horizontal, sectionHorizontalPadding)
@@ -457,35 +482,14 @@ struct SidebarView: View {
         }
     }
 
-    private func createCanvas() {
-        invokeAction {
-            NotificationCenter.default.post(name: .newCanvas, object: nil)
-        }
-    }
-
     private var newPageMenuButton: some View {
-        Menu {
-            Button {
-                createFile()
-            } label: {
-                Label("New Page", systemImage: "doc")
-            }
-            Button {
-                createCanvas()
-            } label: {
-                Label("New Canvas", systemImage: "rectangle.on.rectangle.angled")
-            }
-        } label: {
+        Button(action: { createFile() }) {
             Image(systemName: "square.and.pencil")
                 .font(ShellZoomMetrics.font(Typography.body, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: ShellZoomMetrics.size(24), height: ShellZoomMetrics.size(24))
-        } primaryAction: {
-            createFile()
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(.borderless)
         .help("New Page")
     }
 

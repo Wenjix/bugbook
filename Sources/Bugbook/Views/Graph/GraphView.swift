@@ -18,39 +18,25 @@ struct GraphEdge: Identifiable {
     var id: String { "\(source)→\(target)\(isParentChild ? ":pc" : "")" }
 }
 
-// MARK: - Force Simulation
+// MARK: - Background Simulation Actor
 
-@MainActor
-class ForceSimulation: ObservableObject {
-    @Published var nodes: [GraphNode] = []
-    @Published var edges: [GraphEdge] = []
-
-    private var timer: Timer?
+/// Runs O(n²) force simulation on a background thread, isolated from the main actor.
+private actor SimulationEngine {
+    private var nodes: [GraphNode] = []
+    private var edges: [GraphEdge] = []
     private var settledFrames = 0
     private let settleThreshold: CGFloat = 0.3
     private let maxSettledFrames = 60
 
-    func start() {
-        settledFrames = 0
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.tick()
-            }
-        }
+    func setGraph(nodes: [GraphNode], edges: [GraphEdge]) {
+        self.nodes = nodes
+        self.edges = edges
+        self.settledFrames = 0
     }
 
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-    }
-
-    deinit {
-        timer?.invalidate()
-    }
-
-    private func tick() {
-        guard !nodes.isEmpty else { return }
+    /// Returns updated node positions, or nil if the simulation has settled and should stop.
+    func tick() -> [GraphNode]? {
+        guard !nodes.isEmpty else { return nil }
 
         let damping: CGFloat = 0.9
         let repulsionStrength: CGFloat = 8000
@@ -64,7 +50,6 @@ class ForceSimulation: ObservableObject {
             nodeIndex[nodes[i].id] = i
         }
 
-        // Compute center
         let center = CGPoint(x: 0, y: 0)
 
         // Repulsion: all pairs push apart
@@ -109,15 +94,10 @@ class ForceSimulation: ObservableObject {
         // Center gravity + apply velocity + damping
         var maxVel: CGFloat = 0
         for i in nodes.indices {
-            // Gravity toward center
             nodes[i].velocity.x += (center.x - nodes[i].position.x) * centerGravity
             nodes[i].velocity.y += (center.y - nodes[i].position.y) * centerGravity
-
-            // Damping
             nodes[i].velocity.x *= damping
             nodes[i].velocity.y *= damping
-
-            // Apply
             nodes[i].position.x += nodes[i].velocity.x
             nodes[i].position.y += nodes[i].velocity.y
 
@@ -125,15 +105,54 @@ class ForceSimulation: ObservableObject {
             maxVel = max(maxVel, vel)
         }
 
-        // Stop simulation when settled
+        // Check if settled
         if maxVel < settleThreshold {
             settledFrames += 1
             if settledFrames >= maxSettledFrames {
-                stop()
+                return nil // signal to stop
             }
         } else {
             settledFrames = 0
         }
+
+        return nodes
+    }
+}
+
+// MARK: - Force Simulation (Main Actor Publisher)
+
+@MainActor
+class ForceSimulation: ObservableObject {
+    @Published var nodes: [GraphNode] = []
+    @Published var edges: [GraphEdge] = []
+
+    private let engine = SimulationEngine()
+    private var simulationTask: Task<Void, Never>?
+
+    func start() {
+        simulationTask?.cancel()
+        let engineRef = engine
+        Task { await engineRef.setGraph(nodes: nodes, edges: edges) }
+        simulationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let updated = await engineRef.tick()
+                guard !Task.isCancelled else { return }
+                if let updated {
+                    self.nodes = updated
+                } else {
+                    // Simulation settled
+                    return
+                }
+                // Yield to next frame (~60fps)
+                try? await Task.sleep(nanoseconds: 16_666_667)
+            }
+        }
+    }
+
+    func stop() {
+        simulationTask?.cancel()
+        simulationTask = nil
     }
 }
 
@@ -335,12 +354,12 @@ struct GraphView: View {
         let filePaths: [String] = await Task.detached {
             let fm = FileManager.default
             guard let enumerator = fm.enumerator(atPath: workspace) else { return [String]() }
-            // Pre-scan for database folders (contain _schema.json) and canvas folders (contain _canvas.json)
+            // Pre-scan for database folders (contain _schema.json)
             var excludedDirs: Set<String> = []
             if let scanner = fm.enumerator(atPath: workspace) {
                 while let rel = scanner.nextObject() as? String {
                     let filename = (rel as NSString).lastPathComponent
-                    if filename == "_schema.json" || filename == "_canvas.json" {
+                    if filename == "_schema.json" {
                         let dir = (workspace as NSString).appendingPathComponent(
                             (rel as NSString).deletingLastPathComponent
                         )
@@ -358,7 +377,7 @@ struct GraphView: View {
                 let filename = (relativePath as NSString).lastPathComponent
                 guard filename.hasSuffix(".md") else { continue }
                 let fullPath = (workspace as NSString).appendingPathComponent(relativePath)
-                // Skip database row files and canvas node files
+                // Skip database row files
                 let parentDir = (fullPath as NSString).deletingLastPathComponent
                 if excludedDirs.contains(parentDir) { continue }
                 paths.append(fullPath)

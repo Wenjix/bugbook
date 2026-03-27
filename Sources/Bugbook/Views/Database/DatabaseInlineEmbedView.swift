@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BugbookCore
 
 /// Compact database embed for rendering inside a markdown page.
@@ -15,12 +16,18 @@ struct DatabaseInlineEmbedView: View {
     @State private var showSettings: Bool = false
     @State private var searchText: String = ""
     @State private var hasStartedLoading = false
-    @State private var isHoveringHeader = false
+    @State private var isHoveringTitle = false
+    @State private var isHoveringTabs = false
     @State private var isDeleted = false
     @State private var isEditingTitle: Bool = false
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isSearchFocused: Bool
     @State private var newRowScrollId: String? = nil
+    @State private var draggedViewTabId: String?
+    @State private var viewTabDropTargetId: String?
+    @State private var tableContainerWidth: CGFloat = 0
+    @State private var showTemplatePicker = false
+    @State private var editingTemplate: DatabaseTemplate? = nil
 
     init(dbPath: String, onOpenRow: ((DatabaseRow) -> Void)? = nil, onOpenDatabase: (() -> Void)? = nil) {
         self.dbPath = dbPath
@@ -78,6 +85,59 @@ struct DatabaseInlineEmbedView: View {
                 .padding(8)
             }
         }
+        .overlay {
+            if showTemplatePicker {
+                Color.black.opacity(0.2)
+                    .ignoresSafeArea()
+                    .onTapGesture { showTemplatePicker = false }
+
+                DatabaseTemplatePickerView(
+                    templates: state.templates,
+                    onSelectEmpty: {
+                        showTemplatePicker = false
+                        addEmptyRow()
+                    },
+                    onSelectTemplate: { template in
+                        showTemplatePicker = false
+                        addRowFromTemplate(template)
+                    },
+                    onNewTemplate: {
+                        showTemplatePicker = false
+                        let newTemplate = state.createTemplate(name: "Untitled")
+                        editingTemplate = newTemplate
+                    },
+                    onDismiss: { showTemplatePicker = false }
+                )
+            }
+        }
+        .overlay {
+            if editingTemplate != nil, let schema = state.schema {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
+
+                DatabaseTemplateEditorModal(
+                    dbPath: dbPath,
+                    schema: schema,
+                    template: Binding(
+                        get: { editingTemplate! },
+                        set: { editingTemplate = $0 }
+                    ),
+                    onSave: { updated in state.updateTemplate(updated) },
+                    onDelete: { templateId in
+                        state.deleteTemplate(templateId)
+                        editingTemplate = nil
+                    },
+                    onClose: {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
+                )
+            }
+        }
         .task {
             guard !hasStartedLoading else { return }
             hasStartedLoading = true
@@ -106,8 +166,8 @@ struct DatabaseInlineEmbedView: View {
         HStack(spacing: 8) {
             // Title
             if isEditingTitle {
-                TextField("Untitled Database", text: $state.editingTitle)
-                    .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
+                TextField("", text: $state.editingTitle)
+                    .font(.system(size: EditorTypography.scaled(20), weight: .semibold))
                     .foregroundStyle(.primary)
                     .textFieldStyle(.plain)
                     .focused($isTitleFocused)
@@ -123,33 +183,15 @@ struct DatabaseInlineEmbedView: View {
                     }
             } else {
                 Button { isEditingTitle = true } label: {
-                    Text(state.editingTitle.isEmpty ? "Untitled Database" : state.editingTitle)
-                        .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    Text(state.editingTitle.isEmpty ? "New database" : state.editingTitle)
+                        .font(.system(size: EditorTypography.scaled(20), weight: .semibold))
+                        .foregroundStyle(state.editingTitle.isEmpty ? .tertiary : .primary)
                 }
                 .buttonStyle(.plain)
             }
 
-            // Add view — always visible next to title
-            Menu {
-                ForEach([ViewType.table, .list, .kanban, .calendar], id: \.rawValue) { type in
-                    Button { state.addView(type: type) } label: {
-                        Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
-                    }
-                }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-
-            // Open full page — next to title controls, visible on hover
-            if isHoveringHeader {
+            // Open full page — visible on hover over title
+            if isHoveringTitle {
                 Button { onOpenDatabase?() } label: {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 12))
@@ -217,7 +259,7 @@ struct DatabaseInlineEmbedView: View {
         .padding(.bottom, 4)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
-                isHoveringHeader = hovering
+                isHoveringTitle = hovering
             }
         }
     }
@@ -227,34 +269,76 @@ struct DatabaseInlineEmbedView: View {
     private func viewTabsStrip(schema: DatabaseSchema) -> some View {
         HStack(spacing: 4) {
             ForEach(schema.views) { view in
-                Button {
-                    state.activeViewId = view.id
+                inlineViewTabButton(view: view)
+            }
+            if isHoveringTabs {
+                Menu {
+                    ForEach([ViewType.table, .list, .kanban, .calendar], id: \.rawValue) { type in
+                        Button { state.addView(type: type) } label: {
+                            Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
+                        }
+                    }
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: iconForViewType(view.type))
-                        Text(view.name)
-                    }
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .clipShape(.rect(cornerRadius: 4))
-                    .foregroundStyle(view.id == state.activeViewId ? .primary : .secondary)
+                    Image(systemName: "plus")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button(role: .destructive) {
-                        state.deleteView(view)
-                    } label: {
-                        Label("Delete View", systemImage: "trash")
-                    }
-                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Add a new view")
             }
             Spacer()
         }
         .padding(.leading, 12)
         .padding(.trailing, 12)
         .padding(.vertical, 4)
+        .onHover { isHoveringTabs = $0 }
+    }
+
+    private func inlineViewTabButton(view: ViewConfig) -> some View {
+        Button {
+            draggedViewTabId = nil
+            viewTabDropTargetId = nil
+            state.activeViewId = view.id
+        } label: {
+            HStack(spacing: 4) {
+                if viewTabDropTargetId == view.id {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 2, height: 14)
+                }
+                Image(systemName: iconForViewType(view.type))
+                Text(view.name)
+            }
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
+            .clipShape(.rect(cornerRadius: 4))
+            .foregroundStyle(view.id == state.activeViewId ? .primary : .secondary)
+            .opacity(draggedViewTabId == view.id ? 0.4 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                state.deleteView(view)
+            } label: {
+                Label("Delete View", systemImage: "trash")
+            }
+        }
+        .onDrag {
+            draggedViewTabId = view.id
+            return NSItemProvider(object: view.id as NSString)
+        }
+        .onDrop(of: [.text], delegate: ViewTabDropDelegate(
+            targetId: view.id,
+            state: state,
+            draggedId: $draggedViewTabId,
+            dropTargetId: $viewTabDropTargetId
+        ))
     }
 
     // MARK: - Settings Popover
@@ -620,6 +704,11 @@ struct DatabaseInlineEmbedView: View {
 
         switch state.activeView?.type ?? .table {
         case .table:
+            // For large databases, use an inner scroll context so LazyVStack
+            // can be truly lazy instead of forcing all rows to lay out for the
+            // parent page's ScrollView. Small databases keep the flat layout.
+            let useInnerScroll = filtered.count > 20
+            let controlsInset = DatabaseZoomMetrics.size(TableView.rowControlsInset)
             ScrollView(.horizontal) {
                 TableView(
                     schema: schema,
@@ -646,10 +735,20 @@ struct DatabaseInlineEmbedView: View {
                     onClearSorts: { state.clearSorts() },
                     onNewRow: { addNewRow() },
                     scrollToRowId: newRowScrollId,
-                    usesInnerScroll: false
+                    usesInnerScroll: useInnerScroll,
+                    containerWidth: tableContainerWidth
                 )
             }
+            .scrollClipDisabled()
             .scrollIndicators(.visible)
+            .padding(.leading, -controlsInset)
+            .frame(height: useInnerScroll ? 400 : nil)
+            .background {
+                GeometryReader { geo in
+                    Color.clear.onAppear { tableContainerWidth = geo.size.width }
+                        .onChange(of: geo.size.width) { _, w in tableContainerWidth = w }
+                }
+            }
         case .kanban:
             KanbanView(
                 schema: schema,
@@ -658,6 +757,7 @@ struct DatabaseInlineEmbedView: View {
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
+                onUpdateSubGroupBy: { propId in state.updateSubGroupBy(propId) },
                 onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
                 onDelete: { row in state.deleteRow(row) },
                 onReorderRows: { draggedId, targetId in
@@ -674,7 +774,7 @@ struct DatabaseInlineEmbedView: View {
                     state.hideKanbanColumn(propertyId: propId, optionId: optionId)
                 }
             )
-            .frame(height: 360)
+            .frame(height: 600)
         case .list:
             ListView(
                 schema: schema,
@@ -700,8 +800,25 @@ struct DatabaseInlineEmbedView: View {
     // MARK: - View-Specific Operations
 
     private func addNewRow() {
+        if !state.templates.isEmpty {
+            showTemplatePicker = true
+        } else {
+            addEmptyRow()
+        }
+    }
+
+    private func addEmptyRow() {
         do {
             let newRow = try state.createRow()
+            newRowScrollId = newRow.id
+        } catch {
+            state.error = error.localizedDescription
+        }
+    }
+
+    private func addRowFromTemplate(_ template: DatabaseTemplate) {
+        do {
+            let newRow = try state.createRowFromTemplate(template)
             newRowScrollId = newRow.id
         } catch {
             state.error = error.localizedDescription

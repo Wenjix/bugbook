@@ -1,7 +1,14 @@
 import CoreTransferable
 import UniformTypeIdentifiers
 
-struct SidebarReferenceDragPayload: Codable, Transferable {
+extension UTType {
+    /// Custom type for editor-to-sidebar page/database reference drags.
+    /// Uses a custom identifier so FileTreeView's .onDrop(of: [.text]) doesn't intercept it
+    /// (UTType.json conforms to .text, which caused the drag to be swallowed).
+    static let sidebarReference = UTType(exportedAs: "com.bugbook.sidebar-reference")
+}
+
+struct SidebarReferenceDragPayload: Codable, Transferable, Equatable {
     let path: String
     let kind: String
 
@@ -14,10 +21,6 @@ struct SidebarReferenceDragPayload: Codable, Transferable {
     }
 
     static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .bugbookSidebarReference)
+        CodableRepresentation(contentType: .sidebarReference)
     }
-}
-
-extension UTType {
-    static let bugbookSidebarReference = UTType(exportedAs: "com.bugbook.sidebar-reference")
 }

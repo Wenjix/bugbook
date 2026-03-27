@@ -82,6 +82,11 @@ struct CommandPaletteView: View {
     var onSelectContentMatch: ((FileEntry, String) -> Void)?
 
     var body: some View {
+        let items = allItems
+        let indexMap = Dictionary(items.enumerated().map { ($0.element.id, $0.offset) },
+                                  uniquingKeysWith: { first, _ in first })
+        let sections = groupedSections(items)
+
         VStack(spacing: 0) {
             // Search field
             HStack {
@@ -101,9 +106,6 @@ struct CommandPaletteView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 1) {
-                        let items = allItems
-                        let sections = groupedSections(items)
-
                         if items.isEmpty && !searchText.isEmpty {
                             Text("No results")
                                 .foregroundStyle(.secondary)
@@ -114,8 +116,8 @@ struct CommandPaletteView: View {
 
                         ForEach(sections, id: \.title) { section in
                             SectionHeader(title: section.title)
-                            ForEach(section.items.enumerated(), id: \.element.id) { _, item in
-                                let idx = globalIndex(of: item, in: items)
+                            ForEach(section.items) { item in
+                                let idx = indexMap[item.id] ?? 0
                                 paletteRow(item: item, index: idx)
                                     .id(item.id)
                             }
@@ -125,7 +127,6 @@ struct CommandPaletteView: View {
                 }
                 .frame(maxHeight: 350)
                 .onChange(of: selectedIndex) { _, newIndex in
-                    let items = allItems
                     if newIndex >= 0, newIndex < items.count {
                         proxy.scrollTo(items[newIndex].id, anchor: .center)
                     }
@@ -139,7 +140,7 @@ struct CommandPaletteView: View {
             return .handled
         }
         .onKeyPress(.downArrow) {
-            selectedIndex = min(allItems.count - 1, selectedIndex + 1)
+            selectedIndex = min(items.count - 1, selectedIndex + 1)
             return .handled
         }
         .onKeyPress(.escape) {
@@ -413,9 +414,6 @@ struct CommandPaletteView: View {
             PaletteCommand(id: "new_database", name: "New Database", icon: "tablecells.badge.ellipsis", shortcut: nil) {
                 NotificationCenter.default.post(name: .newDatabase, object: nil)
             },
-            PaletteCommand(id: "new_canvas", name: "New Canvas", icon: "rectangle.on.rectangle.angled", shortcut: nil) {
-                NotificationCenter.default.post(name: .newCanvas, object: nil)
-            },
             PaletteCommand(id: "open_settings", name: "Open Settings", icon: "gear", shortcut: "Cmd+,") {
                 NotificationCenter.default.post(name: .openSettings, object: nil)
             },
@@ -437,7 +435,7 @@ struct CommandPaletteView: View {
     private func flattenFileTree(_ entries: [FileEntry]) -> [FileEntry] {
         var result: [FileEntry] = []
         for entry in entries {
-            if (!entry.isDirectory || entry.isDatabase || entry.isCanvas) {
+            if (!entry.isDirectory || entry.isDatabase) {
                 result.append(entry)
             }
             if let children = entry.children {
@@ -511,29 +509,37 @@ struct CommandPaletteView: View {
             let fm = FileManager.default
             guard let enumerator = fm.enumerator(atPath: workspace) else { return [IndexedContentLine]() }
 
+            // Single pass: collect all relative paths, building excludedDirs on the fly
             var excludedDirs: Set<String> = []
-            if let scanner = fm.enumerator(atPath: workspace) {
-                while let rel = scanner.nextObject() as? String {
-                    guard !Task.isCancelled else { return [] }
-                    let filename = (rel as NSString).lastPathComponent
-                    if filename == "_schema.json" || filename == "_canvas.json" {
-                        let dir = (rel as NSString).deletingLastPathComponent
-                        excludedDirs.insert(dir)
-                    }
-                }
-            }
-
-            var indexed: [IndexedContentLine] = []
-            let maxLineLength = 160
+            var mdFiles: [(relativePath: String, filename: String)] = []
 
             while let relativePath = enumerator.nextObject() as? String {
-                guard !Task.isCancelled else { break }
+                guard !Task.isCancelled else { return [] }
                 if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) { continue }
                 let components = relativePath.components(separatedBy: "/")
                 if components.contains(where: { $0.hasPrefix(".") }) { continue }
 
                 let filename = (relativePath as NSString).lastPathComponent
-                guard filename.hasSuffix(".md") else { continue }
+
+                // Track database directories
+                if filename == "_schema.json" {
+                    let dir = (relativePath as NSString).deletingLastPathComponent
+                    excludedDirs.insert(dir)
+                    continue
+                }
+
+                if filename.hasSuffix(".md") {
+                    mdFiles.append((relativePath, filename))
+                }
+            }
+
+            guard !Task.isCancelled else { return [] }
+
+            var indexed: [IndexedContentLine] = []
+            let maxLineLength = 160
+
+            for (relativePath, filename) in mdFiles {
+                guard !Task.isCancelled else { break }
 
                 let parentDir = (relativePath as NSString).deletingLastPathComponent
                 if excludedDirs.contains(parentDir) { continue }
@@ -642,7 +648,7 @@ struct CommandPaletteView: View {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: binary)
             task.arguments = [mode == "bm25" ? "search" : mode == "semantic" ? "vsearch" : "query",
-                               query, "--json", "-n", "20", "-c", collection]
+                               query, "--json", "-n", "20", "-c", collection, "--min-score", "0.3"]
             let pipe = Pipe()
             task.standardOutput = pipe
             task.standardError = FileHandle.nullDevice
@@ -700,10 +706,6 @@ struct CommandPaletteView: View {
     }
 
     // MARK: - Selection
-
-    private func globalIndex(of item: PaletteItem, in items: [PaletteItem]) -> Int {
-        items.firstIndex(where: { $0.id == item.id }) ?? 0
-    }
 
     private func selectCurrent() {
         let items = allItems
@@ -785,14 +787,8 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private func defaultFileIcon(for entry: FileEntry) -> some View {
-        if entry.isCanvas {
-            Image(systemName: "rectangle.on.rectangle.angled")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        } else {
-            Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        }
+        Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
     }
 }

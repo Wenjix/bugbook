@@ -36,7 +36,7 @@ struct TemplatePickerView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 2) {
-                        ForEach(templates.enumerated(), id: \.element.id) { index, template in
+                        ForEach(Array(templates.enumerated()), id: \.element.id) { index, template in
                             let displayName = template.name.hasSuffix(".md")
                                 ? String(template.name.dropLast(3))
                                 : template.name

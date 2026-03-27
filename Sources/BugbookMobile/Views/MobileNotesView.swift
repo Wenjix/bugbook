@@ -100,7 +100,7 @@ private struct FileTreeRow: View {
     @State private var isExpanded = false
 
     private var hasExpandableChildren: Bool {
-        if node.isDirectory && !node.isDatabase && !node.isCanvas { return true }
+        if node.isDirectory && !node.isDatabase { return true }
         if let children = node.children, !children.isEmpty, !node.isDatabase { return true }
         return false
     }
@@ -142,10 +142,6 @@ private struct FileTreeRow: View {
             } label: {
                 fileLabel
             }
-        } else if node.isCanvas {
-            Label(node.name, systemImage: iconName)
-                .font(.body)
-                .foregroundStyle(.secondary)
         } else {
             NavigationLink {
                 MobilePageEditorView(note: node, workspace: workspace)
@@ -179,7 +175,6 @@ private struct FileTreeRow: View {
 
     private var iconName: String {
         if node.isDatabase { return "tablecells" }
-        if node.isCanvas { return "rectangle.3.group" }
         if node.isDirectory { return "folder" }
         return "doc.text"
     }

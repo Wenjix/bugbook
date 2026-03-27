@@ -64,8 +64,7 @@ class DatabaseService {
             updatedAt: now
         )
         try rowStore.saveRow(row, schema: schema, dbPath: dbPath)
-        let allRows = rowStore.loadAllRows(in: dbPath, schema: schema, skipBody: true)
-        try updateIndex(rows: allRows, schema: schema, at: dbPath)
+        try incrementalIndexInsert(row: row, schema: schema, at: dbPath)
         return row
     }
 
@@ -250,75 +249,128 @@ class DatabaseService {
         try indexManager.saveIndex(index, at: dbPath)
     }
 
+    // MARK: - Incremental Index Updates
+
+    /// Insert a single row into the existing index without a full reload.
+    private func incrementalIndexInsert(row: DatabaseRow, schema: DatabaseSchema, at dbPath: String) throws {
+        try mutateIndex(at: dbPath) { rowsMap, indexes in
+            rowsMap[row.id] = indexManager.buildRowEntry(row: row, schema: schema, dbPath: dbPath)
+            addToReverseIndexes(row: row, schema: schema, indexes: &indexes)
+        }
+    }
+
+    /// Update a single row in the existing index without a full reload.
+    func incrementalIndexUpdate(row: DatabaseRow, schema: DatabaseSchema, at dbPath: String) throws {
+        try mutateIndex(at: dbPath) { rowsMap, indexes in
+            removeFromReverseIndexes(rowId: row.id, indexes: &indexes)
+            rowsMap[row.id] = indexManager.buildRowEntry(row: row, schema: schema, dbPath: dbPath)
+            addToReverseIndexes(row: row, schema: schema, indexes: &indexes)
+        }
+    }
+
+    /// Remove a single row from the existing index without a full reload.
+    func incrementalIndexDelete(rowId: String, schema: DatabaseSchema, at dbPath: String) throws {
+        try mutateIndex(at: dbPath) { rowsMap, indexes in
+            rowsMap.removeValue(forKey: rowId)
+            removeFromReverseIndexes(rowId: rowId, indexes: &indexes)
+        }
+    }
+
+    /// Load the index, apply a mutation to its rows and indexes, then save.
+    private func mutateIndex(
+        at dbPath: String,
+        body: (inout [String: Any], inout [String: [String: [String]]]) -> Void
+    ) throws {
+        var index = indexManager.loadIndex(at: dbPath) ?? [:]
+        var rowsMap = index["rows"] as? [String: Any] ?? [:]
+        var indexes = index["indexes"] as? [String: [String: [String]]] ?? [:]
+
+        body(&rowsMap, &indexes)
+
+        index["rows"] = rowsMap
+        index["indexes"] = indexes
+        index["updated_at"] = Self.isoFormatter.string(from: Date())
+        index["version"] = 1
+        try indexManager.saveIndex(index, at: dbPath)
+    }
+
+    private func addToReverseIndexes(row: DatabaseRow, schema: DatabaseSchema, indexes: inout [String: [String: [String]]]) {
+        let indexedTypes: Set<PropertyType> = [.select, .multiSelect, .relation, .checkbox]
+        for prop in schema.properties where indexedTypes.contains(prop.type) {
+            guard let val = row.properties[prop.id] else { continue }
+            switch val {
+            case .select(let optId):
+                indexes[prop.id, default: [:]][optId, default: []].append(row.id)
+            case .multiSelect(let optIds):
+                for optId in optIds {
+                    indexes[prop.id, default: [:]][optId, default: []].append(row.id)
+                }
+            case .relation(let rid):
+                indexes[prop.id, default: [:]][rid, default: []].append(row.id)
+            case .relationMany(let rids):
+                for rid in rids {
+                    indexes[prop.id, default: [:]][rid, default: []].append(row.id)
+                }
+            case .checkbox(let b):
+                indexes[prop.id, default: [:]][b ? "true" : "false", default: []].append(row.id)
+            default:
+                break
+            }
+        }
+    }
+
+    private func removeFromReverseIndexes(rowId: String, indexes: inout [String: [String: [String]]]) {
+        for (propId, propIndex) in indexes {
+            var updated = propIndex
+            for (key, rowIds) in propIndex {
+                let filtered = rowIds.filter { $0 != rowId }
+                if filtered.isEmpty {
+                    updated.removeValue(forKey: key)
+                } else if filtered.count != rowIds.count {
+                    updated[key] = filtered
+                }
+            }
+            indexes[propId] = updated
+        }
+    }
+
     // MARK: - Private: Load Rows (with legacy repair)
 
     private func loadRows(in dbPath: String, schema: DatabaseSchema) throws -> [DatabaseRow] {
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: dbPath) else { return [] }
+        // Delegate to RowStore for loading and duplicate cleanup, then apply legacy repair.
+        let detailed = rowStore.loadAllRowsDetailed(in: dbPath, schema: schema)
 
-        // Track best row per ID and filenames to detect duplicates.
-        var bestByID: [String: (row: DatabaseRow, filename: String, repaired: Bool)] = [:]
-        var duplicateFiles: [String] = []
+        var rows: [DatabaseRow] = []
+        var repairedRows: [DatabaseRow] = []
 
-        for name in contents {
-            guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
-            let filePath = (dbPath as NSString).appendingPathComponent(name)
-            guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
-            guard let result = RowSerializer.parseDetailed(content: content, schema: schema, skipBody: true) else { continue }
-
-            let repairedProperties = repairLegacyProperties(in: result.row.properties, rawProperties: result.rawProperties, schema: schema)
-            let row = DatabaseRow(
-                id: result.row.id,
-                properties: repairedProperties.properties,
-                body: result.row.body,
-                createdAt: result.row.createdAt,
-                updatedAt: result.row.updatedAt
+        for entry in detailed {
+            let repaired = repairLegacyProperties(
+                in: entry.row.properties,
+                rawProperties: entry.rawProperties,
+                schema: schema
             )
-
-            let rowId = row.id
-            if let existing = bestByID[rowId] {
-                // Keep the one whose filename matches the canonical suffix pattern.
-                let suffix = RowStore.extractIdSuffix(from: rowId)
-                let existingIsCanonical = existing.filename.contains("(\(suffix))")
-                let newIsCanonical = name.contains("(\(suffix))")
-
-                if newIsCanonical && !existingIsCanonical {
-                    duplicateFiles.append(existing.filename)
-                    bestByID[rowId] = (row, name, repairedProperties.repaired)
-                } else if !newIsCanonical && existingIsCanonical {
-                    duplicateFiles.append(name)
-                } else {
-                    // Both canonical or both non-canonical — keep newer
-                    if row.updatedAt > existing.row.updatedAt {
-                        duplicateFiles.append(existing.filename)
-                        bestByID[rowId] = (row, name, repairedProperties.repaired)
-                    } else {
-                        duplicateFiles.append(name)
-                    }
-                }
-            } else {
-                bestByID[rowId] = (row, name, repairedProperties.repaired)
+            let row = DatabaseRow(
+                id: entry.row.id,
+                properties: repaired.properties,
+                body: entry.row.body,
+                createdAt: entry.row.createdAt,
+                updatedAt: entry.row.updatedAt
+            )
+            rows.append(row)
+            if repaired.repaired {
+                repairedRows.append(row)
             }
         }
-
-        // Clean up orphan duplicate files.
-        for filename in duplicateFiles {
-            let filePath = (dbPath as NSString).appendingPathComponent(filename)
-            try? fileManager.removeItem(atPath: filePath)
-        }
-
-        let rows = bestByID.values.map(\.row)
-        let repairedRows = bestByID.values.filter(\.repaired).map(\.row)
-        let sortedRows = rows.sorted { $0.createdAt < $1.createdAt }
 
         // If we repaired legacy properties during load, persist the mapped values.
         if !repairedRows.isEmpty {
             for row in repairedRows {
                 try? rowStore.saveRow(row, schema: schema, dbPath: dbPath)
             }
-            try? updateIndex(rows: sortedRows, schema: schema, at: dbPath)
+            try? updateIndex(rows: rows, schema: schema, at: dbPath)
         }
 
-        return sortedRows
+        return rows
     }
 
     // MARK: - Legacy Property Repair

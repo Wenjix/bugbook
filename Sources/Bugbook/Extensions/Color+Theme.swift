@@ -19,6 +19,9 @@ extension Color {
     static let borderColor = Color("borderColor", bundle: nil)
     static let dividerColor = Color("dividerColor", bundle: nil)
 
+    // MARK: - Drag & Drop
+    static let dragIndicator = Color(light: Color(hex: "B4D7FF"), dark: Color(hex: "B4D7FF").opacity(0.7))
+
     // MARK: - Surfaces
     static let sidebarBg = Color("sidebarBg", bundle: nil)
     static let editorBg = Color("editorBg", bundle: nil)
@@ -43,9 +46,11 @@ extension Color {
     static let fallbackTextSecondary = Color(light: Color(hex: "6b6b6b"), dark: Color(hex: "9b9b9b"))
     static let fallbackTextMuted     = Color(light: Color(hex: "9b9b9b"), dark: Color(hex: "373737"))
 
-    // Accent
-    static let fallbackAccent      = Color(light: Color(hex: "2383e2"), dark: Color(hex: "528bcc"))
-    static let fallbackAccentLight = Color(light: Color(hex: "dbeafe"), dark: Color(hex: "1e3a5f"))
+    // Accent — neutral charcoal (light) / soft gray (dark)
+    static let fallbackAccent      = Color(light: Color(hex: "2d2d2d"), dark: Color(hex: "b0b0b0"))
+    static let fallbackAccentLight = Color(light: Color(hex: "e8e8e8"), dark: Color(hex: "3a3a3a"))
+    // Text on accent fill — white on charcoal (light), dark on gray (dark)
+    static let fallbackAccentFg    = Color(light: .white, dark: Color(hex: "1f1f1f"))
 
     // Borders & dividers
     static let fallbackBorderColor  = Color(light: Color(hex: "e8e8e5"), dark: Color(hex: "2e2e2e"))
@@ -63,6 +68,9 @@ extension Color {
     static let fallbackSurfaceHover  = Color(light: Color(hex: "0000000A"), dark: Color(hex: "ffffff0A"))
     static let fallbackSurfaceSubtle = Color(light: Color(hex: "00000008"), dark: Color(hex: "ffffff08"))
     static let fallbackBadgeBg       = Color(light: Color(hex: "0000001A"), dark: Color(hex: "ffffff1A"))
+
+    // Selection / highlight
+    static let selectionHighlight = Color(light: Color(hex: "B4D7FF").opacity(0.45), dark: Color(hex: "B4D7FF").opacity(0.2))
 }
 
 // MARK: - Helpers

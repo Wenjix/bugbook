@@ -6,7 +6,7 @@ enum EditorTypography {
     static let zoomScaleKey = "editorZoomScale"
     static let minZoomScale: CGFloat = 0.8
     static let maxZoomScale: CGFloat = 2.4
-    static let defaultZoomScale: CGFloat = 1.1
+    static let defaultZoomScale: CGFloat = 1.0
 
     static var zoomScale: CGFloat {
         let stored = UserDefaults.standard.double(forKey: zoomScaleKey)
@@ -25,7 +25,7 @@ enum EditorTypography {
 
 enum EditorSelectionStyle {
     static var backgroundColor: NSColor {
-        NSColor.controlAccentColor.withAlphaComponent(0.28)
+        NSColor(red: 0.706, green: 0.843, blue: 1.0, alpha: 0.45) // #B4D7FF at 45%
     }
 
     static var foregroundColor: NSColor {
@@ -43,6 +43,7 @@ struct BlockTextView: NSViewRepresentable {
     var isMultiline: Bool = false
     var font: NSFont = .systemFont(ofSize: EditorTypography.bodyFontSize)
     var textColor: NSColor = .labelColor
+    var strikethrough: Bool = false
     var placeholder: String? = nil
     var onTextChange: (() -> Void)? = nil
     @Binding var textHeight: CGFloat
@@ -154,6 +155,14 @@ struct BlockTextView: NSViewRepresentable {
             guard let coordinator = coordinator else { return false }
             return coordinator.handleImagePaste()
         }
+        textView.onPageLinkDrop = { [weak coordinator] pageName in
+            guard let coordinator = coordinator else { return }
+            let doc = coordinator.parent.document
+            let blockId = coordinator.parent.blockId
+            if let idx = doc.blocks.firstIndex(where: { $0.id == blockId }) {
+                doc.insertPageLinkBlock(at: idx + 1, name: pageName)
+            }
+        }
         textView.copySelectionAction = { [weak coordinator] in
             coordinator?.handleCopySelection() ?? false
         }
@@ -193,13 +202,18 @@ struct BlockTextView: NSViewRepresentable {
             .foregroundColor: EditorSelectionStyle.foregroundColor
         ]
 
-        // Re-apply foreground color to existing text when textColor changes
+        // Re-apply foreground color and strikethrough to existing text when textColor changes
         if textColor != context.coordinator.lastTextColor {
             context.coordinator.lastTextColor = textColor
             let fullRange = NSRange(location: 0, length: textView.textStorage?.length ?? 0)
             if fullRange.length > 0 {
                 context.coordinator.withProgrammaticViewUpdate {
                     textView.textStorage?.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+                    textView.textStorage?.addAttribute(
+                        .strikethroughStyle,
+                        value: strikethrough ? NSUnderlineStyle.single.rawValue : 0,
+                        range: fullRange
+                    )
                 }
             }
         }
@@ -716,6 +730,10 @@ struct BlockTextView: NSViewRepresentable {
                 }
                 parent.document.slashMenuFilter = String(textView.string.dropFirst(1))
                 parent.document.slashMenuSelectedIndex = 0
+                // Dismiss if no commands match — let the user keep typing
+                if parent.document.filteredSlashCommands.isEmpty {
+                    parent.document.dismissSlashMenu()
+                }
             } else if parent.document.slashMenuBlockId == parent.blockId {
                 parent.document.dismissSlashMenu()
             }
@@ -1203,6 +1221,7 @@ class BlockNSTextView: NSTextView {
     var onMultiBlockSelectionEnd: (() -> Void)?
     var onShiftClick: (() -> Void)?
     var onPasteImage: (() -> Bool)?
+    var onPageLinkDrop: ((String) -> Void)?
     var copySelectionAction: (() -> Bool)?
     var cutSelectionAction: (() -> Bool)?
     var onFrameWidthChanged: (() -> Void)?
@@ -1282,13 +1301,28 @@ class BlockNSTextView: NSTextView {
         }
     }
 
-    // Reject all external drops to prevent UUID string insertion from drag-and-drop
+    // Accept page path drops (sidebar page drags) but reject everything else
+    // to prevent UUID string insertion from block reorder drag-and-drop.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        return false
+        guard let pageName = pageNameFromDrag(sender) else { return false }
+        onPageLinkDrop?(pageName)
+        return true
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        return []
+        return pageNameFromDrag(sender) != nil ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return pageNameFromDrag(sender) != nil ? .copy : []
+    }
+
+    private func pageNameFromDrag(_ sender: NSDraggingInfo) -> String? {
+        guard let str = sender.draggingPasteboard.string(forType: .string) else { return nil }
+        let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"), trimmed.hasSuffix(".md") else { return nil }
+        let filename = (trimmed as NSString).lastPathComponent
+        return String(filename.dropLast(3))
     }
 
     override func paste(_ sender: Any?) {

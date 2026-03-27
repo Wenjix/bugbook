@@ -65,7 +65,7 @@ struct MovePagePickerView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 16)
                         } else {
-                            ForEach(items.enumerated(), id: \.element.id) { index, dest in
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, dest in
                                 destinationRow(dest, index: index)
                                     .id(dest.id)
                             }
@@ -213,8 +213,6 @@ struct MovePagePickerView: View {
                 ))
             } else if entry.isDatabase {
                 // Skip databases as move targets
-            } else if entry.isCanvas {
-                // Skip canvases as move targets
             }
 
             if let children = entry.children {

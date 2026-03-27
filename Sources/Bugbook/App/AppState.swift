@@ -31,9 +31,11 @@ enum ViewMode {
     var aiSidePanelOpen: Bool = false
     var aiInitialPrompt: String?
     var aiSelectionContext: String?
+    var aiReferencedItems: [AiContextItem] = []
     var currentView: ViewMode = .editor
     var movePagePath: String?  // non-nil triggers move page picker
-    var flashcardReviewOpen: Bool = false
+
+    var isRecording: Bool = false
 
     var activeTab: OpenFile? {
         guard activeTabIndex >= 0, activeTabIndex < openTabs.count else { return nil }
@@ -243,14 +245,12 @@ enum ViewMode {
         }
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         return FileEntry(
             id: path,
             name: (path as NSString).lastPathComponent,
             path: path,
-            isDirectory: isDatabase || isCanvas,
+            isDirectory: isDatabase,
             kind: kind
         )
     }
@@ -362,6 +362,30 @@ enum ViewMode {
         activeTabIndex = openTabs.count - 1
     }
 
+    func openMeetings() {
+        showSettings = false
+        currentView = .editor
+
+        // Open meetings as a tab (reuse existing if open)
+        let meetingsPath = "bugbook://meetings"
+        if let existingIndex = openTabs.firstIndex(where: { $0.isMeetings }) {
+            activeTabIndex = existingIndex
+            return
+        }
+        let tab = OpenFile(
+            id: UUID(),
+            path: meetingsPath,
+            content: "",
+            isDirty: false,
+            isEmptyTab: false,
+            kind: .meetings,
+            displayName: "Meetings",
+            icon: "person.2"
+        )
+        openTabs.append(tab)
+        activeTabIndex = openTabs.count - 1
+    }
+
     func toggleAiPanel(prompt: String? = nil) {
         if aiSidePanelOpen {
             aiSidePanelOpen = false
@@ -370,8 +394,11 @@ enum ViewMode {
         openAiPanel(prompt: prompt)
     }
 
-    func openAiPanel(prompt: String? = nil) {
+    func openAiPanel(prompt: String? = nil, referencedItems: [AiContextItem] = []) {
         aiInitialPrompt = prompt
+        if !referencedItems.isEmpty {
+            aiReferencedItems.append(contentsOf: referencedItems)
+        }
         showSettings = false
         if currentView == .chat {
             currentView = .editor

@@ -49,13 +49,14 @@ class FileSystemService {
 
     // MARK: - File Tree Building
 
-    func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
+    nonisolated func buildFileTree(at path: String, depth: Int = 0) -> [FileEntry] {
         let state = depth == 0 ? Log.signpost.beginInterval("buildFileTree") : nil
         defer { if let state { Log.signpost.endInterval("buildFileTree", state) } }
+        let fm = FileManager.default
 
         guard depth < 5 else { return [] }
 
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else {
+        guard let contents = try? fm.contentsOfDirectory(atPath: path) else {
             return []
         }
 
@@ -73,7 +74,7 @@ class FileSystemService {
             let fullPath = (path as NSString).appendingPathComponent(name)
             if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }
             var isDir: ObjCBool = false
-            guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
                 if isDatabaseFolder(at: fullPath) {
@@ -92,22 +93,6 @@ class FileSystemService {
                         path: fullPath,
                         isDirectory: false,
                         kind: .database
-                    ))
-                } else if isCanvasFolder(at: fullPath) {
-                    // Canvas folder - read display name from _canvas.json
-                    var canvasName = name
-                    let metaPath = (fullPath as NSString).appendingPathComponent("_canvas.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let n = json["name"] as? String {
-                        canvasName = n
-                    }
-                    folders.append(FileEntry(
-                        id: fullPath,
-                        name: canvasName,
-                        path: fullPath,
-                        isDirectory: false,
-                        kind: .canvas
                     ))
                 } else if isCompanionFolder(name, siblings: siblingNames) {
                     // Companion folder - skip, its contents are handled by the parent .md file
@@ -130,7 +115,7 @@ class FileSystemService {
                 // Check for companion folder children
                 let companionPath = companionFolderPath(for: fullPath)
                 var children: [FileEntry]?
-                if fileManager.fileExists(atPath: companionPath) {
+                if fm.fileExists(atPath: companionPath) {
                     children = buildFileTree(at: companionPath, depth: depth + 1)
                 }
 
@@ -238,8 +223,6 @@ class FileSystemService {
             let displayName = (newPath as NSString).lastPathComponent
             if isDatabaseFolder(at: newPath) {
                 try? updateDatabaseDisplayName(at: newPath, name: displayName)
-            } else if isCanvasFolder(at: newPath) {
-                try? updateCanvasDisplayName(at: newPath, name: displayName)
             }
             return newPath
         }
@@ -580,7 +563,8 @@ class FileSystemService {
             return defaultSortedEntries(entries)
         }
 
-        let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        // Use last occurrence to handle duplicate names in saved order (prevents crash)
+        let orderMap = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { _, last in last })
         return entries.sorted { a, b in
             let idxA = orderMap[a.name] ?? Int.max
             let idxB = orderMap[b.name] ?? Int.max
@@ -704,7 +688,7 @@ class FileSystemService {
             let fullPath = (trashDir as NSString).appendingPathComponent(name)
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue,
-               !isDatabaseFolder(at: fullPath), !isCanvasFolder(at: fullPath) {
+               !isDatabaseFolder(at: fullPath) {
                 return nil
             }
 
@@ -808,23 +792,18 @@ class FileSystemService {
         return fileManager.fileExists(atPath: path) ? path : nil
     }
 
-    private func companionFolderPath(for mdPath: String) -> String {
+    nonisolated private func companionFolderPath(for mdPath: String) -> String {
         guard mdPath.hasSuffix(".md") else { return mdPath }
         return String(mdPath.dropLast(3))
     }
 
-    private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {
+    nonisolated private func isCompanionFolder(_ folderName: String, siblings: Set<String>) -> Bool {
         siblings.contains("\(folderName).md")
     }
 
-    func isDatabaseFolder(at path: String) -> Bool {
+    nonisolated func isDatabaseFolder(at path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
-        return fileManager.fileExists(atPath: schemaPath)
-    }
-
-    func isCanvasFolder(at path: String) -> Bool {
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        return fileManager.fileExists(atPath: canvasPath)
+        return FileManager.default.fileExists(atPath: schemaPath)
     }
 
     func updateDatabaseDisplayName(at path: String, name: String) throws {
@@ -839,46 +818,17 @@ class FileSystemService {
         try updated.write(to: URL(fileURLWithPath: schemaPath), options: .atomic)
     }
 
-    func updateCanvasDisplayName(at path: String, name: String) throws {
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        let data = try Data(contentsOf: URL(fileURLWithPath: canvasPath))
-        var meta = try JSONDecoder().decode(CanvasFileMeta.self, from: data)
-        meta.name = name
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let updated = try encoder.encode(meta)
-        try updated.write(to: URL(fileURLWithPath: canvasPath), options: .atomic)
-    }
-
-    func createCanvas(in directory: String, name: String) throws -> String {
-        let sanitized = name.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-        let folderName = sanitized.isEmpty ? "Untitled Canvas" : sanitized
-        let folderPath = uniqueDirectoryPath(in: directory, base: folderName)
-        try fileManager.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
-
-        let canvasId = "canvas_\(UUID().uuidString.prefix(8).lowercased())"
-        let meta = CanvasFileMeta(
-            id: canvasId,
-            name: folderName,
-            version: 1,
-            viewport: CanvasViewport(x: 0, y: 0, zoom: 1.0),
-            nodes: [],
-            edges: []
-        )
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(meta)
-        let metaPath = (folderPath as NSString).appendingPathComponent("_canvas.json")
-        try data.write(to: URL(fileURLWithPath: metaPath), options: .atomic)
-
-        return folderPath
-    }
-
-    private func parseIconFromFile(at path: String) -> String? {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        return parseIcon(from: content)
+    nonisolated private func parseIconFromFile(at path: String) -> String? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { fh.closeFile() }
+        let data = fh.readData(ofLength: 256)
+        guard let head = String(data: data, encoding: .utf8) else { return nil }
+        guard let range = head.range(of: "<!-- icon:(.*?) -->", options: .regularExpression) else {
+            return nil
+        }
+        let match = String(head[range])
+        let inner = match.dropFirst(10).dropLast(4).trimmingCharacters(in: .whitespaces)
+        return inner.isEmpty ? nil : inner
     }
 
     private func loadRecentWorkspaces() {

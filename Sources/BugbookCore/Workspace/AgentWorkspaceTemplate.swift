@@ -64,7 +64,36 @@ bugbook backlinks "Bugbook Strategy"
 bugbook search "local-first agent notes"
 ```
 
-`bugbook page get --raw` prints clean markdown by default; add `--include-internal-comments` for the literal stored file. `bugbook page get --blocks` returns parsed markdown blocks plus document metadata. `bugbook page get --block-id` narrows reads to one block by stable UUID or `path:` selector. `bugbook page headings` lists headings with levels and line numbers. `bugbook page format --style bugbook|commonmark` rewrites a page using either Bugbook's dense block format or a CommonMark-style layout with structural blank lines. `bugbook page format --style commonmark` strips persisted block IDs and converts Bugbook-only block syntax into portable approximations: toggles become `<details>`, columns are flattened sequentially with thematic breaks, database embeds become labeled text, and page-link blocks become relative markdown links when they resolve uniquely in the workspace or plain text when they do not. `bugbook page format --report` adds `warning_count` plus structured `warnings` so agents can see which page links were downgraded during commonmark export. `bugbook page format --fail-on-warnings` turns those portability warnings into a non-zero exit and skips the write, which is useful for agent and CI gating. `bugbook page compact` is the shortcut for `bugbook page format --style bugbook`, removes empty paragraph gaps, and both commands report `empty_paragraphs_removed` in their mutation payloads. `bugbook page ensure-block-ids` persists unique stable block IDs and repairs duplicate persisted IDs, while `bugbook page strip-block-ids` removes those internal comments again. `bugbook page get --section` or `--section-line` narrows reads to a single heading section. `bugbook page update` supports either a full replacement or prepend/append edits per command, `--section` or `--section-line` scopes those edits to a heading body, `--block-id` scopes them to one block without polluting a clean note, `--text-file` preserves the selected block's markdown type, `--create-section` appends a missing section safely, `--dry-run` previews the resulting page plus structured line changes before writing, and `--output summary` returns a compact mutation payload. `bugbook block list`, `block get`, `block replace`, `block update-text`, `block insert`, `block move`, and `block delete` provide a dedicated block-level surface. `bugbook get` and `bugbook query --fields` return friendly property names and display values by default; add `--raw-properties` when you also need schema IDs and stored option IDs.
+`bugbook page get --raw` prints clean markdown by default; add \
+`--include-internal-comments` for the literal stored file. \
+`bugbook page get --blocks` returns parsed markdown blocks plus document metadata. \
+`bugbook page get --block-id` narrows reads to one block by stable UUID or `path:` selector. \
+`bugbook page headings` lists headings with levels and line numbers. \
+`bugbook page format --style bugbook|commonmark` rewrites a page using either Bugbook's dense \
+block format or a CommonMark-style layout with structural blank lines. \
+`bugbook page format --style commonmark` strips persisted block IDs and converts Bugbook-only \
+block syntax into portable approximations: toggles become `<details>`, columns are flattened \
+sequentially with thematic breaks, database embeds become labeled text, and page-link blocks \
+become relative markdown links when they resolve uniquely in the workspace or plain text when \
+they do not. `bugbook page format --report` adds `warning_count` plus structured `warnings` \
+so agents can see which page links were downgraded during commonmark export. \
+`bugbook page format --fail-on-warnings` turns those portability warnings into a non-zero exit \
+and skips the write, which is useful for agent and CI gating. \
+`bugbook page compact` is the shortcut for `bugbook page format --style bugbook`, removes \
+empty paragraph gaps, and both commands report `empty_paragraphs_removed` in their mutation \
+payloads. `bugbook page ensure-block-ids` persists unique stable block IDs and repairs \
+duplicate persisted IDs, while `bugbook page strip-block-ids` removes those internal comments \
+again. `bugbook page get --section` or `--section-line` narrows reads to a single heading \
+section. `bugbook page update` supports either a full replacement or prepend/append edits per \
+command, `--section` or `--section-line` scopes those edits to a heading body, `--block-id` \
+scopes them to one block without polluting a clean note, `--text-file` preserves the selected \
+block's markdown type, `--create-section` appends a missing section safely, `--dry-run` \
+previews the resulting page plus structured line changes before writing, and \
+`--output summary` returns a compact mutation payload. `bugbook block list`, `block get`, \
+`block replace`, `block update-text`, `block insert`, `block move`, and `block delete` \
+provide a dedicated block-level surface. `bugbook get` and `bugbook query --fields` return \
+friendly property names and display values by default; add `--raw-properties` when you also \
+need schema IDs and stored option IDs.
 
 ## Boards And Databases
 ```bash
@@ -82,7 +111,11 @@ bugbook db view add "Bugbook Strategy Board" --type calendar --name "Calendar" -
 bugbook db view set-default "Bugbook Strategy Board" "Calendar"
 ```
 
-`bugbook db list` includes `relative_path` and, when applicable, `parent_page` metadata so agents can see where a database actually lives. `bugbook db move --page` reparents a database into a page companion folder, retargets stale embed markers, and supports `--dry-run` so agents can preview the change before writing. You can write rows using either schema IDs or friendly property/option names, but inspect the schema first when you need exact field coverage.
+`bugbook db list` includes `relative_path` and, when applicable, `parent_page` metadata so \
+agents can see where a database actually lives. `bugbook db move --page` reparents a database \
+into a page companion folder, retargets stale embed markers, and supports `--dry-run` so \
+agents can preview the change before writing. You can write rows using either schema IDs or \
+friendly property/option names, but inspect the schema first when you need exact field coverage.
 
 ## Skills
 ```bash

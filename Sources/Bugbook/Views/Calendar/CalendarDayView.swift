@@ -89,6 +89,7 @@ struct CalendarDayView: View {
 
                         // Database items
                         let dbItems = calendarVM.databaseItems(for: date, from: databaseItems)
+                            .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                         ForEach(dbItems, id: \.id) { item in
                             let y = calendarVM.yPosition(for: item.date, hourHeight: hourHeight)
                             let color = TagColor.color(for: item.color)

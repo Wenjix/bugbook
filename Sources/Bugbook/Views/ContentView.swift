@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import os
 import Sentry
+import BugbookCore
 
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,12 +15,11 @@ struct ContentView: View {
     @State private var calendarService = CalendarService()
     @State private var calendarVM = CalendarViewModel()
     @State private var meetingNoteService = MeetingNoteService()
+    @State private var transcriptionService = TranscriptionService()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
-    @State private var flashcardCards: [FlashcardItem] = []
-    @State private var canvasDocuments: [UUID: CanvasDocument] = [:]
+
     @State private var saveTask: Task<Void, Never>?
-    @State private var canvasSaveTask: Task<Void, Never>?
     @State private var sidebarPeek = SidebarPeekState()
     @State private var editorUI = EditorUIState()
     @State private var themeToast: ThemeMode?
@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
     @State private var lastTrashPurgeWorkspace: String?
+    @State private var recordingPillController = FloatingRecordingPillController()
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
 
     // Database row peek / modal
@@ -65,7 +66,7 @@ struct ContentView: View {
             sidebarToggleOverlay
             sidebarPeekOverlay
             commandPaletteOverlay
-            flashcardReviewOverlay
+
             movePageOverlay
             themeToastOverlay
             editorZoomOverlay
@@ -102,8 +103,8 @@ struct ContentView: View {
                 guard oldValue != clamped else { return }
                 editorUI.showZoomHud()
             }
-            .onChange(of: appState.settings.qmdSearchMode) { _, mode in
-                QmdService.prewarmDaemonIfNeeded(mode: mode)
+            .onChange(of: appState.settings.qmdSearchMode) { _, _ in
+                // v2: no daemon needed, qmd query runs locally
             }
             .onChange(of: appState.sidebarOpen) { _, _ in
                 sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
@@ -148,6 +149,9 @@ struct ContentView: View {
                     ensureAiInitializedIfNeeded()
                 }
             }
+            .onChange(of: appState.isRecording) { _, recording in
+                recordingPillController.isRecording = recording
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
                 flushDirtyTabs()
             }
@@ -161,6 +165,7 @@ struct ContentView: View {
                 editorUI.cleanUp()
                 sidebarPeek.cleanUp()
                 workspaceWatcher?.stop()
+                recordingPillController.cleanup()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 if let path = notification.object as? String {
@@ -191,7 +196,9 @@ struct ContentView: View {
                 if let info = notification.userInfo,
                    let sourcePath = info["sourcePath"] as? String,
                    let destDir = info["destDir"] as? String {
-                    performMovePage(from: sourcePath, toDirectory: destDir)
+                    let insertIndex = info["insertIndex"] as? Int
+                    let siblingNames = info["siblings"] as? [String]
+                    performMovePage(from: sourcePath, toDirectory: destDir, insertIndex: insertIndex, siblingNames: siblingNames)
                 }
             }
     }
@@ -224,10 +231,12 @@ struct ContentView: View {
                 handleSidebarToggleRequest()
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
+                flushDirtyTabContent()
                 appState.commandPaletteMode = .search
                 appState.commandPaletteOpen.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpenNewTab)) { _ in
+                flushDirtyTabContent()
                 appState.commandPaletteMode = .newTab
                 appState.commandPaletteOpen = true
             }
@@ -250,15 +259,12 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
                 appState.openCalendar()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .reviewFlashcards)) { _ in
-                flashcardCards = collectFlashcards()
-                appState.flashcardReviewOpen = true
+            .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
+                appState.openMeetings()
             }
+
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .newCanvas)) { _ in
-                createNewCanvas()
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateBack)) { _ in
                 navigateBackInActiveTab()
@@ -474,23 +480,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var flashcardReviewOverlay: some View {
-        if appState.flashcardReviewOpen {
-            FlashcardReviewView(
-                cards: flashcardCards,
-                onDismiss: { appState.flashcardReviewOpen = false }
-            )
-            .zIndex(100)
-        }
-    }
-
-    private func collectFlashcards() -> [FlashcardItem] {
-        guard let tab = appState.activeTab,
-              let doc = blockDocuments[tab.id] else { return [] }
-        let name = tab.displayName ?? (tab.path as NSString).lastPathComponent
-        return FlashcardScanner.scan(document: doc, pageName: name)
-    }
 
     @ViewBuilder
     private func sidebarChromeButton(
@@ -568,11 +557,10 @@ struct ContentView: View {
         }
     }
 
-    private func performMovePage(from sourcePath: String, toDirectory destDir: String) {
+    private func performMovePage(from sourcePath: String, toDirectory destDir: String, insertIndex: Int? = nil, siblingNames: [String]? = nil) {
         do {
             let newPath = try fileSystem.movePage(at: sourcePath, toDirectory: destDir)
             let oldPath = sourcePath
-            let movingDatabase = fileSystem.isDatabaseFolder(at: newPath)
 
             // Update any open tabs pointing to the old path
             for tab in appState.openTabs {
@@ -610,26 +598,12 @@ struct ContentView: View {
                 }
             }
 
-            // Insert a page link in the parent page's content
-            let parentPagePath = destDir + ".md"
-            if !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
-                let pageName = (newPath as NSString).lastPathComponent
-                    .replacingOccurrences(of: ".md", with: "")
-                let linkLine = "[[\(pageName)]]"
-                if var parentContent = try? fileSystem.loadFile(at: parentPagePath) {
-                    // Only add if not already linked
-                    if !parentContent.contains(linkLine) {
-                        if !parentContent.hasSuffix("\n") { parentContent += "\n" }
-                        parentContent += "\n\(linkLine)\n"
-                        try? fileSystem.saveFile(at: parentPagePath, content: parentContent)
-
-                        // Reload the parent page if it's open
-                        if let parentTab = appState.openTabs.first(where: { $0.path == parentPagePath }),
-                           let parentDoc = blockDocuments[parentTab.id] {
-                            parentDoc.blocks = MarkdownBlockParser.parse(parentContent)
-                        }
-                    }
-                }
+            // Apply reorder if a target position was specified (cross-parent .above drop)
+            if let insertIndex, let siblingNames {
+                let movedName = (newPath as NSString).lastPathComponent
+                var names = siblingNames
+                names.insert(movedName, at: min(insertIndex, names.count))
+                fileSystem.saveCustomOrder(names, for: destDir)
             }
 
             appState.movePagePath = nil
@@ -662,22 +636,6 @@ struct ContentView: View {
                             }
                         }
 
-                        // Remove the page link from the parent page
-                        let parentPagePath = destDir + ".md"
-                        if !movingDatabase, FileManager.default.fileExists(atPath: parentPagePath) {
-                            let pageName = (newPath as NSString).lastPathComponent
-                                .replacingOccurrences(of: ".md", with: "")
-                            let linkLine = "[[\(pageName)]]"
-                            if var parentContent = try? fs.loadFile(at: parentPagePath) {
-                                parentContent = parentContent.replacingOccurrences(of: "\n\(linkLine)\n", with: "\n")
-                                try? fs.saveFile(at: parentPagePath, content: parentContent)
-                                if let parentTab = self.appState.openTabs.first(where: { $0.path == parentPagePath }),
-                                   let parentDoc = self.blockDocuments[parentTab.id] {
-                                    parentDoc.blocks = MarkdownBlockParser.parse(parentContent)
-                                }
-                            }
-                        }
-
                         self.refreshFileTree()
                     } catch {
                         Log.fileSystem.error("Undo move failed: \(error.localizedDescription)")
@@ -693,6 +651,34 @@ struct ContentView: View {
         } catch {
             Log.fileSystem.error("Move page failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Handle a page path dropped from the sidebar into the editor.
+    /// Inserts a page link block and moves the source file into the current page's companion folder.
+    private func handleSidebarPageDrop(sourcePath: String, into document: BlockDocument, at insertIndex: Int) {
+        guard let tab = appState.activeTab,
+              sourcePath != tab.path,
+              FileManager.default.fileExists(atPath: sourcePath) else { return }
+
+        let pageName = ((sourcePath as NSString).lastPathComponent as NSString).deletingPathExtension
+
+        let targetCompanionDir: String
+        if tab.path.hasSuffix(".md") {
+            targetCompanionDir = String(tab.path.dropLast(3))
+        } else {
+            targetCompanionDir = tab.path
+        }
+
+        guard !tab.path.hasPrefix(sourcePath.hasSuffix(".md") ? String(sourcePath.dropLast(3)) + "/" : sourcePath + "/") else { return }
+
+        performMovePage(from: sourcePath, toDirectory: targetCompanionDir)
+
+        let alreadyLinked = document.blocks.contains { $0.type == .pageLink && $0.pageLinkName == pageName }
+        if !alreadyLinked {
+            document.insertPageLinkBlock(at: insertIndex, name: pageName)
+        }
+
+        scheduleSave()
     }
 
     /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
@@ -782,7 +768,8 @@ struct ContentView: View {
 
     private var activeTabLeadingPadding: CGFloat {
         let isCalendar = appState.activeTab?.isCalendar ?? false
-        if isCalendar { return 0 }
+        let isMeetings = appState.activeTab?.isMeetings ?? false
+        if isCalendar || isMeetings { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -798,7 +785,7 @@ struct ContentView: View {
             .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
 
         VStack(spacing: 0) {
-            if let tab = appState.activeTab, !tab.isEmptyTab, !tab.isCalendar {
+            if let tab = appState.activeTab, !tab.isEmptyTab, !tab.isCalendar, !tab.isMeetings {
                 HStack {
                     BreadcrumbView(
                         items: breadcrumbs(for: tab),
@@ -808,7 +795,7 @@ struct ContentView: View {
 
                     Spacer()
 
-                    if !tab.isEmptyTab && !tab.isCanvas && !tab.isDatabase {
+                    if !tab.isEmptyTab && !tab.isDatabase {
                         Button {
                             showPageOptionsMenu.toggle()
                         } label: {
@@ -899,7 +886,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .inlineDatabaseRowPeek)) { notification in
             guard let dbPath = notification.databasePath,
                   let rowId = notification.databaseRowId else { return }
-            peekTarget = RowTarget(dbPath: dbPath, rowId: rowId)
+            if peekTarget?.dbPath == dbPath && peekTarget?.rowId == rowId {
+                closePeekPanel()
+            } else {
+                peekTarget = RowTarget(dbPath: dbPath, rowId: rowId)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .databaseRowModalRequested)) { notification in
             guard let dbPath = notification.databasePath,
@@ -918,8 +909,6 @@ struct ContentView: View {
                     onOpenFolder: { Task { await openWorkspace() } }
                 )
                 .onAppear { openDefaultPageIfConfigured() }
-            } else if tab.isCanvas {
-                canvasEditor(for: tab)
             } else if tab.isDatabaseRow, let dbPath = tab.databasePath, let rowId = tab.databaseRowId {
                 DatabaseRowFullPageView(
                     dbPath: dbPath,
@@ -936,6 +925,16 @@ struct ContentView: View {
                     calendarService: calendarService,
                     calendarVM: calendarVM,
                     meetingNoteService: meetingNoteService,
+                    aiService: aiService,
+                    onNavigateToFile: { path in
+                        navigateToFilePath(path)
+                    }
+                )
+            } else if tab.isMeetings {
+                MeetingsView(
+                    appState: appState,
+                    calendarService: calendarService,
+                    aiService: aiService,
                     onNavigateToFile: { path in
                         navigateToFilePath(path)
                     }
@@ -1001,23 +1000,27 @@ struct ContentView: View {
                                         .padding(.trailing, 52)
                                         .padding(.top, 8)
                                 }
-
-                                BlockEditorView(
-                                    document: document,
-                                    onTextChange: {
-                                        guard appState.activeTabIndex < appState.openTabs.count else { return }
-                                        if !appState.openTabs[appState.activeTabIndex].isDirty {
-                                            appState.openTabs[appState.activeTabIndex].isDirty = true
-                                        }
-                                        syncTitle(from: document)
-                                        scheduleSave()
-                                    },
-                                    onTyping: { triggerFocusMode() }
-                                )
                             }
                             .frame(maxWidth: document.fullWidth ? .infinity : 860)
                             Spacer(minLength: 0)
                         }
+
+                        BlockEditorView(
+                            document: document,
+                            onTextChange: {
+                                guard appState.activeTabIndex < appState.openTabs.count else { return }
+                                if !appState.openTabs[appState.activeTabIndex].isDirty {
+                                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                                }
+                                syncTitle(from: document)
+                                scheduleSave()
+                            },
+                            onTyping: { triggerFocusMode() },
+                            onPagePathDrop: { sourcePath, insertIndex in
+                                handleSidebarPageDrop(sourcePath: sourcePath, into: document, at: insertIndex)
+                            },
+                            contentColumnMaxWidth: document.fullWidth ? nil : 860
+                        )
                     }
                 }
                 .background(Color.fallbackEditorBg)
@@ -1072,6 +1075,12 @@ struct ContentView: View {
         doc.onCreateDatabase = { [weak appState] name in
             guard appState?.workspacePath != nil else { return nil }
             let path = try? createDatabasePath(name: name, parentPagePath: doc.filePath)
+            if path != nil { refreshFileTree() }
+            return path
+        }
+        doc.onCreateMeetingDatabase = { [weak appState] in
+            guard let workspace = appState?.workspacePath else { return nil }
+            let path = findOrCreateMeetingsDatabase(in: workspace)
             if path != nil { refreshFileTree() }
             return path
         }
@@ -1143,6 +1152,172 @@ struct ContentView: View {
         doc.onCancelAiPrompt = { [weak doc] in
             doc?.dismissAiPrompt()
         }
+        let ts = transcriptionService
+        doc.transcriptionService = ts
+        doc.onStartMeeting = { [weak doc] blockId in
+            Task {
+                await ts.startRecording()
+                // Poll confirmed segments and audio level after recording starts
+                var lastSegmentCount = 0
+                var lastVolatile = ""
+                var lastLevel: Float = -1
+                while ts.isRecording {
+                    let level = ts.audioLevel
+                    if level != lastLevel {
+                        lastLevel = level
+                        doc?.meetingAudioLevel = level
+                    }
+
+                    let segments = ts.confirmedSegments
+                    let volatile = ts.volatileText
+                    let segmentsChanged = segments.count != lastSegmentCount
+                    let volatileChanged = volatile != lastVolatile
+                    if segmentsChanged || volatileChanged {
+                        lastSegmentCount = segments.count
+                        lastVolatile = volatile
+                        var entries = segments
+                        if !volatile.isEmpty { entries.append(volatile) }
+                        doc?.updateBlockProperty(id: blockId) { block in
+                            block.transcriptEntries = entries
+                            block.meetingTranscript = entries.joined(separator: " ")
+                        }
+                        doc?.meetingVolatileText = volatile
+                    }
+
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                doc?.meetingAudioLevel = 0
+                doc?.meetingVolatileText = ""
+            }
+        }
+        doc.onStopMeeting = { [weak doc] blockId in
+            _ = ts.stopRecording()
+            guard let doc else { return }
+            let transcript = ts.currentTranscript
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .complete
+                block.meetingTranscript = transcript
+            }
+        }
+        doc.onDropPageFromSidebar = { [weak appState, weak doc] sourcePath, insertionIndex in
+            guard let appState, let doc else { return }
+            guard let tab = appState.activeTab else { return }
+            // Don't drop a page onto itself
+            guard sourcePath != tab.path else { return }
+
+            let pageName = ((sourcePath as NSString).lastPathComponent as NSString)
+                .deletingPathExtension
+
+            // Insert the page link block at the drop location
+            doc.insertPageLinkBlock(at: insertionIndex, name: pageName)
+
+            // Mark dirty and save immediately so performMovePage sees the link
+            // already in the file and doesn't append a duplicate at the bottom
+            if let tabIdx = appState.openTabs.firstIndex(where: { $0.id == tab.id }) {
+                appState.openTabs[tabIdx].isDirty = true
+            }
+            performSave(tabId: tab.id)
+
+            // Move the file into this page's companion folder
+            let companionDir = tab.path.hasSuffix(".md") ? String(tab.path.dropLast(3)) : tab.path
+            performMovePage(from: sourcePath, toDirectory: companionDir)
+        }
+    }
+
+    // MARK: - Meeting Finalization
+
+    private static let meetingTitleDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "MMM d, yyyy"
+        return df
+    }()
+
+    private func finalizeMeeting(doc: BlockDocument, blockId: UUID, transcript: String, appState: AppState?) async {
+        let fallbackTitle = "Meeting \(Self.meetingTitleDateFormatter.string(from: Date()))"
+
+        guard !transcript.isEmpty else {
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .complete
+                if block.meetingTitle.isEmpty { block.meetingTitle = fallbackTitle }
+                block.meetingSummary = "No audio was captured."
+                block.meetingActionItems = ""
+            }
+            return
+        }
+
+        // Include user notes if they wrote any during the meeting
+        let userNotes = doc.blocks.first(where: { $0.id == blockId })?.meetingNotes ?? ""
+
+        let prompt = """
+        You are a meeting notes assistant. Produce clean, structured notes like a skilled executive assistant would.
+
+        Output format (use EXACTLY):
+
+        TITLE: <descriptive title from content — e.g. "Q2 Planning & AutoLoRA Demo", NOT "Meeting" or a date>
+
+        ### <Topic or Presenter Name>
+        - **Bold key entity** followed by concise detail
+          - Supporting specifics (numbers, names, decisions) as sub-bullets
+        - Another key point
+          1. Use numbered sub-items for sequential steps or features
+
+        ### Action Items
+        - [ ] Owner: specific action item with deadline if mentioned
+
+        Style rules:
+        - **Bold** speaker names, project names, and key terms on first mention
+        - ### for section headings (topic-based, not "Summary")
+        - Top-level bullets: one key point each, specific and factual
+        - Sub-bullets: only for supporting details that add real information
+        - Numbered sub-lists for features, steps, or ordered items
+        - NO meta-commentary ("participants discussed", "the team talked about") — state facts directly
+        - NO filler or padding — every bullet should carry information
+        - Keep total output under 30 bullet points. For long meetings, prioritize: decisions > action items > key facts > discussion details
+        - If nothing actionable, omit Action Items entirely
+        \(userNotes.isEmpty ? "" : "\nUser's notes during the meeting (integrate into relevant sections):\n\(userNotes)\n")
+        Transcript:
+        \(transcript)
+        """
+
+        let engine = appState?.settings.preferredAIEngine ?? .auto
+        let apiKey = appState?.settings.anthropicApiKey ?? ""
+        let workspace = appState?.workspacePath ?? ""
+
+        do {
+            let result = try await aiService.generateContent(
+                engine: engine,
+                workspacePath: workspace,
+                prompt: prompt,
+                apiKey: apiKey
+            )
+
+            // Extract title from first line if present
+            var title = fallbackTitle
+            var body = result
+            if let titleLine = result.components(separatedBy: "\n").first,
+               titleLine.hasPrefix("TITLE:") {
+                title = titleLine.replacingOccurrences(of: "TITLE:", with: "").trimmingCharacters(in: .whitespaces)
+                body = result.components(separatedBy: "\n").dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .complete
+                // Only override title if user didn't set one manually
+                if block.meetingTitle.isEmpty || block.meetingTitle == "New Meeting" {
+                    block.meetingTitle = title
+                }
+                block.meetingSummary = body
+                // Store full structured output for the summary view parser
+                block.language = body
+            }
+        } catch {
+            doc.updateBlockProperty(id: blockId) { block in
+                block.meetingState = .complete
+                if block.meetingTitle.isEmpty { block.meetingTitle = fallbackTitle }
+                block.meetingSummary = "AI summary unavailable: \(error.localizedDescription)"
+                block.meetingActionItems = ""
+            }
+        }
     }
 
     // MARK: - Theme
@@ -1189,8 +1364,9 @@ struct ContentView: View {
                       let doc = blockDocuments[tab.id],
                       let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
                 hideFormattingPanel()
+                let blockItems = doc.selectedBlockContextItems()
                 appState.aiSelectionContext = selectedMarkdown
-                appState.openAiPanel()
+                appState.openAiPanel(referencedItems: blockItems)
             }
         )
         panel.show(above: rect)
@@ -1227,8 +1403,9 @@ struct ContentView: View {
                       let doc = blockDocuments[tab.id],
                       let selectedMarkdown = doc.selectedBlocksMarkdown() else { return }
                 hideFormattingPanel()
+                let blockItems = doc.selectedBlockContextItems()
                 appState.aiSelectionContext = selectedMarkdown
-                appState.openAiPanel()
+                appState.openAiPanel(referencedItems: blockItems)
             }
         )
         panel.show(above: blockRect)
@@ -1311,14 +1488,12 @@ struct ContentView: View {
         let name = (defaultPage as NSString).lastPathComponent
         let schemaPath = (defaultPage as NSString).appendingPathComponent("_schema.json")
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
-        let canvasPath = (defaultPage as NSString).appendingPathComponent("_canvas.json")
-        let isCanvas = FileManager.default.fileExists(atPath: canvasPath)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(
             id: defaultPage,
             name: name,
             path: defaultPage,
-            isDirectory: isDatabase || isCanvas,
+            isDirectory: isDatabase,
             kind: kind
         )
         navigateToEntry(entry, preferExistingTab: false)
@@ -1355,13 +1530,12 @@ struct ContentView: View {
         }
 
         let isDatabase = isDatabaseFolderPath(targetPath)
-        let isCanvas = isCanvasFolderPath(targetPath)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(
             id: targetPath,
             name: item.name,
             path: targetPath,
-            isDirectory: isDatabase || isCanvas,
+            isDirectory: isDatabase,
             kind: kind,
             icon: item.icon
         )
@@ -1370,7 +1544,6 @@ struct ContentView: View {
 
     private func isOpenableBreadcrumbPath(_ path: String) -> Bool {
         if isDatabaseFolderPath(path) { return true }
-        if isCanvasFolderPath(path) { return true }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
         return !isDir.boolValue
@@ -1379,11 +1552,6 @@ struct ContentView: View {
     private func isDatabaseFolderPath(_ path: String) -> Bool {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         return FileManager.default.fileExists(atPath: schemaPath)
-    }
-
-    private func isCanvasFolderPath(_ path: String) -> Bool {
-        let canvasPath = (path as NSString).appendingPathComponent("_canvas.json")
-        return FileManager.default.fileExists(atPath: canvasPath)
     }
 
     private func initializeWorkspace() {
@@ -1401,8 +1569,6 @@ struct ContentView: View {
 
         // Register workspace as a qmd collection in the background (no-op if qmd not installed)
         QmdService.registerCollectionInBackground(workspace: workspacePath)
-        // Pre-warm the daemon now if hybrid mode is already selected
-        QmdService.prewarmDaemonIfNeeded(mode: appState.settings.qmdSearchMode)
 
         // Create onboarding file for empty workspaces before building the file tree
         if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: workspacePath) {
@@ -1433,10 +1599,12 @@ struct ContentView: View {
         let watcher = WorkspaceWatcher { [weak appState] in
             guard let appState = appState,
                   let workspace = appState.workspacePath else { return }
-            let tree = fileSystem.buildFileTree(at: workspace)
-            Task { @MainActor in
-                self.appState.fileTree = tree
-                refreshSidebarReferences(using: tree)
+            Task.detached {
+                let tree = fileSystem.buildFileTree(at: workspace)
+                await MainActor.run {
+                    appState.fileTree = tree
+                    self.refreshSidebarReferences(using: tree)
+                }
             }
         }
         watcher.watch(path: path)
@@ -1445,9 +1613,14 @@ struct ContentView: View {
 
     private func refreshFileTree() {
         guard let path = appState.workspacePath else { return }
-        let tree = fileSystem.buildFileTree(at: path)
-        appState.fileTree = tree
-        refreshSidebarReferences(using: tree)
+        let fileSystem = self.fileSystem
+        Task.detached {
+            let tree = fileSystem.buildFileTree(at: path)
+            await MainActor.run {
+                self.appState.fileTree = tree
+                self.refreshSidebarReferences(using: tree)
+            }
+        }
     }
 
     private func syncAvailablePages(_ pages: [FileEntry]) {
@@ -1497,9 +1670,6 @@ struct ContentView: View {
         if isDatabaseFolderPath(path) {
             kind = .database
             name = databaseDisplayName(at: path) ?? (path as NSString).lastPathComponent
-        } else if isCanvasFolderPath(path) {
-            kind = .canvas
-            name = (path as NSString).lastPathComponent
         } else {
             kind = .page
             name = (path as NSString).lastPathComponent
@@ -1524,6 +1694,29 @@ struct ContentView: View {
         return json["name"] as? String
     }
 
+    /// Handles a page dragged from the sidebar into the editor at a specific block index.
+    /// Creates a pageLink block at the drop position and moves the file to be a sub-page.
+    private func handleSidebarPageDropIntoEditor(sourcePath: String, insertIndex: Int, document: BlockDocument) {
+        guard let tab = appState.activeTab else { return }
+        let currentPagePath = tab.path
+        // Don't drop a page onto itself
+        guard sourcePath != currentPagePath else { return }
+        // Don't drop a page that's already a sub-page of the current page
+        let currentCompanion = currentPagePath.hasSuffix(".md") ? String(currentPagePath.dropLast(3)) : currentPagePath
+        guard !(sourcePath as NSString).deletingLastPathComponent.hasPrefix(currentCompanion) else { return }
+
+        let pageName = (sourcePath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+
+        // 1. Insert the pageLink block at the drop position
+        document.insertPageLinkBlock(at: insertIndex, name: pageName)
+
+        // 2. Save the current document so the link is persisted before move
+        performSave(tabId: tab.id)
+
+        // 3. Move the file to be a sub-page of the current page
+        performMovePage(from: sourcePath, toDirectory: currentCompanion)
+    }
+
     private func addSidebarReference(_ payload: SidebarReferenceDragPayload) {
         guard let workspace = appState.workspacePath else { return }
 
@@ -1537,7 +1730,7 @@ struct ContentView: View {
     }
 
     private func loadFileContent(for entry: FileEntry) {
-        guard !entry.isDatabase, !entry.isCanvas, !entry.isDatabaseRow else { return }
+        guard !entry.isDatabase, !entry.isDatabaseRow else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
@@ -1917,61 +2110,9 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Canvas
-
-    @ViewBuilder
-    private func canvasEditor(for tab: OpenFile) -> some View {
-        if let doc = canvasDocuments[tab.id] {
-            CanvasView(
-                document: doc,
-                onNavigateToFile: { path in navigateToFilePath(path) },
-                availablePages: appState.fileTree
-            )
-            .onChange(of: doc.isDirty) { _, dirty in
-                if dirty { scheduleCanvasSave(tabId: tab.id) }
-            }
-        } else {
-            Color.fallbackEditorBg
-                .onAppear { loadCanvasContent(for: tab) }
-        }
-    }
-
-    private func loadCanvasContent(for tab: OpenFile) {
-        guard tab.isCanvas else { return }
-        let doc = CanvasDocument()
-        doc.load(from: tab.path)
-        canvasDocuments[tab.id] = doc
-    }
-
-    private func scheduleCanvasSave(tabId: UUID) {
-        let docs = self.canvasDocuments
-        canvasSaveTask?.cancel()
-        canvasSaveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            docs[tabId]?.save()
-        }
-    }
-
-    private func createNewCanvas() {
-        guard let workspace = appState.workspacePath else { return }
-        do {
-            let path = try fileSystem.createCanvas(in: workspace, name: "Untitled Canvas")
-            let displayName = (path as NSString).lastPathComponent
-            let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .canvas)
-            appState.openFile(entry)
-            if let tab = appState.activeTab {
-                loadCanvasContent(for: tab)
-            }
-            refreshFileTree()
-        } catch {
-            Log.canvas.error("Failed to create canvas: \(error.localizedDescription)")
-        }
-    }
-
     private func createNewDatabase() {
         do {
-            let path = try createDatabasePath(name: "Untitled Database")
+            let path = try createDatabasePath(name: "")
             let displayName = (path as NSString).lastPathComponent
             let entry = FileEntry(id: path, name: displayName, path: path, isDirectory: false, kind: .database)
             appState.openFile(entry)
@@ -1996,6 +2137,23 @@ struct ContentView: View {
             return try fileSystem.createDatabase(underPage: pagePath, name: name)
         }
         return try fileSystem.createDatabase(in: workspace, name: name)
+    }
+
+    private func findOrCreateMeetingsDatabase(in workspace: String) -> String? {
+        // Look for an existing "Meetings" database at the workspace root
+        if let contents = try? FileManager.default.contentsOfDirectory(atPath: workspace) {
+            for name in contents where !name.hasPrefix(".") {
+                let fullPath = (workspace as NSString).appendingPathComponent(name)
+                guard fileSystem.isDatabaseFolder(at: fullPath) else { continue }
+                let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
+                guard let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+                      let schema = try? JSONDecoder().decode(DatabaseSchema.self, from: data),
+                      schema.name.lowercased().contains("meeting") else { continue }
+                return fullPath
+            }
+        }
+
+        return try? fileSystem.createDatabase(in: workspace, name: "Meetings")
     }
 
     private func activePagePathForDatabaseCreation() -> String? {
@@ -2111,6 +2269,18 @@ struct ContentView: View {
         }
     }
 
+    /// Syncs in-memory BlockDocument content into openTabs[].content for every
+    /// dirty tab so the command palette's content index sees the latest edits,
+    /// even if the 1-second save debounce hasn't fired yet.
+    private func flushDirtyTabContent() {
+        for i in appState.openTabs.indices where appState.openTabs[i].isDirty {
+            let tabId = appState.openTabs[i].id
+            if let doc = blockDocuments[tabId] {
+                appState.openTabs[i].content = doc.markdown
+            }
+        }
+    }
+
     private func scheduleSave() {
         guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
         let tabId = tab.id
@@ -2163,7 +2333,6 @@ struct ContentView: View {
             .filter {
                 $0.isDirty
                     && !$0.path.isEmpty
-                    && !$0.isCanvas
                     && !$0.isDatabase
                     && !$0.isDatabaseRow
             }
@@ -2234,7 +2403,6 @@ struct ContentView: View {
     /// Removes any databaseEmbed blocks referencing `dbPath` from all currently open BlockDocuments.
     private func cleanupTabDocuments(_ tabId: UUID) {
         blockDocuments.removeValue(forKey: tabId)
-        canvasDocuments.removeValue(forKey: tabId)
         databaseRowFullWidth.removeValue(forKey: tabId)
     }
 
@@ -2401,9 +2569,11 @@ struct ContentView: View {
         }
 
         let dbService = DatabaseService()
+        // Load schema before deleting so we can do an incremental index removal
+        let schemaForIndex = try? dbService.loadDatabase(at: dbPath).0
         try? dbService.deleteRow(rowId, in: dbPath)
-        if let (schema, rows) = try? dbService.loadDatabase(at: dbPath) {
-            try? dbService.updateIndex(rows: rows, schema: schema, at: dbPath)
+        if let schema = schemaForIndex {
+            try? dbService.incrementalIndexDelete(rowId: rowId, schema: schema, at: dbPath)
         }
 
         NotificationCenter.default.post(
@@ -2615,8 +2785,7 @@ struct ContentView: View {
         }
         let name = (path as NSString).lastPathComponent
         let isDatabase = isDatabaseFolderPath(path)
-        let isCanvas = isCanvasFolderPath(path)
-        let kind: TabKind = isDatabase ? .database : isCanvas ? .canvas : .page
+        let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
         navigateToEntry(entry, preferExistingTab: true)
     }

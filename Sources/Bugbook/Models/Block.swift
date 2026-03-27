@@ -14,6 +14,16 @@ enum BlockType: Equatable {
     case pageLink
     case column
     case toggle
+    case headingToggle
+    case meeting
+}
+
+/// The lifecycle state of a meeting recording block.
+enum MeetingBlockState: Equatable {
+    case ready
+    case recording
+    case processing
+    case complete
 }
 
 struct Block: Identifiable, Equatable {
@@ -35,6 +45,15 @@ struct Block: Identifiable, Equatable {
     var columnIndex: Int  // which column this belongs to (only meaningful inside .column parent)
     var isExpanded: Bool
 
+    // Meeting block properties
+    var meetingState: MeetingBlockState
+    var meetingTranscript: String
+    var meetingSummary: String
+    var meetingActionItems: String
+    var meetingTitle: String
+    var meetingNotes: String
+    var transcriptEntries: [String] = []
+
     init(
         id: UUID = UUID(),
         type: BlockType = .paragraph,
@@ -52,7 +71,13 @@ struct Block: Identifiable, Equatable {
         backgroundColor: BlockColor = .default,
         children: [Block] = [],
         columnIndex: Int = 0,
-        isExpanded: Bool = true
+        isExpanded: Bool = true,
+        meetingState: MeetingBlockState = .complete,
+        meetingTranscript: String = "",
+        meetingSummary: String = "",
+        meetingActionItems: String = "",
+        meetingTitle: String = "",
+        meetingNotes: String = ""
     ) {
         self.id = id
         self.type = type
@@ -71,5 +96,11 @@ struct Block: Identifiable, Equatable {
         self.children = children
         self.columnIndex = columnIndex
         self.isExpanded = isExpanded
+        self.meetingState = meetingState
+        self.meetingTranscript = meetingTranscript
+        self.meetingSummary = meetingSummary
+        self.meetingActionItems = meetingActionItems
+        self.meetingTitle = meetingTitle
+        self.meetingNotes = meetingNotes
     }
 }

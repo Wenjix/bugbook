@@ -7,131 +7,291 @@ struct AiSidePanelView: View {
     @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var activeTask: Task<Void, Never>?
+    @State private var statusPhase: String = "Thinking..."
+    @State private var referencedItems: [AiContextItem] = []
+    @State private var showPagePicker = false
+    @State private var pagePickerSearch = ""
     @FocusState private var inputFocused: Bool
+    @FocusState private var pickerSearchFocused: Bool
+    @State private var pickerSelectedIndex: Int = 0
+    @State private var hoveredMessageId: UUID?
+
+    private var threadLabel: String {
+        guard let first = messages.first(where: { $0.role == .user }) else { return "New AI Chat" }
+        let text = first.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.count > 30 ? String(text.prefix(30)) + "..." : text
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 8) {
-                Image("BugbookAI")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 22, height: 22)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            header
 
-                Text("Ask AI")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.fallbackTextPrimary)
-
+            if messages.isEmpty {
                 Spacer()
-
-                Button(action: openFullChat) {
-                    Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Expand to full chat")
-
-                Button(action: closePanel) {
-                    Label("Close", systemImage: "xmark")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Close")
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            // Messages
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(messages) { message in
-                            messageBubble(message)
-                                .id(message.id)
-                        }
-
-                        if aiService.isRunning {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Thinking...")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Color.fallbackTextSecondary)
-                                Spacer()
-                                Button("Cancel") {
-                                    cancelGeneration()
-                                }
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.fallbackTextSecondary)
-                                .buttonStyle(.borderless)
-                            }
-                            .padding(.horizontal, 16)
-                            .id("loading")
-                        }
-                    }
-                    .padding(.vertical, 12)
-                }
-                .onChange(of: messages.count) { _, _ in
-                    if let last = messages.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
-                }
-                .onChange(of: aiService.isRunning) { _, running in
-                    if running {
-                        proxy.scrollTo("loading", anchor: .bottom)
-                    }
-                }
+            } else {
+                messageList
             }
 
-            Divider()
-
-            // Input area
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField("Ask about your notes...", text: $inputText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .lineLimit(1...20)
-                    .frame(minHeight: 24)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .focused($inputFocused)
-                    .onSubmit {
-                        sendMessage()
-                    }
-
-                Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(
-                            inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? Color.fallbackTextMuted
-                                : Brand.primary
-                        )
-                }
-                .buttonStyle(.borderless)
-                .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty || aiService.isRunning)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            inputArea
         }
         .frame(width: 380)
         .background(Color.fallbackEditorBg)
         .task {
             inputFocused = true
+            // Ingest any referenced items passed via appState
+            let incoming = appState.aiReferencedItems
+            if !incoming.isEmpty {
+                let existing = Set(referencedItems.map(\.id))
+                referencedItems += incoming.filter { !existing.contains($0.id) }
+                appState.aiReferencedItems.removeAll()
+            }
             if let prompt = appState.aiInitialPrompt, !prompt.isEmpty {
                 inputText = prompt
                 appState.aiInitialPrompt = nil
-                // Auto-send the prompt from inline AI trigger
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     sendMessage()
                 }
             }
+        }
+        .onChange(of: appState.aiReferencedItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            let existing = Set(referencedItems.map(\.id))
+            referencedItems += newItems.filter { !existing.contains($0.id) }
+            appState.aiReferencedItems.removeAll()
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image("BugbookAI")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+
+            Text(threadLabel)
+                .font(.system(size: Typography.body, weight: .semibold))
+                .foregroundStyle(Color.fallbackTextPrimary)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button(action: openFullChat) {
+                Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Expand to full chat")
+
+            Button(action: closePanel) {
+                Label("Collapse", systemImage: "chevron.right.2")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Collapse sidebar")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Command Suggestions
+
+    private var commandSuggestions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            suggestionRow("Summarize this page", prompt: "Summarize this page")
+            suggestionRow("Organize this page", prompt: "Organize this page into clear sections")
+            suggestionRow("Rewrite this section", prompt: "Rewrite this page for clarity")
+            suggestionRow("Extract action items", prompt: "Extract action items from this page")
+        }
+    }
+
+    @State private var hoveredSuggestion: String?
+
+    private func suggestionRow(_ label: String, prompt: String) -> some View {
+        Button {
+            inputText = prompt
+            sendMessage()
+        } label: {
+            Text(label)
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(hoveredSuggestion == label ? Color.fallbackTextPrimary : Color.fallbackTextSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(hoveredSuggestion == label ? Color.primary.opacity(Opacity.subtle) : .clear)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in hoveredSuggestion = hovering ? label : nil }
+    }
+
+    // MARK: - Message List
+
+    private var messageList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(messages) { message in
+                        messageBubble(message)
+                            .id(message.id)
+                    }
+
+                    if aiService.isRunning {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(statusPhase)
+                                .font(.system(size: Typography.bodySmall))
+                                .foregroundStyle(Color.fallbackTextSecondary)
+                            Spacer()
+                            Button("Cancel") {
+                                cancelGeneration()
+                            }
+                            .font(.system(size: Typography.caption))
+                            .foregroundStyle(Color.fallbackTextSecondary)
+                            .buttonStyle(.borderless)
+                        }
+                        .padding(.horizontal, 16)
+                        .id("loading")
+                    }
+                }
+                .padding(.vertical, 12)
+            }
+            .onChange(of: messages.count) { _, _ in
+                if let last = messages.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+            }
+            .onChange(of: aiService.isRunning) { _, running in
+                if running {
+                    proxy.scrollTo("loading", anchor: .bottom)
+                }
+            }
+        }
+    }
+
+    // MARK: - Context Chips
+
+    private var contextChipsView: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(referencedItems) { item in
+                    HStack(spacing: 5) {
+                        Image(systemName: item.iconName)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+
+                        Text(item.displayLabel)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+
+                        Button {
+                            referencedItems.removeAll { $0.id == item.id }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.fallbackBadgeBg)
+                    .clipShape(.capsule)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    // MARK: - Page Reference Picker
+
+    private var pickerVisiblePages: [FileEntry] {
+        Array(filteredPages.prefix(50))
+    }
+
+    private var pageReferencePickerView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+
+                TextField("Search pages...", text: $pagePickerSearch)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: Typography.bodySmall))
+                    .focused($pickerSearchFocused)
+                    .onSubmit {
+                        let pages = pickerVisiblePages
+                        if !pages.isEmpty, pickerSelectedIndex < pages.count {
+                            addPageReference(pages[pickerSelectedIndex])
+                        }
+                    }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            if filteredPages.isEmpty {
+                Text("No pages found")
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(pickerVisiblePages.enumerated()), id: \.element.path) { index, entry in
+                                PageReferenceRow(
+                                    entry: entry,
+                                    displayName: displayName(for: entry.name),
+                                    index: index,
+                                    isSelected: index == pickerSelectedIndex,
+                                    onHoverIndex: { pickerSelectedIndex = $0 }
+                                ) {
+                                    addPageReference(entry)
+                                }
+                                .id(entry.path)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .onChange(of: pickerSelectedIndex) { _, newIndex in
+                        let pages = pickerVisiblePages
+                        if newIndex < pages.count {
+                            proxy.scrollTo(pages[newIndex].path, anchor: .center)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(width: 280)
+        .frame(maxHeight: 300)
+        .popoverSurface()
+        .onAppear {
+            pickerSearchFocused = true
+            pickerSelectedIndex = 0
+        }
+        .onDisappear { pagePickerSearch = "" }
+        .onChange(of: pagePickerSearch) { _, _ in
+            pickerSelectedIndex = 0
+        }
+        .onKeyPress(.upArrow) {
+            if pickerSelectedIndex > 0 { pickerSelectedIndex -= 1 }
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            let count = pickerVisiblePages.count
+            if pickerSelectedIndex < count - 1 { pickerSelectedIndex += 1 }
+            return .handled
         }
     }
 
@@ -145,15 +305,44 @@ struct AiSidePanelView: View {
 
                 if message.role == .applied {
                     appliedBubble(message)
-                } else {
+                } else if message.role == .user {
+                    // User: dark rounded bubble with white text
                     Text(message.content)
-                        .font(.system(size: 14))
-                        .foregroundStyle(message.role == .error ? .red : Color.fallbackTextPrimary)
+                        .font(.system(size: Typography.body))
+                        .foregroundStyle(.white)
                         .textSelection(.enabled)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(bubbleBackground(for: message.role))
-                        .clipShape(.rect(cornerRadius: Radius.lg))
+                        .background(Color(light: Color(hex: "1f1f1f"), dark: Color(hex: "e0e0e0")))
+                        .clipShape(.rect(cornerRadius: Radius.xl))
+                } else {
+                    // Assistant / error: plain text, no bubble
+                    Text(message.content)
+                        .font(.system(size: Typography.body))
+                        .foregroundStyle(message.role == .error ? .red : Color.fallbackTextPrimary)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 4)
+                        .overlay(alignment: .topTrailing) {
+                            if message.role == .assistant && hoveredMessageId == message.id {
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(message.content, forType: .string)
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.fallbackTextSecondary)
+                                        .padding(4)
+                                        .background(Color.fallbackBgTertiary)
+                                        .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+                                }
+                                .buttonStyle(.borderless)
+                                .offset(x: 4, y: -4)
+                            }
+                        }
+                        .onHover { hovering in
+                            hoveredMessageId = hovering ? message.id : nil
+                        }
                 }
 
                 if message.role != .user { Spacer(minLength: 40) }
@@ -165,17 +354,24 @@ struct AiSidePanelView: View {
     @ViewBuilder
     private func appliedBubble(_ message: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.green)
-                Text("Done — what do you think?")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.fallbackTextPrimary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.green)
+                    Text("Done — what do you think?")
+                        .font(.system(size: Typography.body))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                }
+                if let summary = message.changeSummary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.primary.opacity(Opacity.subtle))
+            .background(Color.green.opacity(Opacity.light))
             .clipShape(.rect(cornerRadius: Radius.lg))
 
             if activeDocument != nil {
@@ -186,7 +382,6 @@ struct AiSidePanelView: View {
                         } else {
                             activeDocument?.undo()
                         }
-                        // Toggle the reverted state
                         if let idx = messages.firstIndex(where: { $0.id == message.id }) {
                             messages[idx].isReverted.toggle()
                         }
@@ -209,18 +404,145 @@ struct AiSidePanelView: View {
         }
     }
 
-    private func bubbleBackground(for role: ChatMessage.Role) -> Color {
-        switch role {
-        case .user:
-            return Color.fallbackAccent.opacity(Opacity.medium)
-        case .assistant, .applied:
-            return Color.primary.opacity(Opacity.subtle)
-        case .error:
-            return Color.red.opacity(0.1)
+    // MARK: - Input Area
+
+    private var inputArea: some View {
+        VStack(spacing: 6) {
+            // Command suggestions (shown when no messages or always above input)
+            if messages.isEmpty {
+                commandSuggestions
+                    .padding(.horizontal, 12)
+            }
+
+            VStack(spacing: 0) {
+                if !referencedItems.isEmpty {
+                    contextChipsView
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
+                }
+
+                // Context chips (page context)
+                if let doc = activeDocument, let path = doc.filePath {
+                    let pageName = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+                    HStack(spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 10))
+                            Text(pageName)
+                                .font(.system(size: Typography.caption2))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(Color.fallbackTextSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(Opacity.subtle))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                }
+
+                // Text field + buttons
+                HStack(alignment: .bottom, spacing: 8) {
+                    Button {
+                        showPagePicker.toggle()
+                    } label: {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.fallbackTextSecondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Reference a page")
+                    .floatingPopover(isPresented: $showPagePicker, arrowEdge: .top, becomesKey: true) {
+                        pageReferencePickerView
+                    }
+
+                    TextField("Ask about your notes...", text: $inputText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: Typography.body))
+                        .lineLimit(1...20)
+                        .frame(minHeight: 24)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .focused($inputFocused)
+                        .onChange(of: inputText) { _, value in
+                            if value.hasSuffix("@") {
+                                showPagePicker = true
+                            }
+                        }
+                        .onSubmit {
+                            sendMessage()
+                        }
+
+                    if aiService.isRunning {
+                        Button(action: cancelGeneration) {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.borderless)
+                    } else {
+                        Button(action: sendMessage) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(
+                                    canSend
+                                        ? Color.fallbackTextPrimary
+                                        : Color.fallbackTextMuted
+                                )
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!canSend)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        inputFocused ? Color(hex: "6366f1") : Color.fallbackBorderColor,
+                        lineWidth: inputFocused ? 2 : 1
+                    )
+            )
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Actions
+
+    private var canSend: Bool {
+        !inputText.trimmingCharacters(in: .whitespaces).isEmpty && !aiService.isRunning
+    }
+
+    private func buildContext(
+        references: [AiContextItem],
+        selectionContext: String?
+    ) -> String {
+        if !references.isEmpty {
+            var sections: [String] = []
+            if let selectionContext {
+                sections.append("Selected text:\n\(selectionContext)")
+            } else if let doc = activeDocument {
+                sections.append("Current page:\n\(MarkdownBlockParser.serialize(doc.blocks))")
+            }
+            for ref in references {
+                sections.append("\(ref.contextHeading):\n\(ref.contextMarkdown)")
+            }
+            return sections.joined(separator: "\n\n---\n\n")
+        }
+        if let selectionContext {
+            return selectionContext
+        }
+        if let doc = activeDocument {
+            return MarkdownBlockParser.serialize(doc.blocks)
+        }
+        return ""
+    }
 
     private func sendMessage() {
         let trimmed = inputText.trimmingCharacters(in: .whitespaces)
@@ -230,24 +552,27 @@ struct AiSidePanelView: View {
         messages.append(userMessage)
         inputText = ""
 
+        // Snapshot referenced items for this message and clear them
+        let currentReferences = referencedItems
+        referencedItems.removeAll()
+
         // Capture selection context and block range before it gets cleared
         let selectionContext = appState.aiSelectionContext
         let hasSelection = selectionContext != nil
         let blockRange = activeDocument?.selectedBlockPathRange()
         let pagePath = activeDocument?.filePath
 
-        // Build context
-        let pageContext: String
-        if let selectionContext {
-            pageContext = selectionContext
-        } else if let doc = activeDocument {
-            pageContext = MarkdownBlockParser.serialize(doc.blocks)
-        } else {
-            pageContext = ""
-        }
+        statusPhase = "Reading page..."
+        let blockCountBefore = activeDocument?.blocks.count ?? 0
 
         let task = Task {
+            // Build context off main thread (contextMarkdown may read files)
+            let pageContext = buildContext(
+                references: currentReferences,
+                selectionContext: selectionContext
+            )
             do {
+                statusPhase = "Generating..."
                 let workspacePath = appState.workspacePath ?? ""
                 let response: String
                 if activeDocument != nil {
@@ -256,25 +581,31 @@ struct AiSidePanelView: View {
                         workspacePath: workspacePath,
                         prompt: trimmed,
                         pageContext: pageContext,
-                        apiKey: appState.settings.anthropicApiKey
+                        apiKey: appState.settings.anthropicApiKey,
+                        model: appState.settings.anthropicModel
                     )
                 } else {
                     response = try await aiService.chatWithNotes(
                         engine: appState.settings.preferredAIEngine,
                         workspacePath: workspacePath,
                         question: trimmed,
-                        apiKey: appState.settings.anthropicApiKey
+                        apiKey: appState.settings.anthropicApiKey,
+                        model: appState.settings.anthropicModel
                     )
                 }
 
                 guard !Task.isCancelled else { return }
 
+                // Sanitize AI output: strip empty blocks and excessive whitespace
+                let sanitized = AiService.sanitizeResponse(response)
+
+                statusPhase = "Applying changes..."
                 // Apply changes via CLI for precision, fallback to in-memory
                 if let pagePath, let doc = activeDocument {
                     let pageName = ((pagePath as NSString).lastPathComponent as NSString).deletingPathExtension
                     let applied = await applyViaCLI(
                         pageName: pageName,
-                        response: response,
+                        response: sanitized,
                         hasSelection: hasSelection,
                         blockRange: blockRange
                     )
@@ -282,13 +613,24 @@ struct AiSidePanelView: View {
                         doc.reloadFromDisk()
                     } else {
                         if hasSelection {
-                            doc.replaceSelectedBlocks(markdown: response)
+                            doc.replaceSelectedBlocks(markdown: sanitized)
                         } else {
-                            doc.applyAiResponse(markdown: response)
+                            doc.applyAiResponse(markdown: sanitized)
                         }
                     }
-                    // Show clean confirmation instead of raw markdown
-                    let appliedMessage = ChatMessage(role: .applied, content: response, timestamp: Date())
+                    // Build change summary
+                    let blockCountAfter = doc.blocks.count
+                    let blockDelta = blockCountAfter - blockCountBefore
+                    let summary: String
+                    if blockDelta > 0 {
+                        summary = "Added \(blockDelta) block\(blockDelta == 1 ? "" : "s"), ~\(response.count) chars"
+                    } else if blockDelta < 0 {
+                        summary = "Removed \(abs(blockDelta)) block\(abs(blockDelta) == 1 ? "" : "s"), ~\(response.count) chars"
+                    } else {
+                        summary = "Modified content, ~\(response.count) chars"
+                    }
+                    var appliedMessage = ChatMessage(role: .applied, content: response, timestamp: Date())
+                    appliedMessage.changeSummary = summary
                     messages.append(appliedMessage)
                 } else {
                     // No active doc — show the response as plain chat
@@ -312,28 +654,19 @@ struct AiSidePanelView: View {
         let escapedPage = pageName.replacingOccurrences(of: "'", with: "'\"'\"'")
 
         if hasSelection, let range = blockRange {
-            // Replace the first selected block with the AI response,
-            // then delete the remaining selected blocks
             let tempFile = NSTemporaryDirectory() + "bugbook-ai-\(UUID().uuidString).md"
             do {
                 try response.write(toFile: tempFile, atomically: true, encoding: .utf8)
                 defer { try? FileManager.default.removeItem(atPath: tempFile) }
 
-                // Replace the first block with the full AI response
                 _ = try await aiService.executeBugbookCommand(
                     "block replace '\(escapedPage)' \(range.first) --content-file '\(tempFile)'"
                 )
 
-                // Delete remaining original blocks (they're now shifted, delete from last to first+1)
                 if range.first != range.last {
-                    // After replacing the first block, the indices shift.
-                    // The safest approach: get fresh block count, delete by original range
                     let firstIdx = Int(range.first.replacingOccurrences(of: "path:", with: "")) ?? 0
                     let lastIdx = Int(range.last.replacingOccurrences(of: "path:", with: "")) ?? 0
                     if lastIdx > firstIdx {
-                        // Delete from last to first+1 (reverse order to keep indices stable)
-                        // But after replace, the new content may span multiple blocks.
-                        // Count how many blocks the AI response creates
                         let newBlockCount = MarkdownBlockParser.parse(response).count
                         let deleteStart = firstIdx + newBlockCount
                         let deleteEnd = lastIdx + newBlockCount - 1
@@ -350,7 +683,6 @@ struct AiSidePanelView: View {
                 return false
             }
         } else {
-            // Full page update via CLI
             let tempFile = NSTemporaryDirectory() + "bugbook-ai-\(UUID().uuidString).md"
             do {
                 try response.write(toFile: tempFile, atomically: true, encoding: .utf8)
@@ -378,5 +710,111 @@ struct AiSidePanelView: View {
 
     private func openFullChat() {
         appState.openNotesChat()
+    }
+
+    // MARK: - Page Reference Helpers
+
+    private var allPages: [FileEntry] {
+        var files: [FileEntry] = []
+        flattenFiles(appState.fileTree, into: &files)
+        let unique = Dictionary(files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        return unique.values
+            .filter { !$0.isDirectory && !$0.isDatabase }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var filteredPages: [FileEntry] {
+        let existingPaths = Set(referencedItems.compactMap { item -> String? in
+            if case .page(let path, _) = item { return path }
+            return nil
+        })
+        let query = pagePickerSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return allPages.filter { entry in
+            guard !existingPaths.contains(entry.path) else { return false }
+            if query.isEmpty { return true }
+            return entry.name.lowercased().contains(query) || relativePath(for: entry.path).lowercased().contains(query)
+        }
+    }
+
+    private func flattenFiles(_ entries: [FileEntry], into result: inout [FileEntry]) {
+        for entry in entries {
+            result.append(entry)
+            if let children = entry.children {
+                flattenFiles(children, into: &result)
+            }
+        }
+    }
+
+    private func addPageReference(_ entry: FileEntry) {
+        let item = AiContextItem.page(path: entry.path, name: entry.name)
+        guard !referencedItems.contains(where: { $0.id == item.id }) else { return }
+        referencedItems.append(item)
+        if inputText.hasSuffix("@") {
+            inputText.removeLast()
+        }
+        showPagePicker = false
+        pagePickerSearch = ""
+        inputFocused = true
+    }
+
+    private func relativePath(for path: String) -> String {
+        guard let workspace = appState.workspacePath, path.hasPrefix(workspace) else { return path }
+        let relative = path.dropFirst(workspace.count)
+        return relative.hasPrefix("/") ? String(relative.dropFirst()) : String(relative)
+    }
+
+    private func displayName(for name: String) -> String {
+        name.hasSuffix(".md") ? String(name.dropLast(3)) : name
+    }
+}
+
+// MARK: - Page Reference Row
+
+private struct PageReferenceRow: View {
+    let entry: FileEntry
+    let displayName: String
+    let index: Int
+    var isSelected: Bool = false
+    let onHoverIndex: (Int) -> Void
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                pageIcon
+                Text(displayName)
+                    .font(.system(size: Typography.bodySmall))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(isSelected || isHovered ? Color.primary.opacity(Opacity.light) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering { onHoverIndex(index) }
+        }
+    }
+
+    @ViewBuilder
+    private var pageIcon: some View {
+        if let icon = entry.icon, !icon.isEmpty {
+            if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(.system(size: 13))
+            } else {
+                Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
     }
 }

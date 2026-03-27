@@ -38,6 +38,29 @@ func reorderedManualRowOrder(
 }
 
 func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
+    // Checkbox-specific operators
+    if case .checkbox(let checked) = value {
+        switch filter.op {
+        case "is_checked": return checked
+        case "is_not_checked": return !checked
+        default: break
+        }
+    }
+
+    // Date comparisons use sortable keys for correct ordering
+    if case .date(let raw) = value {
+        let sortKey = DatabaseDateValue.decode(from: raw)?.sortKey ?? raw
+        switch filter.op {
+        case "equals": return sortKey == filter.value
+        case "not_equals": return sortKey != filter.value
+        case "greater_than": return sortKey > filter.value
+        case "less_than": return sortKey < filter.value
+        case "greater_than_or_equal": return sortKey >= filter.value
+        case "less_than_or_equal": return sortKey <= filter.value
+        default: break
+        }
+    }
+
     let stringVal = stringFromValue(value)
     switch filter.op {
     case "equals": return stringVal == filter.value
@@ -46,13 +69,25 @@ func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
     case "not_contains": return !stringVal.localizedCaseInsensitiveContains(filter.value)
     case "is_empty": return stringVal.isEmpty
     case "is_not_empty": return !stringVal.isEmpty
-    case "greater_than": return stringVal > filter.value
-    case "less_than": return stringVal < filter.value
+    case "greater_than":
+        if let lhs = Double(stringVal), let rhs = Double(filter.value) { return lhs > rhs }
+        return stringVal > filter.value
+    case "less_than":
+        if let lhs = Double(stringVal), let rhs = Double(filter.value) { return lhs < rhs }
+        return stringVal < filter.value
+    case "less_than_or_equal":
+        if let lhs = Double(stringVal), let rhs = Double(filter.value) { return lhs <= rhs }
+        return stringVal <= filter.value
     default: return true
     }
 }
 
 func compareValues(_ a: PropertyValue, _ b: PropertyValue) -> ComparisonResult {
+    if case .number(let aNum) = a, case .number(let bNum) = b {
+        if aNum < bNum { return .orderedAscending }
+        if aNum > bNum { return .orderedDescending }
+        return .orderedSame
+    }
     if case .date(let aRaw) = a, case .date(let bRaw) = b {
         let aKey = DatabaseDateValue.decode(from: aRaw)?.sortKey ?? aRaw
         let bKey = DatabaseDateValue.decode(from: bRaw)?.sortKey ?? bRaw
@@ -162,6 +197,42 @@ struct RowLoadErrorView: View {
 
 func defaultDatabaseViewConfig() -> ViewConfig {
     ViewConfig(id: "default", name: "Table", type: .table, sorts: [], filters: [])
+}
+
+// MARK: - View Tab Drop Delegate
+
+struct ViewTabDropDelegate: DropDelegate {
+    let targetId: String
+    let state: DatabaseViewState
+    @Binding var draggedId: String?
+    @Binding var dropTargetId: String?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedId, draggedId != targetId else { return }
+        dropTargetId = targetId
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTargetId == targetId {
+            dropTargetId = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let draggedId, draggedId != targetId else { return false }
+        state.reorderViews(sourceId: draggedId, beforeId: targetId)
+        self.draggedId = nil
+        dropTargetId = nil
+        return true
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedId != nil && draggedId != targetId
+    }
 }
 
 func uniqueDatePropertyName(in schema: DatabaseSchema) -> String {

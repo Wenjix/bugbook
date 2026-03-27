@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct WikiLinkView: View {
     let pageName: String
@@ -8,25 +9,31 @@ struct WikiLinkView: View {
 
     var body: some View {
         if let sidebarReferencePayload {
-            linkButton
-                .draggable(sidebarReferencePayload)
+            linkContent
+                .onDrag {
+                    let data = (try? JSONEncoder().encode(sidebarReferencePayload)) ?? Data()
+                    return NSItemProvider(item: data as NSData, typeIdentifier: UTType.sidebarReference.identifier)
+                }
         } else {
-            linkButton
+            linkContent
         }
     }
 
-    @ViewBuilder
-    private var linkButton: some View {
-        Button(action: onNavigate) {
-            HStack(spacing: 4) {
-                iconView
-                Text(pageName)
-                    .font(.system(size: EditorTypography.bodyFontSize))
-                    .foregroundStyle(.primary)
-                    .underline()
-            }
+    private var linkContent: some View {
+        HStack(spacing: 4) {
+            iconView
+            Text(pageName)
+                .font(.system(size: EditorTypography.bodyFontSize))
+                .foregroundStyle(.primary)
+                .underline()
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onNavigate)
+        .appCursor(.pointingHand)
+    }
+
+    private var dragPreview: some View {
+        SidebarDragPreview(systemImage: "doc.text", title: pageName)
     }
 
     @ViewBuilder

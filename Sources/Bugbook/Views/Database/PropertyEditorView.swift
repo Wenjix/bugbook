@@ -29,32 +29,42 @@ struct PropertyEditorView: View {
     /// Callback to set the target database for a relation property.
     var onSetRelationTarget: ((String, String) -> Void)?  // (propertyId, targetDbPath)
 
-    /// Consistent cell font matching editor body text (17pt scaled).
-    private var cellFont: Font { DatabaseZoomMetrics.font(17) }
+    /// Consistent cell font matching table text (14pt scaled).
+    private var cellFont: Font { DatabaseZoomMetrics.font(14) }
+
+    /// Whether this property type uses option editing popovers (select/multiSelect only).
+    private var usesOptionEditing: Bool {
+        definition.type == .select || definition.type == .multiSelect
+    }
 
     var body: some View {
-        mainEditor
-            .databasePointerCursor()
-            .floatingPopover(item: $editingOptionId) { optId in
-                editOptionPopover(optionId: optId)
-            }
-            .alert("Delete Option", isPresented: $showDeleteAlert) {
-                Button("Cancel", role: .cancel) { showDeleteConfirm = nil }
-                Button("Delete", role: .destructive) {
-                    if let optId = showDeleteConfirm {
-                        onDeleteOption?(definition.id, optId)
-                    }
-                    showDeleteConfirm = nil
+        if usesOptionEditing {
+            mainEditor
+                .databasePointerCursor()
+                .floatingPopover(item: $editingOptionId) { optId in
+                    editOptionPopover(optionId: optId)
                 }
-            } message: {
-                Text("This will remove the option from all rows that use it.")
-            }
-            .onChange(of: showDeleteConfirm) { _, val in
-                showDeleteAlert = (val != nil)
-            }
-            .onChange(of: showDeleteAlert) { _, show in
-                if !show { showDeleteConfirm = nil }
-            }
+                .alert("Delete Option", isPresented: $showDeleteAlert) {
+                    Button("Cancel", role: .cancel) { showDeleteConfirm = nil }
+                    Button("Delete", role: .destructive) {
+                        if let optId = showDeleteConfirm {
+                            onDeleteOption?(definition.id, optId)
+                        }
+                        showDeleteConfirm = nil
+                    }
+                } message: {
+                    Text("This will remove the option from all rows that use it.")
+                }
+                .onChange(of: showDeleteConfirm) { _, val in
+                    showDeleteAlert = (val != nil)
+                }
+                .onChange(of: showDeleteAlert) { _, show in
+                    if !show { showDeleteConfirm = nil }
+                }
+        } else {
+            mainEditor
+                .databasePointerCursor()
+        }
     }
 
     @ViewBuilder
@@ -643,7 +653,7 @@ struct PropertyEditorView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.fallbackAccentFg)
                         .frame(width: 20, height: 20)
                         .background(Color.accentColor)
                         .clipShape(Circle())
@@ -1097,7 +1107,7 @@ private struct DatePropertyPopover: View {
                     Text("\(calendar.component(.day, from: cell.date))")
                         .font(.callout)
                         .fontWeight(cell.isSelected ? .semibold : .regular)
-                        .foregroundStyle(cell.isSelected ? Color.white : (cell.isCurrentMonth ? Color.primary : Color.secondary))
+                        .foregroundStyle(cell.isSelected ? Color.fallbackAccentFg : (cell.isCurrentMonth ? Color.primary : Color.secondary))
                         .frame(maxWidth: .infinity)
                         .frame(height: 38)
                         .background(

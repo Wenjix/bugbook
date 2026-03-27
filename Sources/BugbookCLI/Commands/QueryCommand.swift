@@ -37,82 +37,105 @@ struct QueryCmd: ParsableCommand {
     func run() throws {
         let (dbPath, schema) = try resolveDatabase(db, workspace: options.resolvedWorkspace)
 
-        // Parse filters
-        var filters: [Filter] = []
-        for expr in filter {
-            filters.append(try parseFilter(expr, schema: schema))
-        }
+        let filters: [Filter] = try filter.map { try parseFilter($0, schema: schema) }
+        let sorts: [Sort] = try sort.map { try parseSort($0, schema: schema) }
+        let fieldList = try parseFieldList(schema: schema)
 
-        // Parse sorts
-        var sorts: [Sort] = []
-        for expr in sort {
-            sorts.append(try parseSort(expr, schema: schema))
-        }
-
-        let fieldList = try fields?
-            .components(separatedBy: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .map { try resolveSchemaPropertyID($0, schema: schema) }
-
-        // Load index for querying
-        let indexManager = IndexManager()
-        let rowStore = RowStore()
-
-        // Load or rebuild index
-        let indexData: [String: Any]
-        if let existing = indexManager.loadIndex(at: dbPath),
-           !indexManager.isStale(indexData: existing, dbPath: dbPath) {
-            indexData = existing
-        } else {
-            let allRows = rowStore.loadAllRows(in: dbPath, schema: schema)
-            let rebuilt = indexManager.rebuild(dbPath: dbPath, schema: schema, rows: allRows)
-            try indexManager.saveIndex(rebuilt, at: dbPath)
-            indexData = rebuilt
-        }
+        let indexData = try loadOrRebuildIndex(dbPath: dbPath, schema: schema)
 
         guard let rowsMap = indexData["rows"] as? [String: [String: Any]] else {
             try outputJSON(["rows": [] as [Any], "total_count": 0, "has_more": false])
             return
         }
 
-        // Apply filters in-memory against the index rows map
-        var matchingIds = Array(rowsMap.keys)
+        let matchingIds = applyFiltersAndSorts(filters: filters, sorts: sorts, rowsMap: rowsMap, schema: schema)
+        let paginatedResult = paginate(matchingIds)
 
-        for f in filters {
-            matchingIds = matchingIds.filter { rowId in
+        let outputRows = buildOutputRows(
+            ids: paginatedResult.ids, rowsMap: rowsMap, dbPath: dbPath, schema: schema, fieldList: fieldList
+        )
+
+        try outputJSON([
+            "rows": outputRows,
+            "total_count": paginatedResult.totalCount,
+            "has_more": paginatedResult.hasMore,
+        ])
+    }
+
+    // MARK: - Helpers
+
+    private func parseFieldList(schema: DatabaseSchema) throws -> [String]? {
+        try fields?
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { try resolveSchemaPropertyID($0, schema: schema) }
+    }
+
+    private func loadOrRebuildIndex(dbPath: String, schema: DatabaseSchema) throws -> [String: Any] {
+        let indexManager = IndexManager()
+        let rowStore = RowStore()
+
+        if let existing = indexManager.loadIndex(at: dbPath),
+           !indexManager.isStale(indexData: existing, dbPath: dbPath) {
+            return existing
+        }
+
+        let allRows = rowStore.loadAllRows(in: dbPath, schema: schema)
+        let rebuilt = indexManager.rebuild(dbPath: dbPath, schema: schema, rows: allRows)
+        try indexManager.saveIndex(rebuilt, at: dbPath)
+        return rebuilt
+    }
+
+    private func applyFiltersAndSorts(
+        filters: [Filter], sorts: [Sort], rowsMap: [String: [String: Any]], schema: DatabaseSchema
+    ) -> [String] {
+        var ids = Array(rowsMap.keys)
+
+        for activeFilter in filters {
+            ids = ids.filter { rowId in
                 guard let rowData = rowsMap[rowId],
                       let props = rowData["properties"] as? [String: Any] else { return false }
-                return matchesFilter(f, properties: props, schema: schema)
+                return matchesFilter(activeFilter, properties: props, schema: schema)
             }
         }
 
-        // Sort
-        for s in sorts.reversed() {
-            matchingIds.sort { id1, id2 in
+        for sortExpr in sorts.reversed() {
+            ids.sort { id1, id2 in
                 let props1 = (rowsMap[id1]?["properties"] as? [String: Any]) ?? [:]
                 let props2 = (rowsMap[id2]?["properties"] as? [String: Any]) ?? [:]
-                let v1 = props1[s.property]
-                let v2 = props2[s.property]
-                let result = compareValues(v1, v2)
-                return s.ascending ? result < 0 : result > 0
+                let lhs = props1[sortExpr.property]
+                let rhs = props2[sortExpr.property]
+                let result = compareValues(lhs, rhs)
+                return sortExpr.ascending ? result < 0 : result > 0
             }
         }
 
-        let totalCount = matchingIds.count
+        return ids
+    }
 
-        // Apply offset/limit
+    private func paginate(_ ids: [String]) -> (ids: [String], totalCount: Int, hasMore: Bool) {
+        var result = ids
+        let totalCount = result.count
+
         if let offset = offset, offset > 0 {
-            matchingIds = Array(matchingIds.dropFirst(offset))
+            result = Array(result.dropFirst(offset))
         }
         if let limit = limit, limit > 0 {
-            matchingIds = Array(matchingIds.prefix(limit))
+            result = Array(result.prefix(limit))
         }
 
-        let hasMore = totalCount > (offset ?? 0) + matchingIds.count
+        let hasMore = totalCount > (offset ?? 0) + result.count
+        return (result, totalCount, hasMore)
+    }
 
-        // Build output rows
+    private func buildOutputRows(
+        ids: [String], rowsMap: [String: [String: Any]], dbPath: String,
+        schema: DatabaseSchema, fieldList: [String]?
+    ) -> [[String: Any]] {
+        let rowStore = RowStore()
         var outputRows: [[String: Any]] = []
-        for rowId in matchingIds {
+
+        for rowId in ids {
             guard let rowData = rowsMap[rowId],
                   let props = rowData["properties"] as? [String: Any] else { continue }
 
@@ -123,33 +146,23 @@ struct QueryCmd: ParsableCommand {
             ]
 
             let propertyOutput = presentedQueryProperties(
-                props,
-                schema: schema,
-                fields: fieldList,
-                includeRawProperties: rawProperties
+                props, schema: schema, fields: fieldList, includeRawProperties: rawProperties
             )
             for (key, value) in propertyOutput {
                 row[key] = value
             }
 
-            if body {
-                // Load the actual row file to get the body
-                if let filename = rowData["filename"] as? String {
-                    let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
-                    if let dbRow = rowStore.loadRow(at: filePath, schema: schema) {
-                        row["body"] = dbRow.body
-                    }
+            if body, let filename = rowData["filename"] as? String {
+                let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
+                if let dbRow = rowStore.loadRow(at: filePath, schema: schema) {
+                    row["body"] = dbRow.body
                 }
             }
 
             outputRows.append(row)
         }
 
-        try outputJSON([
-            "rows": outputRows,
-            "total_count": totalCount,
-            "has_more": hasMore,
-        ])
+        return outputRows
     }
 }
 
@@ -186,42 +199,57 @@ private func matchesFilter(_ filter: Filter, properties: [String: Any], schema: 
     }
 }
 
+// MARK: - Property Value Comparison
+
 private func comparePropertyValue(_ raw: Any?, to value: PropertyValue) -> Int {
     guard let raw = raw else { return value == .empty ? 0 : -1 }
 
     switch value {
-    case .text(let s):
-        if let rawStr = raw as? String { return rawStr.compare(s).rawValue }
-    case .number(let n):
-        if let rawNum = raw as? Double {
-            if rawNum < n { return -1 }
-            if rawNum > n { return 1 }
-            return 0
-        }
-        if let rawInt = raw as? Int {
-            let d = Double(rawInt)
-            if d < n { return -1 }
-            if d > n { return 1 }
-            return 0
-        }
-    case .select(let s):
-        if let rawStr = raw as? String { return rawStr == s ? 0 : (rawStr < s ? -1 : 1) }
-    case .date(let s):
-        if let rawStr = raw as? String {
-            let rawKey = DatabaseDateValue.decode(from: rawStr)?.sortKey ?? rawStr
-            let compareKey = DatabaseDateValue.decode(from: s)?.sortKey ?? s
-            return rawKey.compare(compareKey).rawValue
-        }
-    case .checkbox(let b):
-        if let rawBool = raw as? Bool { return rawBool == b ? 0 : -1 }
-    case .relation(let s):
-        if let rawStr = raw as? String { return rawStr == s ? 0 : -1 }
+    case .text(let text):
+        return compareRawToString(raw, expected: text)
+    case .number(let num):
+        return compareRawToNumber(raw, expected: num)
+    case .select(let sel):
+        return compareRawToString(raw, expected: sel)
+    case .date(let dateStr):
+        return compareRawToDate(raw, expected: dateStr)
+    case .checkbox(let flag):
+        if let rawBool = raw as? Bool { return rawBool == flag ? 0 : -1 }
+    case .relation(let rel):
+        if let rawStr = raw as? String { return rawStr == rel ? 0 : -1 }
     case .empty:
         return isPropertyEmpty(raw) ? 0 : 1
     default:
         break
     }
     return -1
+}
+
+private func compareRawToString(_ raw: Any, expected: String) -> Int {
+    guard let rawStr = raw as? String else { return -1 }
+    return rawStr.compare(expected).rawValue
+}
+
+private func compareRawToNumber(_ raw: Any, expected: Double) -> Int {
+    if let rawNum = raw as? Double {
+        if rawNum < expected { return -1 }
+        if rawNum > expected { return 1 }
+        return 0
+    }
+    if let rawInt = raw as? Int {
+        let asDouble = Double(rawInt)
+        if asDouble < expected { return -1 }
+        if asDouble > expected { return 1 }
+        return 0
+    }
+    return -1
+}
+
+private func compareRawToDate(_ raw: Any, expected: String) -> Int {
+    guard let rawStr = raw as? String else { return -1 }
+    let rawKey = DatabaseDateValue.decode(from: rawStr)?.sortKey ?? rawStr
+    let compareKey = DatabaseDateValue.decode(from: expected)?.sortKey ?? expected
+    return rawKey.compare(compareKey).rawValue
 }
 
 private func propertyContains(_ raw: Any?, value: PropertyValue) -> Bool {
@@ -245,27 +273,37 @@ private func isPropertyEmpty(_ raw: Any?) -> Bool {
     return false
 }
 
-private func compareValues(_ v1: Any?, _ v2: Any?) -> Int {
-    if v1 == nil && v2 == nil { return 0 }
-    if v1 == nil { return -1 }
-    if v2 == nil { return 1 }
+// MARK: - Generic Value Comparison
 
-    if let s1 = v1 as? String, let s2 = v2 as? String {
-        return s1.compare(s2).rawValue
+private func compareValues(_ lhs: Any?, _ rhs: Any?) -> Int {
+    if lhs == nil && rhs == nil { return 0 }
+    if lhs == nil { return -1 }
+    if rhs == nil { return 1 }
+
+    if let lhsStr = lhs as? String, let rhsStr = rhs as? String {
+        return lhsStr.compare(rhsStr).rawValue
     }
-    if let n1 = v1 as? Double, let n2 = v2 as? Double {
-        if n1 < n2 { return -1 }
-        if n1 > n2 { return 1 }
-        return 0
+    if let lhsDbl = lhs as? Double, let rhsDbl = rhs as? Double {
+        return compareDoubles(lhsDbl, rhsDbl)
     }
-    if let n1 = v1 as? Int, let n2 = v2 as? Int {
-        if n1 < n2 { return -1 }
-        if n1 > n2 { return 1 }
-        return 0
+    if let lhsInt = lhs as? Int, let rhsInt = rhs as? Int {
+        return compareInts(lhsInt, rhsInt)
     }
-    if let b1 = v1 as? Bool, let b2 = v2 as? Bool {
-        if b1 == b2 { return 0 }
-        return b1 ? 1 : -1
+    if let lhsBool = lhs as? Bool, let rhsBool = rhs as? Bool {
+        if lhsBool == rhsBool { return 0 }
+        return lhsBool ? 1 : -1
     }
+    return 0
+}
+
+private func compareDoubles(_ lhs: Double, _ rhs: Double) -> Int {
+    if lhs < rhs { return -1 }
+    if lhs > rhs { return 1 }
+    return 0
+}
+
+private func compareInts(_ lhs: Int, _ rhs: Int) -> Int {
+    if lhs < rhs { return -1 }
+    if lhs > rhs { return 1 }
     return 0
 }

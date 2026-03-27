@@ -32,7 +32,6 @@ enum OnboardingService {
 
         **Sidebar** — Browse and organize your pages in the file tree. Drag to reorder.
         **Databases** — Create structured tables with properties, filters, and views.
-        **Canvas** — Spatial workspace for arranging cards and connections.
         **Graph View** — Visualize links between your pages.
         **Daily Notes** — Cmd+P, then search "daily" to create today's note.
         **Templates** — Add .md files to a Templates/ folder to reuse them.

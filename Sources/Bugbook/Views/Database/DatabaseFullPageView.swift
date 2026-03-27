@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import BugbookCore
 
 extension Notification.Name {
@@ -39,6 +40,10 @@ struct DatabaseFullPageView: View {
     @State private var renamingPropertyId: String? = nil
     @State private var renamingPropertyName: String = ""
     @State private var initialPeekHandled = false
+    @State private var draggedViewTabId: String?
+    @State private var viewTabDropTargetId: String?
+    @State private var showTemplatePicker = false
+    @State private var editingTemplate: DatabaseTemplate? = nil
 
     init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
@@ -112,6 +117,59 @@ struct DatabaseFullPageView: View {
                 )
             }
         }
+        .overlay {
+            if showTemplatePicker {
+                Color.black.opacity(0.2)
+                    .ignoresSafeArea()
+                    .onTapGesture { showTemplatePicker = false }
+
+                DatabaseTemplatePickerView(
+                    templates: state.templates,
+                    onSelectEmpty: {
+                        showTemplatePicker = false
+                        createEmptyRow()
+                    },
+                    onSelectTemplate: { template in
+                        showTemplatePicker = false
+                        createRowFromTemplate(template)
+                    },
+                    onNewTemplate: {
+                        showTemplatePicker = false
+                        let newTemplate = state.createTemplate(name: "Untitled")
+                        editingTemplate = newTemplate
+                    },
+                    onDismiss: { showTemplatePicker = false }
+                )
+            }
+        }
+        .overlay {
+            if editingTemplate != nil, let schema = state.schema {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
+
+                DatabaseTemplateEditorModal(
+                    dbPath: dbPath,
+                    schema: schema,
+                    template: Binding(
+                        get: { editingTemplate! },
+                        set: { editingTemplate = $0 }
+                    ),
+                    onSave: { updated in state.updateTemplate(updated) },
+                    onDelete: { templateId in
+                        state.deleteTemplate(templateId)
+                        editingTemplate = nil
+                    },
+                    onClose: {
+                        if let t = editingTemplate { state.updateTemplate(t) }
+                        editingTemplate = nil
+                    }
+                )
+            }
+        }
         .task {
             state.loadData {
                 if let targetId = initialRowId,
@@ -137,7 +195,7 @@ struct DatabaseFullPageView: View {
 
     private func dbHeader(schema: DatabaseSchema) -> some View {
         HStack(spacing: 8) {
-            TextField("Database Name", text: $state.editingTitle, axis: .vertical)
+            TextField("New database", text: $state.editingTitle, axis: .vertical)
                 .lineLimit(1...10)
                 .onSubmit { state.persistTitle() }
                 .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
@@ -175,48 +233,76 @@ struct DatabaseFullPageView: View {
 
     // MARK: - View Tabs
 
+    @State private var isHoveringTabs = false
+
     private func viewTabs(schema: DatabaseSchema) -> some View {
         HStack(spacing: 4) {
             ForEach(schema.views) { view in
-                Button {
-                    state.activeViewId = view.id
-                    state.persistActiveView(view.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: iconForViewType(view.type))
-                        Text(view.name)
-                    }
-                    .font(DatabaseZoomMetrics.font(12))
-                    .padding(.horizontal, DatabaseZoomMetrics.size(8))
-                    .padding(.vertical, DatabaseZoomMetrics.size(4))
-                    .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
-                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
-                }
-                .buttonStyle(.plain)
+                viewTabButton(view: view)
             }
 
-            Menu {
-                ForEach(ViewType.allCases, id: \.rawValue) { type in
-                    Button { state.addView(type: type) } label: {
-                        Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
+            if isHoveringTabs {
+                Menu {
+                    ForEach(ViewType.allCases, id: \.rawValue) { type in
+                        Button { state.addView(type: type) } label: {
+                            Label(type.rawValue.capitalized, systemImage: iconForViewType(type))
+                        }
                     }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(DatabaseZoomMetrics.font(11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: DatabaseZoomMetrics.size(20), height: DatabaseZoomMetrics.size(20))
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Image(systemName: "plus")
-                    .font(DatabaseZoomMetrics.font(11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: DatabaseZoomMetrics.size(20), height: DatabaseZoomMetrics.size(20))
-                    .contentShape(Rectangle())
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Add a new view")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
 
             Spacer()
         }
         .padding(.leading, DatabaseZoomMetrics.size(4))
         .padding(.trailing, DatabaseZoomMetrics.size(12))
         .padding(.vertical, DatabaseZoomMetrics.size(4))
+        .onHover { isHoveringTabs = $0 }
+    }
+
+    private func viewTabButton(view: ViewConfig) -> some View {
+        Button {
+            draggedViewTabId = nil
+            viewTabDropTargetId = nil
+            state.activeViewId = view.id
+            state.persistActiveView(view.id)
+        } label: {
+            HStack(spacing: 4) {
+                if viewTabDropTargetId == view.id {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 2, height: DatabaseZoomMetrics.size(14))
+                }
+                Image(systemName: iconForViewType(view.type))
+                Text(view.name)
+            }
+            .font(DatabaseZoomMetrics.font(12))
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(4))
+            .background(view.id == state.activeViewId ? Color.primary.opacity(0.1) : Color.clear)
+            .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+            .opacity(draggedViewTabId == view.id ? 0.4 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onDrag {
+            draggedViewTabId = view.id
+            return NSItemProvider(object: view.id as NSString)
+        }
+        .onDrop(of: [.text], delegate: ViewTabDropDelegate(
+            targetId: view.id,
+            state: state,
+            draggedId: $draggedViewTabId,
+            dropTargetId: $viewTabDropTargetId
+        ))
     }
 
     // MARK: - Settings Popover
@@ -629,7 +715,8 @@ struct DatabaseFullPageView: View {
                         onClearSorts: { state.clearSorts() },
                         onNewRow: { createNewRow() },
                         showVerticalLines: showVerticalLines,
-                        usesInnerScroll: false
+                        usesInnerScroll: false,
+                        containerWidth: geo.size.width
                     )
                     .frame(
                         minWidth: geo.size.width,
@@ -648,6 +735,7 @@ struct DatabaseFullPageView: View {
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },
+                onUpdateSubGroupBy: { propId in state.updateSubGroupBy(propId) },
                 onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
                 onDelete: { row in state.deleteRow(row) },
                 onReorderRows: { draggedId, targetId in
@@ -695,6 +783,14 @@ struct DatabaseFullPageView: View {
     // MARK: - View-Specific Operations
 
     private func createNewRow() {
+        if !state.templates.isEmpty {
+            showTemplatePicker = true
+        } else {
+            createEmptyRow()
+        }
+    }
+
+    private func createEmptyRow() {
         Task {
             do {
                 let newRow = try state.createRow()
@@ -702,6 +798,15 @@ struct DatabaseFullPageView: View {
             } catch {
                 state.error = error.localizedDescription
             }
+        }
+    }
+
+    private func createRowFromTemplate(_ template: DatabaseTemplate) {
+        do {
+            let newRow = try state.createRowFromTemplate(template)
+            openRow(newRow)
+        } catch {
+            state.error = error.localizedDescription
         }
     }
 

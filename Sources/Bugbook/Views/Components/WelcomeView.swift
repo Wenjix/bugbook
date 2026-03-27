@@ -11,8 +11,7 @@ struct WelcomeView: View {
             Image("BugbookLogo")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 100, height: 100)
-                .offset(x: -6)
+                .frame(width: 56, height: 56)
 
             VStack(spacing: 6) {
                 Text("Bugbook")

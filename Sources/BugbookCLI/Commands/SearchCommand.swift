@@ -25,6 +25,9 @@ struct Search: ParsableCommand {
     @Option(name: .long, help: "Search mode: bm25 (keyword, default), semantic, hybrid")
     var mode: String = "bm25"
 
+    @Option(name: .long, help: "Minimum relevance score (0.0-1.0) to include in results")
+    var minScore: Double?
+
     @Option(name: .long, help: "Force search engine: qmd (default) or local")
     var engine: String = "qmd"
 
@@ -40,7 +43,7 @@ struct Search: ParsableCommand {
                 backend.ensureCollection()
                 let results = try backend.search(
                     query: query, limit: limit, mode: mode,
-                    filesOnly: filesOnly, tag: tag
+                    filesOnly: filesOnly, tag: tag, minScore: minScore
                 )
                 if !results.isEmpty {
                     try outputJSON([
@@ -76,11 +79,12 @@ private struct QmdBackend {
         return name.isEmpty ? "bugbook" : name
     }
 
-    /// Locate the qmd binary, checking PATH and common install locations.
+    /// Locate the qmd binary, checking PATH (via login shell) and common install locations.
     static func find() -> String? {
+        // Login shell lookup — respects nvm, bun, npm global configs
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        task.arguments = ["which", "qmd"]
+        task.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        task.arguments = ["-l", "-c", "which qmd"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -105,8 +109,7 @@ private struct QmdBackend {
         return nil
     }
 
-    /// Register workspace as a qmd collection and build the FTS index.
-    /// collection add only registers the path; update actually indexes the files.
+    /// Register workspace as a qmd collection, build the FTS index, and register context metadata.
     func ensureCollection() {
         func run(_ args: [String]) {
             let task = Process()
@@ -117,20 +120,58 @@ private struct QmdBackend {
             try? task.run()
             task.waitUntilExit()
         }
-        run(["collection", "add", workspace, "--name", collectionName])
+        // v2: collection name derived from directory, no --name flag
+        run(["collection", "add", workspace])
         run(["update"])
+        ensureContextRegistered(run: run)
     }
 
-    func search(query: String, limit: Int, mode: String, filesOnly: Bool, tag: String?) throws -> [[String: Any]] {
-        var results: [[String: Any]]
-        switch mode {
-        case "semantic":
-            results = try runCLISearch(tool: "vsearch", query: query, limit: limit)
-        case "hybrid":
-            results = try runHybridSearch(query: query, limit: limit)
-        default: // bm25
-            results = try runCLISearch(tool: "search", query: query, limit: limit)
+    /// Register context only when the set of databases has changed since last registration.
+    private func ensureContextRegistered(run: ([String]) -> Void) {
+        let store = DatabaseStore()
+        let databases = store.listDatabases(in: workspace)
+        let currentKey = databases.map(\.name).sorted().joined(separator: ",")
+
+        let markerPath = (workspace as NSString).appendingPathComponent(".qmd-context-marker")
+        if let existing = try? String(contentsOfFile: markerPath, encoding: .utf8), existing == currentKey {
+            return
         }
+
+        run(["context", "add", "qmd://\(collectionName)",
+             "Bugbook personal knowledge base — pages, databases, and meeting notes"])
+        for db in databases {
+            let relativePath = relativeToWorkspace(db.path)
+            if let schema = try? store.loadSchema(at: db.path) {
+                let propNames = schema.properties.map(\.name).joined(separator: ", ")
+                run(["context", "add", "qmd://\(collectionName)/\(relativePath)",
+                     "\(db.name) database — \(propNames)"])
+            }
+        }
+
+        try? currentKey.write(toFile: markerPath, atomically: true, encoding: .utf8)
+    }
+
+    private func relativeToWorkspace(_ path: String) -> String {
+        guard path.hasPrefix(workspace) else { return path }
+        return String(path.dropFirst(workspace.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    func search(query: String, limit: Int, mode: String, filesOnly: Bool, tag: String?, minScore: Double? = nil) throws -> [[String: Any]] {
+        let tool = mode == "semantic" ? "vsearch" : mode == "hybrid" ? "query" : "search"
+
+        if filesOnly {
+            if let fileResults = try? runCLIFilesSearch(tool: tool, query: query, limit: limit, minScore: minScore) {
+                var filtered = fileResults.filter { result in
+                    guard let file = result["file"] as? String else { return false }
+                    return !WorkspacePathRules.shouldIgnoreRelativePath(file)
+                }
+                if let tag = tag { filtered = applyTagFilter(filtered, tag: tag) }
+                return Array(filtered.prefix(limit))
+            }
+            fputs("Warning: qmd --files failed, falling back to --json with dedup\n", stderr)
+        }
+
+        var results = try runCLISearch(tool: tool, query: query, limit: limit, minScore: minScore)
 
         if let tag = tag {
             results = applyTagFilter(results, tag: tag)
@@ -152,134 +193,51 @@ private struct QmdBackend {
         return Array(results.prefix(limit))
     }
 
-    // MARK: CLI search (bm25 / semantic)
+    // MARK: CLI search
 
-    private func runCLISearch(tool: String, query: String, limit: Int) throws -> [[String: Any]] {
+    /// Run a qmd search command and return raw stdout data.
+    private func runQmd(tool: String, query: String, limit: Int, minScore: Double? = nil, extraFlags: [String] = []) throws -> Data {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: binary)
-        task.arguments = [tool, query, "--json", "-n", "\(limit)", "-c", collectionName]
+        var args = [tool, query] + extraFlags + ["-n", "\(limit)", "-c", collectionName]
+        if let minScore = minScore { args += ["--min-score", "\(minScore)"] }
+        task.arguments = args
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         try task.run()
         task.waitUntilExit()
-
         guard task.terminationStatus == 0 else {
             throw CLIError.invalidInput("qmd \(tool) exited \(task.terminationStatus)")
         }
-        return parseQmdData(pipe.fileHandleForReading.readDataToEndOfFile())
+        return pipe.fileHandleForReading.readDataToEndOfFile()
     }
 
-    // MARK: Hybrid search via HTTP daemon
-
-    private func runHybridSearch(query: String, limit: Int) throws -> [[String: Any]] {
-        try ensureDaemon()
-        return try callMCPQuery(query: query, limit: limit)
+    private func runCLISearch(tool: String, query: String, limit: Int, minScore: Double? = nil) throws -> [[String: Any]] {
+        let data = try runQmd(tool: tool, query: query, limit: limit, minScore: minScore, extraFlags: ["--json"])
+        return parseQmdData(data)
     }
 
-    private func ensureDaemon() throws {
-        if isDaemonHealthy() { return }
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: binary)
-        task.arguments = ["mcp", "--http", "--daemon"]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        try task.run()
-
-        fputs("Starting qmd daemon (loading models, up to 120s)…\n", stderr)
-        let deadline = Date().addingTimeInterval(120)
-        while Date() < deadline {
-            Thread.sleep(forTimeInterval: 2)
-            if isDaemonHealthy() { return }
-        }
-        throw CLIError.invalidInput("qmd daemon did not start within 120s")
-    }
-
-    private func isDaemonHealthy() -> Bool {
-        guard let url = URL(string: "http://localhost:8181/health") else { return false }
-        var req = URLRequest(url: url, timeoutInterval: 2)
-        req.httpMethod = "GET"
-        var healthy = false
-        let sema = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: req) { _, resp, _ in
-            if let http = resp as? HTTPURLResponse, http.statusCode == 200 { healthy = true }
-            sema.signal()
-        }.resume()
-        sema.wait()
-        return healthy
-    }
-
-    /// Call the MCP `query` tool with lex + vec + hyde sub-searches for full hybrid.
-    private func callMCPQuery(query: String, limit: Int) throws -> [[String: Any]] {
-        guard let url = URL(string: "http://localhost:8181/mcp") else {
-            throw CLIError.invalidInput("invalid qmd daemon URL")
-        }
-        var req = URLRequest(url: url, timeoutInterval: 120)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let body: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": [
-                "name": "query",
-                "arguments": [
-                    "searches": [
-                        ["type": "lex", "query": query],
-                        ["type": "vec", "query": query],
-                        ["type": "hyde", "query": query],
-                    ],
-                    "limit": limit,
-                    "collections": [collectionName],
-                ] as [String: Any],
-            ] as [String: Any],
-        ]
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        var responseData: Data?
-        var responseError: Error?
-        let sema = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: req) { data, _, error in
-            responseData = data; responseError = error
-            sema.signal()
-        }.resume()
-        sema.wait()
-
-        if let error = responseError { throw error }
-        guard let data = responseData else { return [] }
-        return parseMCPResponse(data)
+    /// Run qmd with --files flag for file-only results.
+    private func runCLIFilesSearch(tool: String, query: String, limit: Int, minScore: Double? = nil) throws -> [[String: Any]] {
+        let data = try runQmd(tool: tool, query: query, limit: limit, minScore: minScore, extraFlags: ["--files"])
+        // --files returns CSV lines: #docid,score,qmd://collection/path,"context"
+        let output = String(data: data, encoding: .utf8) ?? ""
+        var seen = Set<String>()
+        return output.components(separatedBy: "\n")
+            .compactMap { line -> [String: Any]? in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return nil }
+                guard let qmdRange = trimmed.range(of: "qmd://") else { return nil }
+                let afterQmd = trimmed[qmdRange.lowerBound...]
+                let pathEnd = afterQmd.firstIndex(of: ",") ?? afterQmd.endIndex
+                let rel = normalizedRelativePath(String(afterQmd[..<pathEnd]))
+                guard seen.insert(rel).inserted else { return nil }
+                return ["file": rel, "name": pageDisplayName(fromPath: rel)]
+            }
     }
 
     // MARK: Response parsing
-
-    private func parseMCPResponse(_ data: Data) -> [[String: Any]] {
-        guard
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let result = json["result"] as? [String: Any],
-            let content = result["content"] as? [[String: Any]]
-        else { return [] }
-
-        // Look for structuredContent first, then fall back to parsing the text blob
-        if let structured = result["structuredContent"] as? [String: Any],
-           let raw = structured["results"] as? [[String: Any]] {
-            return raw.compactMap { mapResult($0) }
-        }
-
-        // Find the JSON content block (type == "text" containing a JSON object)
-        for block in content {
-            guard block["type"] as? String == "text",
-                  let text = block["text"] as? String,
-                  let textData = text.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: textData) as? [String: Any],
-                  let raw = parsed["results"] as? [[String: Any]]
-            else { continue }
-            return raw.compactMap { mapResult($0) }
-        }
-        return []
-    }
 
     // qmd CLI outputs a JSON array; MCP response wraps in {"results": [...]}
     private func parseQmdData(_ data: Data) -> [[String: Any]] {

@@ -213,7 +213,7 @@ struct CalendarView: View {
                         Text("\(cell.day)")
                             .font(.caption)
                             .fontWeight(cell.isToday ? .bold : .medium)
-                            .foregroundStyle(cell.isToday ? Color.white : Color.primary)
+                            .foregroundStyle(cell.isToday ? Color.fallbackAccentFg : Color.primary)
                             .frame(width: 22, height: 22)
                             .background(cell.isToday ? Circle().fill(Color.accentColor) : Circle().fill(Color.clear))
                         Spacer()

@@ -28,5 +28,24 @@
 	<string></string>
 	<key>SUPublicEDKey</key>
 	<string></string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.bugbook.sidebar-reference</string>
+			<key>UTTypeDescription</key>
+			<string>Bugbook Sidebar Reference</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Bugbook needs microphone access to record meeting audio for live transcription.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Bugbook uses speech recognition to transcribe meeting recordings in real-time.</string>
 </dict>
 </plist>

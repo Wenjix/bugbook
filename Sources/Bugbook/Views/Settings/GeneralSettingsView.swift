@@ -111,7 +111,7 @@ struct GeneralSettingsView: View {
     private func flatPages(from entries: [FileEntry]) -> [FileEntry] {
         var result: [FileEntry] = []
         for entry in entries {
-            if !entry.isDirectory || entry.isDatabase || entry.isCanvas {
+            if !entry.isDirectory || entry.isDatabase {
                 result.append(entry)
             }
             if let children = entry.children {
