@@ -273,7 +273,7 @@ struct MeetingBlockView: View {
 
     // MARK: - Summary View
 
-    private func summaryContent(sections: [ParsedSection]) -> some View {
+    private func summaryContent(sections: [MeetingSection]) -> some View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
