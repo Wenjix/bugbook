@@ -14,7 +14,7 @@ final class EditorTypographyTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(EditorTypography.defaultZoomScale, 1.1)
-        XCTAssertEqual(EditorTypography.zoomScale, 1.1)
+        XCTAssertEqual(EditorTypography.defaultZoomScale, 1.0)
+        XCTAssertEqual(EditorTypography.zoomScale, 1.0)
     }
 }
