@@ -5,6 +5,8 @@ import AppKit
 struct BlockCellView: View {
     var document: BlockDocument
     let block: Block
+    var previousBlockType: BlockType? = nil
+    var nextBlockType: BlockType? = nil
     var isBeingDragged: Bool = false
     var onTyping: (() -> Void)? = nil
     var onHandleDragStart: ((UUID, CGPoint) -> Void)? = nil
@@ -52,7 +54,8 @@ struct BlockCellView: View {
                 .frame(maxWidth: .infinity, minHeight: isEmptyParagraph ? 28 : 0, alignment: .leading)
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, block.type == .horizontalRule ? 1 : 2)
+        .padding(.top, listEdgePadding(neighbor: previousBlockType))
+        .padding(.bottom, listEdgePadding(neighbor: nextBlockType))
         .background(
             block.backgroundColor != .default
                 ? block.backgroundColor.backgroundColor
@@ -68,6 +71,16 @@ struct BlockCellView: View {
 
     private var isEmptyParagraph: Bool {
         block.type == .paragraph && block.text.isEmpty
+    }
+
+    /// Returns tighter vertical padding (1pt) when both the current block and its
+    /// neighbor are list items, keeping consecutive list items visually grouped.
+    /// Non-list blocks and list edges retain normal spacing (2pt). Horizontal rules
+    /// always use 1pt.
+    private func listEdgePadding(neighbor: BlockType?) -> CGFloat {
+        if block.type == .horizontalRule { return 1 }
+        guard block.type.isListItem, let neighbor, neighbor.isListItem else { return 2 }
+        return 1
     }
 
     private var blockUsesOwnInteractions: Bool {

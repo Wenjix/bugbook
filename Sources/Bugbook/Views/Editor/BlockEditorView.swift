@@ -85,6 +85,7 @@ struct BlockEditorView: View {
             }
 
             ForEach(Array(document.blocks.enumerated()).dropFirst(startIndex), id: \.element.id) { index, block in
+                let previousBlock = index > 0 ? document.blocks[index - 1] : nil
                 let nextBlock = index + 1 < document.blocks.count ? document.blocks[index + 1] : nil
                 let useTallDropZone = block.type == .databaseEmbed
                     || block.type == .pageLink
@@ -98,6 +99,8 @@ struct BlockEditorView: View {
                 BlockCellView(
                     document: document,
                     block: block,
+                    previousBlockType: previousBlock?.type,
+                    nextBlockType: nextBlock?.type,
                     isBeingDragged: blockMoveDragState?.draggedIds.contains(block.id) == true,
                     onTyping: onTyping,
                     onHandleDragStart: startBlockMoveDrag,

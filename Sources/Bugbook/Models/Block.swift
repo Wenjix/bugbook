@@ -14,6 +14,14 @@ enum BlockType: Equatable {
     case pageLink
     case column
     case toggle
+
+    /// Whether this block type is a list item (bullet, numbered, or task).
+    var isListItem: Bool {
+        switch self {
+        case .bulletListItem, .numberedListItem, .taskItem: true
+        default: false
+        }
+    }
 }
 
 struct Block: Identifiable, Equatable {

@@ -32,7 +32,9 @@ struct ColumnBlockView: View {
                     )
 
                     ForEach(Array(group.blocks.enumerated()), id: \.element.id) { blockIdx, child in
-                        BlockCellView(document: document, block: child, onTyping: onTyping)
+                        let prevType = blockIdx > 0 ? group.blocks[blockIdx - 1].type : nil
+                        let nextType = blockIdx + 1 < group.blocks.count ? group.blocks[blockIdx + 1].type : nil
+                        BlockCellView(document: document, block: child, previousBlockType: prevType, nextBlockType: nextType, onTyping: onTyping)
                             .padding(.vertical, 1)
 
                         // Drop zone after each block
