@@ -2775,13 +2775,6 @@ struct ContentView: View {
         }
     }
 
-    /// Extracts plain text from the most recent blocks for knowledge queries.
-    private func recentBlockText(from document: BlockDocument) -> String {
-        document.blocks.suffix(20).compactMap { block -> String? in
-            let text = AttributedStringConverter.plainText(from: block.text)
-            return text.isEmpty ? nil : text
-        }.joined(separator: " ")
-    }
 
     private func updateFileTreeName(path: String, newName: String) {
         func update(entries: inout [FileEntry]) {
