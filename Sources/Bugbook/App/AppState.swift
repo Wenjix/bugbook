@@ -34,6 +34,7 @@ enum ViewMode {
     var currentView: ViewMode = .editor
     var movePagePath: String?  // non-nil triggers move page picker
     var flashcardReviewOpen: Bool = false
+    @ObservationIgnored lazy var aiThreadStore = AiThreadStore()
 
     var activeTab: OpenFile? {
         guard activeTabIndex >= 0, activeTabIndex < openTabs.count else { return nil }

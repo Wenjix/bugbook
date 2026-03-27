@@ -4,13 +4,19 @@ import Sentry
 struct NotesChatView: View {
     var appState: AppState
     var aiService: AiService
-    @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var selectedEngine: PreferredAIEngine = .auto
     @State private var referencedFiles: [ChatReferencedFile] = []
     @State private var showFileReferencePicker = false
     @State private var fileReferenceSearch = ""
+    @State private var showThreadPicker = false
     @FocusState private var inputFocused: Bool
+
+    private var threadStore: AiThreadStore { appState.aiThreadStore }
+
+    private var messages: [ChatMessage] {
+        threadStore.activeThread?.messages ?? []
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +35,7 @@ struct NotesChatView: View {
         .task {
             selectedEngine = appState.settings.preferredAIEngine
             inputFocused = true
+            ensureActiveThread()
         }
     }
 
@@ -46,14 +53,22 @@ struct NotesChatView: View {
                 Text("Bugbook")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text("Chat with Notes")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.fallbackTextPrimary)
+
+                threadTitleButton
             }
 
             Spacer()
 
             enginePicker
+
+            Button(action: { threadStore.createThread() }) {
+                Label("New Thread", systemImage: "plus.message")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("New thread")
 
             Button(action: clearChat) {
                 Label("Clear Chat", systemImage: "trash")
@@ -78,6 +93,99 @@ struct NotesChatView: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 14)
+    }
+
+    private var threadTitleButton: some View {
+        Button {
+            showThreadPicker.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Text(threadStore.activeThread?.title ?? "Chat with Notes")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.fallbackTextPrimary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.borderless)
+        .popover(isPresented: $showThreadPicker, arrowEdge: .bottom) {
+            threadPickerContent
+        }
+    }
+
+    private var threadPickerContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                threadStore.createThread()
+                showThreadPicker = false
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.accentColor)
+                    Text("New Thread")
+                        .font(.system(size: Typography.bodySmall, weight: .medium))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .padding(.horizontal, 8)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(threadStore.sortedThreads) { thread in
+                        threadRow(thread)
+                    }
+                }
+            }
+            .frame(maxHeight: 400)
+        }
+        .padding(.vertical, 6)
+        .frame(width: 320)
+    }
+
+    private func threadRow(_ thread: AiThread) -> some View {
+        Button {
+            threadStore.switchTo(thread.id)
+            showThreadPicker = false
+        } label: {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(thread.title)
+                        .font(.system(size: Typography.bodySmall, weight: thread.id == threadStore.activeThreadId ? .semibold : .regular))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                        .lineLimit(1)
+                    Text(relativeTimestamp(thread.updatedAt))
+                        .font(.system(size: Typography.caption2))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if thread.id == threadStore.activeThreadId {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                threadStore.deleteThread(thread.id)
+            } label: {
+                Label("Delete Thread", systemImage: "trash")
+            }
+        }
     }
 
     @ViewBuilder
@@ -394,6 +502,12 @@ struct NotesChatView: View {
 
     // MARK: - Actions
 
+    private func ensureActiveThread() {
+        if threadStore.activeThreadId == nil || threadStore.activeThread == nil {
+            threadStore.createThread()
+        }
+    }
+
     private var canSend: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !aiService.isRunning
     }
@@ -403,12 +517,15 @@ struct NotesChatView: View {
         guard !trimmed.isEmpty, !aiService.isRunning else { return }
         let selectedReferences = referencedFiles
 
+        ensureActiveThread()
+        guard let threadId = threadStore.activeThreadId else { return }
+
         let userMessage = ChatMessage(
             role: .user,
             content: displayUserMessage(question: trimmed, references: selectedReferences),
             timestamp: Date()
         )
-        messages.append(userMessage)
+        threadStore.appendMessage(userMessage, to: threadId)
         inputText = ""
         referencedFiles.removeAll()
         showFileReferencePicker = false
@@ -431,17 +548,19 @@ struct NotesChatView: View {
                 )
                 SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "ai.receive"))
                 let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())
-                messages.append(assistantMessage)
+                threadStore.appendMessage(assistantMessage, to: threadId)
             } catch {
                 SentrySDK.addBreadcrumb(Breadcrumb(level: .error, category: "ai.error"))
                 let errorMessage = ChatMessage(role: .error, content: error.localizedDescription, timestamp: Date())
-                messages.append(errorMessage)
+                threadStore.appendMessage(errorMessage, to: threadId)
             }
         }
     }
 
     private func clearChat() {
-        messages.removeAll()
+        guard let threadId = threadStore.activeThreadId else { return }
+        threadStore.deleteThread(threadId)
+        threadStore.createThread()
     }
 
     private func closeChat() {
@@ -546,6 +665,14 @@ struct NotesChatView: View {
 
         \(sections.joined(separator: "\n\n"))
         """
+    }
+
+    // MARK: - Helpers
+
+    private func relativeTimestamp(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

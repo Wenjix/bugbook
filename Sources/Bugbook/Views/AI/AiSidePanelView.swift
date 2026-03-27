@@ -4,47 +4,20 @@ struct AiSidePanelView: View {
     var appState: AppState
     var aiService: AiService
     var activeDocument: BlockDocument?
-    @State private var messages: [ChatMessage] = []
     @State private var inputText: String = ""
     @State private var activeTask: Task<Void, Never>?
+    @State private var showThreadPicker = false
     @FocusState private var inputFocused: Bool
+
+    private var threadStore: AiThreadStore { appState.aiThreadStore }
+
+    private var messages: [ChatMessage] {
+        threadStore.activeThread?.messages ?? []
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 8) {
-                Image("BugbookAI")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 22, height: 22)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-
-                Text("Ask AI")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.fallbackTextPrimary)
-
-                Spacer()
-
-                Button(action: openFullChat) {
-                    Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Expand to full chat")
-
-                Button(action: closePanel) {
-                    Label("Close", systemImage: "xmark")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Close")
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            header
 
             Divider()
 
@@ -124,13 +97,152 @@ struct AiSidePanelView: View {
         .background(Color.fallbackEditorBg)
         .task {
             inputFocused = true
+            // Ensure there's an active thread
+            ensureActiveThread()
             if let prompt = appState.aiInitialPrompt, !prompt.isEmpty {
                 inputText = prompt
                 appState.aiInitialPrompt = nil
-                // Auto-send the prompt from inline AI trigger
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     sendMessage()
                 }
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image("BugbookAI")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+
+            threadTitleButton
+
+            Spacer()
+
+            Button(action: { threadStore.createThread() }) {
+                Label("New Thread", systemImage: "plus")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("New thread")
+
+            Button(action: openFullChat) {
+                Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Expand to full chat")
+
+            Button(action: closePanel) {
+                Label("Close", systemImage: "xmark")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Close")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private var threadTitleButton: some View {
+        Button {
+            showThreadPicker.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Text(threadStore.activeThread?.title ?? "Ask AI")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.fallbackTextPrimary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.borderless)
+        .popover(isPresented: $showThreadPicker, arrowEdge: .bottom) {
+            threadPickerContent
+        }
+    }
+
+    private var threadPickerContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                threadStore.createThread()
+                showThreadPicker = false
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.accentColor)
+                    Text("New Thread")
+                        .font(.system(size: Typography.bodySmall, weight: .medium))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .padding(.horizontal, 8)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(threadStore.sortedThreads) { thread in
+                        threadRow(thread)
+                    }
+                }
+            }
+            .frame(maxHeight: 300)
+        }
+        .padding(.vertical, 6)
+        .frame(width: 280)
+    }
+
+    private func threadRow(_ thread: AiThread) -> some View {
+        Button {
+            threadStore.switchTo(thread.id)
+            showThreadPicker = false
+        } label: {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(thread.title)
+                        .font(.system(size: Typography.bodySmall, weight: thread.id == threadStore.activeThreadId ? .semibold : .regular))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                        .lineLimit(1)
+                    Text(relativeTimestamp(thread.updatedAt))
+                        .font(.system(size: Typography.caption2))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if thread.id == threadStore.activeThreadId {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                threadStore.deleteThread(thread.id)
+            } label: {
+                Label("Delete Thread", systemImage: "trash")
             }
         }
     }
@@ -181,15 +293,7 @@ struct AiSidePanelView: View {
             if activeDocument != nil {
                 HStack(spacing: 8) {
                     Button {
-                        if message.isReverted {
-                            activeDocument?.redo()
-                        } else {
-                            activeDocument?.undo()
-                        }
-                        // Toggle the reverted state
-                        if let idx = messages.firstIndex(where: { $0.id == message.id }) {
-                            messages[idx].isReverted.toggle()
-                        }
+                        handleRevert(message)
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: message.isReverted ? "arrow.uturn.forward" : "arrow.uturn.backward")
@@ -222,12 +326,31 @@ struct AiSidePanelView: View {
 
     // MARK: - Actions
 
+    private func ensureActiveThread() {
+        if threadStore.activeThreadId == nil || threadStore.activeThread == nil {
+            threadStore.createThread()
+        }
+    }
+
+    private func handleRevert(_ message: ChatMessage) {
+        if message.isReverted {
+            activeDocument?.redo()
+        } else {
+            activeDocument?.undo()
+        }
+        guard let threadId = threadStore.activeThreadId else { return }
+        threadStore.toggleMessageReverted(message.id, in: threadId)
+    }
+
     private func sendMessage() {
         let trimmed = inputText.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, !aiService.isRunning else { return }
 
+        ensureActiveThread()
+        guard let threadId = threadStore.activeThreadId else { return }
+
         let userMessage = ChatMessage(role: .user, content: trimmed, timestamp: Date())
-        messages.append(userMessage)
+        threadStore.appendMessage(userMessage, to: threadId)
         inputText = ""
 
         // Capture selection context and block range before it gets cleared
@@ -287,20 +410,18 @@ struct AiSidePanelView: View {
                             doc.applyAiResponse(markdown: response)
                         }
                     }
-                    // Show clean confirmation instead of raw markdown
                     let appliedMessage = ChatMessage(role: .applied, content: response, timestamp: Date())
-                    messages.append(appliedMessage)
+                    threadStore.appendMessage(appliedMessage, to: threadId)
                 } else {
-                    // No active doc — show the response as plain chat
                     let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())
-                    messages.append(assistantMessage)
+                    threadStore.appendMessage(assistantMessage, to: threadId)
                 }
 
                 appState.aiSelectionContext = nil
             } catch {
                 if !Task.isCancelled {
                     let errorMessage = ChatMessage(role: .error, content: error.localizedDescription, timestamp: Date())
-                    messages.append(errorMessage)
+                    threadStore.appendMessage(errorMessage, to: threadId)
                 }
             }
         }
@@ -312,28 +433,19 @@ struct AiSidePanelView: View {
         let escapedPage = pageName.replacingOccurrences(of: "'", with: "'\"'\"'")
 
         if hasSelection, let range = blockRange {
-            // Replace the first selected block with the AI response,
-            // then delete the remaining selected blocks
             let tempFile = NSTemporaryDirectory() + "bugbook-ai-\(UUID().uuidString).md"
             do {
                 try response.write(toFile: tempFile, atomically: true, encoding: .utf8)
                 defer { try? FileManager.default.removeItem(atPath: tempFile) }
 
-                // Replace the first block with the full AI response
                 _ = try await aiService.executeBugbookCommand(
                     "block replace '\(escapedPage)' \(range.first) --content-file '\(tempFile)'"
                 )
 
-                // Delete remaining original blocks (they're now shifted, delete from last to first+1)
                 if range.first != range.last {
-                    // After replacing the first block, the indices shift.
-                    // The safest approach: get fresh block count, delete by original range
                     let firstIdx = Int(range.first.replacingOccurrences(of: "path:", with: "")) ?? 0
                     let lastIdx = Int(range.last.replacingOccurrences(of: "path:", with: "")) ?? 0
                     if lastIdx > firstIdx {
-                        // Delete from last to first+1 (reverse order to keep indices stable)
-                        // But after replace, the new content may span multiple blocks.
-                        // Count how many blocks the AI response creates
                         let newBlockCount = MarkdownBlockParser.parse(response).count
                         let deleteStart = firstIdx + newBlockCount
                         let deleteEnd = lastIdx + newBlockCount - 1
@@ -350,7 +462,6 @@ struct AiSidePanelView: View {
                 return false
             }
         } else {
-            // Full page update via CLI
             let tempFile = NSTemporaryDirectory() + "bugbook-ai-\(UUID().uuidString).md"
             do {
                 try response.write(toFile: tempFile, atomically: true, encoding: .utf8)
@@ -378,5 +489,13 @@ struct AiSidePanelView: View {
 
     private func openFullChat() {
         appState.openNotesChat()
+    }
+
+    // MARK: - Helpers
+
+    private func relativeTimestamp(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
