@@ -230,7 +230,7 @@ struct BlockCellView: View {
     @ViewBuilder
     private var blockContent: some View {
         switch block.type {
-        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .headingToggle:
+        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote:
             TextBlockView(document: document, block: block, onTyping: onTyping)
 
         case .codeBlock:

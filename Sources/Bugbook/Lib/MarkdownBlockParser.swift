@@ -490,9 +490,6 @@ enum MarkdownBlockParser {
                 }
                 lines.append("<!-- /toggle-heading -->")
 
-            case .meeting:
-                lines.append("<!-- meeting: \(block.text) -->")
-
             case .column:
                 lines.append("<!-- columns -->")
                 let maxCol = block.children.map(\.columnIndex).max() ?? 0
