@@ -178,6 +178,8 @@ struct FileTreeDropDelegate: DropDelegate {
         let currentMode = dropState.mode
         dropState.mode = nil
 
+        // No drop mode means the drag ended without a valid target — reject the drop
+        guard currentMode != nil else { return false }
         guard let provider = info.itemProviders(for: [.text]).first else { return false }
 
         // Capture reference for use in async callback
@@ -185,7 +187,8 @@ struct FileTreeDropDelegate: DropDelegate {
 
         provider.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
             guard let data = data as? Data,
-                  let draggedPath = String(data: data, encoding: .utf8) else {
+                  let draggedPath = String(data: data, encoding: .utf8),
+                  !draggedPath.isEmpty else {
                 DispatchQueue.main.async { state.mode = nil }
                 return
             }
@@ -198,6 +201,8 @@ struct FileTreeDropDelegate: DropDelegate {
                 case .onto(let idx):
                     guard idx < entries.count else { return }
                     let target = entries[idx]
+                    // Guard: only move into pages that accept children, never into databases/canvases
+                    guard !target.isDatabase, !target.isCanvas else { return }
                     guard target.path != draggedPath else { return }
                     // Don't drop into own descendant
                     let draggedCompanion = draggedPath.hasSuffix(".md") ? String(draggedPath.dropLast(3)) : draggedPath
@@ -216,6 +221,7 @@ struct FileTreeDropDelegate: DropDelegate {
 
                 case .above(let insertIndex):
                     let draggedName = (draggedPath as NSString).lastPathComponent
+                    guard !draggedName.isEmpty else { return }
                     let draggedParent = (draggedPath as NSString).deletingLastPathComponent
                     let entryParents = Set(entries.map { ($0.path as NSString).deletingLastPathComponent })
                     guard entryParents.contains(draggedParent) || entries.contains(where: { $0.path == draggedPath }) else { return }

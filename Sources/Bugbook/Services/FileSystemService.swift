@@ -82,7 +82,8 @@ class FileSystemService {
                     let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String {
+                       let schemaName = json["name"] as? String,
+                       !schemaName.isEmpty {
                         dbName = schemaName
                     }
                     // Treat database as a non-expandable item (like TS version)
@@ -283,12 +284,20 @@ class FileSystemService {
         }
 
         // Create destination directory if needed (e.g. companion folder for a parent page)
-        if !fileManager.fileExists(atPath: destDir) {
+        let createdDestDir = !fileManager.fileExists(atPath: destDir)
+        if createdDestDir {
             try fileManager.createDirectory(atPath: destDir, withIntermediateDirectories: true)
         }
 
-        // Move the file
-        try fileManager.moveItem(atPath: sourcePath, toPath: destPath)
+        // Move the file — clean up created directory on failure to avoid orphans
+        do {
+            try fileManager.moveItem(atPath: sourcePath, toPath: destPath)
+        } catch {
+            if createdDestDir, let contents = try? fileManager.contentsOfDirectory(atPath: destDir), contents.isEmpty {
+                try? fileManager.removeItem(atPath: destDir)
+            }
+            throw error
+        }
 
         // Move companion folder if it exists
         if hasCompanion {
@@ -559,7 +568,9 @@ class FileSystemService {
 
     /// Save a custom order for entries in a directory (by file name).
     func saveCustomOrder(_ names: [String], for parentPath: String) {
-        UserDefaults.standard.set(names, forKey: orderKey(for: parentPath))
+        // Filter out empty names to prevent corrupted order lists
+        let cleaned = names.filter { !$0.isEmpty }
+        UserDefaults.standard.set(cleaned, forKey: orderKey(for: parentPath))
     }
 
     /// Sort entries using custom order if available, falling back to directories-first then alphabetical.
@@ -580,7 +591,8 @@ class FileSystemService {
             return defaultSortedEntries(entries)
         }
 
-        let orderMap = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        // Use uniquingKeysWith to handle duplicate names in saved order without crashing
+        let orderMap = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         return entries.sorted { a, b in
             let idxA = orderMap[a.name] ?? Int.max
             let idxB = orderMap[b.name] ?? Int.max
@@ -602,7 +614,10 @@ class FileSystemService {
 
     /// Reorder an entry within its sibling list. Saves the new order.
     func reorderEntry(named name: String, toIndex newIndex: Int, inParent parentPath: String, siblings: [FileEntry]) {
-        var names = siblings.map(\.name)
+        guard !name.isEmpty else { return }
+        // Deduplicate names while preserving order — prevents corrupted saved orders
+        var seen = Set<String>()
+        var names = siblings.map(\.name).filter { !$0.isEmpty && seen.insert($0).inserted }
         guard let currentIndex = names.firstIndex(of: name) else { return }
         names.remove(at: currentIndex)
         let insertAt = min(newIndex, names.count)
