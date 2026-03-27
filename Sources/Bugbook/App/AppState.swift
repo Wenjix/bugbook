@@ -362,6 +362,29 @@ enum ViewMode {
         activeTabIndex = openTabs.count - 1
     }
 
+    func openMeetings() {
+        showSettings = false
+        currentView = .editor
+
+        let meetingsPath = "bugbook://meetings"
+        if let existingIndex = openTabs.firstIndex(where: { $0.isMeetings }) {
+            activeTabIndex = existingIndex
+            return
+        }
+        let tab = OpenFile(
+            id: UUID(),
+            path: meetingsPath,
+            content: "",
+            isDirty: false,
+            isEmptyTab: false,
+            kind: .meetings,
+            displayName: "Meetings",
+            icon: "person.2.circle"
+        )
+        openTabs.append(tab)
+        activeTabIndex = openTabs.count - 1
+    }
+
     func toggleAiPanel(prompt: String? = nil) {
         if aiSidePanelOpen {
             aiSidePanelOpen = false

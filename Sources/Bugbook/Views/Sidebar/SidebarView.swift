@@ -239,6 +239,25 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "calendar" : nil }
+
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openMeetings, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
+                        Image(systemName: "person.2.circle")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Text("Meetings")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
+                    .background(hoveredButton == "meetings" ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "meetings" : nil }
             }
             .padding(.horizontal, sectionHorizontalPadding)
             }
