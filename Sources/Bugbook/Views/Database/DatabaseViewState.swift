@@ -375,6 +375,15 @@ final class DatabaseViewState {
         }
     }
 
+    func updateHideTitle(_ hide: Bool) {
+        guard var s = schema, var view = activeView else { return }
+        view.hideTitle = hide ? true : nil
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
     func updateGroupBy(_ propertyId: String) {
         guard var s = schema, var view = activeView else { return }
         view.groupBy = propertyId

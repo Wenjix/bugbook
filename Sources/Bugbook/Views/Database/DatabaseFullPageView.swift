@@ -137,14 +137,16 @@ struct DatabaseFullPageView: View {
 
     private func dbHeader(schema: DatabaseSchema) -> some View {
         HStack(spacing: 8) {
-            TextField("Database Name", text: $state.editingTitle, axis: .vertical)
-                .lineLimit(1...10)
-                .onSubmit { state.persistTitle() }
-                .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
-                .font(DatabaseZoomMetrics.font(17, weight: .semibold))
-                .foregroundStyle(.primary)
-                .textFieldStyle(.plain)
-                .databasePointerCursor()
+            if state.activeView?.hideTitle != true {
+                TextField("Database Name", text: $state.editingTitle, axis: .vertical)
+                    .lineLimit(1...10)
+                    .onSubmit { state.persistTitle() }
+                    .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
+                    .font(DatabaseZoomMetrics.font(17, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .textFieldStyle(.plain)
+                    .databasePointerCursor()
+            }
 
             Spacer()
 
@@ -328,8 +330,23 @@ struct DatabaseFullPageView: View {
                     .padding(.vertical, DatabaseZoomMetrics.size(3))
                 }
 
+                Divider().padding(.top, 4)
+
+                Button { state.updateHideTitle(state.activeView?.hideTitle != true) } label: {
+                    HStack {
+                        Text("Show title").font(DatabaseZoomMetrics.font(15))
+                        Spacer()
+                        if state.activeView?.hideTitle != true {
+                            Image(systemName: "checkmark").font(DatabaseZoomMetrics.font(12)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                .padding(.vertical, DatabaseZoomMetrics.size(3))
+
                 if state.activeView?.type == .table {
-                    Divider().padding(.top, 4)
                     Button { showVerticalLines.toggle() } label: {
                         HStack {
                             Text("Grid lines").font(DatabaseZoomMetrics.font(15))

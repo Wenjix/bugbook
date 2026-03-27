@@ -105,29 +105,31 @@ struct DatabaseInlineEmbedView: View {
     private func headerBar(schema: DatabaseSchema) -> some View {
         HStack(spacing: 8) {
             // Title
-            if isEditingTitle {
-                TextField("Untitled Database", text: $state.editingTitle)
-                    .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .textFieldStyle(.plain)
-                    .focused($isTitleFocused)
-                    .databasePointerCursor()
-                    .onAppear { isTitleFocused = true }
-                    .onSubmit {
-                        state.persistTitle()
-                        isEditingTitle = false
-                    }
-                    .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
-                    .onChange(of: isTitleFocused) { _, focused in
-                        if !focused { isEditingTitle = false }
-                    }
-            } else {
-                Button { isEditingTitle = true } label: {
-                    Text(state.editingTitle.isEmpty ? "Untitled Database" : state.editingTitle)
+            if state.activeView?.hideTitle != true {
+                if isEditingTitle {
+                    TextField("Untitled Database", text: $state.editingTitle)
                         .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
                         .foregroundStyle(.primary)
+                        .textFieldStyle(.plain)
+                        .focused($isTitleFocused)
+                        .databasePointerCursor()
+                        .onAppear { isTitleFocused = true }
+                        .onSubmit {
+                            state.persistTitle()
+                            isEditingTitle = false
+                        }
+                        .onChange(of: state.editingTitle) { _, _ in state.scheduleTitleSave() }
+                        .onChange(of: isTitleFocused) { _, focused in
+                            if !focused { isEditingTitle = false }
+                        }
+                } else {
+                    Button { isEditingTitle = true } label: {
+                        Text(state.editingTitle.isEmpty ? "Untitled Database" : state.editingTitle)
+                            .font(.system(size: EditorTypography.bodyFontSize, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
 
             // Add view — always visible next to title
@@ -369,8 +371,23 @@ struct DatabaseInlineEmbedView: View {
                     .padding(.vertical, 3)
                 }
 
+                Divider().padding(.top, 4)
+
+                Button { state.updateHideTitle(state.activeView?.hideTitle != true) } label: {
+                    HStack {
+                        Text("Show title").font(.callout)
+                        Spacer()
+                        if state.activeView?.hideTitle != true {
+                            Image(systemName: "checkmark").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 3)
+
                 if state.activeView?.type == .table {
-                    Divider().padding(.top, 4)
                     Button { state.toggleWrapCellText() } label: {
                         HStack {
                             Text("Wrap cell text").font(.callout)
