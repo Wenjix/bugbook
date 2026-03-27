@@ -267,10 +267,7 @@ struct BlockCellView: View {
             ColumnBlockView(document: document, block: block, onTyping: onTyping)
 
         case .meeting:
-            MeetingBlockView(
-                document: document,
-                block: block
-            )
+            MeetingBlockView(document: document, block: block)
         }
     }
 }

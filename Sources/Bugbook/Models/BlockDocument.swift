@@ -371,6 +371,16 @@ class BlockDocument {
         let before = String(block.text[..<splitAt])
         let after = String(block.text[splitAt...])
 
+        // Meeting block → Enter creates a paragraph below (don't split the card)
+        if block.type == .meeting {
+            saveUndo()
+            let newBlock = Block(type: .paragraph)
+            blocks.insert(newBlock, at: idx + 1)
+            focusedBlockId = newBlock.id
+            cursorPosition = 0
+            return newBlock.id
+        }
+
         // Toggle title → Enter creates child inside the container
         if block.type == .toggle || block.type == .headingToggle {
             saveUndo()
@@ -464,6 +474,14 @@ class BlockDocument {
 
         let idx = loc.topLevel
         guard idx > 0 else { return nil }
+
+        // Don't merge into non-text blocks (meeting, image, horizontal rule, etc.)
+        let prevBlock = blocks[idx - 1]
+        if prevBlock.type == .meeting || prevBlock.type == .horizontalRule || prevBlock.type == .image || prevBlock.type == .databaseEmbed || prevBlock.type == .pageLink {
+            focusedBlockId = prevBlock.id
+            return nil
+        }
+
         saveUndo()
 
         let prevText = blocks[idx - 1].text
@@ -910,6 +928,18 @@ class BlockDocument {
                         block.databasePath = dbPath
                     }
                 }
+                dismissSlashMenu()
+                return
+            }
+
+            // Meeting block — set type and title, then insert a paragraph below for notes
+            if type == .meeting {
+                saveUndo()
+                updateBlockProperty(id: blockId) { block in
+                    block.type = .meeting
+                    block.text = "Meeting"
+                }
+                focusOrInsertParagraphAfter(blockId: blockId)
                 dismissSlashMenu()
                 return
             }
