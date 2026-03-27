@@ -391,58 +391,75 @@ struct MeetingBlockView: View {
     // MARK: - Bottom Bar
 
     private func bottomBar(showWaveform: Bool) -> some View {
-        Button(action: {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                isTranscriptOpen.toggle()
-            }
-        }) {
-            HStack(spacing: 8) {
-                if showWaveform {
-                    WaveformView(audioLevel: document.meetingAudioLevel)
-                        .frame(width: 40, height: 16)
-                } else {
-                    Text("Transcript")
-                        .font(.system(size: Typography.caption, weight: .medium))
-                        .foregroundStyle(Color.fallbackTextSecondary)
+        HStack(spacing: 8) {
+            // Left side: tap to toggle transcript
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isTranscriptOpen.toggle()
                 }
-
-                Spacer()
-
-                if isTranscriptOpen {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isSearchingTranscript.toggle()
-                            if !isSearchingTranscript { transcriptSearch = "" }
-                        }
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(isSearchingTranscript ? Color.accentColor : Color.fallbackTextSecondary)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        let fullTranscript = allTranscriptText()
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(fullTranscript, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 11, weight: .medium))
+            } label: {
+                HStack(spacing: 8) {
+                    if showWaveform {
+                        WaveformView(audioLevel: document.meetingAudioLevel)
+                            .frame(width: 40, height: 16)
+                    } else {
+                        Text("Transcript")
+                            .font(.system(size: Typography.caption, weight: .medium))
                             .foregroundStyle(Color.fallbackTextSecondary)
                     }
-                    .buttonStyle(.plain)
-                    .help("Copy transcript")
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
+            Spacer()
+
+            if isTranscriptOpen {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isSearchingTranscript.toggle()
+                        if !isSearchingTranscript { transcriptSearch = "" }
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isSearchingTranscript ? Color.accentColor : Color.fallbackTextSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    let fullTranscript = allTranscriptText()
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(fullTranscript, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.fallbackTextSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Copy transcript")
+            }
+
+            // Chevron: also toggles transcript
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isTranscriptOpen.toggle()
+                }
+            } label: {
                 Image(systemName: isTranscriptOpen ? "chevron.down" : "chevron.up")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.fallbackTextSecondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
         .background(Color.primary.opacity(Opacity.subtle))
     }
 
