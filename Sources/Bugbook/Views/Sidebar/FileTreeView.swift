@@ -116,6 +116,7 @@ struct FileTreeView: View {
         // Update if entries changed (ids, order, or properties like icon)
         if sorted != cachedEntries {
             cachedEntries = sorted
+            fileSystem.reconcileCustomOrder(for: sorted, parentPath: effectiveParentPath)
         }
     }
 }
