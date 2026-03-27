@@ -1,0 +1,79 @@
+# SwiftLint configuration for Bugbook
+# Tuned to the codebase — generous thresholds, focused on real issues.
+
+excluded:
+  - .build
+  - build
+  - DerivedData
+  - Package.swift
+
+# Only enable opt-in rules that add real value
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - fatal_error_message
+  - first_where
+  - last_where
+  - contains_over_filter_count
+  - flatmap_over_map_reduce
+  - toggle_bool
+  - unavailable_function
+  - unowned_variable_capture
+
+disabled_rules:
+  - trailing_comma
+  - todo
+  - opening_brace
+  - multiple_closures_with_trailing_closure
+  - identifier_name
+
+# Thresholds tuned to existing codebase
+line_length:
+  warning: 150
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+  ignores_interpolated_strings: true
+
+function_body_length:
+  warning: 120
+  error: 250
+
+type_body_length:
+  warning: 500
+  error: 1500
+
+file_length:
+  warning: 1000
+  error: 2000
+
+cyclomatic_complexity:
+  warning: 20
+  error: 30
+
+large_tuple:
+  warning: 4
+  error: 6
+
+nesting:
+  type_level:
+    warning: 3
+  function_level:
+    warning: 5
+
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  max_length:
+    warning: 60
+    error: 80
+  excluded:
+    - id
+    - x
+    - y
+    - i
+    - j
+    - db
+    - to
+    - op
