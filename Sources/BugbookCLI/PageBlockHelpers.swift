@@ -91,6 +91,7 @@ private enum ParsedPageBlockType: String {
     case pageLink = "page_link"
     case column
     case toggle
+    case headingToggle = "heading_toggle"
 }
 
 private struct ParsedPageBlock {
@@ -378,6 +379,34 @@ private enum PageBlockParser {
                 continue
             }
 
+            if let headingLevel = parseToggleHeadingComment(trimmed) {
+                let collapsed = trimmed.contains("collapsed")
+                index += 1
+                let title = index < lines.count ? lines[index] : ""
+                index += 1
+
+                var childLines: [String] = []
+                while index < lines.count {
+                    if lines[index].trimmingCharacters(in: .whitespaces) == "<!-- /toggle-heading -->" {
+                        index += 1
+                        break
+                    }
+                    childLines.append(lines[index])
+                    index += 1
+                }
+
+                blocks.append(
+                    makeBlock(
+                        type: .headingToggle,
+                        text: title,
+                        headingLevel: headingLevel,
+                        children: childLines.isEmpty ? [] : parseBlocks(childLines.joined(separator: "\n")),
+                        isExpanded: !collapsed
+                    )
+                )
+                continue
+            }
+
             if trimmed == "<!-- toggle -->" || trimmed == "<!-- toggle collapsed -->" {
                 let collapsed = trimmed.contains("collapsed")
                 index += 1
@@ -600,7 +629,7 @@ private enum PageBlockParser {
         }
 
         let hasColor = block.textColor != nil || block.backgroundColor != nil
-        if hasColor, style == .bugbook, block.type != .column, block.type != .toggle {
+        if hasColor, style == .bugbook, block.type != .column, block.type != .toggle, block.type != .headingToggle {
             var parts: [String] = []
             if let textColor = block.textColor, !textColor.isEmpty {
                 parts.append("color:\(textColor)")
@@ -689,6 +718,38 @@ private enum PageBlockParser {
             case .commonmark:
                 lines.append(block.isExpanded ? "<details open>" : "<details>")
                 lines.append("<summary>\(escapeHTML(block.text))</summary>")
+                if !block.children.isEmpty {
+                    lines.append("")
+                    lines.append(contentsOf: serializeLines(
+                        block.children,
+                        includeBlockIDComments: false,
+                        style: style
+                    ))
+                    if lines.last != "" {
+                        lines.append("")
+                    }
+                }
+                lines.append("</details>")
+            }
+
+        case .headingToggle:
+            let level = max(1, min(3, block.headingLevel))
+            switch style {
+            case .bugbook:
+                lines.append(block.isExpanded ? "<!-- toggle-heading \(level) -->" : "<!-- toggle-heading \(level) collapsed -->")
+                lines.append(block.text)
+                if !block.children.isEmpty {
+                    lines.append(contentsOf: serializeLines(
+                        block.children,
+                        includeBlockIDComments: includeBlockIDComments,
+                        style: style
+                    ))
+                }
+                lines.append("<!-- /toggle-heading -->")
+            case .commonmark:
+                let hashes = String(repeating: "#", count: level)
+                lines.append(block.isExpanded ? "<details open>" : "<details>")
+                lines.append("<summary>\(hashes) \(escapeHTML(block.text))</summary>")
                 if !block.children.isEmpty {
                     lines.append("")
                     lines.append(contentsOf: serializeLines(
@@ -843,6 +904,8 @@ private enum PageBlockParser {
         return trimmed == "<!-- toggle -->"
             || trimmed == "<!-- toggle collapsed -->"
             || trimmed == "<!-- /toggle -->"
+            || parseToggleHeadingComment(trimmed) != nil
+            || trimmed == "<!-- /toggle-heading -->"
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
@@ -983,6 +1046,16 @@ private enum PageBlockParser {
         guard trimmed.hasPrefix("[["), trimmed.hasSuffix("]]") else { return nil }
         let name = String(trimmed.dropFirst(2).dropLast(2))
         return name.isEmpty ? nil : name
+    }
+
+    /// Parses `<!-- toggle-heading N -->` or `<!-- toggle-heading N collapsed -->`, returning the heading level.
+    private static func parseToggleHeadingComment(_ trimmed: String) -> Int? {
+        guard trimmed.hasPrefix("<!-- toggle-heading ") else { return nil }
+        let inner = trimmed.dropFirst("<!-- toggle-heading ".count)
+        guard let digitChar = inner.first, let level = Int(String(digitChar)), (1...3).contains(level) else { return nil }
+        let rest = inner.dropFirst()
+        if rest == " -->" || rest == " collapsed -->" { return level }
+        return nil
     }
 
     private static func parsePageLinkComment(_ line: String) -> String? {
@@ -1819,7 +1892,7 @@ private func updateParsedPageBlockText(
 
 private func parsedPageBlockSupportsTextMutation(_ block: ParsedPageBlock) -> Bool {
     switch block.type {
-    case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .codeBlock, .blockquote, .toggle:
+    case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .codeBlock, .blockquote, .toggle, .headingToggle:
         return true
     case .horizontalRule, .image, .databaseEmbed, .pageLink, .column:
         return false
@@ -1963,10 +2036,10 @@ private func parsedPageBlockJSON(
     if block.stableID {
         json["persisted_id"] = block.id
     }
-    if !block.text.isEmpty || block.type == .paragraph || block.type == .heading || block.type == .blockquote || block.type == .toggle {
+    if !block.text.isEmpty || block.type == .paragraph || block.type == .heading || block.type == .blockquote || block.type == .toggle || block.type == .headingToggle {
         json["text"] = block.text
     }
-    if block.headingLevel != 1 || block.type == .heading {
+    if block.headingLevel != 1 || block.type == .heading || block.type == .headingToggle {
         json["heading_level"] = block.headingLevel
     }
     if block.listDepth > 0 || block.type == .bulletListItem || block.type == .numberedListItem || block.type == .taskItem {
@@ -2002,7 +2075,7 @@ private func parsedPageBlockJSON(
     if includeColumnIndex {
         json["column_index"] = block.columnIndex
     }
-    if block.type == .toggle {
+    if block.type == .toggle || block.type == .headingToggle {
         json["expanded"] = block.isExpanded
     }
     if !block.children.isEmpty {
