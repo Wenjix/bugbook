@@ -46,6 +46,8 @@ class BlockDocument {
     var isAiGenerating: Bool = false
     var selectedBlockIds: Set<UUID> = []
     var moveBlockId: UUID?
+    /// Set to a block ID to scroll the editor so that block's top is visible.
+    var scrollToBlockId: UUID?
     var selectionRect: CGRect?
     var selectionBlockId: UUID?
     var multiBlockTextSelection: MultiBlockTextSelection?

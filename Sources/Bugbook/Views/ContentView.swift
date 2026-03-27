@@ -955,6 +955,7 @@ struct ContentView: View {
     private func editorView(for tab: OpenFile) -> some View {
         if let document = blockDocuments[tab.id] {
             HStack(spacing: 0) {
+                ScrollViewReader { scrollProxy in
                 ScrollView {
                     VStack(spacing: 0) {
                         PageHeaderView(
@@ -1065,6 +1066,14 @@ struct ContentView: View {
                         hideFormattingPanel()
                     }
                 }
+                .onChange(of: document.scrollToBlockId) { _, blockId in
+                    guard let blockId else { return }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        scrollProxy.scrollTo(blockId, anchor: .top)
+                    }
+                    document.scrollToBlockId = nil
+                }
+                } // ScrollViewReader
             }
         } else {
             Color.fallbackEditorBg

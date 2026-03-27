@@ -147,6 +147,7 @@ struct BlockEditorView: View {
                     onHandleDragChange: updateBlockMoveDrag,
                     onHandleDragEnd: endBlockMoveDrag
                 )
+                    .id(block.id)
                     .padding(.vertical, 1)
                     .overlay(alignment: .trailing) {
                         // Right-side drop zone for column creation.
