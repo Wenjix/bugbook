@@ -11,6 +11,8 @@ struct MeetingBlockView: View {
     @State private var title: String
     @State private var notes: String
     @State private var isTranscriptOpen = false
+    @State private var transcriptSearch = ""
+    @State private var isSearchingTranscript = false
     @State private var isSummaryExpanded = false
     @State private var activeTab: MeetingTab = .summary
     @State private var isHovered = false
@@ -406,6 +408,31 @@ struct MeetingBlockView: View {
 
                 Spacer()
 
+                if isTranscriptOpen {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSearchingTranscript.toggle()
+                            if !isSearchingTranscript { transcriptSearch = "" }
+                        }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(isSearchingTranscript ? Color.accentColor : Color.fallbackTextSecondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        let fullTranscript = allTranscriptText()
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(fullTranscript, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.fallbackTextSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy transcript")
+                }
 
                 Image(systemName: isTranscriptOpen ? "chevron.down" : "chevron.up")
                     .font(.system(size: 10, weight: .semibold))
@@ -417,6 +444,13 @@ struct MeetingBlockView: View {
         }
         .buttonStyle(.plain)
         .background(Color.primary.opacity(Opacity.subtle))
+    }
+
+    private func allTranscriptText() -> String {
+        let entries = !block.transcriptEntries.isEmpty
+            ? block.transcriptEntries
+            : splitTranscriptIntoBubbles(block.meetingTranscript)
+        return entries.joined(separator: "\n\n")
     }
 
     // MARK: - Transcript Drawer
@@ -431,12 +465,37 @@ struct MeetingBlockView: View {
         VStack(spacing: 0) {
             Divider()
 
+            if isSearchingTranscript {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    TextField("Search transcript...", text: $transcriptSearch)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: Typography.bodySmall))
+                    if !transcriptSearch.isEmpty {
+                        Button { transcriptSearch = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(Opacity.subtle))
+            }
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        let entries = !block.transcriptEntries.isEmpty
+                        let allEntries = !block.transcriptEntries.isEmpty
                             ? block.transcriptEntries
                             : splitTranscriptIntoBubbles(block.meetingTranscript)
+                        let entries = transcriptSearch.isEmpty
+                            ? allEntries
+                            : allEntries.filter { $0.localizedCaseInsensitiveContains(transcriptSearch) }
 
                         ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
                             HStack {
