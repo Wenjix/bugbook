@@ -648,7 +648,7 @@ struct CommandPaletteView: View {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: binary)
             task.arguments = [mode == "bm25" ? "search" : mode == "semantic" ? "vsearch" : "query",
-                               query, "--json", "-n", "20", "-c", collection]
+                               query, "--json", "-n", "20", "-c", collection, "--min-score", "0.3"]
             let pipe = Pipe()
             task.standardOutput = pipe
             task.standardError = FileHandle.nullDevice
