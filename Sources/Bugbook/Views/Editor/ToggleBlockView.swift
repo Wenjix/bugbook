@@ -52,8 +52,10 @@ struct ToggleBlockView: View {
                                     .buttonStyle(.plain)
                             }
                     } else {
-                        ForEach(block.children) { child in
-                            BlockCellView(document: document, block: child, onTyping: onTyping)
+                        ForEach(Array(block.children.enumerated()), id: \.element.id) { idx, child in
+                            let prevType = idx > 0 ? block.children[idx - 1].type : nil
+                            let nextType = idx + 1 < block.children.count ? block.children[idx + 1].type : nil
+                            BlockCellView(document: document, block: child, previousBlockType: prevType, nextBlockType: nextType, onTyping: onTyping)
                                 .padding(.vertical, 1)
                         }
                     }

@@ -16,6 +16,14 @@ enum BlockType: Equatable {
     case toggle
     case headingToggle
     case meeting
+
+    /// Whether this block type is a list item (bullet, numbered, or task).
+    var isListItem: Bool {
+        switch self {
+        case .bulletListItem, .numberedListItem, .taskItem: true
+        default: false
+        }
+    }
 }
 
 /// The lifecycle state of a meeting recording block.
