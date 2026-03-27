@@ -67,6 +67,10 @@ class TranscriptionService {
         audioLevel = 0
 
         #if canImport(FluidAudio)
+        // Configure chunk sizes so the total window (left + chunk + right) = 15s = 240000 samples,
+        // matching the parakeet-tdt-0.6b-v3 CoreML model's fixed input shape (1 x 240000).
+        // Default config uses chunkSeconds=15 + rightContext=2 = 17s = 272000 samples, which
+        // exceeds the model limit and causes a shape mismatch error.
         let manager = StreamingAsrManager(config: StreamingAsrConfig(
             chunkSeconds: 11.0,
             hypothesisChunkSeconds: 1.0,
@@ -169,7 +173,7 @@ class TranscriptionService {
         #if canImport(FluidAudio)
         let manager = streamingManager
         streamingManager = nil
-        // Fire-and-forget finalization — transcript already captured above
+        // Fire-and-forget finalization -- transcript already captured above
         Task {
             let finalText = try? await manager?.finish()
             await MainActor.run { [weak self] in
@@ -206,7 +210,7 @@ class TranscriptionService {
         let result = try await asr.transcribe(fileURL, source: .system)
         return [TranscriptSegment(speaker: "Speaker 1", text: result.text, timestamp: 0)]
         #else
-        throw TranscriptionError.transcriptionFailed("FluidAudio not available — re-enable when upstream fixes macOS 26 SDK compatibility")
+        throw TranscriptionError.transcriptionFailed("FluidAudio not available")
         #endif
     }
 
