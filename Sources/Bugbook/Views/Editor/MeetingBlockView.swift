@@ -460,7 +460,13 @@ struct MeetingBlockView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
-        .background(Color.primary.opacity(Opacity.subtle))
+        .background(
+            Color.primary.opacity(Opacity.subtle),
+            in: UnevenRoundedRectangle(
+                bottomLeadingRadius: isTranscriptOpen ? 0 : Radius.lg,
+                bottomTrailingRadius: isTranscriptOpen ? 0 : Radius.lg
+            )
+        )
     }
 
     private func allTranscriptText() -> String {
