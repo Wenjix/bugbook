@@ -439,6 +439,9 @@ struct MeetingBlockView: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 isTranscriptOpen.toggle()
             }
+            if isTranscriptOpen {
+                document.scrollToBlockId = block.id
+            }
         }) {
             HStack(spacing: 8) {
                 if showWaveform {
@@ -590,6 +593,7 @@ struct MeetingBlockView: View {
         withAnimation(.easeInOut(duration: 0.25)) {
             isTranscriptOpen = true
         }
+        document.scrollToBlockId = block.id
     }
 
     private func stopRecording() {
