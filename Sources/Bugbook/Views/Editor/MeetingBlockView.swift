@@ -16,8 +16,7 @@ struct MeetingBlockView: View {
     @State private var isSummaryExpanded = false
     @State private var activeTab: MeetingTab = .summary
     @State private var isHovered = false
-    @State private var waveformPhase: CGFloat = 0
-    @State private var hasVoiceActivity = false
+    private var hasVoiceActivity: Bool { document.meetingAudioLevel > 0.01 }
 
     // Dev's AI processing state
     @State private var isProcessing = false
@@ -445,7 +444,7 @@ struct MeetingBlockView: View {
         }) {
             HStack(spacing: 8) {
                 if showWaveform {
-                    WaveformView(isActive: hasVoiceActivity, phase: waveformPhase)
+                    WaveformView(isActive: block.meetingState == .recording, phase: 0)
                         .frame(width: 40, height: 16)
                 } else {
                     Text("Transcript")
