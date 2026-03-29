@@ -590,10 +590,6 @@ struct MeetingBlockView: View {
 
     private func startRecording() {
         document.updateMeetingState(blockId: block.id, state: .recording)
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isTranscriptOpen = true
-        }
-        document.scrollToBlockId = block.id
     }
 
     private func stopRecording() {
