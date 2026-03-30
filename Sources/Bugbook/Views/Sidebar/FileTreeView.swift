@@ -207,6 +207,8 @@ struct FileTreeDropDelegate: DropDelegate {
                     // Guard: only move into pages that accept children, never into databases/canvases
                     guard !target.isDatabase else { return }
                     guard target.path != draggedPath else { return }
+                    // Don't nest databases inside pages — databases should stay at their current level
+                    if fileSystem.isDatabaseFolder(at: draggedPath) { return }
                     // Don't drop into own descendant
                     let draggedCompanion = draggedPath.hasSuffix(".md") ? String(draggedPath.dropLast(3)) : draggedPath
                     guard !target.path.hasPrefix(draggedCompanion + "/") else { return }
