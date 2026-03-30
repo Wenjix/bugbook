@@ -161,9 +161,8 @@ struct CommandPaletteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 isSearchFieldFocused = true
             }
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
+            // Invalidate stale cache so edits since last open are picked up
+            invalidateContentIndex()
             // Detect qmd once; in-memory index remains the fallback
             Task {
                 let path = await Task.detached(priority: .utility) {
@@ -175,22 +174,16 @@ struct CommandPaletteView: View {
         .onDisappear {
             contentSearchTask?.cancel()
             contentSearchTask = nil
-            contentIndexTask?.cancel()
-            contentIndexTask = nil
+            clearContentIndex()
         }
         .onChange(of: appState.fileTree) { _, newTree in
             cachedFlatEntries = flattenFileTree(newTree)
         }
         .onChange(of: appState.workspacePath) { _, _ in
-            contentIndex = []
-            contentIndexWorkspace = nil
-            contentIndexTask?.cancel()
-            contentIndexTask = nil
+            clearContentIndex()
             cachedFlatEntries = flattenFileTree(appState.fileTree)
             scheduleContentSearch(query: effectiveQuery(from: searchText))
-            Task { @MainActor in
-                await warmContentIndexIfNeeded()
-            }
+            invalidateContentIndex()
         }
     }
 
@@ -469,6 +462,20 @@ struct CommandPaletteView: View {
     private func warmContentIndexIfNeeded() async {
         guard let workspace = appState.workspacePath else { return }
         _ = await ensureContentIndex(for: workspace)
+    }
+
+    private func clearContentIndex() {
+        contentIndex = []
+        contentIndexWorkspace = nil
+        contentIndexTask?.cancel()
+        contentIndexTask = nil
+    }
+
+    private func invalidateContentIndex() {
+        clearContentIndex()
+        Task { @MainActor in
+            await warmContentIndexIfNeeded()
+        }
     }
 
     @MainActor
