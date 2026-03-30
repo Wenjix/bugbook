@@ -93,20 +93,42 @@ struct PropertyEditorView: View {
 
     private func editOptionPopover(optionId: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Rename Option")
+            Text("Edit Option")
                 .font(.subheadline)
                 .fontWeight(.medium)
 
             TextField("Name", text: $editingOptionName)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 180)
+                .frame(width: 200)
                 .onSubmit {
-                    let trimmed = editingOptionName.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty {
-                        onUpdateOption?(definition.id, optionId, trimmed, nil)
-                    }
-                    editingOptionId = nil
+                    commitOptionEdit(optionId: optionId)
                 }
+
+            // Color picker grid
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Color")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(22), spacing: 4), count: 5), spacing: 4) {
+                    ForEach(Self.optionColors, id: \.self) { color in
+                        Button {
+                            editingOptionColor = color
+                        } label: {
+                            Circle()
+                                .fill(colorForName(color))
+                                .frame(width: 18, height: 18)
+                                .overlay {
+                                    if editingOptionColor == color {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
 
             HStack {
                 Spacer()
@@ -114,11 +136,7 @@ struct PropertyEditorView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                 Button("Save") {
-                    let trimmed = editingOptionName.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty {
-                        onUpdateOption?(definition.id, optionId, trimmed, nil)
-                    }
-                    editingOptionId = nil
+                    commitOptionEdit(optionId: optionId)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -127,6 +145,14 @@ struct PropertyEditorView: View {
         }
         .padding(12)
         .popoverSurface()
+    }
+
+    private func commitOptionEdit(optionId: String) {
+        let trimmed = editingOptionName.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            onUpdateOption?(definition.id, optionId, trimmed, editingOptionColor)
+        }
+        editingOptionId = nil
     }
 
     // MARK: - Text
@@ -162,6 +188,7 @@ struct PropertyEditorView: View {
     @State private var newSelectOptionName: String = ""
     @State private var editingOptionId: String? = nil
     @State private var editingOptionName: String = ""
+    @State private var editingOptionColor: String = "default"
     @State private var showDeleteConfirm: String? = nil
     @State private var showDeleteAlert = false
 
@@ -216,6 +243,7 @@ struct PropertyEditorView: View {
                     value = .select(option.id)
                     showSelectPopover = false
                 }
+                .contextMenu { optionContextMenu(for: option) }
             }
             if onAddOption != nil {
                 Divider().padding(.vertical, 2)
@@ -300,6 +328,7 @@ struct PropertyEditorView: View {
                     }
                     value = updated.isEmpty ? .empty : .multiSelect(updated)
                 }
+                .contextMenu { optionContextMenu(for: option) }
             }
             if onAddOption != nil {
                 Divider().padding(.vertical, 2)
@@ -351,9 +380,10 @@ struct PropertyEditorView: View {
 
     @ViewBuilder
     private func optionContextMenu(for option: SelectOption) -> some View {
-        Button("Rename...") {
+        Button("Edit...") {
             editingOptionId = option.id
             editingOptionName = option.name
+            editingOptionColor = option.color
         }
         Menu("Color") {
             ForEach(Self.optionColors, id: \.self) { color in
