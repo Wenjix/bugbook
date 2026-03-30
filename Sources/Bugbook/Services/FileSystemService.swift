@@ -693,6 +693,37 @@ class FileSystemService {
         (workspace as NSString).appendingPathComponent(".trash")
     }
 
+    // MARK: - Agent Skills
+
+    /// Scans ~/.claude/skills/ for skill subfolders containing a .md file.
+    /// Returns one FileEntry per skill, pointing at the first .md file found.
+    nonisolated func scanSkills() -> [FileEntry] {
+        let skillsRoot = (NSHomeDirectory() as NSString).appendingPathComponent(".claude/skills")
+        let fm = FileManager.default
+        guard let subfolders = try? fm.contentsOfDirectory(atPath: skillsRoot) else { return [] }
+
+        var entries: [FileEntry] = []
+        for folder in subfolders.sorted() {
+            if folder.hasPrefix(".") { continue }
+            let folderPath = (skillsRoot as NSString).appendingPathComponent(folder)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: folderPath, isDirectory: &isDir), isDir.boolValue else { continue }
+
+            guard let files = try? fm.contentsOfDirectory(atPath: folderPath) else { continue }
+            guard let mdFile = files.first(where: { $0.hasSuffix(".md") }) else { continue }
+            let mdPath = (folderPath as NSString).appendingPathComponent(mdFile)
+
+            entries.append(FileEntry(
+                id: "skill:\(mdPath)",
+                name: folder,
+                path: mdPath,
+                isDirectory: false,
+                kind: .page
+            ))
+        }
+        return entries
+    }
+
     func resolveFavorites(for workspacePath: String, fileTree: [FileEntry]) -> [FileEntry] {
         let storedPaths = favoritePaths(for: workspacePath)
         var resolvedPaths: [String] = []

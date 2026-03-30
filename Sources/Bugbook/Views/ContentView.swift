@@ -792,6 +792,10 @@ struct ContentView: View {
                 .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
 
+            if let tab = appState.activeTab, tab.path.contains("/.claude/skills/") {
+                skillFileBanner(path: tab.path)
+            }
+
             activeTabContent
                 .environment(\.workspacePath, appState.workspacePath)
         }
@@ -1585,8 +1589,10 @@ struct ContentView: View {
                   let workspace = appState.workspacePath else { return }
             Task.detached {
                 let tree = fileSystem.buildFileTree(at: workspace)
+                let skills = fileSystem.scanSkills()
                 await MainActor.run {
                     appState.fileTree = tree
+                    appState.agentSkills = skills
                     self.refreshSidebarReferences(using: tree)
                     self.refreshFavorites(using: tree)
                 }
@@ -1601,8 +1607,10 @@ struct ContentView: View {
         let fileSystem = self.fileSystem
         Task.detached {
             let tree = fileSystem.buildFileTree(at: path)
+            let skills = fileSystem.scanSkills()
             await MainActor.run {
                 self.appState.fileTree = tree
+                self.appState.agentSkills = skills
                 self.refreshSidebarReferences(using: tree)
                 self.refreshFavorites(using: tree)
             }
@@ -2805,6 +2813,24 @@ struct ContentView: View {
         let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
         navigateToEntry(entry, preferExistingTab: true)
+    }
+
+    @ViewBuilder
+    private func skillFileBanner(path: String) -> some View {
+        let home = NSHomeDirectory()
+        let display = path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+        HStack(spacing: ShellZoomMetrics.size(6)) {
+            Image(systemName: "pencil.line")
+                .font(ShellZoomMetrics.font(Typography.caption))
+                .foregroundStyle(.secondary)
+            Text("Editing skill file \u{00B7} \(display)")
+                .font(ShellZoomMetrics.font(Typography.caption))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, ShellZoomMetrics.size(16))
+        .padding(.vertical, ShellZoomMetrics.size(6))
+        .background(Color.primary.opacity(0.04))
     }
 
     private func breadcrumbs(for tab: OpenFile) -> [BreadcrumbItem] {

@@ -24,6 +24,7 @@ enum ViewMode {
     var fileTree: [FileEntry] = []
     var sidebarReferences: [FileEntry] = []
     var favorites: [FileEntry] = []
+    var agentSkills: [FileEntry] = []
     var settings: AppSettings = .default
     var commandPaletteOpen: Bool = false
     var commandPaletteMode: CommandPaletteMode = .search

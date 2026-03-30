@@ -20,6 +20,7 @@ struct SidebarView: View {
     @State private var isSidebarReferenceDropTargeted = false
     @AppStorage("sidebar_favorites_expanded") private var favoritesExpanded = true
     @AppStorage("sidebar_workspace_expanded") private var workspaceExpanded = true
+    @AppStorage("sidebar_agents_expanded") private var agentsExpanded = true
     @State private var expandedFolders: Set<String> = {
         let arr = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
         return Set(arr)
@@ -275,6 +276,28 @@ struct SidebarView: View {
                 if favoritesExpanded {
                     VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
                         ForEach(appState.favorites) { entry in
+                            FileTreeItemView(
+                                entry: entry,
+                                activeFilePath: appState.activeTab?.path,
+                                fileSystem: fileSystem,
+                                workspacePath: appState.workspacePath,
+                                onSelectFile: onSelectFile,
+                                onRefreshTree: refreshTree,
+                                expandedFolders: $expandedFolders
+                            )
+                        }
+                    }
+                    .padding(.horizontal, sectionHorizontalPadding)
+                }
+            }
+
+            // Agents section
+            if !appState.agentSkills.isEmpty {
+                sidebarSectionHeader("Agents", isExpanded: $agentsExpanded)
+
+                if agentsExpanded {
+                    VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
+                        ForEach(appState.agentSkills) { entry in
                             FileTreeItemView(
                                 entry: entry,
                                 activeFilePath: appState.activeTab?.path,
