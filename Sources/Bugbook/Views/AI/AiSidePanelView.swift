@@ -34,7 +34,7 @@ struct AiSidePanelView: View {
                             HStack(spacing: 8) {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text("Thinking...")
+                                Text(aiService.phase.label.isEmpty ? "Thinking..." : aiService.phase.label)
                                     .font(.system(size: 13))
                                     .foregroundStyle(Color.fallbackTextSecondary)
                                 Spacer()
@@ -277,13 +277,21 @@ struct AiSidePanelView: View {
     @ViewBuilder
     private func appliedBubble(_ message: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.green)
-                Text("Done — what do you think?")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.fallbackTextPrimary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.green)
+                    Text("Done — what do you think?")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+                }
+                if let summary = message.changeSummary {
+                    Text(summary)
+                        .font(.system(size: Typography.caption2))
+                        .foregroundStyle(Color.fallbackTextSecondary)
+                        .padding(.leading, 19) // align with text after icon
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -394,6 +402,9 @@ struct AiSidePanelView: View {
 
                 // Apply changes via CLI for precision, fallback to in-memory
                 if let pagePath, let doc = activeDocument {
+                    let beforeBlocks = doc.blocks
+                    aiService.phase = .applyingChanges
+
                     let pageName = ((pagePath as NSString).lastPathComponent as NSString).deletingPathExtension
                     let applied = await applyViaCLI(
                         pageName: pageName,
@@ -410,7 +421,8 @@ struct AiSidePanelView: View {
                             doc.applyAiResponse(markdown: response)
                         }
                     }
-                    let appliedMessage = ChatMessage(role: .applied, content: response, timestamp: Date())
+                    let summary = Self.changeSummary(before: beforeBlocks, after: doc.blocks)
+                    let appliedMessage = ChatMessage(role: .applied, content: response, timestamp: Date(), changeSummary: summary)
                     threadStore.appendMessage(appliedMessage, to: threadId)
                 } else {
                     let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())
@@ -501,5 +513,32 @@ struct AiSidePanelView: View {
 
     private func relativeTimestamp(_ date: Date) -> String {
         Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Compute a human-readable summary of block-level changes.
+    private static func changeSummary(before: [Block], after: [Block]) -> String? {
+        let beforeIDs = Set(before.map { $0.id })
+        let afterIDs = Set(after.map { $0.id })
+
+        let added = afterIDs.subtracting(beforeIDs).count
+        let removed = beforeIDs.subtracting(afterIDs).count
+
+        let commonIDs = beforeIDs.intersection(afterIDs)
+        let beforeMap = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
+        let afterMap = Dictionary(uniqueKeysWithValues: after.map { ($0.id, $0) })
+        var modified = 0
+        for id in commonIDs {
+            if beforeMap[id] != afterMap[id] {
+                modified += 1
+            }
+        }
+
+        guard added > 0 || removed > 0 || modified > 0 else { return nil }
+
+        var parts: [String] = []
+        if added > 0 { parts.append("Added \(added) block\(added == 1 ? "" : "s")") }
+        if modified > 0 { parts.append("modified \(modified)") }
+        if removed > 0 { parts.append("removed \(removed)") }
+        return parts.joined(separator: ", ")
     }
 }

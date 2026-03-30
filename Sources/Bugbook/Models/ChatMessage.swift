@@ -15,11 +15,12 @@ struct ChatMessage: Identifiable, Codable {
         case applied
     }
 
-    init(id: UUID = UUID(), role: Role, content: String, timestamp: Date, isReverted: Bool = false) {
+    init(id: UUID = UUID(), role: Role, content: String, timestamp: Date, isReverted: Bool = false, changeSummary: String? = nil) {
         self.id = id
         self.role = role
         self.content = content
         self.timestamp = timestamp
         self.isReverted = isReverted
+        self.changeSummary = changeSummary
     }
 }
