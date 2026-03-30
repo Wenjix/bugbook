@@ -381,7 +381,7 @@ enum MarkdownBlockParser {
                 var transcript = ""
                 var summary = ""
                 var actionItems = ""
-                var notes = ""
+                var noteLines: [String] = []
                 var section = ""
                 while i < lines.count {
                     let mLine = lines[i].trimmingCharacters(in: .whitespaces)
@@ -408,7 +408,7 @@ enum MarkdownBlockParser {
                         case "transcript":
                             transcript += (transcript.isEmpty ? "" : "\n") + lines[i]
                         case "notes":
-                            notes += (notes.isEmpty ? "" : "\n") + lines[i]
+                            noteLines.append(String(lines[i]))
                         default:
                             break
                         }
@@ -420,7 +420,13 @@ enum MarkdownBlockParser {
                 meetingBlock.meetingTranscript = transcript
                 meetingBlock.meetingSummary = summary
                 meetingBlock.meetingActionItems = actionItems
-                meetingBlock.meetingNotes = notes
+                // Parse notes as child blocks; keep plain string for backwards compat
+                let notesStr = noteLines.joined(separator: "\n")
+                meetingBlock.meetingNotes = notesStr
+                if !noteLines.isEmpty {
+                    let trimmedNotes = notesStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    meetingBlock.children = trimmedNotes.isEmpty ? [] : parse(trimmedNotes)
+                }
                 meetingBlock.meetingState = .complete
                 blocks.append(meetingBlock)
                 continue
@@ -644,7 +650,10 @@ enum MarkdownBlockParser {
                     lines.append("<!-- meeting-actions -->")
                     lines.append(block.meetingActionItems)
                 }
-                if !block.meetingNotes.isEmpty {
+                if !block.children.isEmpty {
+                    lines.append("<!-- meeting-notes -->")
+                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
+                } else if !block.meetingNotes.isEmpty {
                     lines.append("<!-- meeting-notes -->")
                     lines.append(block.meetingNotes)
                 }

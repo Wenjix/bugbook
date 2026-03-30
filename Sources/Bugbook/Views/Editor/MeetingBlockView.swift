@@ -9,7 +9,6 @@ struct MeetingBlockView: View {
     let block: Block
 
     @State private var title: String
-    @State private var notes: String
     @State private var isTranscriptOpen = false
     @State private var transcriptSearch = ""
     @State private var isSearchingTranscript = false
@@ -32,7 +31,6 @@ struct MeetingBlockView: View {
         self.document = document
         self.block = block
         _title = State(initialValue: block.meetingTitle)
-        _notes = State(initialValue: block.meetingNotes)
     }
 
     var body: some View {
@@ -101,26 +99,10 @@ struct MeetingBlockView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
 
-            TextEditor(text: $notes)
-                .font(.system(size: Typography.body))
-                .foregroundStyle(Color.fallbackTextPrimary)
-                .scrollContentBackground(.hidden)
+            meetingNotesChildBlocks
                 .frame(minHeight: 80)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .overlay(alignment: .topLeading) {
-                    if notes.isEmpty {
-                        Text("Write notes...")
-                            .font(.system(size: Typography.body))
-                            .foregroundStyle(Color.fallbackTextMuted)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .onChange(of: notes) { _, newVal in
-                    document.updateMeetingNotes(blockId: block.id, notes: newVal)
-                }
         }
     }
 
@@ -162,26 +144,10 @@ struct MeetingBlockView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
 
-            TextEditor(text: $notes)
-                .font(.system(size: Typography.body))
-                .foregroundStyle(Color.fallbackTextPrimary)
-                .scrollContentBackground(.hidden)
+            meetingNotesChildBlocks
                 .frame(minHeight: 160)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .overlay(alignment: .topLeading) {
-                    if notes.isEmpty {
-                        Text("Write notes...")
-                            .font(.system(size: Typography.body))
-                            .foregroundStyle(Color.fallbackTextMuted)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .onChange(of: notes) { _, newVal in
-                    document.updateMeetingNotes(blockId: block.id, notes: newVal)
-                }
 
             Divider()
 
@@ -232,6 +198,25 @@ struct MeetingBlockView: View {
                 Spacer()
 
                 ladybugButton
+
+                // Generate summary button (only when no summary exists)
+                if parseSections(block.language).isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty && (!block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty || !block.children.isEmpty) {
+                    Button {
+                        Task { await generateSummary() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 10))
+                            Text("Generate")
+                                .font(.system(size: Typography.caption, weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(Opacity.subtle))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+                    }
+                    .buttonStyle(.borderless)
+                }
 
                 // Expand button (hover only)
                 if isHovered {
@@ -415,18 +400,27 @@ struct MeetingBlockView: View {
 
     private var notesView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if block.meetingNotes.isEmpty {
+            if block.children.isEmpty && block.meetingNotes.isEmpty {
                 Text("No notes recorded.")
                     .font(.system(size: Typography.bodySmall))
                     .foregroundStyle(Color.fallbackTextMuted)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
-            } else {
+            } else if block.children.isEmpty {
+                // Legacy plain-text notes (backwards compat)
                 Text(block.meetingNotes)
                     .font(.system(size: Typography.bodySmall))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .textSelection(.enabled)
                     .padding(14)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(block.children) { child in
+                        BlockCellView(document: document, block: child)
+                            .padding(.vertical, 1)
+                    }
+                }
+                .padding(14)
             }
         }
     }
@@ -585,6 +579,34 @@ struct MeetingBlockView: View {
         .help("Ask AI about this meeting")
     }
 
+    // MARK: - Meeting Notes (Child Blocks)
+
+    private var meetingNotesChildBlocks: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if block.children.isEmpty {
+                Text("Write notes...")
+                    .font(.system(size: Typography.body))
+                    .foregroundStyle(Color.fallbackTextMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { addChild() }
+            } else {
+                ForEach(block.children) { child in
+                    BlockCellView(document: document, block: child)
+                        .padding(.vertical, 1)
+                }
+            }
+        }
+    }
+
+    private func addChild() {
+        guard let idx = document.index(for: block.id) else { return }
+        let newChild = Block(type: .paragraph)
+        document.blocks[idx].children.append(newChild)
+        document.focusedBlockId = newChild.id
+        document.cursorPosition = 0
+    }
+
     // MARK: - Actions
 
     private func startRecording() {
@@ -622,7 +644,9 @@ struct MeetingBlockView: View {
 
     private func generateSummary() async {
         let transcript = block.meetingTranscript
-        let userNotes = block.meetingNotes
+        let userNotes = block.children.isEmpty
+            ? block.meetingNotes
+            : block.children.map { $0.text }.joined(separator: "\n")
 
         document.updateMeetingState(blockId: block.id, state: .processing)
         isProcessing = true

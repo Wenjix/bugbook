@@ -1,36 +1,26 @@
 # Long Run — 2026-03-29
 
 Started: 9:45 PM
-Status: Working (batch 2-3 parallel)
-
-## Plan
-
-22 tickets across 9 projects. 10 executable in this repo.
-
-### Batches
-- Batch 1 (parallel): A1 + B1 + C1 — DONE
-- Batch 2 (after A1): A2 Callout — RUNNING
-- Batch 3 (parallel with B2): C2 MCP Servers + D1 Select Color — RUNNING
-- Batch 4+: Large features
+Status: Working (batch 4)
 
 ## Completed
 
-- [x] A1: Outline (TOC) block type [High] — merged to dev
-- [x] B1: Database table calculations footer [High] — merged to dev
-- [x] C1: Add Agents sidebar section [Medium] — merged to dev
+- [x] Outline (TOC) block type [High] (row_u9mndd) — merged to dev
+- [x] Database table calculations footer [High] (row_kegyb1) — merged to dev
+- [x] Add Agents sidebar section [Medium] (row_woy99m) — merged to dev
+- [x] Add MCP Servers listing [Low] (row_qfrvll) — merged to dev
+- [x] Callout block type [High] (row_fnmxx9) — merged to dev
+- [x] Change select option color [Medium] (row_bu993v) — merged to dev
 
 ## In Progress
 
-- [ ] A2: Callout block type — worker running
-- [ ] C2: Add MCP Servers listing — worker running
-- [ ] D1: Change select option color — worker running
+- [ ] Meeting notes markdown shortcuts [High] (row_34on11) — worker running
 
 ## Remaining
 
-- [ ] A3: Meeting notes markdown shortcuts
-- [ ] E1: AND/OR filter groups
-- [ ] E2: Inline mentions
-- [ ] E3: Formula/rollup/lookup
+- [ ] AND/OR filter groups [Medium] (row_1i5rmc) — very large
+- [ ] Inline mentions [Medium] (row_xxvee0) — very large
+- [ ] Formula/rollup/lookup [Medium] (row_cygwau) — very large
 
 ## Blocked / Skipped
 
@@ -43,10 +33,12 @@ Status: Working (batch 2-3 parallel)
 
 ## Discoveries
 
-- BugbookCore/Engine/AggregationEngine.swift already existed from prior session with full string-based API
-- Worker's duplicate AggregationFunction enum in DatabaseViewHelpers cleaned up during merge
-- ~/.claude/skills/ contains both regular folders and symlinks to ~/.agents/skills/
+- AggregationEngine existed in BugbookCore from prior session
+- ~/.claude/skills/ has symlinks to ~/.agents/skills/
+- MCP servers stored in ~/.claude.json (not ~/.claude/settings.json as spec said)
+- Select option color infrastructure existed but was undiscoverable (context menu only on inline pills, not dropdown items)
 
 ## Build Status
 
 Dev branch: PASSING (swift build clean)
+All 6 completed features build and compile together.
