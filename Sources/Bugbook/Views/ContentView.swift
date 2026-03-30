@@ -659,6 +659,9 @@ struct ContentView: View {
               sourcePath != tab.path,
               FileManager.default.fileExists(atPath: sourcePath) else { return }
 
+        // Don't move databases into companion folders via editor drops
+        guard !fileSystem.isDatabaseFolder(at: sourcePath) else { return }
+
         let pageName = ((sourcePath as NSString).lastPathComponent as NSString).deletingPathExtension
 
         let targetCompanionDir: String
@@ -1196,6 +1199,8 @@ struct ContentView: View {
             guard let tab = appState.activeTab else { return }
             // Don't drop a page onto itself
             guard sourcePath != tab.path else { return }
+            // Don't move databases into companion folders via editor drops
+            guard !fileSystem.isDatabaseFolder(at: sourcePath) else { return }
 
             let pageName = ((sourcePath as NSString).lastPathComponent as NSString)
                 .deletingPathExtension
@@ -1695,6 +1700,8 @@ struct ContentView: View {
         let currentPagePath = tab.path
         // Don't drop a page onto itself
         guard sourcePath != currentPagePath else { return }
+        // Don't move databases into companion folders via editor drops
+        guard !fileSystem.isDatabaseFolder(at: sourcePath) else { return }
         // Don't drop a page that's already a sub-page of the current page
         let currentCompanion = currentPagePath.hasSuffix(".md") ? String(currentPagePath.dropLast(3)) : currentPagePath
         guard !(sourcePath as NSString).deletingLastPathComponent.hasPrefix(currentCompanion) else { return }
