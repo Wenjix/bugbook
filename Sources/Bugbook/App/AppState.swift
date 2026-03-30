@@ -15,6 +15,12 @@ enum ViewMode {
     case calendar
 }
 
+struct MCPServerInfo: Identifiable {
+    let name: String
+    let command: String
+    var id: String { name }
+}
+
 @MainActor
 @Observable class AppState {
     var openTabs: [OpenFile] = []
@@ -35,6 +41,7 @@ enum ViewMode {
     var aiReferencedItems: [AiContextItem] = []
     var currentView: ViewMode = .editor
     var movePagePath: String?  // non-nil triggers move page picker
+    var mcpServers: [MCPServerInfo] = []
 
     var isRecording: Bool = false
 
