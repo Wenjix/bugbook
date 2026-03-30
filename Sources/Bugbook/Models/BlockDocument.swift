@@ -67,6 +67,8 @@ class BlockDocument {
     @ObservationIgnored var onOpenDatabaseTab: ((String) -> Void)?
     @ObservationIgnored var onSubmitAiPrompt: ((String) -> Void)?
     @ObservationIgnored var onCancelAiPrompt: (() -> Void)?
+    @ObservationIgnored var onToggleFavorite: ((String) -> Void)?
+    @ObservationIgnored var onIsFavorite: ((String) -> Bool)?
     @ObservationIgnored var onMoveBlock: ((UUID, String) -> Void)?
     /// Called when a page is dropped from the sidebar into the editor.
     /// Parameters: (sourcePath, insertionIndex). Should move the file and refresh tree.

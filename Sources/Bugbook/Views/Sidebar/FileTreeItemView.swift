@@ -273,6 +273,24 @@ struct FileTreeItemView: View {
 
             ctxDivider
 
+            if let workspace = workspacePath {
+                ctxButton(
+                    id: "favorite",
+                    icon: fileSystem.isFavorite(entry.path, for: workspace) ? "star.fill" : "star",
+                    label: fileSystem.isFavorite(entry.path, for: workspace) ? "Unfavorite page" : "Favorite page"
+                ) {
+                    showContextMenu = false
+                    if fileSystem.isFavorite(entry.path, for: workspace) {
+                        fileSystem.removeFavoritePath(entry.path, for: workspace)
+                    } else {
+                        fileSystem.addFavoritePath(entry.path, for: workspace)
+                    }
+                    onRefreshTree()
+                }
+
+                ctxDivider
+            }
+
             ctxButton(id: "delete", icon: "trash", label: "Delete", isDestructive: true) {
                 showContextMenu = false; showDeleteConfirmation = true
             }

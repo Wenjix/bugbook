@@ -18,6 +18,8 @@ struct SidebarView: View {
     @State private var isFullScreen: Bool = false
     @State private var localTrashPopoverPresented: Bool = false
     @State private var isSidebarReferenceDropTargeted = false
+    @AppStorage("sidebar_favorites_expanded") private var favoritesExpanded = true
+    @AppStorage("sidebar_workspace_expanded") private var workspaceExpanded = true
     @State private var expandedFolders: Set<String> = {
         let arr = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
         return Set(arr)
@@ -266,20 +268,35 @@ struct SidebarView: View {
             .padding(.horizontal, sectionHorizontalPadding)
             }
 
-            // Pages header
-            HStack {
-                Text("Pages")
-                    .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
-                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
-                Spacer()
+            // Favorites section
+            if !appState.favorites.isEmpty {
+                sidebarSectionHeader("Favorites", isExpanded: $favoritesExpanded)
+
+                if favoritesExpanded {
+                    VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
+                        ForEach(appState.favorites) { entry in
+                            FileTreeItemView(
+                                entry: entry,
+                                activeFilePath: appState.activeTab?.path,
+                                fileSystem: fileSystem,
+                                workspacePath: appState.workspacePath,
+                                onSelectFile: onSelectFile,
+                                onRefreshTree: refreshTree,
+                                expandedFolders: $expandedFolders
+                            )
+                        }
+                    }
+                    .padding(.horizontal, sectionHorizontalPadding)
+                }
             }
-            .padding(.horizontal, ShellZoomMetrics.size(isCompact ? 12 : 14))
-            .padding(.top, headerTopPadding)
-            .padding(.bottom, ShellZoomMetrics.size(2))
+
+            // Workspace header
+            sidebarSectionHeader("Workspace", isExpanded: $workspaceExpanded)
 
             // File tree
             ScrollView {
                 VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
+                if workspaceExpanded {
                     if !appState.sidebarReferences.isEmpty {
                         VStack(spacing: ShellZoomMetrics.size(1)) {
                             ForEach(appState.sidebarReferences) { entry in
@@ -298,7 +315,7 @@ struct SidebarView: View {
                     }
 
                     FileTreeView(
-                        entries: appState.fileTree,
+                        entries: fileTreeWithoutFavorites,
                         activeFilePath: appState.activeTab?.path,
                         fileSystem: fileSystem,
                         workspacePath: appState.workspacePath,
@@ -306,6 +323,7 @@ struct SidebarView: View {
                         onRefreshTree: refreshTree,
                         expandedFolders: $expandedFolders
                     )
+                }
                 }
                 .padding(.horizontal, sectionHorizontalPadding)
                 .padding(.vertical, treeVerticalPadding)
@@ -466,6 +484,16 @@ struct SidebarView: View {
 
     // MARK: - Helpers
 
+    private func sidebarSectionHeader(_ title: String, isExpanded: Binding<Bool>) -> some View {
+        SidebarSectionHeaderView(title: title, isExpanded: isExpanded, isCompact: isCompact, headerTopPadding: headerTopPadding)
+    }
+
+    private var fileTreeWithoutFavorites: [FileEntry] {
+        let favPaths = Set(appState.favorites.map(\.path))
+        guard !favPaths.isEmpty else { return appState.fileTree }
+        return appState.fileTree.filter { !favPaths.contains($0.path) }
+    }
+
     private func refreshTree() {
         guard let workspace = appState.workspacePath else { return }
         appState.fileTree = fileSystem.buildFileTree(at: workspace)
@@ -516,5 +544,39 @@ struct SidebarView: View {
         .buttonStyle(.borderless)
         .help(help)
         .disabled(!isEnabled)
+    }
+}
+
+private struct SidebarSectionHeaderView: View {
+    let title: String
+    @Binding var isExpanded: Bool
+    let isCompact: Bool
+    let headerTopPadding: CGFloat
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .opacity(isHovering ? 1 : 0)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, ShellZoomMetrics.size(isCompact ? 12 : 14))
+        .padding(.top, headerTopPadding)
+        .padding(.bottom, ShellZoomMetrics.size(2))
+        .onHover { isHovering = $0 }
     }
 }

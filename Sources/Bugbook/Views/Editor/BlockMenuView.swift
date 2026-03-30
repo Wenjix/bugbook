@@ -45,6 +45,19 @@ struct BlockMenuView: View {
                 }
                 moveToButton
 
+                if let block = currentBlock, block.type == .pageLink,
+                   let pagePath = resolvePageLinkPath(block.pageLinkName) {
+                    let isFav = document.onIsFavorite?(pagePath) ?? false
+                    menuButton(
+                        id: "favorite",
+                        icon: isFav ? "star.fill" : "star",
+                        label: isFav ? "Unfavorite page" : "Favorite page"
+                    ) {
+                        document.onToggleFavorite?(pagePath)
+                        document.dismissBlockMenu()
+                    }
+                }
+
                 sectionDivider
 
                 // Section 2: Turn Into — hover to open submenu
@@ -491,4 +504,19 @@ struct BlockMenuView: View {
         return true
     }
 
+    private func resolvePageLinkPath(_ name: String) -> String? {
+        func search(in entries: [FileEntry]) -> String? {
+            for entry in entries {
+                let entryName = entry.name.replacingOccurrences(of: ".md", with: "")
+                if entryName.localizedCaseInsensitiveCompare(name) == .orderedSame {
+                    return entry.path
+                }
+                if let children = entry.children, let found = search(in: children) {
+                    return found
+                }
+            }
+            return nil
+        }
+        return search(in: document.availablePages)
+    }
 }
