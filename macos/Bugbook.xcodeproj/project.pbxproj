@@ -13,6 +13,7 @@
 		045B1A2FD850725900D6FC22 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C72383D5865CC78156A21463 /* GeneralSettingsView.swift */; };
 		09871C22EFFDCF1EEF0A47AF /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 968A3076C851ABC04C18EC51 /* ChatMessage.swift */; };
 		0D60BAED04EE7FA14331418C /* MeetingBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38503CD6DD60C57D352CA45A /* MeetingBlockView.swift */; };
+		A7E1F2B3C4D5068798A9B0C1 /* OutlineBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8F2A3C4D5E6179809B0C1D2 /* OutlineBlockView.swift */; };
 		5E8D2F63A1C04B79D2370E18 /* MeetingNotesEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A7E91B3F5D82A0E6B10C47 /* MeetingNotesEditor.swift */; };
 		0ECCD65D875F55E2148FF871 /* EditorDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727128AD995E5A86B60ADCBE /* EditorDraftStore.swift */; };
 		0FF49E848A57B76FEB3FF655 /* SlashCommandMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14D46F5252C474875D2AE94 /* SlashCommandMenu.swift */; };
@@ -208,6 +209,7 @@
 		33262B570A72E09F2E88ECF2 /* TrashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashView.swift; sourceTree = "<group>"; };
 		37262953A2E00C21609C6836 /* SearchSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSettingsView.swift; sourceTree = "<group>"; };
 		38503CD6DD60C57D352CA45A /* MeetingBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingBlockView.swift; sourceTree = "<group>"; };
+		B8F2A3C4D5E6179809B0C1D2 /* OutlineBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineBlockView.swift; sourceTree = "<group>"; };
 		C4A7E91B3F5D82A0E6B10C47 /* MeetingNotesEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingNotesEditor.swift; sourceTree = "<group>"; };
 		398B466A4F5F82ACEA4874F6 /* Block.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Block.swift; sourceTree = "<group>"; };
 		3A9D73232AA7B54B9A6C8C58 /* BlockViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockViews.swift; sourceTree = "<group>"; };
@@ -411,6 +413,7 @@
 				00F20EDB7EB07349C54B1DB8 /* HeadingToggleBlockView.swift */,
 				38503CD6DD60C57D352CA45A /* MeetingBlockView.swift */,
 				C4A7E91B3F5D82A0E6B10C47 /* MeetingNotesEditor.swift */,
+				B8F2A3C4D5E6179809B0C1D2 /* OutlineBlockView.swift */,
 				1DA108034A6C3859C95A72DA /* PageHeaderView.swift */,
 				F772F851E9A873C8CC70B6C0 /* PagePickerView.swift */,
 				E14D46F5252C474875D2AE94 /* SlashCommandMenu.swift */,
@@ -930,6 +933,7 @@
 				BAC17E1581B72C2E679063F4 /* MarkdownParser.swift in Sources */,
 				0D60BAED04EE7FA14331418C /* MeetingBlockView.swift in Sources */,
 				5E8D2F63A1C04B79D2370E18 /* MeetingNotesEditor.swift in Sources */,
+				A7E1F2B3C4D5068798A9B0C1 /* OutlineBlockView.swift in Sources */,
 				7EDA4964EE97D79FFE09EF59 /* MeetingNoteService.swift in Sources */,
 				D231B9D2E5E28A22F7DC5659 /* MovePagePickerView.swift in Sources */,
 				3AAA59CAFE542617EFFD989E /* NotesChatView.swift in Sources */,

@@ -811,6 +811,7 @@ class BlockDocument {
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0), section: "Basic blocks", keywords: ["codeblock", "snippet", "programming"]),
         SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0), section: "Basic blocks", keywords: ["separator", "line", "hr", "horizontal rule"]),
         SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0), section: "Basic blocks", keywords: ["collapse", "expand", "accordion", "dropdown"]),
+        SlashCommand(name: "Table of Contents", icon: "list.bullet.indent", action: .blockType(.outline, headingLevel: 0), section: "Basic blocks", keywords: ["toc", "outline", "contents", "navigation", "headings"]),
         // Inline
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage, section: "Inline", keywords: ["subpage", "new page", "child"]),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage, section: "Inline", keywords: ["wiki", "reference", "mention"]),
@@ -907,6 +908,17 @@ class BlockDocument {
                         block.databasePath = dbPath
                     }
                 }
+                dismissSlashMenu()
+                return
+            }
+
+            // Outline block — set type and move focus to next paragraph
+            if type == .outline {
+                saveUndo()
+                updateBlockProperty(id: blockId) { block in
+                    block.type = .outline
+                }
+                focusOrInsertParagraphAfter(blockId: blockId)
                 dismissSlashMenu()
                 return
             }

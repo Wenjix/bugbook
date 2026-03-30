@@ -16,6 +16,7 @@ enum BlockType: Equatable {
     case toggle
     case headingToggle
     case meeting
+    case outline
 }
 
 /// The lifecycle state of a meeting recording block.
