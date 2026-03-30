@@ -778,6 +778,8 @@ struct DatabaseFullPageView: View {
                         },
                         onClearSorts: { state.clearSorts() },
                         onNewRow: { createNewRow() },
+                        onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                        calculationResults: state.calculationResults(for: filtered),
                         showVerticalLines: showVerticalLines,
                         usesInnerScroll: false,
                         containerWidth: geo.size.width

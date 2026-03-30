@@ -17,6 +17,7 @@ enum BlockType: Equatable {
     case headingToggle
     case meeting
     case table
+    case outline
 
     /// Whether this block type is a list item (bullet, numbered, or task).
     var isListItem: Bool {

@@ -368,6 +368,33 @@ final class DatabaseViewState {
         }
     }
 
+    func setCalculation(propertyId: String, function: String?) {
+        guard var s = schema, var view = activeView else { return }
+        if view.calculations == nil { view.calculations = [:] }
+        view.calculations?[propertyId] = function
+        if function == nil { view.calculations?.removeValue(forKey: propertyId) }
+        if view.calculations?.isEmpty == true { view.calculations = nil }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    func calculationResults(for rows: [DatabaseRow]) -> [String: String] {
+        guard let view = activeView, let schema = schema,
+              let calculations = view.calculations, !calculations.isEmpty else { return [:] }
+        var results: [String: String] = [:]
+        for (propertyId, function) in calculations {
+            results[propertyId] = AggregationEngine.compute(
+                function: function,
+                propertyId: propertyId,
+                rows: rows,
+                schema: schema
+            )
+        }
+        return results
+    }
+
     func toggleWrapCellText() {
         guard var s = schema, var view = activeView, view.type == .table else { return }
         view.wrapCellText = !(view.wrapCellText ?? false)

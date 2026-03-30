@@ -30,6 +30,8 @@ struct TableView: View {
     var onReorderRows: ((String, String?) -> Void)?
     var onClearSorts: (() -> Void)?
     var onNewRow: (() -> Void)?
+    var onSetCalculation: ((String, String?) -> Void)?
+    var calculationResults: [String: String] = [:]
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
     var usesInnerScroll: Bool = true
@@ -598,6 +600,45 @@ struct TableView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Calculation Footer
+
+    private var calculationsFooter: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: scaledRowControlsInset, height: 1)
+
+            // Title column footer cell
+            if let titleProp = schema.titleProperty {
+                CalculationFooterCell(
+                    propertyId: titleProp.id,
+                    propertyType: titleProp.type,
+                    currentFunction: viewConfig.calculations?[titleProp.id],
+                    result: calculationResults[titleProp.id],
+                    onSetCalculation: onSetCalculation
+                )
+                .frame(width: titleColumnWidth, height: compactHeaderHeight)
+            } else {
+                Color.clear.frame(width: titleColumnWidth, height: compactHeaderHeight)
+            }
+
+            ForEach(visibleProperties) { prop in
+                CalculationFooterCell(
+                    propertyId: prop.id,
+                    propertyType: prop.type,
+                    currentFunction: viewConfig.calculations?[prop.id],
+                    result: calculationResults[prop.id],
+                    onSetCalculation: onSetCalculation
+                )
+                .frame(width: columnWidth(for: prop), height: compactHeaderHeight)
+            }
+        }
+        .padding(.horizontal, DatabaseZoomMetrics.size(4))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: compactHeaderHeight)
+        .background(Color.secondary.opacity(0.04))
+        .overlay(alignment: .top) { Divider() }
+        .overlay { columnDividers().allowsHitTesting(false) }
+    }
+
     // MARK: - Helpers
 
     private func columnWidth(for prop: PropertyDefinition) -> CGFloat {
@@ -688,6 +729,11 @@ struct TableView: View {
             } else {
                 // When data exists, simple button below
                 newPageButton
+
+                // Calculations footer
+                if onSetCalculation != nil {
+                    calculationsFooter
+                }
             }
         }
     }
@@ -982,6 +1028,45 @@ struct TableView: View {
         return rows[index + 1].id
     }
 
+    // MARK: - Calculations Footer
+
+    private var calculationsFooter: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: scaledRowControlsInset, height: 1)
+
+            HStack(spacing: 0) {
+                // Title column calculation cell
+                if let titlePropId = schema.titleProperty?.id {
+                    CalculationFooterCell(
+                        propertyId: titlePropId,
+                        propertyType: .title,
+                        currentFunction: viewConfig.calculations?[titlePropId],
+                        result: calculationResults[titlePropId],
+                        onSetCalculation: onSetCalculation
+                    )
+                    .frame(width: titleColumnWidth)
+                } else {
+                    Color.clear.frame(width: titleColumnWidth)
+                }
+
+                ForEach(visibleProperties) { prop in
+                    CalculationFooterCell(
+                        propertyId: prop.id,
+                        propertyType: prop.type,
+                        currentFunction: viewConfig.calculations?[prop.id],
+                        result: calculationResults[prop.id],
+                        onSetCalculation: onSetCalculation
+                    )
+                    .frame(width: columnWidth(for: prop))
+                }
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(4))
+        }
+        .frame(height: compactHeaderHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.04))
+    }
+
 }
 
 // MARK: - HoverRow (per-row hover state to avoid full-tree re-renders)
@@ -1245,5 +1330,101 @@ private extension View {
 private struct NoFeedbackButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+    }
+}
+
+// MARK: - Calculation Footer Cell
+
+private struct CalculationFooterCell: View {
+    let propertyId: String
+    let propertyType: PropertyType
+    let currentFunction: String?
+    let result: String?
+    var onSetCalculation: ((String, String?) -> Void)?
+
+    @State private var isHovered = false
+    @State private var showPopover = false
+
+    private var availableFunctions: [String] {
+        AggregationEngine.availableFunctions(for: propertyType)
+    }
+
+    var body: some View {
+        Button {
+            showPopover = true
+        } label: {
+            HStack(spacing: 0) {
+                if let result, let fn = currentFunction {
+                    HStack(spacing: DatabaseZoomMetrics.size(4)) {
+                        Text(AggregationEngine.displayName(for: fn))
+                            .font(DatabaseZoomMetrics.font(11))
+                            .foregroundStyle(.tertiary)
+                        Text(result)
+                            .font(DatabaseZoomMetrics.font(13))
+                            .foregroundStyle(.secondary)
+                    }
+                } else if isHovered {
+                    Text("Calculate")
+                        .font(DatabaseZoomMetrics.font(13))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .floatingPopover(isPresented: $showPopover, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(availableFunctions, id: \.self) { fn in
+                    calcFunctionRow(fn)
+                }
+
+                if currentFunction != nil {
+                    Divider()
+                    Button {
+                        onSetCalculation?(propertyId, nil)
+                        showPopover = false
+                    } label: {
+                        Text("None")
+                            .font(DatabaseZoomMetrics.font(13))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+                            .padding(.vertical, DatabaseZoomMetrics.size(4))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(DatabaseZoomMetrics.size(6))
+            .frame(width: DatabaseZoomMetrics.size(180))
+            .popoverSurface()
+        }
+    }
+
+    private func calcFunctionRow(_ fn: String) -> some View {
+        let isSelected = currentFunction == fn
+        return Button {
+            onSetCalculation?(propertyId, isSelected ? nil : fn)
+            showPopover = false
+        } label: {
+            HStack {
+                Text(AggregationEngine.displayName(for: fn))
+                    .font(DatabaseZoomMetrics.font(13))
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(DatabaseZoomMetrics.font(11, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(8))
+            .padding(.vertical, DatabaseZoomMetrics.size(4))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

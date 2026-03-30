@@ -798,6 +798,8 @@ struct DatabaseInlineEmbedView: View {
                     },
                     onClearSorts: { state.clearSorts() },
                     onNewRow: { addNewRow() },
+                    onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                    calculationResults: state.calculationResults(for: filtered),
                     scrollToRowId: newRowScrollId,
                     usesInnerScroll: useInnerScroll,
                     containerWidth: tableContainerWidth

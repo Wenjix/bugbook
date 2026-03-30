@@ -339,6 +339,20 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Outline (Table of Contents) block
+            if trimmed == "<!-- toc -->" {
+                i += 1
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toc -->" {
+                        i += 1
+                        break
+                    }
+                    i += 1
+                }
+                blocks.append(makeBlock(type: .outline))
+                continue
+            }
+
             // Meeting block
             if trimmed == "<!-- meeting -->" {
                 i += 1
@@ -590,6 +604,10 @@ enum MarkdownBlockParser {
                 }
                 lines.append("<!-- /columns -->")
 
+            case .outline:
+                lines.append("<!-- toc -->")
+                lines.append("<!-- /toc -->")
+
             case .meeting:
                 // Only serialize completed meetings; recording/processing blocks are transient
                 guard block.meetingState == .complete else { break }
@@ -695,6 +713,8 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- columns -->"
             || trimmed == "<!-- column-separator -->"
             || trimmed == "<!-- /columns -->"
+            || trimmed == "<!-- toc -->"
+            || trimmed == "<!-- /toc -->"
             || trimmed == "<!-- meeting -->"
             || trimmed == "<!-- /meeting -->"
             || trimmed == "<!-- meeting-notes -->"

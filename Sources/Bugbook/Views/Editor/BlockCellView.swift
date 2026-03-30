@@ -83,7 +83,7 @@ struct BlockCellView: View {
 
     private var blockUsesOwnInteractions: Bool {
         switch block.type {
-        case .databaseEmbed, .image, .pageLink, .meeting, .table:
+        case .databaseEmbed, .image, .pageLink, .meeting, .table, .outline:
             true
         default:
             false
@@ -271,6 +271,9 @@ struct BlockCellView: View {
 
         case .table:
             TableBlockView(document: document, block: block)
+
+        case .outline:
+            OutlineBlockView(document: document)
         }
     }
 }
