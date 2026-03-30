@@ -107,7 +107,7 @@ public struct AggregationEngine {
                 switch val {
                 case .checkbox(false): return true
                 case .checkbox(true): return false
-                default: return true
+                default: return false
                 }
             }.count
             let pct = Double(unchecked) / Double(rows.count) * 100
@@ -200,24 +200,32 @@ public struct AggregationEngine {
         return "-"
     }
 
+    private static let currencyFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 2
+        return f
+    }()
+
+    private static let decimalFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 2
+        return f
+    }()
+
     private static func formatNumber(_ value: Double, format: String?) -> String {
         switch format {
         case "dollar":
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .currency
-            formatter.currencyCode = "USD"
-            formatter.maximumFractionDigits = 2
-            return formatter.string(from: NSNumber(value: value)) ?? String(value)
+            return currencyFormatter.string(from: NSNumber(value: value)) ?? String(value)
         case "percent":
             return "\(Int((value * 100).rounded()))%"
         default:
             if value == value.rounded() && abs(value) < 1e15 {
                 return String(Int(value))
             }
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.maximumFractionDigits = 2
-            return formatter.string(from: NSNumber(value: value)) ?? String(value)
+            return decimalFormatter.string(from: NSNumber(value: value)) ?? String(value)
         }
     }
 }

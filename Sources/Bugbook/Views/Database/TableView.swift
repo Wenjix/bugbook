@@ -147,19 +147,6 @@ struct TableView: View {
         return result
     }
 
-    private func colorForName(_ name: String) -> Color {
-        switch name {
-        case "blue": return .blue
-        case "green": return .green
-        case "red": return .red
-        case "yellow": return .yellow
-        case "purple": return .purple
-        case "pink": return .pink
-        case "orange": return .orange
-        case "teal": return .teal
-        default: return .gray
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -718,7 +705,7 @@ struct TableView: View {
     @ViewBuilder
     private func groupSection(_ group: (key: String, label: String, color: String, rows: [DatabaseRow])) -> some View {
         let isCollapsed = collapsedGroups.contains(group.key)
-        let groupColor = colorForName(group.color)
+        let groupColor = TagColor.color(for: group.color)
 
         // Group header
         Button {

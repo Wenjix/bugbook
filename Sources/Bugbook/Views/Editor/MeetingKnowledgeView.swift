@@ -121,10 +121,6 @@ struct MeetingKnowledgeView: View {
         }
         .buttonStyle(.plain)
         .background(Color.clear)
-        .onHover { hovering in
-            // Let SwiftUI handle hover via buttonStyle
-            _ = hovering
-        }
     }
 
     // MARK: - Query Logic

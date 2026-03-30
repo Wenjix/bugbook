@@ -17,8 +17,6 @@ struct MeetingBlockView: View {
     @State private var isHovered = false
     private var hasVoiceActivity: Bool { document.meetingAudioLevel > 0.01 }
 
-    // Dev's AI processing state
-    @State private var isProcessing = false
     @State private var processingStatus = ""
     @State private var showTranscriptSheet = false
 
@@ -649,7 +647,6 @@ struct MeetingBlockView: View {
             : block.children.map { $0.text }.joined(separator: "\n")
 
         document.updateMeetingState(blockId: block.id, state: .processing)
-        isProcessing = true
 
         if !transcript.isEmpty {
             processingStatus = "Cleaning transcript..."
@@ -670,7 +667,6 @@ struct MeetingBlockView: View {
             }
         }
 
-        isProcessing = false
         processingStatus = ""
         document.updateMeetingState(blockId: block.id, state: .complete)
     }
