@@ -608,9 +608,13 @@ struct CommandPaletteView: View {
     private func searchFileContents(query: String) async -> [ContentMatch] {
         guard let workspace = appState.workspacePath else { return [] }
 
-        // Use qmd when available — faster and ranking-aware
-        if let binary = qmdBinaryPath, !binary.isEmpty {
-            if let results = await searchWithQmd(query: query, workspace: workspace, binary: binary) {
+        // Use qmd when available — faster and ranking-aware.
+        // Skip qmd when any tab has unsaved edits: qmd's external index
+        // won't reflect in-flight changes, so fall through to the in-memory index.
+        let hasDirtyTabs = appState.openTabs.contains(where: { $0.isDirty })
+        if !hasDirtyTabs, let binary = qmdBinaryPath, !binary.isEmpty {
+            if let results = await searchWithQmd(query: query, workspace: workspace, binary: binary),
+               !results.isEmpty {
                 return results
             }
         }
