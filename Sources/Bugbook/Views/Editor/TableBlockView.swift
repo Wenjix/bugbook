@@ -11,10 +11,22 @@ struct TableBlockView: View {
     @State private var isHovering = false
     @State private var dragColumnIndex: Int?
     @State private var dragStartWidth: CGFloat = 0
+    @State private var draggingRowIndex: Int?
+    @State private var rowDropTarget: RowDropTarget?
+    @State private var rowFrames: [Int: CGRect] = [:]
 
     private struct CellPosition: Equatable {
         let row: Int
         let col: Int
+    }
+
+    private enum RowDropPlacement {
+        case before, after
+    }
+
+    private struct RowDropTarget: Equatable {
+        let row: Int
+        let placement: RowDropPlacement
     }
 
     private var rows: [[String]] { block.tableData }
@@ -42,6 +54,8 @@ struct TableBlockView: View {
             addColumnButton
                 .opacity(isHovering ? 1 : 0)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { selectedCell = nil }
         .onAppear { initColumnWidths() }
         .onChange(of: colCount) { _, _ in initColumnWidths() }
         .onHover { isHovering = $0 }
@@ -53,13 +67,31 @@ struct TableBlockView: View {
         VStack(spacing: 0) {
             ForEach(0..<rowCount, id: \.self) { rowIdx in
                 if rowIdx > 0 {
-                    Rectangle()
-                        .fill(Color(nsColor: .separatorColor))
-                        .frame(height: 0.5)
+                    if showsInsertionIndicator(forRow: rowIdx, placement: .before) {
+                        Rectangle().fill(Color.dragIndicator).frame(height: 2)
+                    } else {
+                        Rectangle()
+                            .fill(Color(nsColor: .separatorColor))
+                            .frame(height: 0.5)
+                    }
                 }
                 tableRow(rowIdx)
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(
+                            key: TableRowFramePreferenceKey.self,
+                            value: [rowIdx: geo.frame(in: .named("tableReorder"))]
+                        )
+                    })
+                    .opacity(draggingRowIndex == rowIdx ? 0.4 : 1)
+
+                // Insertion indicator after the last row
+                if rowIdx == rowCount - 1, showsInsertionIndicator(forRow: rowIdx, placement: .after) {
+                    Rectangle().fill(Color.dragIndicator).frame(height: 2)
+                }
             }
         }
+        .coordinateSpace(name: "tableReorder")
+        .onPreferenceChange(TableRowFramePreferenceKey.self) { rowFrames = $0 }
     }
 
     // MARK: - Table Row
@@ -69,6 +101,10 @@ struct TableBlockView: View {
         let isHeader = block.hasHeaderRow && rowIdx == 0
 
         HStack(spacing: 0) {
+            // Row drag handle
+            rowDragHandle(rowIdx)
+                .opacity(isHovering ? 1 : 0)
+
             ForEach(0..<colCount, id: \.self) { colIdx in
                 if colIdx > 0 {
                     // Resize handle doubles as the column separator
@@ -114,7 +150,9 @@ struct TableBlockView: View {
                 .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
         )
         .contentShape(Rectangle())
-        .onTapGesture { selectedCell = CellPosition(row: row, col: col) }
+        .highPriorityGesture(
+            TapGesture().onEnded { selectedCell = CellPosition(row: row, col: col) }
+        )
     }
 
     // MARK: - Column Resize Handle
@@ -165,17 +203,14 @@ struct TableBlockView: View {
 
     private var addColumnButton: some View {
         Button { addColumn() } label: {
-            VStack {
-                Spacer()
-                Image(systemName: "plus")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                Spacer()
-            }
-            .frame(width: 24)
-            .contentShape(Rectangle())
+            Image(systemName: "plus")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(width: 24)
         .help("Add column")
     }
 
@@ -198,6 +233,72 @@ struct TableBlockView: View {
         Divider()
         Button("Delete", role: .destructive) { deleteRow(rowIdx) }
             .disabled(rowCount <= 1)
+    }
+
+    // MARK: - Row Drag Handle
+
+    private func rowDragHandle(_ rowIdx: Int) -> some View {
+        GripDotsView()
+            .fixedSize()
+            .frame(width: 20, height: 32)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .named("tableReorder"))
+                    .onChanged { value in
+                        if draggingRowIndex == nil {
+                            draggingRowIndex = rowIdx
+                        }
+                        rowDropTarget = computeDropTarget(at: value.location)
+                    }
+                    .onEnded { value in
+                        let target = computeDropTarget(at: value.location)
+                        if let source = draggingRowIndex, let target {
+                            let destIndex = target.placement == .before ? target.row : target.row + 1
+                            if destIndex != source && destIndex != source + 1 {
+                                moveRow(from: source, to: destIndex)
+                            }
+                        }
+                        draggingRowIndex = nil
+                        rowDropTarget = nil
+                    }
+            )
+    }
+
+    // MARK: - Row Reorder Helpers
+
+    private func computeDropTarget(at location: CGPoint) -> RowDropTarget? {
+        for rowIdx in 0..<rowCount {
+            guard let frame = rowFrames[rowIdx] else { continue }
+            if location.y < frame.minY {
+                return RowDropTarget(row: rowIdx, placement: .before)
+            }
+            if location.y <= frame.maxY {
+                let placement: RowDropPlacement = location.y < frame.midY ? .before : .after
+                return RowDropTarget(row: rowIdx, placement: placement)
+            }
+        }
+        // Below all rows
+        if let lastFrame = rowFrames[rowCount - 1], location.y > lastFrame.maxY {
+            return RowDropTarget(row: rowCount - 1, placement: .after)
+        }
+        // Above all rows
+        if let firstFrame = rowFrames[0], location.y < firstFrame.minY {
+            return RowDropTarget(row: 0, placement: .before)
+        }
+        return nil
+    }
+
+    private func showsInsertionIndicator(forRow rowIdx: Int, placement: RowDropPlacement) -> Bool {
+        rowDropTarget?.row == rowIdx && rowDropTarget?.placement == placement
+    }
+
+    private func moveRow(from source: Int, to dest: Int) {
+        document.updateBlockProperty(id: block.id) { block in
+            guard source < block.tableData.count else { return }
+            let row = block.tableData.remove(at: source)
+            let adjustedDest = dest > source ? dest - 1 : dest
+            block.tableData.insert(row, at: min(adjustedDest, block.tableData.count))
+        }
     }
 
     // MARK: - Data Helpers
@@ -339,5 +440,15 @@ struct TableCellTextField: NSViewRepresentable {
             }
             return false
         }
+    }
+}
+
+// MARK: - Preference Key for Row Frames
+
+private struct TableRowFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [Int: CGRect] = [:]
+
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }
