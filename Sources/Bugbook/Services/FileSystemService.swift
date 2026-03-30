@@ -670,6 +670,96 @@ class FileSystemService {
         (workspace as NSString).appendingPathComponent(".trash")
     }
 
+    func resolveFavorites(for workspacePath: String, fileTree: [FileEntry]) -> [FileEntry] {
+        let storedPaths = favoritePaths(for: workspacePath)
+        var resolvedPaths: [String] = []
+        let entries = storedPaths.compactMap { path -> FileEntry? in
+            if let entry = findEntry(path: path, in: fileTree) {
+                resolvedPaths.append(path)
+                return FileEntry(
+                    id: "favorite:\(path)", name: entry.name, path: entry.path,
+                    isDirectory: false, kind: entry.kind, icon: entry.icon
+                )
+            }
+            guard FileManager.default.fileExists(atPath: path) else { return nil }
+            resolvedPaths.append(path)
+            let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+            let isDb = FileManager.default.fileExists(atPath: schemaPath)
+            let kind: TabKind = isDb ? .database : .page
+            let name: String
+            if isDb, let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let dbName = json["name"] as? String {
+                name = dbName
+            } else {
+                name = (path as NSString).lastPathComponent
+            }
+            return FileEntry(id: "favorite:\(path)", name: name, path: path, isDirectory: false, kind: kind)
+        }
+        if resolvedPaths != storedPaths {
+            saveFavoritePaths(resolvedPaths, for: workspacePath)
+        }
+        return entries
+    }
+
+    func findEntry(path: String, in entries: [FileEntry]) -> FileEntry? {
+        for entry in entries {
+            if entry.path == path { return entry }
+            if let children = entry.children, let found = findEntry(path: path, in: children) { return found }
+        }
+        return nil
+    }
+
+    func databaseDisplayName(at path: String) -> String? {
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["name"] as? String
+    }
+
+    // MARK: - Path Rewriting
+
+    func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
+        guard filePath.hasSuffix(".md"),
+              oldBase != newBase,
+              var content = try? String(contentsOfFile: filePath, encoding: .utf8),
+              content.contains(oldBase) else { return }
+        content = content.replacingOccurrences(of: oldBase, with: newBase)
+        try? content.write(toFile: filePath, atomically: true, encoding: .utf8)
+    }
+
+    func rewritePathsRecursively(in directory: String, oldBase: String, newBase: String) {
+        guard oldBase != newBase,
+              FileManager.default.fileExists(atPath: directory) else { return }
+        guard let items = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return }
+        for item in items {
+            let fullPath = (directory as NSString).appendingPathComponent(item)
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir)
+            if isDir.boolValue {
+                rewritePathsRecursively(in: fullPath, oldBase: oldBase, newBase: newBase)
+            } else {
+                rewritePathsInFile(at: fullPath, oldBase: oldBase, newBase: newBase)
+            }
+        }
+    }
+
+    // MARK: - Wiki Link Updates
+
+    func updateWikiLinksOnDisk(in directory: String, oldLink: String, newLink: String, excludingPaths: Set<String>) {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(atPath: directory) else { return }
+        while let relativePath = enumerator.nextObject() as? String {
+            guard relativePath.hasSuffix(".md") else { continue }
+            let fullPath = (directory as NSString).appendingPathComponent(relativePath)
+            guard !excludingPaths.contains(fullPath) else { continue }
+            guard var content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
+            guard content.contains(oldLink) else { continue }
+            content = content.replacingOccurrences(of: oldLink, with: newLink)
+            try? content.write(toFile: fullPath, atomically: true, encoding: .utf8)
+        }
+    }
+
     /// Move a file (and companion folder) to `.trash/` instead of permanently deleting.
     func trashFile(at path: String, workspace: String) throws {
         let trashDir = trashDirectory(in: workspace)

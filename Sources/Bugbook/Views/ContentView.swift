@@ -572,12 +572,10 @@ struct ContentView: View {
             let newCompanion = newPath.hasSuffix(".md") ? String(newPath.dropLast(3)) : newPath
 
             // Rewrite absolute paths inside moved files (database embeds, etc.) in background
-            let capturedOldCompanion = oldCompanion
-            let capturedNewCompanion = newCompanion
-            let capturedNewPath = newPath
+            let fs = fileSystem
             DispatchQueue.global(qos: .utility).async {
-                Self.rewritePathsInFile(at: capturedNewPath, oldBase: capturedOldCompanion, newBase: capturedNewCompanion)
-                Self.rewritePathsRecursively(in: capturedNewCompanion, oldBase: capturedOldCompanion, newBase: capturedNewCompanion)
+                fs.rewritePathsInFile(at: newPath, oldBase: oldCompanion, newBase: newCompanion)
+                fs.rewritePathsRecursively(in: newCompanion, oldBase: oldCompanion, newBase: newCompanion)
             }
 
             // Also update paths for children that moved (companion folder contents)
@@ -683,32 +681,6 @@ struct ContentView: View {
     }
 
     /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
-    private static func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
-        guard filePath.hasSuffix(".md"),
-              oldBase != newBase,
-              var content = try? String(contentsOfFile: filePath, encoding: .utf8),
-              content.contains(oldBase) else { return }
-        content = content.replacingOccurrences(of: oldBase, with: newBase)
-        try? content.write(toFile: filePath, atomically: true, encoding: .utf8)
-    }
-
-    /// Recursively rewrite paths in all .md files under a directory.
-    private static func rewritePathsRecursively(in directory: String, oldBase: String, newBase: String) {
-        guard oldBase != newBase,
-              FileManager.default.fileExists(atPath: directory) else { return }
-        guard let items = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return }
-        for item in items {
-            let fullPath = (directory as NSString).appendingPathComponent(item)
-            var isDir: ObjCBool = false
-            FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir)
-            if isDir.boolValue {
-                rewritePathsRecursively(in: fullPath, oldBase: oldBase, newBase: newBase)
-            } else {
-                rewritePathsInFile(at: fullPath, oldBase: oldBase, newBase: newBase)
-            }
-        }
-    }
-
     // MARK: - Main Content
 
     @ViewBuilder
@@ -1531,12 +1503,12 @@ struct ContentView: View {
         guard let targetPath = candidates.first(where: isOpenableBreadcrumbPath(_:)) else { return }
         guard appState.activeTab?.path != targetPath else { return }
 
-        if let existing = findEntryByPath(targetPath, in: appState.fileTree) {
+        if let existing = fileSystem.findEntry(path: targetPath, in: appState.fileTree) {
             navigateToEntry(existing, preferExistingTab: false)
             return
         }
 
-        let isDatabase = isDatabaseFolderPath(targetPath)
+        let isDatabase = fileSystem.isDatabaseFolder(at: targetPath)
         let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(
             id: targetPath,
@@ -1550,16 +1522,12 @@ struct ContentView: View {
     }
 
     private func isOpenableBreadcrumbPath(_ path: String) -> Bool {
-        if isDatabaseFolderPath(path) { return true }
+        if fileSystem.isDatabaseFolder(at: path) { return true }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
         return !isDir.boolValue
     }
 
-    private func isDatabaseFolderPath(_ path: String) -> Bool {
-        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
-        return FileManager.default.fileExists(atPath: schemaPath)
-    }
 
     private func initializeWorkspace() {
         // Restore the most recently used workspace, falling back to the default
@@ -1660,7 +1628,7 @@ struct ContentView: View {
     }
 
     private func buildSidebarReferenceEntry(for path: String, in fileTree: [FileEntry]) -> FileEntry? {
-        if let entry = findEntryByPath(path, in: fileTree) {
+        if let entry = fileSystem.findEntry(path: path, in: fileTree) {
             return FileEntry(
                 id: "sidebar-ref:\(path)",
                 name: entry.name,
@@ -1676,9 +1644,9 @@ struct ContentView: View {
 
         let kind: TabKind
         let name: String
-        if isDatabaseFolderPath(path) {
+        if fileSystem.isDatabaseFolder(at: path) {
             kind = .database
-            name = databaseDisplayName(at: path) ?? (path as NSString).lastPathComponent
+            name = fileSystem.databaseDisplayName(at: path) ?? (path as NSString).lastPathComponent
         } else {
             kind = .page
             name = (path as NSString).lastPathComponent
@@ -1692,15 +1660,6 @@ struct ContentView: View {
             kind: kind,
             isSidebarReference: true
         )
-    }
-
-    private func databaseDisplayName(at path: String) -> String? {
-        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        return json["name"] as? String
     }
 
     /// Handles a page dragged from the sidebar into the editor at a specific block index.
@@ -1733,43 +1692,7 @@ struct ContentView: View {
             appState.favorites = []
             return
         }
-        let tree = fileTree ?? appState.fileTree
-        let storedPaths = fileSystem.favoritePaths(for: workspace)
-        var resolvedPaths: [String] = []
-        let resolvedEntries = storedPaths.compactMap { path -> FileEntry? in
-            guard let entry = buildFavoriteEntry(for: path, in: tree) else { return nil }
-            resolvedPaths.append(path)
-            return entry
-        }
-        if resolvedPaths != storedPaths {
-            fileSystem.saveFavoritePaths(resolvedPaths, for: workspace)
-        }
-        appState.favorites = resolvedEntries
-    }
-
-    private func buildFavoriteEntry(for path: String, in fileTree: [FileEntry]) -> FileEntry? {
-        if let entry = findEntryByPath(path, in: fileTree) {
-            return FileEntry(
-                id: "favorite:\(path)",
-                name: entry.name,
-                path: entry.path,
-                isDirectory: false,
-                kind: entry.kind,
-                icon: entry.icon
-            )
-        }
-        guard FileManager.default.fileExists(atPath: path) else { return nil }
-        let kind: TabKind = isDatabaseFolderPath(path) ? .database : .page
-        let name = kind == .database
-            ? (databaseDisplayName(at: path) ?? (path as NSString).lastPathComponent)
-            : (path as NSString).lastPathComponent
-        return FileEntry(
-            id: "favorite:\(path)",
-            name: name,
-            path: path,
-            isDirectory: false,
-            kind: kind
-        )
+        appState.favorites = fileSystem.resolveFavorites(for: workspace, fileTree: fileTree ?? appState.fileTree)
     }
 
     func toggleFavorite(path: String) {
@@ -2384,21 +2307,7 @@ struct ContentView: View {
         let openPaths = Set(appState.openTabs.map(\.path))
         let oldLink = "[[\(oldName)]]"
         let newLink = "[[\(newName)]]"
-        updateWikiLinksOnDisk(in: workspace, oldLink: oldLink, newLink: newLink, excludingPaths: openPaths)
-    }
-
-    private func updateWikiLinksOnDisk(in directory: String, oldLink: String, newLink: String, excludingPaths: Set<String>) {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(atPath: directory) else { return }
-        while let relativePath = enumerator.nextObject() as? String {
-            guard relativePath.hasSuffix(".md") else { continue }
-            let fullPath = (directory as NSString).appendingPathComponent(relativePath)
-            guard !excludingPaths.contains(fullPath) else { continue }
-            guard var content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
-            guard content.contains(oldLink) else { continue }
-            content = content.replacingOccurrences(of: oldLink, with: newLink)
-            try? content.write(toFile: fullPath, atomically: true, encoding: .utf8)
-        }
+        fileSystem.updateWikiLinksOnDisk(in: workspace, oldLink: oldLink, newLink: newLink, excludingPaths: openPaths)
     }
 
     private func triggerFocusMode() {
@@ -2751,7 +2660,7 @@ struct ContentView: View {
     private func openDatabase(at path: String) {
         guard FileManager.default.fileExists(atPath: path) else { return }
 
-        if let existing = findEntryByPath(path, in: appState.fileTree) {
+        if let existing = fileSystem.findEntry(path: path, in: appState.fileTree) {
             navigateToEntry(existing, preferExistingTab: false)
             return
         }
@@ -2775,18 +2684,6 @@ struct ContentView: View {
         navigateToEntry(entry, preferExistingTab: false)
     }
 
-    private func findEntryByPath(_ path: String, in entries: [FileEntry]) -> FileEntry? {
-        for entry in entries {
-            if entry.path == path {
-                return entry
-            }
-            if let children = entry.children,
-               let found = findEntryByPath(path, in: children) {
-                return found
-            }
-        }
-        return nil
-    }
 
     private func resolveDatabasePath(from raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2889,12 +2786,12 @@ struct ContentView: View {
     }
 
     private func navigateToFilePath(_ path: String) {
-        if let existing = findEntryByPath(path, in: appState.fileTree) {
+        if let existing = fileSystem.findEntry(path: path, in: appState.fileTree) {
             navigateToEntry(existing, preferExistingTab: true)
             return
         }
         let name = (path as NSString).lastPathComponent
-        let isDatabase = isDatabaseFolderPath(path)
+        let isDatabase = fileSystem.isDatabaseFolder(at: path)
         let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
         navigateToEntry(entry, preferExistingTab: true)
