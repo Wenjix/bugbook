@@ -21,11 +21,28 @@ struct AiEngineStatus {
     var codexVersion: String?
 }
 
+enum AiPhase: Equatable {
+    case idle
+    case readingContext
+    case generating
+    case applyingChanges
+
+    var label: String {
+        switch self {
+        case .idle: return ""
+        case .readingContext: return "Reading page..."
+        case .generating: return "Generating response..."
+        case .applyingChanges: return "Applying changes..."
+        }
+    }
+}
+
 @MainActor
 @Observable
 class AiService {
     var engineStatus = AiEngineStatus()
     var isRunning = false
+    var phase: AiPhase = .idle
     var error: String?
     @ObservationIgnored private var hasDetectedEngines = false
 
@@ -103,8 +120,9 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         if engine == .claudeAPI {
             guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
             isRunning = true
+            phase = .generating
             error = nil
-            defer { isRunning = false }
+            defer { isRunning = false; phase = .idle }
             do {
                 return try await callAPI(apiKey: apiKey, userPrompt: question, model: model)
             } catch {
@@ -124,8 +142,9 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         }
 
         isRunning = true
+        phase = .generating
         error = nil
-        defer { isRunning = false }
+        defer { isRunning = false; phase = .idle }
 
         let command: String
         switch cli {
@@ -229,6 +248,7 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
     // MARK: - Content Generation
 
     func generateContent(engine: PreferredAIEngine, workspacePath: String, prompt: String, pageContext: String = "", apiKey: String = "", model: AnthropicModel = .sonnet) async throws -> String {
+        phase = .readingContext
         var fullPrompt = Self.systemInstruction + "\n\n"
         if !pageContext.isEmpty {
             fullPrompt += "Current page context:\n\(pageContext)\n\n"
@@ -239,7 +259,8 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
             guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
             isRunning = true
             error = nil
-            defer { isRunning = false }
+            phase = .generating
+            defer { isRunning = false; phase = .idle }
             do {
                 return try await callAPI(apiKey: apiKey, systemPrompt: Self.systemInstruction, userPrompt: pageContext.isEmpty ? prompt : "Current page context:\n\(pageContext)\n\nUser request: \(prompt)", maxTokens: 2048, model: model)
             } catch {
@@ -259,7 +280,8 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
 
         isRunning = true
         error = nil
-        defer { isRunning = false }
+        phase = .generating
+        defer { isRunning = false; phase = .idle }
 
         let command: String
         switch cli {
