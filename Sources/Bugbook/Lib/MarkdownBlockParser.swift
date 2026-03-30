@@ -391,16 +391,102 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Table (markdown pipe-separated rows)
+            if line.hasPrefix("|") && line.hasSuffix("|") {
+                var tableRows: [[String]] = []
+                var hasHeader = false
+                // Parse first row
+                tableRows.append(parseTableRow(line))
+                i += 1
+                // Check for separator row (indicates header)
+                if i < lines.count {
+                    let nextLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if isTableSeparator(nextLine) {
+                        hasHeader = true
+                        i += 1
+                    }
+                }
+                // Parse remaining data rows
+                while i < lines.count {
+                    let rowLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    guard rowLine.hasPrefix("|") && rowLine.hasSuffix("|") else { break }
+                    if isTableSeparator(rowLine) { i += 1; continue }
+                    tableRows.append(parseTableRow(rowLine))
+                    i += 1
+                }
+                var tableBlock = makeBlock(type: .table)
+                tableBlock.tableData = tableRows
+                tableBlock.hasHeaderRow = hasHeader
+                blocks.append(tableBlock)
+                continue
+            }
+
             // Paragraph (including empty lines)
             blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             i += 1
         }
+
+        // Strip empty paragraph blocks produced by blank lines in markdown
+        blocks = stripEmptyParagraphs(blocks)
 
         if blocks.isEmpty {
             blocks.append(Block(type: .paragraph))
         }
 
         return blocks
+    }
+
+    /// Remove paragraph blocks whose text is empty or whitespace-only.
+    /// Recurses into children (toggle, headingToggle, column blocks).
+    private static func stripEmptyParagraphs(_ blocks: [Block]) -> [Block] {
+        blocks.compactMap { block in
+            if block.type == .paragraph,
+               block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return nil
+            }
+            if !block.children.isEmpty {
+                var cleaned = block
+                cleaned.children = stripEmptyParagraphs(block.children)
+                return cleaned
+            }
+            return block
+        }
+    }
+
+    /// Parse a single markdown table row like "| a | b | c |" into ["a", "b", "c"].
+    /// Handles escaped pipes (\|) inside cell text.
+    private static func parseTableRow(_ line: String) -> [String] {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let inner = trimmed.dropFirst().dropLast()
+        // Split on unescaped | only
+        var cells: [String] = []
+        var current = ""
+        var escaped = false
+        for ch in inner {
+            if escaped { current.append(ch); escaped = false; continue }
+            if ch == "\\" { escaped = true; current.append(ch); continue }
+            if ch == "|" {
+                cells.append(current.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "\\|", with: "|"))
+                current = ""
+                continue
+            }
+            current.append(ch)
+        }
+        cells.append(current.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "\\|", with: "|"))
+        return cells
+    }
+
+    /// Check if a line is a table separator row like "|---|---|---|".
+    private static func isTableSeparator(_ line: String) -> Bool {
+        guard line.hasPrefix("|") && line.hasSuffix("|") else { return false }
+        let inner = line.dropFirst().dropLast()
+        let cells = inner.split(separator: "|", omittingEmptySubsequences: false)
+        return cells.allSatisfy { cell in
+            let t = cell.trimmingCharacters(in: .whitespaces)
+            return t.allSatisfy { $0 == "-" || $0 == ":" } && t.contains("-")
+        }
     }
 
     // MARK: - Serialize
@@ -528,6 +614,21 @@ enum MarkdownBlockParser {
                     lines.append(block.meetingTranscript)
                 }
                 lines.append("<!-- /meeting -->")
+
+            case .table:
+                guard !block.tableData.isEmpty else { break }
+                let colCount = block.tableData.map(\.count).max() ?? 0
+                guard colCount > 0 else { break }
+                for (rowIdx, row) in block.tableData.enumerated() {
+                    let padded = row + Array(repeating: "", count: max(0, colCount - row.count))
+                    let escaped = padded.map { $0.replacingOccurrences(of: "|", with: "\\|") }
+                    lines.append("| " + escaped.joined(separator: " | ") + " |")
+                    // Separator after first row if header
+                    if rowIdx == 0 && block.hasHeaderRow {
+                        let sep = Array(repeating: "---", count: colCount)
+                        lines.append("| " + sep.joined(separator: " | ") + " |")
+                    }
+                }
             }
         }
 

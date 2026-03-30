@@ -646,6 +646,83 @@ class BlockDocument {
         }
     }
 
+    // MARK: - Table Mutations
+
+    func updateTableCell(id: UUID, row: Int, col: Int, text: String) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            while block.tableData.count <= row {
+                block.tableData.append(Array(repeating: "", count: max(col + 1, block.tableData.first?.count ?? 3)))
+            }
+            for i in block.tableData.indices {
+                while block.tableData[i].count <= col { block.tableData[i].append("") }
+            }
+            block.tableData[row][col] = text
+        }
+    }
+
+    func addTableRow(id: UUID, colCount: Int) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            block.tableData.append(Array(repeating: "", count: colCount))
+        }
+    }
+
+    func insertTableRow(id: UUID, at index: Int, colCount: Int) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            block.tableData.insert(Array(repeating: "", count: colCount), at: min(index, block.tableData.count))
+        }
+    }
+
+    func deleteTableRow(id: UUID, at index: Int) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            guard index < block.tableData.count, block.tableData.count > 1 else { return }
+            block.tableData.remove(at: index)
+        }
+    }
+
+    func duplicateTableRow(id: UUID, at index: Int) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            guard index < block.tableData.count else { return }
+            block.tableData.insert(block.tableData[index], at: index + 1)
+        }
+    }
+
+    func clearTableRow(id: UUID, at index: Int) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            guard index < block.tableData.count else { return }
+            block.tableData[index] = Array(repeating: "", count: block.tableData[index].count)
+        }
+    }
+
+    func addTableColumn(id: UUID) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            for i in block.tableData.indices { block.tableData[i].append("") }
+        }
+    }
+
+    func deleteTableColumn(id: UUID, at index: Int) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            for i in block.tableData.indices {
+                guard index < block.tableData[i].count, block.tableData[i].count > 1 else { continue }
+                block.tableData[i].remove(at: index)
+            }
+        }
+    }
+
+    func toggleTableHeaderRow(id: UUID) {
+        saveUndo()
+        updateBlockProperty(id: id) { block in
+            block.hasHeaderRow.toggle()
+        }
+    }
+
     func deleteBlock(id: UUID) {
         guard let loc = blockLocation(for: id) else { return }
 
@@ -829,6 +906,7 @@ class BlockDocument {
         SlashCommand(name: "To-do", icon: "checkmark.square", action: .blockType(.taskItem, headingLevel: 0), section: "Basic blocks", keywords: ["checkbox", "task", "checklist", "check"]),
         SlashCommand(name: "Quote", icon: "text.quote", action: .blockType(.blockquote, headingLevel: 0), section: "Basic blocks", keywords: ["blockquote", "callout"]),
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0), section: "Basic blocks", keywords: ["codeblock", "snippet", "programming"]),
+        SlashCommand(name: "Table", icon: "tablecells", action: .blockType(.table, headingLevel: 0), section: "Basic blocks", keywords: ["grid", "rows", "columns", "data"]),
         SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0), section: "Basic blocks", keywords: ["separator", "line", "hr", "horizontal rule"]),
         SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0), section: "Basic blocks", keywords: ["collapse", "expand", "accordion", "dropdown"]),
         SlashCommand(name: "Toggle Heading 1", icon: "chevron.right", action: .blockType(.headingToggle, headingLevel: 1), section: "Basic blocks", keywords: ["toggle h1", "collapsible heading"]),
@@ -930,6 +1008,19 @@ class BlockDocument {
                         block.databasePath = dbPath
                     }
                 }
+                dismissSlashMenu()
+                return
+            }
+
+            // Table block — initialize with empty 3x2 grid
+            if type == .table {
+                saveUndo()
+                updateBlockProperty(id: blockId) { block in
+                    block.type = .table
+                    block.tableData = Array(repeating: Array(repeating: "", count: 3), count: 2)
+                    block.hasHeaderRow = false
+                }
+                focusOrInsertParagraphAfter(blockId: blockId)
                 dismissSlashMenu()
                 return
             }

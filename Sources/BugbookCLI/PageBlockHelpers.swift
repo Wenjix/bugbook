@@ -93,6 +93,7 @@ private enum ParsedPageBlockType: String {
     case toggle
     case headingToggle = "heading_toggle"
     case meeting
+    case table
 }
 
 private struct ParsedPageBlock {
@@ -115,6 +116,8 @@ private struct ParsedPageBlock {
     var children: [ParsedPageBlock] = []
     var columnIndex: Int = 0
     var isExpanded: Bool = true
+    var tableData: [[String]] = []
+    var hasHeaderRow: Bool = false
 }
 
 private struct ParsedPageDocumentMetadata {
@@ -477,6 +480,33 @@ private enum PageBlockParser {
                 continue
             }
 
+            // Table (markdown pipe-separated rows)
+            if line.hasPrefix("|") && line.hasSuffix("|") {
+                var tableRows: [[String]] = []
+                var hasHeader = false
+                tableRows.append(parseTableRow(line))
+                index += 1
+                if index < lines.count {
+                    let nextLine = lines[index].trimmingCharacters(in: .whitespaces)
+                    if isTableSeparator(nextLine) {
+                        hasHeader = true
+                        index += 1
+                    }
+                }
+                while index < lines.count {
+                    let rowLine = lines[index].trimmingCharacters(in: .whitespaces)
+                    guard rowLine.hasPrefix("|") && rowLine.hasSuffix("|") else { break }
+                    if isTableSeparator(rowLine) { index += 1; continue }
+                    tableRows.append(parseTableRow(rowLine))
+                    index += 1
+                }
+                var tableBlock = makeBlock(type: .table)
+                tableBlock.tableData = tableRows
+                tableBlock.hasHeaderRow = hasHeader
+                blocks.append(tableBlock)
+                continue
+            }
+
             blocks.append(makeBlock(type: .paragraph, text: unescapeParagraphText(line)))
             index += 1
         }
@@ -815,6 +845,18 @@ private enum PageBlockParser {
                 ))
             }
             lines.append("<!-- /meeting -->")
+        case .table:
+            let colCount = block.tableData.map(\.count).max() ?? 0
+            guard colCount > 0, !block.tableData.isEmpty else { break }
+            for (rowIdx, row) in block.tableData.enumerated() {
+                let padded = row + Array(repeating: "", count: max(0, colCount - row.count))
+                let escaped = padded.map { $0.replacingOccurrences(of: "|", with: "\\|") }
+                lines.append("| " + escaped.joined(separator: " | ") + " |")
+                if rowIdx == 0, block.hasHeaderRow {
+                    let sep = Array(repeating: "---", count: colCount)
+                    lines.append("| " + sep.joined(separator: " | ") + " |")
+                }
+            }
         }
 
         return lines
@@ -871,6 +913,38 @@ private enum PageBlockParser {
             return text
         }
         return leadingSpaces + String(repeating: "\\", count: slashCount + 1) + tail
+    }
+
+    private static func parseTableRow(_ line: String) -> [String] {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let inner = trimmed.dropFirst().dropLast()
+        var cells: [String] = []
+        var current = ""
+        var escaped = false
+        for ch in inner {
+            if escaped { current.append(ch); escaped = false; continue }
+            if ch == "\\" { escaped = true; current.append(ch); continue }
+            if ch == "|" {
+                cells.append(current.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "\\|", with: "|"))
+                current = ""
+                continue
+            }
+            current.append(ch)
+        }
+        cells.append(current.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "\\|", with: "|"))
+        return cells
+    }
+
+    private static func isTableSeparator(_ line: String) -> Bool {
+        guard line.hasPrefix("|") && line.hasSuffix("|") else { return false }
+        let inner = line.dropFirst().dropLast()
+        let cells = inner.split(separator: "|", omittingEmptySubsequences: false)
+        return cells.allSatisfy { cell in
+            let t = cell.trimmingCharacters(in: .whitespaces)
+            return t.allSatisfy { $0 == "-" || $0 == ":" } && t.contains("-")
+        }
     }
 
     private static func unescapeParagraphText(_ line: String) -> String {
@@ -1906,7 +1980,7 @@ private func parsedPageBlockSupportsTextMutation(_ block: ParsedPageBlock) -> Bo
     switch block.type {
     case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .codeBlock, .blockquote, .toggle, .headingToggle, .meeting:
         return true
-    case .horizontalRule, .image, .databaseEmbed, .pageLink, .column:
+    case .horizontalRule, .image, .databaseEmbed, .pageLink, .column, .table:
         return false
     }
 }
@@ -2089,6 +2163,10 @@ private func parsedPageBlockJSON(
     }
     if block.type == .toggle || block.type == .headingToggle {
         json["expanded"] = block.isExpanded
+    }
+    if block.type == .table {
+        json["table_data"] = block.tableData
+        json["has_header_row"] = block.hasHeaderRow
     }
     if !block.children.isEmpty {
         json["children"] = block.children.enumerated().map { offset, child in
