@@ -609,14 +609,16 @@ struct MeetingBlockView: View {
 
     private func startRecording() {
         document.updateMeetingState(blockId: block.id, state: .recording)
+        document.onStartMeeting?(block.id)
     }
 
     private func stopRecording() {
-        document.updateMeetingState(blockId: block.id, state: .complete)
+        document.onStopMeeting?(block.id)
     }
 
     private func resumeRecording() {
         document.updateMeetingState(blockId: block.id, state: .recording)
+        document.onStartMeeting?(block.id)
     }
 
     private func openAiWithContext() {
