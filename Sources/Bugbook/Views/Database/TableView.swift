@@ -1031,6 +1031,8 @@ struct TableView: View {
         .frame(height: compactHeaderHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.04))
+        .overlay(alignment: .top) { Divider() }
+        .overlay { columnDividers().allowsHitTesting(false) }
     }
 
 }

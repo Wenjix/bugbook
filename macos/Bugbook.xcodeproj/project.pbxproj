@@ -220,7 +220,6 @@
 		3A9D73232AA7B54B9A6C8C58 /* BlockViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockViews.swift; sourceTree = "<group>"; };
 		3B1D94EABC044FCDB416EC80 /* BlockCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockCellView.swift; sourceTree = "<group>"; };
 		3DFE4267C5991F2C8E05CB7D /* RelationResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationResolver.swift; sourceTree = "<group>"; };
-				AEE87332A7E8CD3926DC8C6F /* AggregationEngine.swift */,
 		40FCF6F845DD2446799C49B5 /* MutationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MutationEngine.swift; sourceTree = "<group>"; };
 		425B08EB298C262A170FC229 /* ViewModePickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModePickerButton.swift; sourceTree = "<group>"; };
 		47CC5A6C9F18F716799F484C /* AgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStore.swift; sourceTree = "<group>"; };
@@ -567,6 +566,7 @@
 		81AEC0B0CCBE4BD108764522 /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				AEE87332A7E8CD3926DC8C6F /* AggregationEngine.swift */,
 				40FCF6F845DD2446799C49B5 /* MutationEngine.swift */,
 				1A49740409C913AF7DE543D6 /* QueryEngine.swift */,
 				3DFE4267C5991F2C8E05CB7D /* RelationResolver.swift */,
