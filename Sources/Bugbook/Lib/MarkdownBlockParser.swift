@@ -247,6 +247,29 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Callout block
+            if let calloutVariant = parseCalloutOpenComment(trimmed) {
+                i += 1
+                // First line is the callout title
+                let title = i < lines.count ? String(lines[i]) : ""
+                i += 1
+                // Remaining lines until <!-- /callout --> are children
+                var childLines: [Substring] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /callout -->" {
+                        i += 1
+                        break
+                    }
+                    childLines.append(lines[i])
+                    i += 1
+                }
+                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                var block = makeBlock(type: .callout, text: title, children: children)
+                block.calloutType = calloutVariant
+                blocks.append(block)
+                continue
+            }
+
             // Toggle block
             if trimmed == "<!-- toggle -->" || trimmed == "<!-- toggle collapsed -->" {
                 let collapsed = trimmed.contains("collapsed")
@@ -408,7 +431,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle {
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle, block.type != .callout {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -521,6 +544,14 @@ enum MarkdownBlockParser {
                     lines.append(block.meetingTranscript)
                 }
                 lines.append("<!-- /meeting -->")
+
+            case .callout:
+                lines.append("<!-- callout \(block.calloutType) -->")
+                lines.append(block.text)
+                if !block.children.isEmpty {
+                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
+                }
+                lines.append("<!-- /callout -->")
             }
         }
 
@@ -588,6 +619,7 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- /columns -->"
             || trimmed == "<!-- meeting -->"
             || trimmed == "<!-- /meeting -->"
+            || trimmed == "<!-- /callout -->"
             || trimmed == "<!-- meeting-notes -->"
             || trimmed == "<!-- meeting-transcript -->"
             || trimmed == "<!-- meeting-summary -->"
@@ -595,6 +627,7 @@ enum MarkdownBlockParser {
             return true
         }
         if parseHeadingToggleComment(trimmed) != nil { return true }
+        if parseCalloutOpenComment(trimmed) != nil { return true }
         return false
     }
 
@@ -761,6 +794,17 @@ enum MarkdownBlockParser {
         let parts = rest.split(separator: " ", maxSplits: 1)
         guard let levelStr = parts.first, let level = Int(levelStr), level >= 1, level <= 3 else { return nil }
         return level
+    }
+
+    private static func parseCalloutOpenComment(_ trimmed: String) -> String? {
+        guard trimmed.hasPrefix("<!-- callout"), trimmed.hasSuffix("-->") else { return nil }
+        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        // inner is like "callout info" or "callout warning"
+        guard inner.hasPrefix("callout") else { return nil }
+        let rest = inner.dropFirst("callout".count).trimmingCharacters(in: .whitespaces)
+        let variant = rest.isEmpty ? "info" : String(rest)
+        let validVariants = ["info", "warning", "success", "error"]
+        return validVariants.contains(variant) ? variant : "info"
     }
 
     private static func parsePageLinkComment(_ line: String) -> String? {

@@ -16,6 +16,7 @@ enum BlockType: Equatable {
     case toggle
     case headingToggle
     case meeting
+    case callout
 }
 
 /// The lifecycle state of a meeting recording block.
@@ -54,6 +55,9 @@ struct Block: Identifiable, Equatable {
     var meetingNotes: String
     var transcriptEntries: [String] = []
 
+    // Callout block properties
+    var calloutType: String = "info"
+
     init(
         id: UUID = UUID(),
         type: BlockType = .paragraph,
@@ -77,7 +81,8 @@ struct Block: Identifiable, Equatable {
         meetingSummary: String = "",
         meetingActionItems: String = "",
         meetingTitle: String = "",
-        meetingNotes: String = ""
+        meetingNotes: String = "",
+        calloutType: String = "info"
     ) {
         self.id = id
         self.type = type
@@ -102,5 +107,6 @@ struct Block: Identifiable, Equatable {
         self.meetingActionItems = meetingActionItems
         self.meetingTitle = meetingTitle
         self.meetingNotes = meetingNotes
+        self.calloutType = calloutType
     }
 }

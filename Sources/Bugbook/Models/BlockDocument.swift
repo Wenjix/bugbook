@@ -811,6 +811,7 @@ class BlockDocument {
         SlashCommand(name: "Code", icon: "chevron.left.forwardslash.chevron.right", action: .blockType(.codeBlock, headingLevel: 0), section: "Basic blocks", keywords: ["codeblock", "snippet", "programming"]),
         SlashCommand(name: "Divider", icon: "minus", action: .blockType(.horizontalRule, headingLevel: 0), section: "Basic blocks", keywords: ["separator", "line", "hr", "horizontal rule"]),
         SlashCommand(name: "Toggle", icon: "chevron.right", action: .blockType(.toggle, headingLevel: 0), section: "Basic blocks", keywords: ["collapse", "expand", "accordion", "dropdown"]),
+        SlashCommand(name: "Callout", icon: "exclamationmark.circle", action: .blockType(.callout, headingLevel: 0), section: "Basic blocks", keywords: ["note", "alert", "warning", "info", "tip", "callout"]),
         // Inline
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage, section: "Inline", keywords: ["subpage", "new page", "child"]),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage, section: "Inline", keywords: ["wiki", "reference", "mention"]),
@@ -897,6 +898,19 @@ class BlockDocument {
             return
 
         case let .blockType(type, headingLevel):
+            // Callout needs special handling — set calloutType and focus after
+            if type == .callout {
+                saveUndo()
+                updateBlockProperty(id: blockId) { block in
+                    block.type = .callout
+                    block.calloutType = "info"
+                    block.text = ""
+                }
+                focusOrInsertParagraphAfter(blockId: blockId)
+                dismissSlashMenu()
+                return
+            }
+
             // Database command needs special handling — creates files via callback
             if type == .databaseEmbed {
                 if blockLocation(for: blockId) != nil,
