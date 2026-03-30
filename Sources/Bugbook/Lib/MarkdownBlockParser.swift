@@ -247,6 +247,27 @@ enum MarkdownBlockParser {
                 continue
             }
 
+            // Callout block
+            if let calloutVariant = parseCalloutOpenComment(trimmed) {
+                i += 1
+                let title = i < lines.count ? String(lines[i]) : ""
+                i += 1
+                var childLines: [Substring] = []
+                while i < lines.count {
+                    if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /callout -->" {
+                        i += 1
+                        break
+                    }
+                    childLines.append(lines[i])
+                    i += 1
+                }
+                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                var block = makeBlock(type: .callout, text: title, children: children)
+                block.calloutType = calloutVariant
+                blocks.append(block)
+                continue
+            }
+
             // Meeting block
             if let title = parseMeetingBlock(line) {
                 blocks.append(makeBlock(type: .meeting, text: title))
@@ -515,7 +536,7 @@ enum MarkdownBlockParser {
 
             // Emit color comment before blocks that have non-default colors
             let hasColor = block.textColor != .default || block.backgroundColor != .default
-            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle {
+            if hasColor, block.type != .column, block.type != .toggle, block.type != .headingToggle, block.type != .callout {
                 var parts: [String] = []
                 if block.textColor != .default {
                     parts.append("color:\(block.textColor.rawValue)")
@@ -641,12 +662,19 @@ enum MarkdownBlockParser {
                     let padded = row + Array(repeating: "", count: max(0, colCount - row.count))
                     let escaped = padded.map { $0.replacingOccurrences(of: "|", with: "\\|") }
                     lines.append("| " + escaped.joined(separator: " | ") + " |")
-                    // Separator after first row if header
                     if rowIdx == 0 && block.hasHeaderRow {
                         let sep = Array(repeating: "---", count: colCount)
                         lines.append("| " + sep.joined(separator: " | ") + " |")
                     }
                 }
+
+            case .callout:
+                lines.append("<!-- callout \(block.calloutType) -->")
+                lines.append(block.text)
+                if !block.children.isEmpty {
+                    lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
+                }
+                lines.append("<!-- /callout -->")
             }
         }
 
@@ -717,6 +745,7 @@ enum MarkdownBlockParser {
             || trimmed == "<!-- /toc -->"
             || trimmed == "<!-- meeting -->"
             || trimmed == "<!-- /meeting -->"
+            || trimmed == "<!-- /callout -->"
             || trimmed == "<!-- meeting-notes -->"
             || trimmed == "<!-- meeting-transcript -->"
             || trimmed == "<!-- meeting-summary -->"
@@ -724,6 +753,7 @@ enum MarkdownBlockParser {
             return true
         }
         if parseHeadingToggleComment(trimmed) != nil { return true }
+        if parseCalloutOpenComment(trimmed) != nil { return true }
         return false
     }
 
@@ -913,6 +943,17 @@ enum MarkdownBlockParser {
         let parts = rest.split(separator: " ", maxSplits: 1)
         guard let levelStr = parts.first, let level = Int(levelStr), level >= 1, level <= 3 else { return nil }
         return level
+    }
+
+    private static func parseCalloutOpenComment(_ trimmed: String) -> String? {
+        guard trimmed.hasPrefix("<!-- callout"), trimmed.hasSuffix("-->") else { return nil }
+        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        // inner is like "callout info" or "callout warning"
+        guard inner.hasPrefix("callout") else { return nil }
+        let rest = inner.dropFirst("callout".count).trimmingCharacters(in: .whitespaces)
+        let variant = rest.isEmpty ? "info" : String(rest)
+        let validVariants = ["info", "warning", "success", "error"]
+        return validVariants.contains(variant) ? variant : "info"
     }
 
     private static func parsePageLinkComment(_ line: String) -> String? {

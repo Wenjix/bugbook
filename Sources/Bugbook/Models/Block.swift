@@ -18,6 +18,7 @@ enum BlockType: Equatable {
     case meeting
     case table
     case outline
+    case callout
 
     /// Whether this block type is a list item (bullet, numbered, or task).
     var isListItem: Bool {
@@ -68,6 +69,9 @@ struct Block: Identifiable, Equatable {
     var tableData: [[String]] = []
     var hasHeaderRow: Bool = false
 
+    // Callout block properties
+    var calloutType: String = "info"
+
     init(
         id: UUID = UUID(),
         type: BlockType = .paragraph,
@@ -93,7 +97,8 @@ struct Block: Identifiable, Equatable {
         meetingTitle: String = "",
         meetingNotes: String = "",
         tableData: [[String]] = [],
-        hasHeaderRow: Bool = false
+        hasHeaderRow: Bool = false,
+        calloutType: String = "info"
     ) {
         self.id = id
         self.type = type
@@ -120,5 +125,6 @@ struct Block: Identifiable, Equatable {
         self.meetingNotes = meetingNotes
         self.tableData = tableData
         self.hasHeaderRow = hasHeaderRow
+        self.calloutType = calloutType
     }
 }

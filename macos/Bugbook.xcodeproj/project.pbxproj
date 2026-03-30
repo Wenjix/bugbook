@@ -103,6 +103,7 @@
 		AA252EC507F381DB0A35F976 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661BA33DC8D61D2884B32072 /* SettingsView.swift */; };
 		AA958FA1B1E64E24C676E3B8 /* ToggleBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2E6CAEA3C923DDA24C7C36A /* ToggleBlockView.swift */; };
 		TB01TABLEBLKVW01 /* TableBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TB02TABLEBLKVW02 /* TableBlockView.swift */; };
+		CA110E7B2F3A8D4E91B6C5D0 /* CalloutBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B3F9A2C4D5E6F0182A3B4C5 /* CalloutBlockView.swift */; };
 		AAACB1E47FC69E8DFD7D3D27 /* EditorUIState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82603F77EB0544EA989F4BE7 /* EditorUIState.swift */; };
 		AB8B8319C66ACD0F141B3EEE /* BlockViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A9D73232AA7B54B9A6C8C58 /* BlockViews.swift */; };
 		ABA26E21B59748870EB509CE /* AgentWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CC5A6C9F18F716799F484C /* AgentWorkspaceStore.swift */; };
@@ -247,6 +248,7 @@
 		D8E7F6D5C4B3A20293847667 /* MeetingKnowledgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingKnowledgeView.swift; sourceTree = "<group>"; };
 		746E6FCF54D009487CB47D71 /* ShellZoomMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellZoomMetrics.swift; sourceTree = "<group>"; };
 		74D38DE480A02B3136213525 /* BlockEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockEditorView.swift; sourceTree = "<group>"; };
+		7B3F9A2C4D5E6F0182A3B4C5 /* CalloutBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalloutBlockView.swift; sourceTree = "<group>"; };
 		753ED053F39EBB80B7270496 /* CodeBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeBlockView.swift; sourceTree = "<group>"; };
 		77D74F02ED2A5522822B783A /* GripDotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GripDotsView.swift; sourceTree = "<group>"; };
 		780A13E34CC19B07D99EFF46 /* ColumnBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnBlockView.swift; sourceTree = "<group>"; };
@@ -414,6 +416,7 @@
 				29502EEA0A700D17E1A1E809 /* BlockMenuView.swift */,
 				AE400CA9718CD5697976941B /* BlockTextView.swift */,
 				3A9D73232AA7B54B9A6C8C58 /* BlockViews.swift */,
+				7B3F9A2C4D5E6F0182A3B4C5 /* CalloutBlockView.swift */,
 				753ED053F39EBB80B7270496 /* CodeBlockView.swift */,
 				780A13E34CC19B07D99EFF46 /* ColumnBlockView.swift */,
 
@@ -901,6 +904,7 @@
 				79B94AC24F342F11305894B8 /* CalendarViewModel.swift in Sources */,
 				4C7AB83E38D1649A967CFF40 /* CalendarWeekView.swift in Sources */,
 				09871C22EFFDCF1EEF0A47AF /* ChatMessage.swift in Sources */,
+				CA110E7B2F3A8D4E91B6C5D0 /* CalloutBlockView.swift in Sources */,
 				640881FBAEA115C91FA7BABF /* CodeBlockView.swift in Sources */,
 				349CC754CCA1FEBE8A961431 /* Color+Theme.swift in Sources */,
 				4F1134DFB5BF17CC4D9E671A /* ColumnBlockView.swift in Sources */,
