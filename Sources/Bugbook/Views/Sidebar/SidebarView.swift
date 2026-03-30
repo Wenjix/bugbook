@@ -291,49 +291,6 @@ struct SidebarView: View {
                 }
             }
 
-            // Agents section
-            if !appState.agentSkills.isEmpty || !appState.mcpServers.isEmpty {
-                sidebarSectionHeader("Agents", isExpanded: $agentsExpanded)
-
-                if agentsExpanded {
-                    VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
-                        ForEach(appState.agentSkills) { entry in
-                            FileTreeItemView(
-                                entry: entry,
-                                activeFilePath: appState.activeTab?.path,
-                                fileSystem: fileSystem,
-                                workspacePath: appState.workspacePath,
-                                onSelectFile: onSelectFile,
-                                onRefreshTree: refreshTree,
-                                expandedFolders: $expandedFolders
-                            )
-                        }
-
-                        ForEach(appState.mcpServers) { server in
-                            HStack(spacing: chromeButtonSpacing) {
-                                Image(systemName: "powerplug")
-                                    .font(ShellZoomMetrics.font(Typography.body))
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text(server.name)
-                                        .font(ShellZoomMetrics.font(Typography.body))
-                                        .foregroundStyle(.primary)
-                                    Text(server.command)
-                                        .font(ShellZoomMetrics.font(Typography.caption))
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
-                                Spacer()
-                            }
-                            .padding(.horizontal, rowHorizontalPadding)
-                            .padding(.vertical, rowVerticalPadding)
-                        }
-                    }
-                    .padding(.horizontal, sectionHorizontalPadding)
-                }
-            }
-
             // Workspace header
             sidebarSectionHeader("Workspace", isExpanded: $workspaceExpanded)
 
@@ -367,6 +324,50 @@ struct SidebarView: View {
                         onRefreshTree: refreshTree,
                         expandedFolders: $expandedFolders
                     )
+                }
+
+                // Agents section (inside scroll, right after workspace files)
+                if !appState.agentSkills.isEmpty || !appState.mcpServers.isEmpty {
+                    sidebarSectionHeader("Agents", isExpanded: $agentsExpanded)
+                        .padding(.top, ShellZoomMetrics.size(8))
+                        .padding(.horizontal, -sectionHorizontalPadding)
+
+                    if agentsExpanded {
+                        VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
+                            ForEach(appState.agentSkills) { entry in
+                                FileTreeItemView(
+                                    entry: entry,
+                                    activeFilePath: appState.activeTab?.path,
+                                    fileSystem: fileSystem,
+                                    workspacePath: appState.workspacePath,
+                                    onSelectFile: onSelectFile,
+                                    onRefreshTree: refreshTree,
+                                    expandedFolders: $expandedFolders
+                                )
+                            }
+
+                            ForEach(appState.mcpServers) { server in
+                                HStack(spacing: chromeButtonSpacing) {
+                                    Image(systemName: "powerplug")
+                                        .font(ShellZoomMetrics.font(Typography.body))
+                                        .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(server.name)
+                                            .font(ShellZoomMetrics.font(Typography.body))
+                                            .foregroundStyle(.primary)
+                                        Text(server.command)
+                                            .font(ShellZoomMetrics.font(Typography.caption))
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, rowHorizontalPadding)
+                                .padding(.vertical, rowVerticalPadding)
+                            }
+                        }
+                    }
                 }
                 }
                 .padding(.horizontal, sectionHorizontalPadding)
