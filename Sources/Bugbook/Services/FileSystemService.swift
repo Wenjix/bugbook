@@ -1048,6 +1048,25 @@ class FileSystemService {
         return sanitized.isEmpty ? "Untitled Database" : sanitized
     }
 
+    // MARK: - MCP Servers
+
+    nonisolated func parseMCPServers() -> [MCPServerInfo] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let configPath = (home as NSString).appendingPathComponent(".claude.json")
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let servers = json["mcpServers"] as? [String: Any] else {
+            return []
+        }
+        return servers.compactMap { key, value in
+            guard let config = value as? [String: Any],
+                  let command = config["command"] as? String else { return nil }
+            let args = (config["args"] as? [String]) ?? []
+            let displayCommand = args.isEmpty ? command : "\(command) \(args.joined(separator: " "))"
+            return MCPServerInfo(name: key, command: displayCommand)
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     // MARK: - App Data Directories (Icons & Covers)
 
     private static let appSupportBase: URL =

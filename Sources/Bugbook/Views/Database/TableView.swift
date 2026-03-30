@@ -679,11 +679,6 @@ struct TableView: View {
                 ungroupedRows
             }
 
-            if !rows.isEmpty {
-                calculationsFooter
-                tableDivider.opacity(0.5)
-            }
-
             if rows.isEmpty {
                 // All empty rows are clickable; "+ New page" follows hover
                 emptyTableRow(index: 0)

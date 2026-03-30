@@ -1,45 +1,52 @@
-# Long Run — 2026-03-27
+# Long Run — 2026-03-29
 
-Started: 12:15 AM
-Finished: 3:50 AM (two sessions)
-Duration: ~3h 35m total
+Started: 9:45 PM
+Status: Working (batch 2-3 parallel)
 
-## Summary
-Completed: 13/14 tickets across 6 projects
-Blocked: 1 (Google OAuth — requires external setup)
+## Plan
 
-## Completed (Session 1 — 10 tickets)
+22 tickets across 9 projects. 10 executable in this repo.
 
-- [x] Meeting block header pinned (row_2owqcb)
-- [x] FluidAudio transcription fix (row_6if5fq)
-- [x] Ghost databases from drag ops (row_oafne9)
-- [x] AI chat thread history (row_y0n3u0)
-- [x] Meetings workspace scan (row_sj7iye)
-- [x] List item spacing (row_q9rs8t)
-- [x] Table view grouping (row_m3tz6s)
-- [x] Sidebar sort fix (row_bf99mr)
-- [x] Heading toggle wiring (row_b7h2vl)
-- [x] Hide database title (row_pr65jt)
+### Batches
+- Batch 1 (parallel): A1 + B1 + C1 — DONE
+- Batch 2 (after A1): A2 Callout — RUNNING
+- Batch 3 (parallel with B2): C2 MCP Servers + D1 Select Color — RUNNING
+- Batch 4+: Large features
 
-## Completed (Session 2 — 3 tickets)
+## Completed
 
-- [x] Meeting notes markdown (row_34on11) — Option B: removed built-in TextEditor, meeting block is compact card, notes typed as regular blocks below with full markdown support
-- [x] Char design review (row_q1mmj4) — research doc at `char-design-review.md` with 5 actionable recommendations
-- [x] Live knowledge retrieval (row_25nsk1) — WorkspaceKnowledgeService (TF-IDF index) + MeetingKnowledgeView (collapsible panel showing related notes)
+- [x] A1: Outline (TOC) block type [High] — merged to dev
+- [x] B1: Database table calculations footer [High] — merged to dev
+- [x] C1: Add Agents sidebar section [Medium] — merged to dev
 
-## Blocked (1)
-- Google OAuth verification (row_rv254w) — requires domain registration, Google Cloud Console setup, OAuth consent screen. Code side is ready (placeholder credentials in CalendarService.swift:44-45).
+## In Progress
+
+- [ ] A2: Callout block type — worker running
+- [ ] C2: Add MCP Servers listing — worker running
+- [ ] D1: Change select option color — worker running
+
+## Remaining
+
+- [ ] A3: Meeting notes markdown shortcuts
+- [ ] E1: AND/OR filter groups
+- [ ] E2: Inline mentions
+- [ ] E3: Formula/rollup/lookup
+
+## Blocked / Skipped
+
+- Build native Gateway interface — too vague
+- Google OAuth — external deps
+- Restructure Gateway 8.0 — content/data work
+- Live knowledge retrieval — too vague
+- Skills viewer tab — superseded by Agents sidebar
+- Canopy tickets — different repo
+
+## Discoveries
+
+- BugbookCore/Engine/AggregationEngine.swift already existed from prior session with full string-based API
+- Worker's duplicate AggregationFunction enum in DatabaseViewHelpers cleaned up during merge
+- ~/.claude/skills/ contains both regular folders and symlinks to ~/.agents/skills/
 
 ## Build Status
-Build: PASSING
-Tests: 302 passed, 0 failures
-All new files added to Xcode project (pbxproj)
 
-## How to test
-
-```bash
-git checkout dev
-open macos/Bugbook.xcodeproj   # Cmd+R
-```
-
-When satisfied: `git checkout main && git merge dev`
+Dev branch: PASSING (swift build clean)

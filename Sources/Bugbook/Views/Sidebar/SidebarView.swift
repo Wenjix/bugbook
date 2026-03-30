@@ -19,8 +19,8 @@ struct SidebarView: View {
     @State private var localTrashPopoverPresented: Bool = false
     @State private var isSidebarReferenceDropTargeted = false
     @AppStorage("sidebar_favorites_expanded") private var favoritesExpanded = true
-    @AppStorage("sidebar_workspace_expanded") private var workspaceExpanded = true
     @AppStorage("sidebar_agents_expanded") private var agentsExpanded = true
+    @AppStorage("sidebar_workspace_expanded") private var workspaceExpanded = true
     @State private var expandedFolders: Set<String> = {
         let arr = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
         return Set(arr)
@@ -292,7 +292,7 @@ struct SidebarView: View {
             }
 
             // Agents section
-            if !appState.agentSkills.isEmpty {
+            if !appState.agentSkills.isEmpty || !appState.mcpServers.isEmpty {
                 sidebarSectionHeader("Agents", isExpanded: $agentsExpanded)
 
                 if agentsExpanded {
@@ -307,6 +307,27 @@ struct SidebarView: View {
                                 onRefreshTree: refreshTree,
                                 expandedFolders: $expandedFolders
                             )
+                        }
+
+                        ForEach(appState.mcpServers) { server in
+                            HStack(spacing: chromeButtonSpacing) {
+                                Image(systemName: "powerplug")
+                                    .font(ShellZoomMetrics.font(Typography.body))
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(server.name)
+                                        .font(ShellZoomMetrics.font(Typography.body))
+                                        .foregroundStyle(.primary)
+                                    Text(server.command)
+                                        .font(ShellZoomMetrics.font(Typography.caption))
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, rowHorizontalPadding)
+                            .padding(.vertical, rowVerticalPadding)
                         }
                     }
                     .padding(.horizontal, sectionHorizontalPadding)

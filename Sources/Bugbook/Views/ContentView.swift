@@ -1579,6 +1579,15 @@ struct ContentView: View {
         }
 
         startWorkspaceWatcher(path: workspacePath)
+
+        // Load MCP server configs
+        let fs = self.fileSystem
+        Task.detached {
+            let servers = fs.parseMCPServers()
+            await MainActor.run {
+                self.appState.mcpServers = servers
+            }
+        }
     }
 
     private func startWorkspaceWatcher(path: String) {
