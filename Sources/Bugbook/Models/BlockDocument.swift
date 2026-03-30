@@ -114,7 +114,7 @@ class BlockDocument {
     func block(for id: UUID) -> Block? {
         for block in blocks {
             if block.id == id { return block }
-            if block.type == .column || block.type == .toggle {
+            if block.type == .column || block.type == .toggle || block.type == .meeting {
                 if let child = block.children.first(where: { $0.id == id }) {
                     return child
                 }
@@ -132,7 +132,7 @@ class BlockDocument {
     func blockLocation(for id: UUID) -> (topLevel: Int, child: Int?)? {
         for (i, block) in blocks.enumerated() {
             if block.id == id { return (i, nil) }
-            if block.type == .column || block.type == .toggle {
+            if block.type == .column || block.type == .toggle || block.type == .meeting {
                 if let childIdx = block.children.firstIndex(where: { $0.id == id }) {
                     return (i, childIdx)
                 }
@@ -157,10 +157,6 @@ class BlockDocument {
 
     func updateMeetingTitle(blockId: UUID, title: String) {
         updateBlockProperty(id: blockId) { $0.meetingTitle = title }
-    }
-
-    func updateMeetingNotes(blockId: UUID, notes: String) {
-        updateBlockProperty(id: blockId) { $0.meetingNotes = notes }
     }
 
     func updateMeetingState(blockId: UUID, state: MeetingBlockState) {
@@ -448,6 +444,13 @@ class BlockDocument {
                 focusedBlockId = blocks[loc.topLevel].id
                 cursorPosition = joinPoint
                 return joinPoint
+            } else if blocks[loc.topLevel].type == .meeting {
+                // First child in meeting notes — just remove if empty, otherwise no-op
+                if block.text.isEmpty {
+                    saveUndo()
+                    blocks[loc.topLevel].children.remove(at: childIdx)
+                }
+                return nil
             } else {
                 // First block in this column — extract from column
                 saveUndo()
@@ -1473,6 +1476,8 @@ class BlockDocument {
             if block.type == .column {
                 ordered.append(contentsOf: block.children.map(\.id))
             } else if block.type == .toggle, block.isExpanded {
+                ordered.append(contentsOf: block.children.map(\.id))
+            } else if block.type == .meeting {
                 ordered.append(contentsOf: block.children.map(\.id))
             }
         }
