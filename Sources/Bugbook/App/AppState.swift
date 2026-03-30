@@ -23,6 +23,7 @@ enum ViewMode {
     var workspacePath: String?
     var fileTree: [FileEntry] = []
     var sidebarReferences: [FileEntry] = []
+    var favorites: [FileEntry] = []
     var settings: AppSettings = .default
     var commandPaletteOpen: Bool = false
     var commandPaletteMode: CommandPaletteMode = .search

@@ -15,6 +15,7 @@ class FileSystemService {
     private let maxRecentWorkspaces = 20
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
+    private let favoritesPrefix = "favorites_"
 
     init() {
         loadRecentWorkspaces()
@@ -639,6 +640,36 @@ class FileSystemService {
     func removeSidebarReferencePath(_ path: String, for workspacePath: String) {
         let filtered = sidebarReferencePaths(for: workspacePath).filter { $0 != path }
         saveSidebarReferencePaths(filtered, for: workspacePath)
+    }
+
+    // MARK: - Favorites
+
+    private func favoritesKey(for workspacePath: String) -> String {
+        "\(favoritesPrefix)\(workspacePath)"
+    }
+
+    func favoritePaths(for workspacePath: String) -> [String] {
+        UserDefaults.standard.stringArray(forKey: favoritesKey(for: workspacePath)) ?? []
+    }
+
+    func saveFavoritePaths(_ paths: [String], for workspacePath: String) {
+        UserDefaults.standard.set(paths, forKey: favoritesKey(for: workspacePath))
+    }
+
+    func addFavoritePath(_ path: String, for workspacePath: String) {
+        var paths = favoritePaths(for: workspacePath)
+        guard !paths.contains(path) else { return }
+        paths.append(path)
+        saveFavoritePaths(paths, for: workspacePath)
+    }
+
+    func removeFavoritePath(_ path: String, for workspacePath: String) {
+        let filtered = favoritePaths(for: workspacePath).filter { $0 != path }
+        saveFavoritePaths(filtered, for: workspacePath)
+    }
+
+    func isFavorite(_ path: String, for workspacePath: String) -> Bool {
+        favoritePaths(for: workspacePath).contains(path)
     }
 
     // MARK: - Trash (Recently Deleted)

@@ -123,6 +123,7 @@ struct ContentView: View {
             .onChange(of: appState.fileTree) { _, newTree in
                 syncAvailablePages(newTree)
                 refreshSidebarReferences(using: newTree)
+                refreshFavorites(using: newTree)
             }
             .onChange(of: appState.aiSidePanelOpen) { _, isOpen in
                 if isOpen {
@@ -1113,6 +1114,12 @@ struct ContentView: View {
             performSave(tabId: tab.id)
             refreshFileTree()
         }
+        doc.onToggleFavorite = { path in
+            self.toggleFavorite(path: path)
+        }
+        doc.onIsFavorite = { path in
+            self.isPathFavorited(path)
+        }
         doc.availablePages = appState.fileTree
         doc.workspacePath = appState.workspacePath
         doc.onNavigateToPage = { pageName in
@@ -1613,6 +1620,7 @@ struct ContentView: View {
                 await MainActor.run {
                     appState.fileTree = tree
                     self.refreshSidebarReferences(using: tree)
+                    self.refreshFavorites(using: tree)
                 }
             }
         }
@@ -1628,6 +1636,7 @@ struct ContentView: View {
             await MainActor.run {
                 self.appState.fileTree = tree
                 self.refreshSidebarReferences(using: tree)
+                self.refreshFavorites(using: tree)
             }
         }
     }
@@ -1724,6 +1733,67 @@ struct ContentView: View {
 
         // 3. Move the file to be a sub-page of the current page
         performMovePage(from: sourcePath, toDirectory: currentCompanion)
+    }
+
+    // MARK: - Favorites
+
+    private func refreshFavorites(using fileTree: [FileEntry]? = nil) {
+        guard let workspace = appState.workspacePath else {
+            appState.favorites = []
+            return
+        }
+        let tree = fileTree ?? appState.fileTree
+        let storedPaths = fileSystem.favoritePaths(for: workspace)
+        var resolvedPaths: [String] = []
+        let resolvedEntries = storedPaths.compactMap { path -> FileEntry? in
+            guard let entry = buildFavoriteEntry(for: path, in: tree) else { return nil }
+            resolvedPaths.append(path)
+            return entry
+        }
+        if resolvedPaths != storedPaths {
+            fileSystem.saveFavoritePaths(resolvedPaths, for: workspace)
+        }
+        appState.favorites = resolvedEntries
+    }
+
+    private func buildFavoriteEntry(for path: String, in fileTree: [FileEntry]) -> FileEntry? {
+        if let entry = findEntryByPath(path, in: fileTree) {
+            return FileEntry(
+                id: "favorite:\(path)",
+                name: entry.name,
+                path: entry.path,
+                isDirectory: false,
+                kind: entry.kind,
+                icon: entry.icon
+            )
+        }
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        let kind: TabKind = isDatabaseFolderPath(path) ? .database : .page
+        let name = kind == .database
+            ? (databaseDisplayName(at: path) ?? (path as NSString).lastPathComponent)
+            : (path as NSString).lastPathComponent
+        return FileEntry(
+            id: "favorite:\(path)",
+            name: name,
+            path: path,
+            isDirectory: false,
+            kind: kind
+        )
+    }
+
+    func toggleFavorite(path: String) {
+        guard let workspace = appState.workspacePath else { return }
+        if fileSystem.isFavorite(path, for: workspace) {
+            fileSystem.removeFavoritePath(path, for: workspace)
+        } else {
+            fileSystem.addFavoritePath(path, for: workspace)
+        }
+        refreshFavorites()
+    }
+
+    func isPathFavorited(_ path: String) -> Bool {
+        guard let workspace = appState.workspacePath else { return false }
+        return fileSystem.isFavorite(path, for: workspace)
     }
 
     private func addSidebarReference(_ payload: SidebarReferenceDragPayload) {
@@ -2309,12 +2379,34 @@ struct ContentView: View {
     }
 
     private func updatePageLinks(oldName: String, newName: String, docs: [UUID: BlockDocument]) {
+        // Update in-memory documents (open tabs)
         for (_, doc) in docs {
             for i in doc.blocks.indices {
                 if doc.blocks[i].type == .pageLink && doc.blocks[i].pageLinkName == oldName {
                     doc.blocks[i].pageLinkName = newName
                 }
             }
+        }
+
+        // Update on-disk markdown files that aren't currently open
+        guard let workspace = appState.workspacePath else { return }
+        let openPaths = Set(appState.openTabs.map(\.path))
+        let oldLink = "[[\(oldName)]]"
+        let newLink = "[[\(newName)]]"
+        updateWikiLinksOnDisk(in: workspace, oldLink: oldLink, newLink: newLink, excludingPaths: openPaths)
+    }
+
+    private func updateWikiLinksOnDisk(in directory: String, oldLink: String, newLink: String, excludingPaths: Set<String>) {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(atPath: directory) else { return }
+        while let relativePath = enumerator.nextObject() as? String {
+            guard relativePath.hasSuffix(".md") else { continue }
+            let fullPath = (directory as NSString).appendingPathComponent(relativePath)
+            guard !excludingPaths.contains(fullPath) else { continue }
+            guard var content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
+            guard content.contains(oldLink) else { continue }
+            content = content.replacingOccurrences(of: oldLink, with: newLink)
+            try? content.write(toFile: fullPath, atomically: true, encoding: .utf8)
         }
     }
 
@@ -2417,6 +2509,24 @@ struct ContentView: View {
 
     private func pageOptionsMenu(for tab: OpenFile, document: BlockDocument) -> some View {
         VStack(alignment: .leading, spacing: 2) {
+            Button {
+                toggleFavorite(path: tab.path)
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: isPathFavorited(tab.path) ? "star.fill" : "star")
+                        .frame(width: 16)
+                    Text(isPathFavorited(tab.path) ? "Unfavorite page" : "Favorite page")
+                    Spacer()
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
             Button {
                 document.fullWidth.toggle()
                 if appState.activeTabIndex < appState.openTabs.count {
