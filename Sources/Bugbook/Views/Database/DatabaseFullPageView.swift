@@ -55,6 +55,11 @@ struct DatabaseFullPageView: View {
         state.filteredAndSortedRows()
     }
 
+    private func calculationResults(for rows: [DatabaseRow], schema: DatabaseSchema) -> [String: String] {
+        guard let calcs = state.activeView?.calculations, !calcs.isEmpty else { return [:] }
+        return AggregationEngine.computeAll(calculations: calcs, properties: schema.properties, rows: rows)
+    }
+
     private var nonTitleProperties: [PropertyDefinition] {
         state.schema?.properties.filter { $0.type != .title } ?? []
     }
@@ -714,6 +719,8 @@ struct DatabaseFullPageView: View {
                         },
                         onClearSorts: { state.clearSorts() },
                         onNewRow: { createNewRow() },
+                        onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                        calculationResults: calculationResults(for: filtered, schema: schema),
                         showVerticalLines: showVerticalLines,
                         usesInnerScroll: false,
                         containerWidth: geo.size.width

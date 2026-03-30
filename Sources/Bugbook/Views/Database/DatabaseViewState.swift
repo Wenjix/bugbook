@@ -368,6 +368,21 @@ final class DatabaseViewState {
         }
     }
 
+    func setCalculation(propertyId: String, function: String?) {
+        guard var s = schema, var view = activeView else { return }
+        if view.calculations == nil { view.calculations = [:] }
+        if let function {
+            view.calculations?[propertyId] = function
+        } else {
+            view.calculations?.removeValue(forKey: propertyId)
+            if view.calculations?.isEmpty == true { view.calculations = nil }
+        }
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
     func toggleWrapCellText() {
         guard var s = schema, var view = activeView, view.type == .table else { return }
         view.wrapCellText = !(view.wrapCellText ?? false)

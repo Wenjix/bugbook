@@ -40,6 +40,11 @@ struct DatabaseInlineEmbedView: View {
         state.filteredAndSortedRows(extraFilter: searchFilter)
     }
 
+    private func calculationResults(for rows: [DatabaseRow], schema: DatabaseSchema) -> [String: String] {
+        guard let calcs = state.activeView?.calculations, !calcs.isEmpty else { return [:] }
+        return AggregationEngine.computeAll(calculations: calcs, properties: schema.properties, rows: rows)
+    }
+
     private var searchFilter: ((DatabaseRow) -> Bool)? {
         guard !searchText.isEmpty, let schema = state.schema else { return nil }
         let titlePropId = schema.properties.first(where: { $0.type == .title })?.id ?? ""
@@ -734,6 +739,8 @@ struct DatabaseInlineEmbedView: View {
                     },
                     onClearSorts: { state.clearSorts() },
                     onNewRow: { addNewRow() },
+                    onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                    calculationResults: calculationResults(for: filtered, schema: schema),
                     scrollToRowId: newRowScrollId,
                     usesInnerScroll: useInnerScroll,
                     containerWidth: tableContainerWidth

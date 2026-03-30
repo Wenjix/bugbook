@@ -30,6 +30,8 @@ struct TableView: View {
     var onReorderRows: ((String, String?) -> Void)?
     var onClearSorts: (() -> Void)?
     var onNewRow: (() -> Void)?
+    var onSetCalculation: ((String, String?) -> Void)?
+    var calculationResults: [String: String] = [:]
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
     var usesInnerScroll: Bool = true
@@ -637,6 +639,11 @@ struct TableView: View {
                 .buttonStyle(.plain)
             }
 
+            if !rows.isEmpty {
+                calculationsFooter
+                tableDivider.opacity(0.5)
+            }
+
             if rows.isEmpty {
                 // All empty rows are clickable; "+ New page" follows hover
                 emptyTableRow(index: 0)
@@ -854,6 +861,134 @@ struct TableView: View {
         return rows[index + 1].id
     }
 
+    // MARK: - Calculations Footer
+
+    private var calculationsFooter: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: scaledRowControlsInset, height: 1)
+
+            HStack(spacing: 0) {
+                // Title column — shows count calculation or placeholder
+                calculationCell(
+                    propertyId: schema.titleProperty?.id ?? "__title__",
+                    propertyType: .title
+                )
+                .frame(width: titleColumnWidth)
+
+                ForEach(visibleProperties) { prop in
+                    calculationCell(propertyId: prop.id, propertyType: prop.type)
+                        .frame(width: columnWidth(for: prop))
+                }
+            }
+            .padding(.horizontal, DatabaseZoomMetrics.size(4))
+        }
+        .frame(height: compactHeaderHeight)
+        .background(Color.secondary.opacity(0.04))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay { columnDividers().allowsHitTesting(false) }
+    }
+
+    private func calculationCell(propertyId: String, propertyType: PropertyType) -> some View {
+        let funcName = viewConfig.calculations?[propertyId]
+        let result = calculationResults[propertyId]
+
+        return CalculationCellView(
+            propertyId: propertyId,
+            propertyType: propertyType,
+            functionName: funcName,
+            result: result,
+            onSelect: { selectedFunc in
+                onSetCalculation?(propertyId, selectedFunc)
+            }
+        )
+        .padding(.horizontal, DatabaseZoomMetrics.size(8))
+    }
+}
+
+// MARK: - Calculation Cell View
+
+private struct CalculationCellView: View {
+    let propertyId: String
+    let propertyType: PropertyType
+    let functionName: String?
+    let result: String?
+    let onSelect: (String?) -> Void
+
+    @State private var isShowingPopover = false
+    @State private var isHovered = false
+
+    private var availableFunctions: [AggregationFunction] {
+        AggregationFunction.available(for: propertyType)
+    }
+
+    var body: some View {
+        Button {
+            isShowingPopover = true
+        } label: {
+            Group {
+                if let functionName, let result {
+                    let fn = AggregationFunction(rawValue: functionName)
+                    HStack(spacing: DatabaseZoomMetrics.size(4)) {
+                        Text(fn?.displayName ?? functionName)
+                            .foregroundStyle(.tertiary)
+                        Text(result)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(isHovered ? "Calculate" : "")
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .font(DatabaseZoomMetrics.font(12))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .popover(isPresented: $isShowingPopover, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    onSelect(nil)
+                    isShowingPopover = false
+                } label: {
+                    Text("None")
+                        .font(.system(size: 12))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Divider().padding(.vertical, 2)
+
+                ForEach(availableFunctions, id: \.rawValue) { fn in
+                    Button {
+                        onSelect(fn.rawValue)
+                        isShowingPopover = false
+                    } label: {
+                        HStack {
+                            Text(fn.displayName)
+                                .font(.system(size: 12))
+                            Spacer()
+                            if functionName == fn.rawValue {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+            .frame(width: 160)
+        }
+    }
 }
 
 // MARK: - HoverRow (per-row hover state to avoid full-tree re-renders)
