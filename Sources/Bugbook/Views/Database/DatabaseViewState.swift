@@ -371,9 +371,12 @@ final class DatabaseViewState {
     func setCalculation(propertyId: String, function: String?) {
         guard var s = schema, var view = activeView else { return }
         if view.calculations == nil { view.calculations = [:] }
-        view.calculations?[propertyId] = function
-        if function == nil { view.calculations?.removeValue(forKey: propertyId) }
-        if view.calculations?.isEmpty == true { view.calculations = nil }
+        if let function {
+            view.calculations?[propertyId] = function
+        } else {
+            view.calculations?.removeValue(forKey: propertyId)
+            if view.calculations?.isEmpty == true { view.calculations = nil }
+        }
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s

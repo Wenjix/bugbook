@@ -40,6 +40,7 @@
 		2BDEEDC610523F8472D8FF1A /* DatabaseRowViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F257D6BA8D9A6DCAA4EB896 /* DatabaseRowViewModel.swift */; };
 		30CE7A2C7065E84D29BA2E59 /* FloatingRecordingPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2720BDB254FE084FC3EFBF /* FloatingRecordingPill.swift */; };
 		31319D254BD21B3105E098D8 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF3076E2CD78CCA495DCDCB /* Logger.swift */; };
+		00C55FADCEE4FCE133BAF026 /* AggregationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE87332A7E8CD3926DC8C6F /* AggregationEngine.swift */; };
 		316D6517CC93BFFDDAC5F7A6 /* MutationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40FCF6F845DD2446799C49B5 /* MutationEngine.swift */; };
 		349CC754CCA1FEBE8A961431 /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27DF0CADED8EC505FAAC6252 /* Color+Theme.swift */; };
 		38F21365F5B64137505F3CFB /* DatabasePointerCursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8372AADDC80570EC6777DEF /* DatabasePointerCursor.swift */; };
@@ -219,6 +220,7 @@
 		3A9D73232AA7B54B9A6C8C58 /* BlockViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockViews.swift; sourceTree = "<group>"; };
 		3B1D94EABC044FCDB416EC80 /* BlockCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockCellView.swift; sourceTree = "<group>"; };
 		3DFE4267C5991F2C8E05CB7D /* RelationResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationResolver.swift; sourceTree = "<group>"; };
+				AEE87332A7E8CD3926DC8C6F /* AggregationEngine.swift */,
 		40FCF6F845DD2446799C49B5 /* MutationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MutationEngine.swift; sourceTree = "<group>"; };
 		425B08EB298C262A170FC229 /* ViewModePickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModePickerButton.swift; sourceTree = "<group>"; };
 		47CC5A6C9F18F716799F484C /* AgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStore.swift; sourceTree = "<group>"; };
@@ -275,6 +277,7 @@
 		A7712E15B025309AF9EAF67D /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		A8372AADDC80570EC6777DEF /* DatabasePointerCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabasePointerCursor.swift; sourceTree = "<group>"; };
 		AE400CA9718CD5697976941B /* BlockTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockTextView.swift; sourceTree = "<group>"; };
+		AEE87332A7E8CD3926DC8C6F /* AggregationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregationEngine.swift; sourceTree = "<group>"; };
 		AF7A98A5ECBDDCDEA159DDBE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AF7FE7EFE7F26CAA875F2754 /* DatabaseInlineEmbedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseInlineEmbedView.swift; sourceTree = "<group>"; };
 		B116D36FE355D650ADC6B0F6 /* DatabaseRowFullPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseRowFullPageView.swift; sourceTree = "<group>"; };
@@ -848,6 +851,7 @@
 				7599744149050661CCF8FB27 /* DatabaseDateValue.swift in Sources */,
 				D5A7B7D7582EC21C39092E60 /* DatabaseStore.swift in Sources */,
 				9E7E6AC9222DBAAC08FAD6BF /* IndexManager.swift in Sources */,
+				00C55FADCEE4FCE133BAF026 /* AggregationEngine.swift in Sources */,
 				316D6517CC93BFFDDAC5F7A6 /* MutationEngine.swift in Sources */,
 				240EB5675B13CEE875BD0E72 /* Query.swift in Sources */,
 				99B81B2510FEA9BB0B092324 /* QueryEngine.swift in Sources */,

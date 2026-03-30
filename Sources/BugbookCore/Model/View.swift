@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - View Type
-
 public enum ViewType: String, Codable, CaseIterable, Sendable {
     case table
     case kanban
@@ -18,8 +16,6 @@ public enum ViewType: String, Codable, CaseIterable, Sendable {
     }
 }
 
-// MARK: - Sort Config (persisted in schema)
-
 public struct SortConfig: Codable, Identifiable, Sendable {
     public let id: String
     public var property: String
@@ -34,8 +30,6 @@ public struct SortConfig: Codable, Identifiable, Sendable {
     }
 }
 
-// MARK: - Filter Config (persisted in schema)
-
 public struct FilterConfig: Codable, Identifiable, Sendable {
     public let id: String
     public var property: String
@@ -49,8 +43,6 @@ public struct FilterConfig: Codable, Identifiable, Sendable {
         self.value = value
     }
 }
-
-// MARK: - View Config
 
 public struct ViewConfig: Identifiable, Codable, Sendable {
     public let id: String

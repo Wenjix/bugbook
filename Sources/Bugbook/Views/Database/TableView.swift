@@ -600,45 +600,6 @@ struct TableView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Calculation Footer
-
-    private var calculationsFooter: some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: scaledRowControlsInset, height: 1)
-
-            // Title column footer cell
-            if let titleProp = schema.titleProperty {
-                CalculationFooterCell(
-                    propertyId: titleProp.id,
-                    propertyType: titleProp.type,
-                    currentFunction: viewConfig.calculations?[titleProp.id],
-                    result: calculationResults[titleProp.id],
-                    onSetCalculation: onSetCalculation
-                )
-                .frame(width: titleColumnWidth, height: compactHeaderHeight)
-            } else {
-                Color.clear.frame(width: titleColumnWidth, height: compactHeaderHeight)
-            }
-
-            ForEach(visibleProperties) { prop in
-                CalculationFooterCell(
-                    propertyId: prop.id,
-                    propertyType: prop.type,
-                    currentFunction: viewConfig.calculations?[prop.id],
-                    result: calculationResults[prop.id],
-                    onSetCalculation: onSetCalculation
-                )
-                .frame(width: columnWidth(for: prop), height: compactHeaderHeight)
-            }
-        }
-        .padding(.horizontal, DatabaseZoomMetrics.size(4))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: compactHeaderHeight)
-        .background(Color.secondary.opacity(0.04))
-        .overlay(alignment: .top) { Divider() }
-        .overlay { columnDividers().allowsHitTesting(false) }
-    }
-
     // MARK: - Helpers
 
     private func columnWidth(for prop: PropertyDefinition) -> CGFloat {
@@ -716,6 +677,11 @@ struct TableView: View {
                 }
             } else {
                 ungroupedRows
+            }
+
+            if !rows.isEmpty {
+                calculationsFooter
+                tableDivider.opacity(0.5)
             }
 
             if rows.isEmpty {

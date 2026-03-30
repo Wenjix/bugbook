@@ -246,3 +246,208 @@ func uniqueDatePropertyName(in schema: DatabaseSchema) -> String {
     }
     return "Date \(suffix)"
 }
+
+// MARK: - Aggregation Engine
+
+enum AggregationFunction: String, CaseIterable {
+    case count
+    case countValues = "count_values"
+    case countUnique = "count_unique"
+    case sum
+    case avg
+    case min
+    case max
+    case percentChecked = "percent_checked"
+    case percentUnchecked = "percent_unchecked"
+
+    var displayName: String {
+        switch self {
+        case .count: return "Count"
+        case .countValues: return "Count values"
+        case .countUnique: return "Count unique"
+        case .sum: return "Sum"
+        case .avg: return "Average"
+        case .min: return "Min"
+        case .max: return "Max"
+        case .percentChecked: return "Percent checked"
+        case .percentUnchecked: return "Percent unchecked"
+        }
+    }
+
+    static func available(for type: PropertyType) -> [AggregationFunction] {
+        var funcs: [AggregationFunction] = [.count, .countValues]
+        if type != .checkbox {
+            funcs.append(.countUnique)
+        }
+        if type == .number {
+            funcs.append(contentsOf: [.sum, .avg, .min, .max])
+        }
+        if type == .date {
+            funcs.append(contentsOf: [.min, .max])
+        }
+        if type == .checkbox {
+            funcs.append(contentsOf: [.percentChecked, .percentUnchecked])
+        }
+        return funcs
+    }
+}
+
+enum AggregationEngine {
+    static func compute(
+        function: AggregationFunction,
+        propertyId: String,
+        propertyType: PropertyType,
+        rows: [DatabaseRow],
+        config: PropertyConfig?
+    ) -> String {
+        let values = rows.map { $0.properties[propertyId] ?? .empty }
+
+        switch function {
+        case .count:
+            return "\(rows.count)"
+
+        case .countValues:
+            let nonEmpty = values.filter { !isEmptyValue($0) }
+            return "\(nonEmpty.count)"
+
+        case .countUnique:
+            let strings = values.compactMap { isEmptyValue($0) ? nil : stringFromValue($0) }
+            return "\(Set(strings).count)"
+
+        case .sum:
+            let total = values.reduce(0.0) { acc, val in
+                if case .number(let n) = val { return acc + n }
+                return acc
+            }
+            return formatNumber(total, config: config)
+
+        case .avg:
+            let numbers = values.compactMap { val -> Double? in
+                if case .number(let n) = val { return n }
+                return nil
+            }
+            guard !numbers.isEmpty else { return "0" }
+            let avg = numbers.reduce(0.0, +) / Double(numbers.count)
+            return formatNumber(avg, config: config)
+
+        case .min:
+            if propertyType == .number {
+                let numbers = values.compactMap { val -> Double? in
+                    if case .number(let n) = val { return n }
+                    return nil
+                }
+                guard let m = numbers.min() else { return "" }
+                return formatNumber(m, config: config)
+            } else if propertyType == .date {
+                let dates = values.compactMap { val -> String? in
+                    if case .date(let raw) = val {
+                        return DatabaseDateValue.decode(from: raw)?.sortKey ?? raw
+                    }
+                    return nil
+                }.filter { !$0.isEmpty }
+                guard let m = dates.min() else { return "" }
+                return formatDateSortKey(m)
+            }
+            return ""
+
+        case .max:
+            if propertyType == .number {
+                let numbers = values.compactMap { val -> Double? in
+                    if case .number(let n) = val { return n }
+                    return nil
+                }
+                guard let m = numbers.max() else { return "" }
+                return formatNumber(m, config: config)
+            } else if propertyType == .date {
+                let dates = values.compactMap { val -> String? in
+                    if case .date(let raw) = val {
+                        return DatabaseDateValue.decode(from: raw)?.sortKey ?? raw
+                    }
+                    return nil
+                }.filter { !$0.isEmpty }
+                guard let m = dates.max() else { return "" }
+                return formatDateSortKey(m)
+            }
+            return ""
+
+        case .percentChecked:
+            guard !rows.isEmpty else { return "0%" }
+            let checked = values.filter { if case .checkbox(true) = $0 { return true }; return false }.count
+            let pct = Int(round(Double(checked) / Double(rows.count) * 100))
+            return "\(pct)%"
+
+        case .percentUnchecked:
+            guard !rows.isEmpty else { return "0%" }
+            let unchecked = values.filter { val in
+                switch val {
+                case .checkbox(false): return true
+                case .checkbox(true): return false
+                default: return true // empty counts as unchecked
+                }
+            }.count
+            let pct = Int(round(Double(unchecked) / Double(rows.count) * 100))
+            return "\(pct)%"
+        }
+    }
+
+    static func computeAll(
+        calculations: [String: String],
+        properties: [PropertyDefinition],
+        rows: [DatabaseRow]
+    ) -> [String: String] {
+        var results: [String: String] = [:]
+        for (propId, funcName) in calculations {
+            guard let fn = AggregationFunction(rawValue: funcName) else { continue }
+            let prop = properties.first(where: { $0.id == propId })
+            let type = prop?.type ?? .text
+            results[propId] = compute(
+                function: fn,
+                propertyId: propId,
+                propertyType: type,
+                rows: rows,
+                config: prop?.config
+            )
+        }
+        return results
+    }
+
+    private static func isEmptyValue(_ value: PropertyValue) -> Bool {
+        switch value {
+        case .empty: return true
+        case .text(let s): return s.isEmpty
+        case .select(let s): return s.isEmpty
+        case .multiSelect(let arr): return arr.isEmpty
+        case .date(let s): return s.isEmpty
+        case .url(let s): return s.isEmpty
+        case .email(let s): return s.isEmpty
+        case .relation(let s): return s.isEmpty
+        case .relationMany(let arr): return arr.isEmpty
+        case .number, .checkbox: return false
+        }
+    }
+
+    private static func formatNumber(_ n: Double, config: PropertyConfig?) -> String {
+        let format = config?.format ?? "number"
+        switch format {
+        case "percent":
+            return "\(formatPlainNumber(n))%"
+        case "currency":
+            return "$\(formatPlainNumber(n))"
+        default:
+            return formatPlainNumber(n)
+        }
+    }
+
+    private static func formatPlainNumber(_ n: Double) -> String {
+        if n == n.rounded() && abs(n) < 1e15 {
+            return String(Int(n))
+        }
+        // Two decimal places for non-integer
+        return String(format: "%.2f", n)
+    }
+
+    private static func formatDateSortKey(_ sortKey: String) -> String {
+        // sortKey is ISO-style "YYYY-MM-DD"; present as-is for readability
+        sortKey
+    }
+}
