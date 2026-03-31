@@ -252,7 +252,7 @@ struct SidebarView: View {
                         Image(systemName: "waveform")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
-                        Text("Meetings")
+                        Text("AI Meeting Notes")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Spacer()
