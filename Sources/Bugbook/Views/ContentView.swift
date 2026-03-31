@@ -1084,12 +1084,22 @@ struct ContentView: View {
                             icon: Binding(
                                 get: { document.icon },
                                 set: {
-                                    document.icon = $0
+                                    let newIcon = $0
+                                    document.icon = newIcon
                                     markActiveEditorTabDirty()
+                                    // Update via pane system
+                                    if let ws = workspaceManager.activeWorkspace,
+                                       let leaf = ws.focusedLeaf,
+                                       case .document(let openFile) = leaf.content {
+                                        workspaceManager.updatePaneOpenFile(paneId: leaf.id) { file in
+                                            file.icon = newIcon
+                                        }
+                                        appState.updateFileTreeIcon(for: openFile.path, icon: newIcon)
+                                    }
+                                    // Legacy tab path (fallback)
                                     if appState.activeTabIndex < appState.openTabs.count {
-                                        let tab = appState.openTabs[appState.activeTabIndex]
-                                        appState.openTabs[appState.activeTabIndex].icon = $0
-                                        appState.updateFileTreeIcon(for: tab.path, icon: $0)
+                                        appState.openTabs[appState.activeTabIndex].icon = newIcon
+                                        appState.updateFileTreeIcon(for: appState.openTabs[appState.activeTabIndex].path, icon: newIcon)
                                     }
                                     scheduleSave()
                                 }
