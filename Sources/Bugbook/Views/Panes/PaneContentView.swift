@@ -25,8 +25,8 @@ struct PaneContentView: View {
                 showBorder: showFocusBorder
             )
 
-            if isHovered && showFocusBorder {
-                PaneActionBar(leaf: leaf, workspaceManager: workspaceManager)
+            if isHovered {
+                PaneActionBar(leaf: leaf, workspaceManager: workspaceManager, isOnlyPane: !showFocusBorder)
                     .padding(6)
                     .transition(.opacity)
             }
@@ -86,38 +86,20 @@ struct PaneContentView: View {
 
 // MARK: - Pane Action Bar
 
-/// Hover-reveal action buttons: grip, pop-out, split-right, split-down, close.
+/// Hover-reveal action buttons: split-right, split-down, pop-out, close.
 /// Split buttons show a type picker via floatingPopover.
+/// When `isOnlyPane` is true, hides close and pop-out (only splits are useful).
 private struct PaneActionBar: View {
     let leaf: PaneNode.Leaf
     let workspaceManager: WorkspaceManager
+    var isOnlyPane: Bool = false
 
     @State private var splitRightPicker = false
     @State private var splitDownPicker = false
+    @State private var mergePicker = false
 
     var body: some View {
         HStack(spacing: 0) {
-            // Grip handle (visual only for now — drag-to-reposition is a future feature)
-            actionButton(help: "Move pane") {
-                // Drag-to-reposition will be implemented here
-            } label: {
-                VStack(spacing: 1.5) {
-                    HStack(spacing: 2) { dot; dot }
-                    HStack(spacing: 2) { dot; dot }
-                    HStack(spacing: 2) { dot; dot }
-                }
-            }
-            .cursor(.openHand)
-
-            divider
-
-            // Pop out to own tab
-            actionButton(icon: "arrow.up.right.square", help: "Pop out to tab") {
-                workspaceManager.popOutPane(id: leaf.id)
-            }
-
-            divider
-
             // Split right — click shows type picker
             actionButton(help: "Split right") {
                 splitRightPicker = true
@@ -148,11 +130,36 @@ private struct PaneActionBar: View {
                 .popoverSurface()
             }
 
-            divider
+            if !isOnlyPane {
+                divider
 
-            // Close
-            actionButton(icon: "xmark", help: "Close pane", isDestructive: true) {
-                workspaceManager.closePane(id: leaf.id)
+                // Pop out to own tab
+                actionButton(icon: "arrow.up.right.square", help: "Pop out to tab") {
+                    workspaceManager.popOutPane(id: leaf.id)
+                }
+
+                // Close
+                actionButton(icon: "xmark", help: "Close pane", isDestructive: true) {
+                    workspaceManager.closePane(id: leaf.id)
+                }
+            }
+
+            // Merge another tab into this pane (show when other tabs exist)
+            if otherTabs.count > 0 {
+                divider
+
+                actionButton(icon: "arrow.down.left.square", help: "Pull tab in here") {
+                    mergePicker = true
+                }
+                .floatingPopover(isPresented: $mergePicker) {
+                    MergeTabPopover(
+                        workspaceManager: workspaceManager,
+                        targetPaneId: leaf.id,
+                        otherTabs: otherTabs,
+                        dismiss: { mergePicker = false }
+                    )
+                    .popoverSurface()
+                }
             }
         }
         .padding(.horizontal, 2)
@@ -170,10 +177,11 @@ private struct PaneActionBar: View {
 
     // MARK: - Helpers
 
-    private var dot: some View {
-        Circle()
-            .fill(Color.secondary.opacity(0.4))
-            .frame(width: 2.5, height: 2.5)
+    /// Other tabs that could be merged into this pane's layout.
+    private var otherTabs: [(index: Int, workspace: Workspace)] {
+        workspaceManager.workspaces.enumerated().compactMap { index, ws in
+            index == workspaceManager.activeWorkspaceIndex ? nil : (index, ws)
+        }
     }
 
     private var divider: some View {
@@ -264,6 +272,74 @@ private struct TypePickerPopover: View {
     }
 }
 
+// MARK: - Merge Tab Popover
+
+/// Lists other open tabs that can be pulled into the current pane's layout as a split.
+private struct MergeTabPopover: View {
+    let workspaceManager: WorkspaceManager
+    let targetPaneId: UUID
+    let otherTabs: [(index: Int, workspace: Workspace)]
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Pull into split")
+                .font(.system(size: Typography.caption2, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+            ForEach(otherTabs, id: \.workspace.id) { index, ws in
+                Button {
+                    workspaceManager.mergeTab(at: index, intoPane: targetPaneId, axis: .horizontal)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: tabIcon(for: ws))
+                            .font(.system(size: 11))
+                            .frame(width: 14)
+                            .foregroundStyle(.secondary)
+                        Text(tabLabel(for: ws))
+                            .font(.system(size: 12))
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 6)
+        .frame(width: 160)
+    }
+
+    private func tabLabel(for ws: Workspace) -> String {
+        guard let leaf = ws.root.firstLeaf else { return ws.name }
+        switch leaf.content {
+        case .document(let file):
+            if let name = file.displayName, !name.isEmpty { return name }
+            if file.isEmptyTab { return "New Tab" }
+            return (file.path as NSString).lastPathComponent
+        case .terminal: return "Terminal"
+        }
+    }
+
+    private func tabIcon(for ws: Workspace) -> String {
+        guard let leaf = ws.root.firstLeaf else { return "doc" }
+        switch leaf.content {
+        case .document(let file):
+            if file.isCalendar { return "calendar" }
+            if file.isMeetings { return "person.2" }
+            if file.isGraphView { return "point.3.connected.trianglepath.dotted" }
+            return "doc.text"
+        case .terminal: return "terminal"
+        }
+    }
+}
+
 // MARK: - Button Style
 
 private struct PaneActionButtonStyle: ButtonStyle {
@@ -282,16 +358,6 @@ private struct PaneActionButtonStyle: ButtonStyle {
             return isDestructive ? Color.red.opacity(0.12) : Color.primary.opacity(0.08)
         }
         return .clear
-    }
-}
-
-// MARK: - Cursor modifier
-
-private extension View {
-    func cursor(_ cursor: NSCursor) -> some View {
-        onHover { hovering in
-            if hovering { cursor.push() } else { NSCursor.pop() }
-        }
     }
 }
 
