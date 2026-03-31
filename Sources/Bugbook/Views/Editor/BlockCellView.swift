@@ -103,7 +103,7 @@ struct BlockCellView: View {
 
     private var blockInteractionCursor: NSCursor {
         switch block.type {
-        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .codeBlock, .toggle, .callout:
+        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .codeBlock, .toggle, .headingToggle, .callout:
             return .iBeam
         default:
             return .arrow
