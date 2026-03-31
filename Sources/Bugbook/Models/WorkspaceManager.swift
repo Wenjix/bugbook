@@ -38,8 +38,34 @@ class WorkspaceManager {
     // MARK: - Workspace Lifecycle
 
     func addWorkspace(name: String? = nil) {
-        let index = workspaces.count + 1
-        let ws = Workspace.makeDefault(name: name ?? "Workspace \(index)")
+        let ws = Workspace.makeDefault(name: name ?? "New Tab")
+        workspaces.append(ws)
+        activeWorkspaceIndex = workspaces.count - 1
+        schedulePersist()
+    }
+
+    func addWorkspaceWith(content: PaneContent) {
+        let paneId = UUID()
+        // For document content, ensure the OpenFile id matches the leaf id
+        let adjustedContent: PaneContent
+        if case .document(var file) = content {
+            file = OpenFile(
+                id: paneId, path: file.path, content: file.content,
+                isDirty: file.isDirty, isEmptyTab: file.isEmptyTab,
+                kind: file.kind, displayName: file.displayName, icon: file.icon
+            )
+            adjustedContent = .document(openFile: file)
+        } else {
+            adjustedContent = content
+        }
+        let ws = Workspace(
+            id: UUID(),
+            name: "New Tab",
+            icon: nil,
+            root: .leaf(.init(id: paneId, content: adjustedContent)),
+            focusedPaneId: paneId,
+            createdAt: Date()
+        )
         workspaces.append(ws)
         activeWorkspaceIndex = workspaces.count - 1
         schedulePersist()
