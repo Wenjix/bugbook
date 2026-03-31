@@ -182,6 +182,31 @@ class WorkspaceManager {
         schedulePersist()
     }
 
+    /// Merge another tab's content into the current layout as a split next to `targetPaneId`.
+    func mergeTab(at tabIndex: Int, intoPane targetPaneId: UUID, axis: PaneNode.Split.Axis) {
+        guard tabIndex >= 0, tabIndex < workspaces.count else { return }
+        guard tabIndex != activeWorkspaceIndex else { return }
+
+        // Grab the other tab's root node
+        let otherWs = workspaces[tabIndex]
+        let mergedNode = otherWs.root
+
+        // Remove the other tab
+        workspaces.remove(at: tabIndex)
+        // Adjust active index if needed
+        if activeWorkspaceIndex > tabIndex {
+            activeWorkspaceIndex -= 1
+        } else if activeWorkspaceIndex >= workspaces.count {
+            activeWorkspaceIndex = workspaces.count - 1
+        }
+
+        // Insert the merged content as a split next to the target pane
+        guard var ws = activeWorkspace else { return }
+        ws.root = ws.root.insertingSplit(replacing: targetPaneId, axis: axis, newSibling: mergedNode)
+        activeWorkspace = ws
+        schedulePersist()
+    }
+
     /// Close a pane by its ID.
     func closePane(id: UUID) {
         guard var ws = activeWorkspace else { return }
