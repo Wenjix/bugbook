@@ -829,8 +829,8 @@ struct ContentView: View {
                     documentContentBuilder: { leaf, file in
                         AnyView(self.paneDocumentContent(leaf: leaf, file: file))
                     },
-                    terminalContentBuilder: { leaf, isFocused in
-                        AnyView(self.paneTerminalContent(leaf: leaf, isFocused: isFocused))
+                    terminalContentBuilder: { leaf, _ in
+                        AnyView(self.paneTerminalContent(leaf: leaf))
                     }
                 )
             }
@@ -969,9 +969,9 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func paneTerminalContent(leaf: PaneNode.Leaf, isFocused: Bool) -> some View {
+    private func paneTerminalContent(leaf: PaneNode.Leaf) -> some View {
         if let session = terminalManager.session(for: leaf.id) {
-            TerminalPaneView(session: session, isFocused: isFocused)
+            TerminalPaneView(session: session, paneId: leaf.id, workspaceManager: workspaceManager)
         } else {
             Color.fallbackEditorBg
                 .onAppear {

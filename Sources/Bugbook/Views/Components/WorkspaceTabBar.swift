@@ -53,20 +53,32 @@ struct WorkspaceTabBar: View {
                             .padding(.vertical, ShellZoomMetrics.size(4))
                     }
 
-                    Button("New Workspace", systemImage: "plus", action: { workspaceManager.addWorkspace() })
-                        .labelStyle(.iconOnly)
-                        .font(ShellZoomMetrics.font(Typography.bodySmall))
-                        .foregroundStyle(.secondary)
-                        .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
-                        .buttonStyle(.plain)
-                        .padding(.leading, ShellZoomMetrics.size(8))
-                        .padding(.bottom, ShellZoomMetrics.size(2))
-                        .onDrop(of: [.text], delegate: WorkspaceTabDropDelegate(
-                            targetIndex: workspaceManager.workspaces.count,
-                            workspaceManager: workspaceManager,
-                            dragOverIndex: $dragOverIndex,
-                            draggingId: $draggingWorkspaceId
-                        ))
+                    Menu {
+                        Button("New Workspace") { workspaceManager.addWorkspace() }
+                        Divider()
+                        Menu("Split Right") {
+                            splitContentOptions(axis: .horizontal)
+                        }
+                        Menu("Split Down") {
+                            splitContentOptions(axis: .vertical)
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(ShellZoomMetrics.font(Typography.bodySmall))
+                            .foregroundStyle(.secondary)
+                            .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
+                    .padding(.leading, ShellZoomMetrics.size(8))
+                    .padding(.bottom, ShellZoomMetrics.size(2))
+                    .onDrop(of: [.text], delegate: WorkspaceTabDropDelegate(
+                        targetIndex: workspaceManager.workspaces.count,
+                        workspaceManager: workspaceManager,
+                        dragOverIndex: $dragOverIndex,
+                        draggingId: $draggingWorkspaceId
+                    ))
                 }
                 .padding(.leading, ShellZoomMetrics.size(2))
             }
@@ -84,6 +96,22 @@ struct WorkspaceTabBar: View {
                     .frame(height: 1)
             }
         )
+    }
+
+    @ViewBuilder
+    private func splitContentOptions(axis: PaneNode.Split.Axis) -> some View {
+        Button("Terminal") {
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .terminal)
+        }
+        Button("Empty Page") {
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .emptyDocument())
+        }
+        Button("Calendar") {
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .calendarDocument())
+        }
+        Button("Meetings") {
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .meetingsDocument())
+        }
     }
 }
 

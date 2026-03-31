@@ -3,38 +3,31 @@ import SwiftUI
 /// Recursively renders a PaneNode tree as a tiling layout.
 /// Splits become nested HStack/VStack with draggable dividers.
 /// Leaves render PaneContentView.
+///
+/// IMPORTANT: This view must NOT read focus state (focusedPaneId) from
+/// workspaceManager. Focus observation is handled by PaneContentView's
+/// internal overlay to avoid re-rendering the entire tree on focus change.
 struct PaneTreeView: View {
     let node: PaneNode
     let workspaceManager: WorkspaceManager
     let hasMultiplePanes: Bool
 
-    /// Called when a pane leaf needs to render its document content.
     let documentContentBuilder: (PaneNode.Leaf, OpenFile) -> AnyView
-
-    /// Called when a pane leaf needs to render its terminal content.
     let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
 
     var body: some View {
         switch node {
         case .leaf(let leaf):
-            leafView(leaf)
+            PaneContentView(
+                leaf: leaf,
+                workspaceManager: workspaceManager,
+                showFocusBorder: hasMultiplePanes,
+                documentContentBuilder: documentContentBuilder,
+                terminalContentBuilder: terminalContentBuilder
+            )
         case .split(let split):
             splitView(split)
         }
-    }
-
-    @ViewBuilder
-    private func leafView(_ leaf: PaneNode.Leaf) -> some View {
-        let isFocused = leaf.id == workspaceManager.activeWorkspace?.focusedPaneId
-
-        PaneContentView(
-            leaf: leaf,
-            isFocused: isFocused,
-            showFocusBorder: hasMultiplePanes,
-            documentContentBuilder: documentContentBuilder,
-            terminalContentBuilder: terminalContentBuilder,
-            onFocus: { workspaceManager.setFocusedPane(id: leaf.id) }
-        )
     }
 
     @ViewBuilder
@@ -94,6 +87,6 @@ struct PaneTreeView: View {
     }
 
     private func firstSize(total: CGFloat, ratio: Double) -> CGFloat {
-        max(total * CGFloat(ratio) - 4, 0) // 4 = half the divider hit area
+        max(total * CGFloat(ratio) - 4, 0)
     }
 }

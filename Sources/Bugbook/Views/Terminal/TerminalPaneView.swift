@@ -5,7 +5,12 @@ import AppKit
 /// SwiftUI view for a terminal pane. Wraps a SwiftTerm LocalProcessTerminalView via NSViewRepresentable.
 struct TerminalPaneView: View {
     let session: TerminalSession
-    let isFocused: Bool
+    let paneId: UUID
+    let workspaceManager: WorkspaceManager
+
+    private var isFocused: Bool {
+        workspaceManager.activeWorkspace?.focusedPaneId == paneId
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,7 +53,6 @@ private struct SwiftTermView: NSViewRepresentable {
     let isFocused: Bool
 
     func makeNSView(context: Context) -> NSView {
-        // Return the SwiftTerm view directly, or an empty view if session not started
         guard let termView = session.terminalView else {
             return NSView()
         }
@@ -58,7 +62,6 @@ private struct SwiftTermView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         if isFocused {
-            // Make the terminal first responder so it receives keyboard input
             DispatchQueue.main.async {
                 if let window = nsView.window, window.firstResponder !== nsView {
                     window.makeFirstResponder(nsView)
