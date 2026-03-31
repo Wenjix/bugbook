@@ -7,6 +7,7 @@ enum TabKind: Equatable, Hashable, Codable {
     case meetings
     case graphView
     case skill
+    case gateway
     case databaseRow(dbPath: String, rowId: String)
 
     var isDatabase: Bool { self == .database }
@@ -14,6 +15,7 @@ enum TabKind: Equatable, Hashable, Codable {
     var isMeetings: Bool { self == .meetings }
     var isGraphView: Bool { self == .graphView }
     var isSkill: Bool { self == .skill }
+    var isGateway: Bool { self == .gateway }
     var isDatabaseRow: Bool { if case .databaseRow = self { return true }; return false }
     var databasePath: String? { if case .databaseRow(let p, _) = self { return p }; return nil }
     var databaseRowId: String? { if case .databaseRow(_, let r) = self { return r }; return nil }

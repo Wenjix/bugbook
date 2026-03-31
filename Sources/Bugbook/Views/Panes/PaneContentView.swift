@@ -71,6 +71,7 @@ struct PaneContentView: View {
         Button("Calendar") { action(.calendarDocument()) }
         Button("Meetings") { action(.meetingsDocument()) }
         Button("Graph View") { action(.graphDocument()) }
+        Button("Gateway") { action(.gatewayDocument()) }
     }
 
     @ViewBuilder

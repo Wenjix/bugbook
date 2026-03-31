@@ -34,6 +34,15 @@ enum PaneContent: Codable, Equatable {
         ))
     }
 
+    /// A gateway dashboard pane.
+    static func gatewayDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://gateway", content: "", isDirty: false, isEmptyTab: false,
+            kind: .gateway, displayName: "Gateway", icon: "square.grid.2x2"
+        ))
+    }
+
     /// A meetings pane.
     static func meetingsDocument() -> PaneContent {
         let id = UUID()

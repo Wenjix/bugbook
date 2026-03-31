@@ -1,0 +1,7 @@
+[
+  {"position": 1, "row_id": "row_ek1o0u", "name": "Configurable AI model for meeting summaries", "files": ["AiService.swift", "AISettingsView.swift"], "eval_type": "interaction", "risk": "low"},
+  {"position": 2, "row_id": "row_0dib4n", "name": "Add FilterGroup recursive data model", "files": ["View.swift", "DatabaseViewHelpers.swift", "DatabaseViewState.swift"], "eval_type": "cli-only", "risk": "high"},
+  {"position": 3, "row_id": "row_dimm5g", "name": "Mention picker: trigger @ and show page list", "files": ["BlockTextView.swift", "BlockDocument.swift"], "eval_type": "interaction", "risk": "medium"},
+  {"position": 4, "row_id": "row_xsiof2", "name": "Build native Gateway interface", "files": ["explore"], "eval_type": "visual", "risk": "high"},
+  {"position": 5, "row_id": "row_zwx9a6", "name": "Restructure Gateway 8.0", "files": ["explore"], "eval_type": "data", "risk": "medium"}
+]
