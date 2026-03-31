@@ -70,7 +70,8 @@ struct Block: Identifiable, Equatable {
     var hasHeaderRow: Bool = false
 
     // Callout block properties
-    var calloutType: String = "info"
+    var calloutIcon: String = "lightbulb"
+    var calloutColor: String = "default"
 
     init(
         id: UUID = UUID(),
@@ -98,7 +99,8 @@ struct Block: Identifiable, Equatable {
         meetingNotes: String = "",
         tableData: [[String]] = [],
         hasHeaderRow: Bool = false,
-        calloutType: String = "info"
+        calloutIcon: String = "lightbulb",
+        calloutColor: String = "default"
     ) {
         self.id = id
         self.type = type
@@ -125,6 +127,7 @@ struct Block: Identifiable, Equatable {
         self.meetingNotes = meetingNotes
         self.tableData = tableData
         self.hasHeaderRow = hasHeaderRow
-        self.calloutType = calloutType
+        self.calloutIcon = calloutIcon
+        self.calloutColor = calloutColor
     }
 }
