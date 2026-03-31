@@ -56,10 +56,16 @@ final class DatabaseViewState {
         guard let view = activeView else { return rows }
         var result = applyManualRowOrder(view.manualRowOrder, to: rows)
 
-        for filter in view.filters {
+        if let group = view.filterGroup, let s = schema {
             result = result.filter { row in
-                let val = row.properties[filter.property] ?? .empty
-                return matchesFilter(val, filter: filter)
+                matchesFilterGroup(row, group: group, schema: s)
+            }
+        } else {
+            for filter in view.filters {
+                result = result.filter { row in
+                    let val = row.properties[filter.property] ?? .empty
+                    return matchesFilter(val, filter: filter)
+                }
             }
         }
 
