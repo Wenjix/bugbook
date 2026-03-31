@@ -154,6 +154,13 @@ struct ContentView: View {
                 }
             }
             .onChange(of: appState.isRecording) { _, recording in
+                if recording, let blockId = appState.recordingBlockId {
+                    // Find the document that owns this recording block
+                    let doc = blockDocuments.values.first { $0.blocks.contains(where: { $0.id == blockId }) }
+                    recordingPillController.onStop = { [weak doc] in
+                        doc?.onStopMeeting?(blockId)
+                    }
+                }
                 recordingPillController.isRecording = recording
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
@@ -1286,9 +1293,11 @@ struct ContentView: View {
         }
         let ts = transcriptionService
         doc.transcriptionService = ts
-        doc.onStartMeeting = { [weak doc] blockId in
+        doc.onStartMeeting = { [weak appState, weak doc] blockId in
             Task {
                 await ts.startRecording()
+                appState?.isRecording = true
+                appState?.recordingBlockId = blockId
                 // Poll confirmed segments and audio level after recording starts
                 var lastSegmentCount = 0
                 var lastVolatile = ""
@@ -1324,8 +1333,10 @@ struct ContentView: View {
                 doc?.meetingVolatileText = ""
             }
         }
-        doc.onStopMeeting = { [weak doc] blockId in
+        doc.onStopMeeting = { [weak appState, weak doc] blockId in
             _ = ts.stopRecording()
+            appState?.isRecording = false
+            appState?.recordingBlockId = nil
             guard let doc else { return }
             let transcript = ts.currentTranscript
             doc.updateBlockProperty(id: blockId) { block in
