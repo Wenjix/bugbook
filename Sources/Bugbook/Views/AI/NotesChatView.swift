@@ -36,6 +36,13 @@ struct NotesChatView: View {
             selectedEngine = appState.settings.preferredAIEngine
             inputFocused = true
             ensureActiveThread()
+            if let prompt = appState.aiInitialPrompt, !prompt.isEmpty {
+                inputText = prompt
+                appState.aiInitialPrompt = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    sendMessage()
+                }
+            }
         }
     }
 
