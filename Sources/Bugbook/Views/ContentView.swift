@@ -515,24 +515,24 @@ struct ContentView: View {
                         appState: appState,
                         isPresented: $appState.commandPaletteOpen,
                         onSelectFile: { entry in
-                            navigateToEntry(entry)
+                            navigateToEntryInPane(entry)
                         },
                         onSelectFileNewTab: { entry in
-                            navigateToEntry(entry, inNewTab: true)
+                            openEntryInNewWorkspaceTab(entry)
                         },
                         onCreateFile: { name in
                             createNewFileWithName(name)
                         },
                         onSelectContentMatch: { entry, query in
                             if appState.commandPaletteMode == .newTab {
-                                navigateToEntry(entry, inNewTab: true)
+                                openEntryInNewWorkspaceTab(entry)
                             } else {
-                                navigateToEntry(entry)
+                                navigateToEntryInPane(entry)
                             }
-                            // Jump to the block containing the match
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                guard let tab = appState.activeTab,
-                                      let doc = blockDocuments[tab.id] else { return }
+                            // Jump to the block containing the match after content loads
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId,
+                                      let doc = blockDocuments[paneId] else { return }
                                 let lowerQuery = query.lowercased()
                                 if let block = doc.blocks.first(where: {
                                     $0.text.lowercased().contains(lowerQuery)
@@ -1614,6 +1614,20 @@ struct ContentView: View {
         workspaceManager.updatePaneContent(paneId: targetPaneId, content: .document(openFile: file))
         workspaceManager.setFocusedPane(id: targetPaneId)
         loadFileContentForPane(entry: entry, paneId: targetPaneId)
+    }
+
+    /// Open a file entry in a new workspace tab (used by Cmd+K new-tab mode).
+    private func openEntryInNewWorkspaceTab(_ entry: FileEntry) {
+        appState.currentView = .editor
+        appState.showSettings = false
+
+        let paneId = UUID()
+        let file = makeOpenFile(for: entry, id: paneId)
+        workspaceManager.addWorkspaceWith(content: .document(openFile: file))
+        // addWorkspaceWith reassigns the pane id; use the actual focused pane id
+        if let actualPaneId = workspaceManager.activeWorkspace?.focusedPaneId {
+            loadFileContentForPane(entry: entry, paneId: actualPaneId)
+        }
     }
 
     /// Load file content from disk into a pane's BlockDocument.
