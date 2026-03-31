@@ -150,6 +150,38 @@ class WorkspaceManager {
         return newLeafId
     }
 
+    /// Pop a pane out of its current split into a new tab.
+    /// If it's already the only pane, this is a no-op.
+    func popOutPane(id: UUID) {
+        guard var ws = activeWorkspace else { return }
+        guard let leaf = ws.root.findLeaf(id: id) else { return }
+        // Already the only pane — nothing to pop out
+        if case .leaf = ws.root { return }
+
+        // Remove from current workspace
+        let (newRoot, siblingId) = ws.root.removingLeaf(id: id)
+        if let newRoot {
+            ws.root = newRoot
+            if ws.focusedPaneId == id {
+                ws.focusedPaneId = siblingId ?? newRoot.firstLeaf?.id ?? ws.focusedPaneId
+            }
+            activeWorkspace = ws
+        }
+
+        // Create new workspace with the popped-out pane
+        let newWs = Workspace(
+            id: UUID(),
+            name: "New Tab",
+            icon: nil,
+            root: .leaf(.init(id: leaf.id, content: leaf.content)),
+            focusedPaneId: leaf.id,
+            createdAt: Date()
+        )
+        workspaces.append(newWs)
+        activeWorkspaceIndex = workspaces.count - 1
+        schedulePersist()
+    }
+
     /// Close a pane by its ID.
     func closePane(id: UUID) {
         guard var ws = activeWorkspace else { return }
