@@ -20,6 +20,13 @@ final class TerminalManager {
     func ensureInitialized() {
         guard ghosttyApp == nil else { return }
 
+        // ghostty_init must be called before any other API call
+        let initResult = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
+        guard initResult == GHOSTTY_SUCCESS else {
+            log.error("ghostty_init failed with code \(initResult)")
+            return
+        }
+
         // Create config
         guard let cfg = ghostty_config_new() else {
             log.error("ghostty_config_new failed")
