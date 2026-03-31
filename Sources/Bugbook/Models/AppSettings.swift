@@ -16,11 +16,13 @@ enum PreferredAIEngine: String, Codable, CaseIterable {
 enum AnthropicModel: String, Codable, CaseIterable {
     case haiku = "claude-haiku-4-5-20251001"
     case sonnet = "claude-sonnet-4-20250514"
+    case opus = "claude-opus-4-20250514"
 
     var displayName: String {
         switch self {
         case .haiku: return "Haiku (fast)"
         case .sonnet: return "Sonnet (quality)"
+        case .opus: return "Opus (best)"
         }
     }
 }

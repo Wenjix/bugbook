@@ -208,7 +208,7 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         let actionItems: String
     }
 
-    func summarizeTranscript(_ transcript: String, apiKey: String) async throws -> TranscriptSummary {
+    func summarizeTranscript(_ transcript: String, apiKey: String, model: AnthropicModel = .sonnet) async throws -> TranscriptSummary {
         guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
 
         let systemPrompt = """
@@ -227,7 +227,8 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
             apiKey: apiKey,
             systemPrompt: systemPrompt,
             userPrompt: "Summarize this meeting transcript:\n\n\(transcript)",
-            maxTokens: 2048
+            maxTokens: 2048,
+            model: model
         )
 
         // Split the AI response into summary and action items sections
