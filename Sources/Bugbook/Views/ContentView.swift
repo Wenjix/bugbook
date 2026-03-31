@@ -2923,7 +2923,7 @@ struct ContentView: View {
         }
 
         if let entry = findEntry(in: appState.fileTree) {
-            navigateToEntry(entry, preferExistingTab: false)
+            navigateToEntryInPane(entry)
         }
     }
 
@@ -2931,7 +2931,7 @@ struct ContentView: View {
         guard FileManager.default.fileExists(atPath: path) else { return }
 
         if let existing = fileSystem.findEntry(path: path, in: appState.fileTree) {
-            navigateToEntry(existing, preferExistingTab: false)
+            navigateToEntryInPane(existing)
             return
         }
 
@@ -2951,7 +2951,7 @@ struct ContentView: View {
             isDirectory: false,
             kind: .database
         )
-        navigateToEntry(entry, preferExistingTab: false)
+        navigateToEntryInPane(entry)
     }
 
 
@@ -3057,15 +3057,16 @@ struct ContentView: View {
     }
 
     private func navigateToFilePath(_ path: String) {
+        let entry: FileEntry
         if let existing = fileSystem.findEntry(path: path, in: appState.fileTree) {
-            navigateToEntry(existing, preferExistingTab: true)
-            return
+            entry = existing
+        } else {
+            let name = (path as NSString).lastPathComponent
+            let isDatabase = fileSystem.isDatabaseFolder(at: path)
+            let kind: TabKind = isDatabase ? .database : .page
+            entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
         }
-        let name = (path as NSString).lastPathComponent
-        let isDatabase = fileSystem.isDatabaseFolder(at: path)
-        let kind: TabKind = isDatabase ? .database : .page
-        let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
-        navigateToEntry(entry, preferExistingTab: true)
+        navigateToEntryInPane(entry)
     }
 
     @ViewBuilder
