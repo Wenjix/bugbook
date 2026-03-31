@@ -66,7 +66,15 @@ struct InlineRowPeekPanel: View {
             if let error = vm.error {
                 RowLoadErrorView(message: error) { vm.loadData(rowId: rowId) }
             } else if vm.schema != nil, vm.row != nil {
-                vm.rowPageView(onBack: { onClose() }, fullWidth: true, workspacePath: workspacePath)
+                vm.rowPageView(
+                    onBack: { onClose() },
+                    fullWidth: true,
+                    workspacePath: workspacePath,
+                    templates: vm.schema?.templates ?? [],
+                    onApplyTemplate: { template in applyTemplate(template) },
+                    onNewTemplate: { vm.createTemplate(name: "Untitled") },
+                    onSaveAsTemplate: { saveCurrentRowAsTemplate() }
+                )
             } else {
                 Spacer()
                 HStack {
@@ -97,6 +105,10 @@ struct InlineRowPeekPanel: View {
             kebabButton(icon: "doc.on.doc", label: "Copy file path") {
                 showKebabMenu = false
                 copyFilePath()
+            }
+            kebabButton(icon: "doc.badge.plus", label: "Save as template") {
+                showKebabMenu = false
+                saveCurrentRowAsTemplate()
             }
             kebabButton(icon: "trash", label: "Delete", isDestructive: true) {
                 showKebabMenu = false
@@ -139,5 +151,35 @@ struct InlineRowPeekPanel: View {
         guard let row = vm.row else { return }
         vm.deleteRow(row.id)
         onClose()
+    }
+
+    private func applyTemplate(_ template: DatabaseTemplate) {
+        guard var currentRow = vm.row, let schema = vm.schema else { return }
+        for (key, value) in template.defaultProperties {
+            currentRow.properties[key] = value
+        }
+        currentRow.body = template.body
+        vm.debouncedSave(currentRow, schema: schema)
+    }
+
+    private func saveCurrentRowAsTemplate() {
+        guard let row = vm.row, let schema = vm.schema else { return }
+        var defaults: [String: PropertyValue] = [:]
+        for prop in schema.properties where prop.type != .title {
+            if let val = row.properties[prop.id], val != .empty {
+                defaults[prop.id] = val
+            }
+        }
+        let titleText: String
+        if let titleProp = schema.titleProperty, let val = row.properties[titleProp.id], case .text(let t) = val {
+            titleText = t
+        } else {
+            titleText = "Untitled"
+        }
+        vm.createTemplate(
+            name: "\(titleText) template",
+            defaultProperties: defaults,
+            body: row.body
+        )
     }
 }
