@@ -1,30 +1,64 @@
 import SwiftUI
 
 /// Renders a single pane leaf's content with focus tracking and border.
+///
+/// Focus state is observed internally by a lightweight overlay — the document/terminal
+/// content is NOT re-rendered when focus changes. This prevents the editor NSTextView
+/// from being destroyed mid-click.
 struct PaneContentView: View {
     let leaf: PaneNode.Leaf
-    let isFocused: Bool
+    let workspaceManager: WorkspaceManager
     let showFocusBorder: Bool
 
-    /// Builds the document content view for a given leaf and its OpenFile.
     let documentContentBuilder: (PaneNode.Leaf, OpenFile) -> AnyView
-
-    /// Builds the terminal content view for a given leaf.
     let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
-
-    let onFocus: () -> Void
 
     var body: some View {
         ZStack {
+            // Content layer — does NOT depend on focus state
             contentForLeaf
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            #if os(macOS)
-            PaneFocusTracker(paneId: leaf.id) { _ in onFocus() }
-            #endif
+            // Focus tracking + indicator — observes focus independently
+            PaneFocusOverlay(
+                paneId: leaf.id,
+                workspaceManager: workspaceManager,
+                showBorder: showFocusBorder
+            )
         }
-        .modifier(PaneFocusIndicator(isFocused: isFocused, showBorder: showFocusBorder))
         .clipShape(Rectangle())
+        .contextMenu {
+            Menu("Split Right") {
+                paneSplitOptions(axis: .horizontal)
+            }
+            Menu("Split Down") {
+                paneSplitOptions(axis: .vertical)
+            }
+            Divider()
+            Button("Close Pane") {
+                workspaceManager.closePane(id: leaf.id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func paneSplitOptions(axis: PaneNode.Split.Axis) -> some View {
+        Button("Terminal") {
+            workspaceManager.setFocusedPane(id: leaf.id)
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .terminal)
+        }
+        Button("Empty Page") {
+            workspaceManager.setFocusedPane(id: leaf.id)
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .emptyDocument())
+        }
+        Button("Calendar") {
+            workspaceManager.setFocusedPane(id: leaf.id)
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .calendarDocument())
+        }
+        Button("Meetings") {
+            workspaceManager.setFocusedPane(id: leaf.id)
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .meetingsDocument())
+        }
     }
 
     @ViewBuilder
@@ -33,7 +67,40 @@ struct PaneContentView: View {
         case .document(let file):
             documentContentBuilder(leaf, file)
         case .terminal:
-            terminalContentBuilder(leaf, isFocused)
+            // Terminal needs focus state for first responder — observe it in TerminalPaneView directly
+            terminalContentBuilder(leaf, false)
+        }
+    }
+}
+
+// MARK: - Focus Overlay
+
+/// Lightweight view that observes focus state and renders the focus indicator.
+/// Isolated from document content so focus changes don't trigger content re-renders.
+private struct PaneFocusOverlay: View {
+    let paneId: UUID
+    let workspaceManager: WorkspaceManager
+    let showBorder: Bool
+
+    private var isFocused: Bool {
+        workspaceManager.activeWorkspace?.focusedPaneId == paneId
+    }
+
+    var body: some View {
+        ZStack {
+            // Click-to-focus tracker
+            #if os(macOS)
+            PaneFocusTracker(paneId: paneId) { id in
+                workspaceManager.setFocusedPane(id: id)
+            }
+            #endif
+
+            // Focus border
+            if isFocused && showBorder {
+                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
+                    .strokeBorder(Color.fallbackAccent.opacity(Opacity.medium), lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
         }
     }
 }

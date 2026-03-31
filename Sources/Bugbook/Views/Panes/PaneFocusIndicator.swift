@@ -3,23 +3,6 @@ import SwiftUI
 import AppKit
 #endif
 
-/// Subtle accent-color border overlay on the focused pane.
-/// Only shown when the workspace has 2+ panes (no border for single-pane workspaces).
-struct PaneFocusIndicator: ViewModifier {
-    let isFocused: Bool
-    let showBorder: Bool
-
-    func body(content: Content) -> some View {
-        content.overlay {
-            if isFocused && showBorder {
-                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.xs))
-                    .strokeBorder(Color.fallbackAccent.opacity(Opacity.medium), lineWidth: 2)
-                    .allowsHitTesting(false)
-            }
-        }
-    }
-}
-
 /// Transparent NSView underlay that tracks mouse-down to update pane focus
 /// without consuming the event. The NSTextView responder chain is unaffected.
 #if os(macOS)
@@ -56,7 +39,7 @@ struct PaneFocusTracker: NSViewRepresentable {
                     if self.bounds.contains(locationInView) {
                         self.onFocus?(self.paneId)
                     }
-                    return event // Always pass through
+                    return event
                 }
             } else if window == nil, let m = monitor {
                 NSEvent.removeMonitor(m)

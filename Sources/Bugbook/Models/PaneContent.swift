@@ -8,6 +8,32 @@ enum PaneContent: Codable, Equatable {
     /// A terminal pane (shell session). Ephemeral; only the type is persisted.
     case terminal
 
+    // MARK: - Factories
+
+    /// An empty document pane (new tab / welcome view).
+    static func emptyDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(id: id, path: "", content: "", isDirty: false, isEmptyTab: true))
+    }
+
+    /// A calendar pane.
+    static func calendarDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://calendar", content: "", isDirty: false, isEmptyTab: false,
+            kind: .calendar, displayName: "Calendar", icon: "calendar.badge.clock"
+        ))
+    }
+
+    /// A meetings pane.
+    static func meetingsDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://meetings", content: "", isDirty: false, isEmptyTab: false,
+            kind: .meetings, displayName: "Meetings", icon: "person.2"
+        ))
+    }
+
     private enum CodingKeys: String, CodingKey {
         case type
         case openFile
