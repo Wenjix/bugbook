@@ -64,8 +64,9 @@ struct WorkspaceTabBar: View {
                     .buttonStyle(.plain)
                     .padding(.leading, ShellZoomMetrics.size(8))
                     .padding(.bottom, ShellZoomMetrics.size(2))
-                    .popover(isPresented: $showNewMenu, arrowEdge: .bottom) {
+                    .floatingPopover(isPresented: $showNewMenu) {
                         NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
+                            .popoverSurface()
                     }
                     .onDrop(of: [.text], delegate: TabDropDelegate(
                         targetIndex: workspaceManager.workspaces.count,
@@ -166,11 +167,11 @@ private struct NewPanePopover: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 4)
 
-            contentRow(icon: "rectangle.split.1x2", label: "Split Right") {
+            contentRow(icon: "rectangle.split.2x1", label: "Split Right") {
                 _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal)
                 dismiss()
             }
-            contentRow(icon: "rectangle.split.2x1", label: "Split Down") {
+            contentRow(icon: "rectangle.split.1x2", label: "Split Down") {
                 _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: .terminal)
                 dismiss()
             }
