@@ -13,17 +13,12 @@ struct MeetingBlockView: View {
     @State private var transcriptSearch = ""
     @State private var isSearchingTranscript = false
     @State private var isSummaryExpanded = false
-    @State private var activeTab: MeetingTab = .summary
+    @State private var showSummary = true
     @State private var isHovered = false
     private var hasVoiceActivity: Bool { document.meetingAudioLevel > 0.01 }
 
     @State private var processingStatus = ""
     @State private var showTranscriptSheet = false
-
-    enum MeetingTab {
-        case summary
-        case notes
-    }
 
     init(document: BlockDocument, block: Block) {
         self.document = document
@@ -82,14 +77,14 @@ struct MeetingBlockView: View {
                     HStack(spacing: 5) {
                         Circle()
                             .fill(Color.red)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 6, height: 6)
                         Text("Record")
                             .font(.system(size: Typography.bodySmall, weight: .medium))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.red.opacity(Opacity.medium))
-                    .foregroundStyle(Color.red)
+                    .background(Color.primary.opacity(Opacity.subtle))
+                    .foregroundStyle(Color.fallbackTextPrimary)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
@@ -126,15 +121,15 @@ struct MeetingBlockView: View {
                 Button(action: stopRecording) {
                     HStack(spacing: 5) {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.white)
-                            .frame(width: 8, height: 8)
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
                         Text("Stop")
                             .font(.system(size: Typography.bodySmall, weight: .medium))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.red)
-                    .foregroundStyle(.white)
+                    .background(Color.primary.opacity(Opacity.subtle))
+                    .foregroundStyle(Color.fallbackTextPrimary)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
@@ -230,26 +225,35 @@ struct MeetingBlockView: View {
                     .transition(.opacity)
                 }
 
-                // Summary/Notes tab picker
-                Picker("", selection: $activeTab) {
-                    Text("Summary").tag(MeetingTab.summary)
-                    Text("Notes").tag(MeetingTab.notes)
+                // Toggle AI summary visibility
+                Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showSummary.toggle() } }) {
+                    HStack(spacing: 4) {
+                        Text("Summary")
+                            .font(.system(size: Typography.caption, weight: .medium))
+                            .foregroundStyle(Color.fallbackTextSecondary)
+                        Image(systemName: showSummary ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.fallbackTextSecondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(Opacity.subtle))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 140)
+                .buttonStyle(.borderless)
 
                 Button(action: resumeRecording) {
                     HStack(spacing: 5) {
                         Circle()
                             .fill(Color.red)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 6, height: 6)
                         Text("Resume")
                             .font(.system(size: Typography.bodySmall, weight: .medium))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.red.opacity(Opacity.medium))
-                    .foregroundStyle(Color.red)
+                    .background(Color.primary.opacity(Opacity.subtle))
+                    .foregroundStyle(Color.fallbackTextPrimary)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
@@ -257,13 +261,11 @@ struct MeetingBlockView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
 
-            // Content area: Summary or Notes
-            switch activeTab {
-            case .summary:
+            // Combined content area: summary (toggleable) + notes
+            if showSummary {
                 summaryView
-            case .notes:
-                notesView
             }
+            notesView
 
             Divider()
 
@@ -829,7 +831,7 @@ private struct WaveformView: View {
             HStack(spacing: 2) {
                 ForEach(0..<barCount, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(isActive ? Color.red : Color.fallbackTextMuted)
+                        .fill(isActive ? Color.fallbackTextSecondary : Color.fallbackTextMuted)
                         .frame(width: 3, height: barHeight(for: i, date: timeline.date))
                         .animation(.easeInOut(duration: 0.1), value: audioLevel)
                 }

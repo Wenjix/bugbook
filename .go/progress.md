@@ -22,14 +22,20 @@ Status: Phase 2 — Launching Wave 1 workers
 ## Completed (verified via UI)
 - [x] TableBlockView fixes (7 min) [high] — PARTIAL PASS: borders darker, grip dots outside cells, cell selection works, +buttons visible. Selection clearing unclear.
 
-## In Progress
-- [ ] Wave 2a: Callout block type — worker running...
-- [ ] Wave 2b: Fix table row grip dots — worker running...
-- [ ] Wave 2c: Wire TranscriptionService — worker running...
-- [ ] Cmd+K navigation fix (iteration 2) — worker running...
+## Completed (build passing, pending UI verification)
+- [x] Callout block type (attempt 2) — neutral default, icon/color picker
+- [x] Fix table row grip dots — explicit frame for 2x3 layout
+- [x] Wire TranscriptionService — live recording + audio levels
 
-## Failed Verification (iterating)
-- Cmd+K navigation (attempt 1) — FAIL: clicking results doesn't navigate. navigateToEntryInPane works from sidebar but not from command palette. Iteration 2 spawned.
+## In Progress
+- [ ] Outline/TOC block type (attempt 2) — worker running
+- [ ] Meeting block Summary/Notes toggle — worker running
+- [ ] Reduce vertical spacing (attempt 2) — worker running
+- [ ] Ask AI full chat view — worker running
+- [ ] Database row templates (attempt 2) — worker running
+
+## Blocked
+- Cmd+K navigation — FAIL after 2 attempts. navigateToEntryInPane works from sidebar but not command palette. Deeper pane system rendering issue. Needs visual debugging.
 
 ## Remaining
 All High + Medium + Low priority tickets (24 total)
