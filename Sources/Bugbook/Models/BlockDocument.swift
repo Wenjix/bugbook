@@ -161,6 +161,14 @@ class BlockDocument {
         updateBlockProperty(id: blockId) { $0.meetingTitle = title }
     }
 
+    func updateMeetingTranscript(blockId: UUID, transcript: String) {
+        updateBlockProperty(id: blockId) { $0.meetingTranscript = transcript }
+    }
+
+    func updateMeetingActionItems(blockId: UUID, actionItems: String) {
+        updateBlockProperty(id: blockId) { $0.meetingActionItems = actionItems }
+    }
+
     func updateMeetingState(blockId: UUID, state: MeetingBlockState) {
         updateBlockProperty(id: blockId) { $0.meetingState = state }
     }

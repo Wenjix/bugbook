@@ -553,7 +553,7 @@ struct MeetingBlockView: View {
             }
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(spacing: 6) {
                     let allEntries = !block.transcriptEntries.isEmpty
                         ? block.transcriptEntries
                         : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
@@ -562,13 +562,16 @@ struct MeetingBlockView: View {
                         : allEntries.filter { $0.localizedCaseInsensitiveContains(transcriptSearch) }
 
                     ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                        Text(entry)
-                            .font(.system(size: Typography.caption2))
-                            .foregroundStyle(Color.fallbackTextPrimary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.primary.opacity(Opacity.light))
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                        HStack {
+                            Text(entry)
+                                .font(.system(size: Typography.caption2))
+                                .foregroundStyle(Color.fallbackTextPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color(nsColor: .controlBackgroundColor))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            Spacer(minLength: 40)
+                        }
                     }
 
                     if block.meetingState == .recording {
@@ -755,27 +758,89 @@ struct MeetingBlockView: View {
 
         document.updateMeetingState(blockId: block.id, state: .processing)
 
+        var cleanedTranscript = transcript
+
         if !transcript.isEmpty {
             processingStatus = "Cleaning transcript..."
-            let cleanedTranscript = await cleanTranscript(transcript)
-            let cleaned = cleanedTranscript ?? transcript
-            document.updateBlockText(id: block.id, text: cleaned)
-
-            processingStatus = "Extracting meeting sections..."
-            let structured = await extractStructuredSections(transcript: cleaned, notes: userNotes)
-            if let structured {
-                document.updateMeetingSummary(blockId: block.id, summary: structured)
+            if let result = await cleanTranscript(transcript) {
+                cleanedTranscript = result
+                document.updateMeetingTranscript(blockId: block.id, transcript: cleanedTranscript)
             }
-        } else if !userNotes.isEmpty {
-            processingStatus = "Generating summary from notes..."
-            let structured = await extractStructuredSections(transcript: "", notes: userNotes)
-            if let structured {
-                document.updateMeetingSummary(blockId: block.id, summary: structured)
+        }
+
+        let hasContent = !cleanedTranscript.isEmpty || !userNotes.isEmpty
+        if hasContent {
+            processingStatus = "Extracting meeting sections..."
+            if let structured = await extractStructuredSections(transcript: cleanedTranscript, notes: userNotes) {
+                let parsed = parseAIResponse(structured)
+                if !parsed.title.isEmpty {
+                    document.updateMeetingTitle(blockId: block.id, title: parsed.title)
+                }
+                if !parsed.actionItems.isEmpty {
+                    document.updateMeetingActionItems(blockId: block.id, actionItems: parsed.actionItems)
+                }
+                document.updateMeetingSummary(blockId: block.id, summary: parsed.sections)
             }
         }
 
         processingStatus = ""
         document.updateMeetingState(blockId: block.id, state: .complete)
+    }
+
+    /// Parse the structured AI response into title, action items, and remaining sections.
+    private func parseAIResponse(_ response: String) -> (title: String, actionItems: String, sections: String) {
+        var title = ""
+        var actionLines: [String] = []
+        var sectionLines: [String] = []
+        var inActionItems = false
+
+        for line in response.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Extract title from "## Title" section
+            if trimmed.hasPrefix("## Title") {
+                // The title value is on the next non-empty line; handled below
+                inActionItems = false
+                continue
+            }
+
+            // Detect action items section
+            if trimmed == "## Action Items" || trimmed == "### Action Items" {
+                inActionItems = true
+                continue
+            }
+
+            // Detect start of a new section (not Action Items)
+            if (trimmed.hasPrefix("## ") || trimmed.hasPrefix("### ")) && !trimmed.contains("Action Items") {
+                inActionItems = false
+            }
+
+            // If we just saw "## Title" and this is a non-empty line, capture it as the title
+            if title.isEmpty && sectionLines.isEmpty && actionLines.isEmpty && !trimmed.isEmpty
+                && !trimmed.hasPrefix("##") && !trimmed.hasPrefix("- ") {
+                title = trimmed
+                continue
+            }
+
+            if inActionItems {
+                if !trimmed.isEmpty {
+                    actionLines.append(trimmed)
+                }
+            } else {
+                sectionLines.append(line)
+            }
+        }
+
+        // Clean trailing empty lines from sections
+        while sectionLines.last?.trimmingCharacters(in: .whitespaces).isEmpty == true {
+            sectionLines.removeLast()
+        }
+
+        return (
+            title: title,
+            actionItems: actionLines.joined(separator: "\n"),
+            sections: sectionLines.joined(separator: "\n")
+        )
     }
 
     private func cleanTranscript(_ raw: String) async -> String? {
