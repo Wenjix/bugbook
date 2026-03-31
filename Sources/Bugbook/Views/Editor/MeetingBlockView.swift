@@ -20,6 +20,11 @@ struct MeetingBlockView: View {
     @State private var processingStatus = ""
     @State private var showTranscriptSheet = false
 
+    // Ask anything Q&A state (transient)
+    @State private var askQuestion = ""
+    @State private var askPairs: [(question: String, answer: String)] = []
+    @State private var isAskLoading = false
+
     enum MeetingTab {
         case summary
         case notes
@@ -154,6 +159,8 @@ struct MeetingBlockView: View {
             if isTranscriptOpen {
                 transcriptDrawer
             }
+
+            askAnythingSection
         }
     }
 
@@ -272,6 +279,8 @@ struct MeetingBlockView: View {
             if isTranscriptOpen {
                 transcriptDrawer
             }
+
+            askAnythingSection
         }
     }
 
@@ -561,6 +570,81 @@ struct MeetingBlockView: View {
             insertion: .push(from: .bottom).combined(with: .opacity),
             removal: .push(from: .top).combined(with: .opacity)
         ))
+    }
+
+    // MARK: - Ask Anything
+
+    private var askAnythingSection: some View {
+        VStack(spacing: 0) {
+            if !askPairs.isEmpty {
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(askPairs.enumerated()), id: \.offset) { _, pair in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(pair.question)
+                                    .font(.system(size: Typography.bodySmall, weight: .medium))
+                                    .foregroundStyle(Color.fallbackTextPrimary)
+                                Text(pair.answer)
+                                    .font(.system(size: Typography.bodySmall))
+                                    .foregroundStyle(Color.fallbackTextSecondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                }
+                .frame(maxHeight: 200)
+            }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                if isAskLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                TextField("Ask anything...", text: $askQuestion)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: Typography.bodySmall))
+                    .onSubmit { submitAskQuestion() }
+                    .disabled(isAskLoading)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(Opacity.subtle))
+        }
+    }
+
+    private func submitAskQuestion() {
+        let question = askQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        askQuestion = ""
+        isAskLoading = true
+
+        let transcript = block.meetingTranscript
+        let notes = block.children.isEmpty
+            ? block.meetingNotes
+            : block.children.map { $0.text }.joined(separator: "\n")
+        let summary = block.meetingSummary
+
+        Task {
+            var context = ""
+            if !transcript.isEmpty { context += "Transcript:\n\(transcript)\n\n" }
+            if !notes.isEmpty { context += "Notes:\n\(notes)\n\n" }
+            if !summary.isEmpty { context += "Summary:\n\(summary)\n\n" }
+
+            let prompt = """
+            You are answering questions about a meeting. Be concise and specific.
+
+            \(context)Question: \(question)
+            """
+
+            let answer = await runClaude(prompt: prompt) ?? "Could not generate an answer."
+            askPairs.append((question: question, answer: answer))
+            isAskLoading = false
+        }
     }
 
     // MARK: - Ladybug AI Button
