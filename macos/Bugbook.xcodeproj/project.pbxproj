@@ -15,6 +15,7 @@
 		0D60BAED04EE7FA14331418C /* MeetingBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38503CD6DD60C57D352CA45A /* MeetingBlockView.swift */; };
 		0ECCD65D875F55E2148FF871 /* EditorDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727128AD995E5A86B60ADCBE /* EditorDraftStore.swift */; };
 		0F9D9E5E8F389B93AE0D3A98 /* AggregationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60576E64129D7C210FF7F7D0 /* AggregationEngine.swift */; };
+		0FA1B2C3D4E5F60718293A4B /* FormulaEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071829304A5B /* FormulaEngine.swift */; };
 		0FF49E848A57B76FEB3FF655 /* SlashCommandMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14D46F5252C474875D2AE94 /* SlashCommandMenu.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* MentionPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6E7F8091A2B3C4D5E6F7081 /* MentionPickerView.swift */; };
 		10C4018F30AC23F772A1ACC8 /* CalendarSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCBC4202AE20197A13962CD /* CalendarSettingsView.swift */; };
@@ -259,6 +260,7 @@
 		5C6265630F0923203C1F9764 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5D16799A267ED55B558F74BD /* Agent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Agent.swift; sourceTree = "<group>"; };
 		60576E64129D7C210FF7F7D0 /* AggregationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregationEngine.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071829304A5B /* FormulaEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormulaEngine.swift; sourceTree = "<group>"; };
 		61811B37BBD5AE6F10496772 /* InlineRowPeekPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineRowPeekPanel.swift; sourceTree = "<group>"; };
 		61DF2C9164D855838AD0F272 /* ShortcutsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsView.swift; sourceTree = "<group>"; };
 		661BA33DC8D61D2884B32072 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -602,6 +604,7 @@
 			isa = PBXGroup;
 			children = (
 				60576E64129D7C210FF7F7D0 /* AggregationEngine.swift */,
+				A1B2C3D4E5F6071829304A5B /* FormulaEngine.swift */,
 				40FCF6F845DD2446799C49B5 /* MutationEngine.swift */,
 				1A49740409C913AF7DE543D6 /* QueryEngine.swift */,
 				3DFE4267C5991F2C8E05CB7D /* RelationResolver.swift */,
@@ -919,6 +922,7 @@
 				ABA26E21B59748870EB509CE /* AgentWorkspaceStore.swift in Sources */,
 				694EBF21623BCEA74940150D /* AgentWorkspaceTemplate.swift in Sources */,
 				0F9D9E5E8F389B93AE0D3A98 /* AggregationEngine.swift in Sources */,
+				0FA1B2C3D4E5F60718293A4B /* FormulaEngine.swift in Sources */,
 				BE90067291DE6CF6F3B58A69 /* CalendarEvent.swift in Sources */,
 				1A69CBC3E525B070D8FCC902 /* CalendarEventStore.swift in Sources */,
 				7599744149050661CCF8FB27 /* DatabaseDateValue.swift in Sources */,
