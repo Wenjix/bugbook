@@ -47,6 +47,13 @@ targets:
       - package: SentryCocoa
         product: Sentry
       - framework: ../Frameworks/GhosttyKit.xcframework
+        embed: false
+      - sdk: Carbon.framework
+      - sdk: Metal.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreText.framework
+      - sdk: QuartzCore.framework
+      - sdk: IOSurface.framework
     info:
       path: App/Info.plist
       properties:
@@ -73,6 +80,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
+        OTHER_LDFLAGS: ["-lz", "-lc++"]
   BugbookUITests:
     type: bundle.ui-testing
     platform: macOS
