@@ -1040,6 +1040,7 @@ private struct RowDragHandleDots: View {
     var body: some View {
         GripDotsView()
             .fixedSize()
+            .frame(width: 12, height: 20)
     }
 }
 
