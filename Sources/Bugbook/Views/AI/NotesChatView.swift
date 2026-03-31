@@ -117,31 +117,18 @@ struct NotesChatView: View {
             }
         }
         .buttonStyle(.borderless)
-        .popover(isPresented: $showThreadPicker, arrowEdge: .bottom) {
+        .floatingPopover(isPresented: $showThreadPicker, arrowEdge: .bottom) {
             threadPickerContent
+                .popoverSurface()
         }
     }
 
     private var threadPickerContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
+            NewThreadButton {
                 threadStore.createThread()
                 showThreadPicker = false
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.accentColor)
-                    Text("New Thread")
-                        .font(.system(size: Typography.bodySmall, weight: .medium))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
 
             Divider()
                 .padding(.horizontal, 8)
@@ -160,39 +147,18 @@ struct NotesChatView: View {
     }
 
     private func threadRow(_ thread: AiThread) -> some View {
-        Button {
-            threadStore.switchTo(thread.id)
-            showThreadPicker = false
-        } label: {
-            HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(thread.title)
-                        .font(.system(size: Typography.bodySmall, weight: thread.id == threadStore.activeThreadId ? .semibold : .regular))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-                        .lineLimit(1)
-                    Text(relativeTimestamp(thread.updatedAt))
-                        .font(.system(size: Typography.caption2))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if thread.id == threadStore.activeThreadId {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button(role: .destructive) {
+        ThreadRow(
+            thread: thread,
+            isActive: thread.id == threadStore.activeThreadId,
+            timestamp: relativeTimestamp(thread.updatedAt),
+            onSelect: {
+                threadStore.switchTo(thread.id)
+                showThreadPicker = false
+            },
+            onDelete: {
                 threadStore.deleteThread(thread.id)
-            } label: {
-                Label("Delete Thread", systemImage: "trash")
             }
-        }
+        )
     }
 
     @ViewBuilder
