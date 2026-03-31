@@ -82,6 +82,29 @@ func matchesFilter(_ value: PropertyValue, filter: FilterConfig) -> Bool {
     }
 }
 
+func matchesFilterGroup(_ row: DatabaseRow, group: FilterGroup, schema: DatabaseSchema) -> Bool {
+    switch group.conjunction {
+    case .and:
+        return group.conditions.allSatisfy { condition in
+            matchesFilterCondition(row, condition: condition, schema: schema)
+        }
+    case .or:
+        return group.conditions.isEmpty || group.conditions.contains { condition in
+            matchesFilterCondition(row, condition: condition, schema: schema)
+        }
+    }
+}
+
+private func matchesFilterCondition(_ row: DatabaseRow, condition: FilterCondition, schema: DatabaseSchema) -> Bool {
+    switch condition {
+    case .filter(let filterConfig):
+        let val = row.properties[filterConfig.property] ?? .empty
+        return matchesFilter(val, filter: filterConfig)
+    case .group(let nestedGroup):
+        return matchesFilterGroup(row, group: nestedGroup, schema: schema)
+    }
+}
+
 func compareValues(_ a: PropertyValue, _ b: PropertyValue) -> ComparisonResult {
     if case .number(let aNum) = a, case .number(let bNum) = b {
         if aNum < bNum { return .orderedAscending }
