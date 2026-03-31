@@ -232,6 +232,11 @@ struct ContentView: View {
                     performMovePage(from: sourcePath, toDirectory: destDir, insertIndex: insertIndex, siblingNames: siblingNames)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .addToSidebar)) { notification in
+                if let payload = notification.object as? SidebarReferenceDragPayload {
+                    addSidebarReference(payload)
+                }
+            }
     }
 
     private func applyCommandNotifications<V: View>(to view: V) -> some View {
