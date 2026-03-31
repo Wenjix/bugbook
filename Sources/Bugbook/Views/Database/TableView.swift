@@ -742,8 +742,6 @@ struct TableView: View {
         }
         .buttonStyle(.plain)
 
-        tableDivider.opacity(0.5)
-
         // Group rows
         if !isCollapsed {
             let groupRowIds = Set(group.rows.map(\.id))
