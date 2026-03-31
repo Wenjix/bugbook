@@ -22,7 +22,6 @@
 		14D253E632857BE6D9923006 /* MeetingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18386D38CC079F0F28BE5CF6 /* MeetingsView.swift */; };
 		1A69CBC3E525B070D8FCC902 /* CalendarEventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2262869710B320C9D232D7B /* CalendarEventStore.swift */; };
 		1C60B08005D500C4166E9E80 /* GraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED677E977CBBB33D0ECA74CE /* GraphView.swift */; };
-		1E82C25E8134A1038E2D96A6 /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C17D091E88E0D5554BE1F38 /* TabBarView.swift */; };
 		1F53E22405A92296FC9615E2 /* HeadingToggleBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00F20EDB7EB07349C54B1DB8 /* HeadingToggleBlockView.swift */; };
 		203CE38A21215FE7D2ED90C2 /* FloatingPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBC605E52D91C41E419FBF35 /* FloatingPopover.swift */; };
 		208879A6F607FAA57195F686 /* ShellZoomMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746E6FCF54D009487CB47D71 /* ShellZoomMetrics.swift */; };
@@ -273,7 +272,6 @@
 		7A438D1B1F3111A465125F0E /* BreadcrumbItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreadcrumbItem.swift; sourceTree = "<group>"; };
 		7AE556881D0438C7C049970E /* MeetingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingsViewModel.swift; sourceTree = "<group>"; };
 		7B61CE715DA55EE073506CF6 /* CalloutBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalloutBlockView.swift; sourceTree = "<group>"; };
-		7C17D091E88E0D5554BE1F38 /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
 		7EC5A7963942301B2BBEAAEF /* RenderLoopDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderLoopDetector.swift; sourceTree = "<group>"; };
 		7F257D6BA8D9A6DCAA4EB896 /* DatabaseRowViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseRowViewModel.swift; sourceTree = "<group>"; };
 		808CF46B8BE4372BB9E904FC /* WorkspaceCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceCalendarView.swift; sourceTree = "<group>"; };
@@ -504,7 +502,6 @@
 				E3F3E4BACD1A0D354E4A9DAA /* MovePagePickerView.swift */,
 				746E6FCF54D009487CB47D71 /* ShellZoomMetrics.swift */,
 				83ED16F6D4CB9ADE91631B42 /* SidebarDragPreview.swift */,
-				7C17D091E88E0D5554BE1F38 /* TabBarView.swift */,
 				1075BF7C8AE8B706A1799531 /* TemplatePickerView.swift */,
 				A7712E15B025309AF9EAF67D /* WelcomeView.swift */,
 				9E2E691CB7B90DC79363BC7B /* WorkspaceTabBar.swift */,
@@ -1031,7 +1028,6 @@
 				D5404002070C02A7C49FAD38 /* SidebarView.swift in Sources */,
 				0FF49E848A57B76FEB3FF655 /* SlashCommandMenu.swift in Sources */,
 				A395087E03AB1A889F4620AE /* SplitDividerView.swift in Sources */,
-				1E82C25E8134A1038E2D96A6 /* TabBarView.swift in Sources */,
 				6AED4644678A23789357E98F /* TableBlockView.swift in Sources */,
 				BB63147ADC84BB1CB310FAD6 /* TableView.swift in Sources */,
 				CE6A8D6D7B08D23CE62776BE /* TemplatePickerView.swift in Sources */,

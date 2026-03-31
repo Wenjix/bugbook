@@ -1,77 +1,50 @@
-# Long Run — 2026-03-29
+# Go Run — 2026-03-30
 
-Started: 9:45 PM
-Finished: ~5:30 AM
-Duration: ~8 hours (across 2 sessions due to interruptions)
+Started: 10:35 PM
+Status: Phase 2 — Launching Wave 1 workers
 
-## Summary
-Completed: 7/10 executable Bugbook tickets
-Skipped: 3 (extremely large features — each multi-day scope)
-Blocked: 5 (external deps, different repo, too vague)
+## Batch Plan
 
-## Completed
+### Wave 1 (parallel — zero file overlap)
+- A: TableBlockView fixes (TableBlockView.swift)
+- B: Cmd+K navigation fix (ContentView.swift, CommandPaletteView.swift)
 
-- [x] Outline (TOC) block type [High] (row_u9mndd)
-- [x] Database table view calculations footer [High] (row_kegyb1)
-- [x] Add Agents sidebar section [Medium] (row_woy99m)
-- [x] Add MCP Servers listing [Low] (row_qfrvll)
-- [x] Callout block type [High] (row_fnmxx9)
-- [x] Change select option color [Medium] (row_bu993v)
-- [x] Meeting notes markdown shortcuts [High] (row_34on11)
+### Wave 2 (parallel chains — no overlap between chains)
+- Chain 2a (editor blocks, sequential): Callout → Outline/TOC → Heading toggles → Spacing → Wire table block
+- Chain 2b (table view, sequential): Fix grip dots → Calculations footer → Table view grouping
+- Chain 2c (meeting, sequential): Wire TranscriptionService → Merge Summary/Notes → Floating pill → Notes padding → Transcript modal → Notes in finished meeting
+
+### Wave 3 (after 2a + 2c): Ask anything AI bar → Post-meeting output
+### Wave 4 (after Wave 1): Ask AI full chat → Style thread picker → Rename Meetings
+### Wave 5 (after 2b): Database row templates
+### Wave 6 (last): Sidebar drag (risky — 5 prior failures)
+
+## Completed (verified via UI)
+- [x] TableBlockView fixes (7 min) [high] — PARTIAL PASS: borders darker, grip dots outside cells, cell selection works, +buttons visible. Selection clearing unclear.
+
+## In Progress
+- [ ] Wave 2a: Callout block type — worker running...
+- [ ] Wave 2b: Fix table row grip dots — worker running...
+- [ ] Wave 2c: Wire TranscriptionService — worker running...
+- [ ] Cmd+K navigation fix (iteration 2) — worker running...
+
+## Failed Verification (iterating)
+- Cmd+K navigation (attempt 1) — FAIL: clicking results doesn't navigate. navigateToEntryInPane works from sidebar but not from command palette. Iteration 2 spawned.
+
+## Remaining
+All High + Medium + Low priority tickets (24 total)
+
+## Blocked / Skipped
+- Canopy (5 tickets) — different repo
+- Google OAuth — external work
+- Gateway 8.0 / native Gateway — no spec
+- Live knowledge retrieval — R&D
+- Inline mentions / AND-OR filters / Formula fields — massive scope, skipping
+- Improve AI meeting notes — needs split (skipping this run)
+- Skills & Agent Config Viewer — no files specified
 
 ## Discoveries
-
-These findings should inform future work:
-- AggregationEngine already existed in BugbookCore/Engine from prior session
-- ~/.claude/skills/ contains both regular folders and symlinks to ~/.agents/skills/
-- MCP servers are stored in ~/.claude.json (not ~/.claude/settings.json as ticket spec said)
-- Select option color infrastructure existed but context menus were only on inline pills — added to dropdown popovers and edit dialog
-- Dev branch has table block type (WIP) from prior commits
-
-## Review Guide
-
-All work is on `dev`. To review:
-
-```bash
-git checkout dev
-open macos/Bugbook.xcodeproj    # Cmd+R
-```
-
-### 1. Outline (TOC) block [Medium risk]
-Type `/toc` or `/outline` → TOC block with indented heading list, clickable entries
-
-### 2. Database calculations footer [Medium risk]
-Open any database table → hover footer row → click "Calculate" → pick a function (Sum, Avg, etc.)
-
-### 3. Agents sidebar section [Medium risk]
-Look for "Agents" section between Favorites and Workspace → skills listed, click opens in editor with banner
-
-### 4. MCP Servers listing [Low risk]
-Under Agents section → MCP servers from ~/.claude.json shown with plug icon
-
-### 5. Callout block [Medium risk]
-Type `/callout` → info callout with blue border. Click icon to cycle variants (info/warning/success/error). Child blocks inside.
-
-### 6. Select option color [Low risk]
-Open a database → click a select cell → right-click an option → Color submenu, or Edit with color picker grid
-
-### 7. Meeting notes markdown [High risk]
-Create/open a meeting block → notes area supports bullets (- ), headings (# ), tasks ([] ), slash menu, Tab indent
-
-## Skipped (too large for overnight)
-
-- AND/OR filter groups (row_1i5rmc) — recursive filter model + nested UI, multi-day scope
-- Inline mentions (row_xxvee0) — attributed text or parse-time mentions, picker UI, backlinks, multi-day scope
-- Formula/rollup/lookup (row_cygwau) — expression parser, cross-DB resolution, multi-day scope
-
-## Blocked
-
-- Build native Gateway — too vague, needs spec
-- Google OAuth — needs domain, Google Console (external)
-- Restructure Gateway 8.0 — content/data migration
-- Live knowledge retrieval — too vague
-- 7 Canopy tickets — different repo (/Users/maxforsey/canopy-menu/)
+(none yet)
 
 ## Build Status
-Dev branch: PASSING (swift build clean)
-All 7 features compile and build together.
+Not yet tested this run. Prior run: dev branch passing.

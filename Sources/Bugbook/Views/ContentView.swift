@@ -515,30 +515,39 @@ struct ContentView: View {
                         appState: appState,
                         isPresented: $appState.commandPaletteOpen,
                         onSelectFile: { entry in
-                            navigateToEntryInPane(entry)
+                            // Defer navigation until after palette dismissal completes
+                            DispatchQueue.main.async {
+                                navigateToEntryInPane(entry)
+                            }
                         },
                         onSelectFileNewTab: { entry in
-                            openEntryInNewWorkspaceTab(entry)
+                            DispatchQueue.main.async {
+                                let paneId = UUID()
+                                let file = makeOpenFile(for: entry, id: paneId)
+                                if let newPaneId = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .document(openFile: file)) {
+                                    loadFileContentForPane(entry: entry, paneId: newPaneId)
+                                }
+                            }
                         },
                         onCreateFile: { name in
                             createNewFileWithName(name)
                         },
                         onSelectContentMatch: { entry, query in
-                            if appState.commandPaletteMode == .newTab {
-                                openEntryInNewWorkspaceTab(entry)
-                            } else {
+                            // Defer navigation until after palette dismissal completes
+                            DispatchQueue.main.async {
                                 navigateToEntryInPane(entry)
-                            }
-                            // Jump to the block containing the match after content loads
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId,
-                                      let doc = blockDocuments[paneId] else { return }
-                                let lowerQuery = query.lowercased()
-                                if let block = doc.blocks.first(where: {
-                                    $0.text.lowercased().contains(lowerQuery)
-                                }) {
-                                    doc.focusedBlockId = block.id
-                                    doc.cursorPosition = 0
+                                // Jump to the block containing the match
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    let focusedPaneId = workspaceManager.activeWorkspace?.focusedPaneId
+                                    guard let paneId = focusedPaneId,
+                                          let doc = blockDocuments[paneId] else { return }
+                                    let lowerQuery = query.lowercased()
+                                    if let block = doc.blocks.first(where: {
+                                        $0.text.lowercased().contains(lowerQuery)
+                                    }) {
+                                        doc.focusedBlockId = block.id
+                                        doc.cursorPosition = 0
+                                    }
                                 }
                             }
                         }
