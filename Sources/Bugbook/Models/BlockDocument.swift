@@ -1030,12 +1030,12 @@ class BlockDocument {
                 return
             }
 
-            // Table block — initialize with empty 3x2 grid
+            // Table block — initialize with empty 3x3 grid
             if type == .table {
                 saveUndo()
                 updateBlockProperty(id: blockId) { block in
                     block.type = .table
-                    block.tableData = Array(repeating: Array(repeating: "", count: 3), count: 2)
+                    block.tableData = Array(repeating: Array(repeating: "", count: 3), count: 3)
                     block.hasHeaderRow = false
                 }
                 focusOrInsertParagraphAfter(blockId: blockId)
