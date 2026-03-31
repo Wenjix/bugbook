@@ -978,43 +978,51 @@ struct TableView: View {
 
     // MARK: - Calculations Footer
 
+    /// Whether any calculation is actively configured (so we always show results).
+    private var hasActiveCalculations: Bool {
+        guard let calcs = viewConfig.calculations else { return false }
+        return !calcs.isEmpty
+    }
+
     private var calculationsFooter: some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: scaledRowControlsInset, height: 1)
-
+        HoverRow { isFooterHovered in
             HStack(spacing: 0) {
-                // Title column calculation cell
-                if let titlePropId = schema.titleProperty?.id {
-                    CalculationFooterCell(
-                        propertyId: titlePropId,
-                        propertyType: .title,
-                        currentFunction: viewConfig.calculations?[titlePropId],
-                        result: calculationResults[titlePropId],
-                        onSetCalculation: onSetCalculation
-                    )
-                    .frame(width: titleColumnWidth)
-                } else {
-                    Color.clear.frame(width: titleColumnWidth)
-                }
+                Color.clear.frame(width: scaledRowControlsInset, height: 1)
 
-                ForEach(visibleProperties) { prop in
-                    CalculationFooterCell(
-                        propertyId: prop.id,
-                        propertyType: prop.type,
-                        currentFunction: viewConfig.calculations?[prop.id],
-                        result: calculationResults[prop.id],
-                        onSetCalculation: onSetCalculation
-                    )
-                    .frame(width: columnWidth(for: prop))
+                HStack(spacing: 0) {
+                    // Title column calculation cell
+                    if let titlePropId = schema.titleProperty?.id {
+                        CalculationFooterCell(
+                            propertyId: titlePropId,
+                            propertyType: .title,
+                            currentFunction: viewConfig.calculations?[titlePropId],
+                            result: calculationResults[titlePropId],
+                            rowHovered: isFooterHovered,
+                            onSetCalculation: onSetCalculation
+                        )
+                        .frame(width: titleColumnWidth)
+                    } else {
+                        Color.clear.frame(width: titleColumnWidth)
+                    }
+
+                    ForEach(visibleProperties) { prop in
+                        CalculationFooterCell(
+                            propertyId: prop.id,
+                            propertyType: prop.type,
+                            currentFunction: viewConfig.calculations?[prop.id],
+                            result: calculationResults[prop.id],
+                            rowHovered: isFooterHovered,
+                            onSetCalculation: onSetCalculation
+                        )
+                        .frame(width: columnWidth(for: prop))
+                    }
                 }
+                .padding(.horizontal, DatabaseZoomMetrics.size(4))
             }
-            .padding(.horizontal, DatabaseZoomMetrics.size(4))
+            .frame(height: compactHeaderHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(isFooterHovered || hasActiveCalculations ? 1 : 0)
         }
-        .frame(height: compactHeaderHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.04))
-        .overlay(alignment: .top) { Divider() }
-        .overlay { columnDividers().allowsHitTesting(false) }
     }
 
 }
@@ -1291,9 +1299,10 @@ private struct CalculationFooterCell: View {
     let propertyType: PropertyType
     let currentFunction: String?
     let result: String?
+    var rowHovered: Bool = false
     var onSetCalculation: ((String, String?) -> Void)?
 
-    @State private var isHovered = false
+    @State private var isCellHovered = false
     @State private var showPopover = false
 
     private var availableFunctions: [String] {
@@ -1314,10 +1323,10 @@ private struct CalculationFooterCell: View {
                             .font(DatabaseZoomMetrics.font(13))
                             .foregroundStyle(.secondary)
                     }
-                } else if isHovered {
+                } else if rowHovered {
                     Text("Calculate")
                         .font(DatabaseZoomMetrics.font(13))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(isCellHovered ? .secondary : .tertiary)
                 }
                 Spacer(minLength: 0)
             }
@@ -1326,7 +1335,7 @@ private struct CalculationFooterCell: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .onHover { isCellHovered = $0 }
         .floatingPopover(isPresented: $showPopover, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(availableFunctions, id: \.self) { fn in
