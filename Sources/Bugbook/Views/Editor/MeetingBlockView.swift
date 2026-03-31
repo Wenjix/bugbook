@@ -55,11 +55,37 @@ struct MeetingBlockView: View {
         .contentShape(RoundedRectangle(cornerRadius: Radius.lg))
         .onHover { isHovered = $0 }
         .padding(.vertical, 4)
-        .sheet(isPresented: $showTranscriptSheet) {
-            TranscriptBubbleView(
-                transcript: block.meetingTranscript,
-                meetingNotes: block.meetingNotes
-            )
+        .overlay {
+            if showTranscriptSheet {
+                ZStack {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.28))
+                        .contentShape(Rectangle())
+                        .onTapGesture { showTranscriptSheet = false }
+
+                    TranscriptBubbleView(
+                        transcript: block.meetingTranscript,
+                        meetingNotes: block.meetingNotes,
+                        onClose: { showTranscriptSheet = false }
+                    )
+                    .frame(maxWidth: 680, maxHeight: 600)
+                    .background(Elevation.popoverBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(Elevation.popoverBorder, lineWidth: 0.5)
+                            .allowsHitTesting(false)
+                    }
+                    .shadow(
+                        color: Elevation.shadowColor.opacity(0.18),
+                        radius: 24,
+                        y: Elevation.shadowY * 2
+                    )
+                    .onTapGesture { }
+                    .padding(32)
+                }
+                .transition(.opacity)
+            }
         }
     }
 
@@ -860,6 +886,7 @@ private struct WaveformView: View {
 struct TranscriptBubbleView: View {
     let transcript: String
     let meetingNotes: String
+    var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -869,14 +896,15 @@ struct TranscriptBubbleView: View {
                     .font(.system(size: 18, weight: .semibold))
                 Spacer()
                 Button {
-                    dismiss()
+                    if let onClose { onClose() } else { dismiss() }
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -917,8 +945,6 @@ struct TranscriptBubbleView: View {
                 .padding(20)
             }
         }
-        .frame(minWidth: 500, minHeight: 400)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private struct Bubble {
