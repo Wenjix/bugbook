@@ -936,7 +936,7 @@ struct ContentView: View {
 
                     Spacer()
 
-                    if !file.isEmptyTab && !file.isDatabase {
+                    if !file.isEmptyTab && !file.isDatabase && !file.isSkill {
                         Button {
                             showPageOptionsMenu.toggle()
                         } label: {
@@ -1046,6 +1046,11 @@ struct ContentView: View {
                     }
                 )
             }
+        } else if file.isSkill {
+            SkillDetailView(
+                filePath: file.path,
+                displayName: file.displayName ?? (file.path as NSString).lastPathComponent
+            )
         } else if file.isDatabase {
             DatabaseFullPageView(dbPath: file.path, initialRowId: dbInitialRowId)
                 .id(leaf.id)
@@ -1618,7 +1623,7 @@ struct ContentView: View {
 
     /// Load file content from disk into a pane's BlockDocument.
     private func loadFileContentForPane(entry: FileEntry, paneId: UUID) {
-        guard !entry.isDatabase, !entry.isDatabaseRow else { return }
+        guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
@@ -1993,7 +1998,7 @@ struct ContentView: View {
     }
 
     private func loadFileContent(for entry: FileEntry) {
-        guard !entry.isDatabase, !entry.isDatabaseRow else { return }
+        guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()

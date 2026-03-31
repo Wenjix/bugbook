@@ -703,33 +703,58 @@ class FileSystemService {
 
     // MARK: - Agent Skills
 
-    /// Scans ~/.claude/skills/ for skill subfolders containing a .md file.
+    /// Scans ~/.claude/skills/ and ~/.claude/agents/ for skill/agent subfolders containing a .md file.
     /// Returns one FileEntry per skill, pointing at the first .md file found.
+    /// Parses YAML frontmatter from each file to extract name and description.
     nonisolated func scanSkills() -> [FileEntry] {
-        let skillsRoot = (NSHomeDirectory() as NSString).appendingPathComponent(".claude/skills")
+        let home = NSHomeDirectory() as NSString
+        let skillsRoot = home.appendingPathComponent(".claude/skills")
+        let agentsRoot = home.appendingPathComponent(".claude/agents")
         let fm = FileManager.default
-        guard let subfolders = try? fm.contentsOfDirectory(atPath: skillsRoot) else { return [] }
 
         var entries: [FileEntry] = []
-        for folder in subfolders.sorted() {
-            if folder.hasPrefix(".") { continue }
-            let folderPath = (skillsRoot as NSString).appendingPathComponent(folder)
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: folderPath, isDirectory: &isDir), isDir.boolValue else { continue }
 
-            guard let files = try? fm.contentsOfDirectory(atPath: folderPath) else { continue }
-            guard let mdFile = files.first(where: { $0.hasSuffix(".md") }) else { continue }
-            let mdPath = (folderPath as NSString).appendingPathComponent(mdFile)
+        for root in [skillsRoot, agentsRoot] {
+            guard let subfolders = try? fm.contentsOfDirectory(atPath: root) else { continue }
+            for folder in subfolders.sorted() {
+                if folder.hasPrefix(".") { continue }
+                let folderPath = (root as NSString).appendingPathComponent(folder)
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: folderPath, isDirectory: &isDir), isDir.boolValue else { continue }
 
-            entries.append(FileEntry(
-                id: "skill:\(mdPath)",
-                name: folder,
-                path: mdPath,
-                isDirectory: false,
-                kind: .page
-            ))
+                guard let files = try? fm.contentsOfDirectory(atPath: folderPath) else { continue }
+                guard let mdFile = files.first(where: { $0.hasSuffix(".md") }) else { continue }
+                let mdPath = (folderPath as NSString).appendingPathComponent(mdFile)
+
+                let displayName = parseSkillFrontmatterName(at: mdPath) ?? folder
+                entries.append(FileEntry(
+                    id: "skill:\(mdPath)",
+                    name: displayName,
+                    path: mdPath,
+                    isDirectory: false,
+                    kind: .skill,
+                    icon: "sf:bolt.fill"
+                ))
+            }
         }
         return entries
+    }
+
+    /// Extracts the `name` field from YAML frontmatter in a SKILL.md file.
+    nonisolated private func parseSkillFrontmatterName(at path: String) -> String? {
+        guard let data = FileManager.default.contents(atPath: path),
+              let content = String(data: data, encoding: .utf8) else { return nil }
+        guard content.hasPrefix("---") else { return nil }
+        let lines = content.components(separatedBy: "\n")
+        for line in lines.dropFirst() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "---" { break }
+            if trimmed.hasPrefix("name:") {
+                let value = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                return value.isEmpty ? nil : value
+            }
+        }
+        return nil
     }
 
     func resolveFavorites(for workspacePath: String, fileTree: [FileEntry]) -> [FileEntry] {
