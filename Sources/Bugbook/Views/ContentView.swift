@@ -51,6 +51,16 @@ struct ContentView: View {
     @State private var showPageOptionsMenu = false
     @State private var databaseRowFullWidth: [UUID: Bool] = [:]
 
+    // Cmd+K deferred navigation: set by palette closure, consumed by .onChange in ContentView's own cycle
+    @State private var pendingCmdKNavigation: CmdKNavRequest?
+
+    private struct CmdKNavRequest: Equatable {
+        let entry: FileEntry
+        let inNewTab: Bool
+        let searchQuery: String?
+        let id: UUID  // unique per request so repeated selections of the same entry still fire
+    }
+
     var body: some View {
         configuredLayout
     }
@@ -236,6 +246,9 @@ struct ContentView: View {
 
     private func applyPaneNotifications<V: View>(to view: V) -> some View {
         view
+            .onChange(of: pendingCmdKNavigation) { _, request in
+                handlePendingCmdKNavigation(request)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .splitPaneRight)) { _ in
                 _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal)
             }
@@ -523,41 +536,17 @@ struct ContentView: View {
                         appState: appState,
                         isPresented: $appState.commandPaletteOpen,
                         onSelectFile: { entry in
-                            // Defer navigation until after palette dismissal completes
-                            DispatchQueue.main.async {
-                                navigateToEntryInPane(entry)
-                            }
+                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: false, searchQuery: nil, id: UUID())
                         },
                         onSelectFileNewTab: { entry in
-                            DispatchQueue.main.async {
-                                let paneId = UUID()
-                                let file = makeOpenFile(for: entry, id: paneId)
-                                if let newPaneId = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .document(openFile: file)) {
-                                    loadFileContentForPane(entry: entry, paneId: newPaneId)
-                                }
-                            }
+                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: true, searchQuery: nil, id: UUID())
                         },
                         onCreateFile: { name in
                             createNewFileWithName(name)
                         },
                         onSelectContentMatch: { entry, query in
-                            // Defer navigation until after palette dismissal completes
-                            DispatchQueue.main.async {
-                                navigateToEntryInPane(entry)
-                                // Jump to the block containing the match
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    let focusedPaneId = workspaceManager.activeWorkspace?.focusedPaneId
-                                    guard let paneId = focusedPaneId,
-                                          let doc = blockDocuments[paneId] else { return }
-                                    let lowerQuery = query.lowercased()
-                                    if let block = doc.blocks.first(where: {
-                                        $0.text.lowercased().contains(lowerQuery)
-                                    }) {
-                                        doc.focusedBlockId = block.id
-                                        doc.cursorPosition = 0
-                                    }
-                                }
-                            }
+                            let newTab = appState.commandPaletteMode == .newTab
+                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: newTab, searchQuery: query, id: UUID())
                         }
                     )
                     Spacer()
@@ -1648,9 +1637,32 @@ struct ContentView: View {
         let paneId = UUID()
         let file = makeOpenFile(for: entry, id: paneId)
         workspaceManager.addWorkspaceWith(content: .document(openFile: file))
-        // addWorkspaceWith reassigns the pane id; use the actual focused pane id
         if let actualPaneId = workspaceManager.activeWorkspace?.focusedPaneId {
             loadFileContentForPane(entry: entry, paneId: actualPaneId)
+        }
+    }
+
+    /// Handle deferred Cmd+K navigation in ContentView's own render cycle.
+    private func handlePendingCmdKNavigation(_ request: CmdKNavRequest?) {
+        guard let request else { return }
+        pendingCmdKNavigation = nil
+        if request.inNewTab {
+            openEntryInNewWorkspaceTab(request.entry)
+        } else {
+            navigateToEntryInPane(request.entry)
+        }
+        if let query = request.searchQuery {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard let ws = workspaceManager.activeWorkspace,
+                      let doc = blockDocuments[ws.focusedPaneId] else { return }
+                let lowerQuery = query.lowercased()
+                if let block = doc.blocks.first(where: {
+                    $0.text.lowercased().contains(lowerQuery)
+                }) {
+                    doc.focusedBlockId = block.id
+                    doc.cursorPosition = 0
+                }
+            }
         }
     }
 
