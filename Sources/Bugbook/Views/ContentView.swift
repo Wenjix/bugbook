@@ -333,6 +333,11 @@ struct ContentView: View {
                 appState.showSettings = false
                 openContentInFocusedPane(.meetingsDocument())
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openGateway)) { _ in
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.gatewayDocument())
+            }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
             }
@@ -814,7 +819,8 @@ struct ContentView: View {
     private var activeTabLeadingPadding: CGFloat {
         let isCalendar = appState.activeTab?.isCalendar ?? false
         let isMeetings = appState.activeTab?.isMeetings ?? false
-        if isCalendar || isMeetings { return 0 }
+        let isGateway = appState.activeTab?.isGateway ?? false
+        if isCalendar || isMeetings || isGateway { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -926,7 +932,7 @@ struct ContentView: View {
     @ViewBuilder
     private func paneDocumentContent(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
         VStack(spacing: 0) {
-            if !file.isEmptyTab && !file.isCalendar && !file.isMeetings {
+            if !file.isEmptyTab && !file.isCalendar && !file.isMeetings && !file.isGateway {
                 HStack {
                     BreadcrumbView(
                         items: breadcrumbs(for: file),
@@ -970,7 +976,7 @@ struct ContentView: View {
     }
 
     private func paneLeadingPadding(for file: OpenFile) -> CGFloat {
-        if file.isCalendar || file.isMeetings { return 0 }
+        if file.isCalendar || file.isMeetings || file.isGateway { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -1046,6 +1052,26 @@ struct ContentView: View {
                     }
                 )
             }
+        } else if file.isGateway {
+            GatewayView(
+                appState: appState,
+                workspacePath: appState.workspacePath,
+                onNavigateToFile: { path in
+                    navigateToFilePath(path)
+                },
+                onOpenGatewayLink: { link in
+                    switch link {
+                    case .calendar:
+                        openContentInFocusedPane(.calendarDocument())
+                    case .graph:
+                        openContentInFocusedPane(.graphDocument())
+                    case .meetings:
+                        openContentInFocusedPane(.meetingsDocument())
+                    case .database(let path):
+                        navigateToFilePath(path)
+                    }
+                }
+            )
         } else if file.isDatabase {
             DatabaseFullPageView(dbPath: file.path, initialRowId: dbInitialRowId)
                 .id(leaf.id)

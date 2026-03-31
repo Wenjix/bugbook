@@ -6,12 +6,14 @@ enum TabKind: Equatable, Hashable, Codable {
     case calendar
     case meetings
     case graphView
+    case gateway
     case databaseRow(dbPath: String, rowId: String)
 
     var isDatabase: Bool { self == .database }
     var isCalendar: Bool { self == .calendar }
     var isMeetings: Bool { self == .meetings }
     var isGraphView: Bool { self == .graphView }
+    var isGateway: Bool { self == .gateway }
     var isDatabaseRow: Bool { if case .databaseRow = self { return true }; return false }
     var databasePath: String? { if case .databaseRow(let p, _) = self { return p }; return nil }
     var databaseRowId: String? { if case .databaseRow(_, let r) = self { return r }; return nil }

@@ -20,6 +20,8 @@
 		132EE00837A422455AC5AA40 /* PaneContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4358B9082C37BE1854810696 /* PaneContentView.swift */; };
 		1364B73C31B34B4A59420743 /* Row.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47EF03A6E9A932800D5A95E /* Row.swift */; };
 		14D253E632857BE6D9923006 /* MeetingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18386D38CC079F0F28BE5CF6 /* MeetingsView.swift */; };
+		A1B2C3D4E5F60718A9B0C1D2 /* GatewayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E2F3A4B5C6071829A0B1C2 /* GatewayView.swift */; };
+		A1B2C3D4E5F60718A9B0C1D3 /* GatewayViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E2F3A4B5C6071829A0B1C3 /* GatewayViewModel.swift */; };
 		1A69CBC3E525B070D8FCC902 /* CalendarEventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2262869710B320C9D232D7B /* CalendarEventStore.swift */; };
 		1C60B08005D500C4166E9E80 /* GraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED677E977CBBB33D0ECA74CE /* GraphView.swift */; };
 		1E82C25E8134A1038E2D96A6 /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C17D091E88E0D5554BE1F38 /* TabBarView.swift */; };
@@ -208,6 +210,8 @@
 		15F843B79C76EBFBEB1F6757 /* AgentHubViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHubViewModel.swift; sourceTree = "<group>"; };
 		17B465CD69F3B8BE6083AF39 /* AiThreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiThreadStore.swift; sourceTree = "<group>"; };
 		18386D38CC079F0F28BE5CF6 /* MeetingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingsView.swift; sourceTree = "<group>"; };
+		D1E2F3A4B5C6071829A0B1C2 /* GatewayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayView.swift; sourceTree = "<group>"; };
+		D1E2F3A4B5C6071829A0B1C3 /* GatewayViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayViewModel.swift; sourceTree = "<group>"; };
 		189FFD8CFB64645025DB5876 /* FileEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileEntry.swift; sourceTree = "<group>"; };
 		1A49740409C913AF7DE543D6 /* QueryEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryEngine.swift; sourceTree = "<group>"; };
 		1DA108034A6C3859C95A72DA /* PageHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageHeaderView.swift; sourceTree = "<group>"; };
@@ -555,6 +559,7 @@
 				B16E9F553D2EDB723B3CDFF8 /* Database */,
 				2579331778CC5EC6DB286690 /* Editor */,
 				C575E14DD4F6A30BEA81C1B4 /* Graph */,
+				D1E2F3A4B5C6071829A0B1C4 /* Gateway */,
 				F3EE2A2FCDD080B2CD99613C /* Meetings */,
 				D6B6A42068B2184566F971A5 /* Panes */,
 				3B7E87FA2AD5CC2E60AC7EF4 /* Settings */,
@@ -580,6 +585,7 @@
 				15F843B79C76EBFBEB1F6757 /* AgentHubViewModel.swift */,
 				257DD331DD4F07DC2016F504 /* CalendarViewModel.swift */,
 				82603F77EB0544EA989F4BE7 /* EditorUIState.swift */,
+				D1E2F3A4B5C6071829A0B1C3 /* GatewayViewModel.swift */,
 				7AE556881D0438C7C049970E /* MeetingsViewModel.swift */,
 				85F0C9E480C148703802DED8 /* SidebarPeekState.swift */,
 			);
@@ -764,6 +770,14 @@
 				18386D38CC079F0F28BE5CF6 /* MeetingsView.swift */,
 			);
 			path = Meetings;
+			sourceTree = "<group>";
+		};
+		D1E2F3A4B5C6071829A0B1C4 /* Gateway */ = {
+			isa = PBXGroup;
+			children = (
+				D1E2F3A4B5C6071829A0B1C2 /* GatewayView.swift */,
+			);
+			path = Gateway;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1002,6 +1016,8 @@
 				59C8876C7E8E337E6D37F861 /* MeetingKnowledgeView.swift in Sources */,
 				7EDA4964EE97D79FFE09EF59 /* MeetingNoteService.swift in Sources */,
 				E704106BDA659E0F10A43A3A /* MeetingNotesEditor.swift in Sources */,
+				A1B2C3D4E5F60718A9B0C1D2 /* GatewayView.swift in Sources */,
+				A1B2C3D4E5F60718A9B0C1D3 /* GatewayViewModel.swift in Sources */,
 				14D253E632857BE6D9923006 /* MeetingsView.swift in Sources */,
 				50C208360E6765C158168DBC /* MeetingsViewModel.swift in Sources */,
 				D231B9D2E5E28A22F7DC5659 /* MovePagePickerView.swift in Sources */,
