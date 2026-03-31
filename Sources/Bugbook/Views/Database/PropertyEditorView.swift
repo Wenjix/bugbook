@@ -239,7 +239,7 @@ struct PropertyEditorView: View {
             }
             Divider().padding(.vertical, 2)
             ForEach(options) { option in
-                optionButton(option.name, color: option.color, isActive: option.id == currentValue) {
+                optionButton(option.name, color: option.color, isActive: option.id == currentValue, option: option) {
                     value = .select(option.id)
                     showSelectPopover = false
                 }
@@ -319,7 +319,7 @@ struct PropertyEditorView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(options) { option in
                 let isSelected = selectedIds.contains(option.id)
-                optionButton(option.name, color: option.color, isActive: isSelected) {
+                optionButton(option.name, color: option.color, isActive: isSelected, option: option) {
                     var updated = selectedIds
                     if isSelected {
                         updated.removeAll { $0 == option.id }
@@ -348,30 +348,22 @@ struct PropertyEditorView: View {
 
     // MARK: - Shared Option Button
 
-    private func optionButton(_ label: String, color: String? = nil, isActive: Bool = false, isAction: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if let color = color {
-                    Circle()
-                        .fill(colorForName(color))
-                        .frame(width: 8, height: 8)
-                }
-                Text(label)
-                    .font(.callout)
-                    .foregroundStyle(isAction ? Color.secondary : Color.primary)
-                Spacer()
-                if isActive {
-                    Image(systemName: "checkmark")
-                        .font(.caption)
-                        .foregroundStyle(.primary)
+    private func optionButton(_ label: String, color: String? = nil, isActive: Bool = false, isAction: Bool = false, option: SelectOption? = nil, action: @escaping () -> Void) -> some View {
+        OptionButtonRow(
+            label: label,
+            color: color.map { colorForName($0) },
+            isActive: isActive,
+            isAction: isAction,
+            showKebab: option != nil,
+            onSelect: action,
+            onKebab: {
+                if let option = option {
+                    editingOptionId = option.id
+                    editingOptionName = option.name
+                    editingOptionColor = option.color
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        )
     }
 
     // MARK: - Option Context Menu
@@ -1361,6 +1353,59 @@ private struct RelationFlowLayout: Layout {
             rows.append((count: currentCount, height: currentHeight))
         }
         return rows
+    }
+}
+
+// MARK: - Option Button Row (hover kebab)
+
+private struct OptionButtonRow: View {
+    let label: String
+    let color: Color?
+    let isActive: Bool
+    let isAction: Bool
+    let showKebab: Bool
+    let onSelect: () -> Void
+    let onKebab: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                if let color {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 8, height: 8)
+                }
+                Text(label)
+                    .font(.callout)
+                    .foregroundStyle(isAction ? Color.secondary : Color.primary)
+                Spacer()
+                if showKebab && isHovered {
+                    Button {
+                        onKebab()
+                    } label: {
+                        Text("···")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 
