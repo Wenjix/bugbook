@@ -292,6 +292,15 @@ struct DatabaseEmbedBlockView: View {
             onOpenDatabase: { onOpenDatabaseTab?(dbPath) }
         )
         .padding(.vertical, 4)
+        .contextMenu {
+            if let sidebarReferencePayload {
+                Button {
+                    NotificationCenter.default.post(name: .addToSidebar, object: sidebarReferencePayload)
+                } label: {
+                    Label("Add to Sidebar", systemImage: "sidebar.left")
+                }
+            }
+        }
     }
 
     private func sidebarDragHandle(payload: SidebarReferenceDragPayload) -> some View {

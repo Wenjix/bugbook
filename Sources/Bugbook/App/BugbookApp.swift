@@ -374,6 +374,7 @@ extension Notification.Name {
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")
     static let movePageToDir = Notification.Name("movePageToDir")
+    static let addToSidebar = Notification.Name("addToSidebar")
 
     // Pane/Workspace system
     static let splitPaneRight = Notification.Name("splitPaneRight")
