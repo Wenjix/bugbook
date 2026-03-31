@@ -1,6 +1,6 @@
 import Foundation
 
-enum TabKind: Equatable, Hashable {
+enum TabKind: Equatable, Hashable, Codable {
     case page
     case database
     case calendar

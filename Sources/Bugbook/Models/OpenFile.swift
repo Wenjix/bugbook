@@ -1,6 +1,6 @@
 import Foundation
 
-struct OpenFile: Identifiable, Equatable {
+struct OpenFile: Identifiable, Equatable, Codable {
     let id: UUID
     var path: String
     var content: String

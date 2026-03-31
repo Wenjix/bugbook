@@ -116,6 +116,23 @@ struct BugbookApp: App {
                     NotificationCenter.default.post(name: .editorZoomReset, object: nil)
                 }
                 .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
+                Button("Split Pane Right") {
+                    NotificationCenter.default.post(name: .splitPaneRight, object: nil)
+                }
+                .keyboardShortcut("d")
+
+                Button("Split Pane Down") {
+                    NotificationCenter.default.post(name: .splitPaneDown, object: nil)
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+
+                Button("Close Workspace") {
+                    NotificationCenter.default.post(name: .closeWorkspace, object: nil)
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
             }
 
             // Block type shortcuts: Cmd+Option+0-9
@@ -271,6 +288,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return event
             }
         }
+
+        // Cmd+Option+Arrow keys for pane focus navigation
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains([.command, .option]),
+                  !flags.contains(.shift),
+                  !flags.contains(.control) else { return event }
+
+            switch event.keyCode {
+            case 123: // Left arrow
+                NotificationCenter.default.post(name: .movePaneFocusLeft, object: nil)
+                return nil
+            case 124: // Right arrow
+                NotificationCenter.default.post(name: .movePaneFocusRight, object: nil)
+                return nil
+            case 126: // Up arrow
+                NotificationCenter.default.post(name: .movePaneFocusUp, object: nil)
+                return nil
+            case 125: // Down arrow
+                NotificationCenter.default.post(name: .movePaneFocusDown, object: nil)
+                return nil
+            default:
+                return event
+            }
+        }
+
+        // Cmd+1-9 for workspace switching
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command else { return event }
+
+            // Key codes for 1-9 on US keyboard
+            let digitKeyCodes: [UInt16: Int] = [
+                18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8
+            ]
+            guard let index = digitKeyCodes[event.keyCode] else { return event }
+            NotificationCenter.default.post(name: .switchWorkspace, object: index)
+            return nil
+        }
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -319,4 +375,13 @@ extension Notification.Name {
     static let movePage = Notification.Name("movePage")
     static let movePageToDir = Notification.Name("movePageToDir")
 
+    // Pane/Workspace system
+    static let splitPaneRight = Notification.Name("splitPaneRight")
+    static let splitPaneDown = Notification.Name("splitPaneDown")
+    static let closeWorkspace = Notification.Name("closeWorkspace")
+    static let movePaneFocusLeft = Notification.Name("movePaneFocusLeft")
+    static let movePaneFocusRight = Notification.Name("movePaneFocusRight")
+    static let movePaneFocusUp = Notification.Name("movePaneFocusUp")
+    static let movePaneFocusDown = Notification.Name("movePaneFocusDown")
+    static let switchWorkspace = Notification.Name("switchWorkspace")
 }
