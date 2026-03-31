@@ -41,6 +41,7 @@ struct OutlineBlockView: View {
 
         return Button {
             document.focusedBlockId = entry.id
+            document.scrollToBlockId = entry.id
         } label: {
             HStack(spacing: 6) {
                 Circle()
