@@ -32,7 +32,7 @@ let package = Package(
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "8.40.0"),
         .package(url: "https://github.com/jpsim/Yams", from: "6.0.1"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.7.9"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.5"),
+        // GhosttyKit: GPU-accelerated terminal engine (replaces SwiftTerm)
     ],
     targets: [
         // Shared library — models, storage, engines
@@ -58,9 +58,22 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
-                .product(name: "SwiftTerm", package: "SwiftTerm"),
+                "GhosttyKit",
             ],
-            path: "Sources/Bugbook"
+            path: "Sources/Bugbook",
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("Carbon"),
+                .linkedFramework("CoreFoundation"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("CoreText"),
+                .linkedFramework("Foundation"),
+                .linkedFramework("IOSurface"),
+                .linkedFramework("Metal"),
+                .linkedFramework("QuartzCore"),
+                .linkedLibrary("c++"),
+                .linkedLibrary("z"),
+            ]
         ),
         // iPhone-friendly SwiftUI app
         .executableTarget(
@@ -91,6 +104,11 @@ let package = Package(
                 "BugbookCore",
             ],
             path: "Tests/BugbookCLITests"
+        ),
+        // GhosttyKit static library (Metal-backed terminal engine)
+        .binaryTarget(
+            name: "GhosttyKit",
+            path: "Frameworks/GhosttyKit.xcframework"
         ),
     ]
 )

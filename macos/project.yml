@@ -11,9 +11,8 @@ packages:
   SentryCocoa:
     url: https://github.com/getsentry/sentry-cocoa
     from: "8.40.0"
-  SwiftTerm:
-    url: https://github.com/migueldeicaza/SwiftTerm.git
-    from: "1.2.5"
+  # GhosttyKit: GPU-accelerated terminal engine (local XCFramework)
+  # Linked via Frameworks/GhosttyKit.xcframework
 targets:
   BugbookCore:
     type: framework
@@ -47,7 +46,14 @@ targets:
       - package: Sparkle
       - package: SentryCocoa
         product: Sentry
-      - package: SwiftTerm
+      - framework: ../Frameworks/GhosttyKit.xcframework
+        embed: false
+      - sdk: Carbon.framework
+      - sdk: Metal.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreText.framework
+      - sdk: QuartzCore.framework
+      - sdk: IOSurface.framework
     info:
       path: App/Info.plist
       properties:
@@ -74,6 +80,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
+        OTHER_LDFLAGS: ["-lz", "-lc++"]
   BugbookUITests:
     type: bundle.ui-testing
     platform: macOS
