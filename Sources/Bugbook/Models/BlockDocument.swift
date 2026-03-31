@@ -1003,12 +1003,13 @@ class BlockDocument {
             return
 
         case let .blockType(type, headingLevel):
-            // Callout needs special handling — set calloutType and focus after
+            // Callout needs special handling — set icon/color defaults and focus after
             if type == .callout {
                 saveUndo()
                 updateBlockProperty(id: blockId) { block in
                     block.type = .callout
-                    block.calloutType = "info"
+                    block.calloutIcon = "lightbulb"
+                    block.calloutColor = "default"
                     block.text = ""
                 }
                 focusOrInsertParagraphAfter(blockId: blockId)
