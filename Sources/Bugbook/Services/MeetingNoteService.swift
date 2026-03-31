@@ -79,7 +79,8 @@ class MeetingNoteService {
         event: CalendarEvent?,
         workspace: String,
         aiService: AiService,
-        apiKey: String
+        apiKey: String,
+        model: AnthropicModel = .sonnet
     ) async -> String? {
         // If there's an event with an existing linked page, return it
         if let event, let existing = event.linkedPagePath,
@@ -98,7 +99,7 @@ class MeetingNoteService {
         let summary: AiService.TranscriptSummary
         if !apiKey.isEmpty {
             do {
-                summary = try await aiService.summarizeTranscript(transcription.fullText, apiKey: apiKey)
+                summary = try await aiService.summarizeTranscript(transcription.fullText, apiKey: apiKey, model: model)
             } catch {
                 self.error = "AI summary failed: \(error.localizedDescription)"
                 summary = AiService.TranscriptSummary(summary: "_(AI summary unavailable)_", actionItems: "- [ ] ")
