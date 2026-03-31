@@ -27,7 +27,7 @@ struct MeetingsView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("Meetings")
+            Text("AI Meeting Notes")
                 .font(.system(size: 16, weight: .semibold))
                 .lineLimit(1)
 
@@ -37,6 +37,17 @@ struct MeetingsView: View {
                 ProgressView()
                     .controlSize(.small)
             }
+
+            Button(action: { appState.openNotesChat() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                    Text("Chat with all my notes")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
 
             Button(action: rescan) {
                 Image(systemName: "arrow.clockwise")
