@@ -25,6 +25,15 @@ enum PaneContent: Codable, Equatable {
         ))
     }
 
+    /// A graph view pane.
+    static func graphDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://graph", content: "", isDirty: false, isEmptyTab: false,
+            kind: .graphView, displayName: "Graph View", icon: "sf:point.3.connected.trianglepath.dotted"
+        ))
+    }
+
     /// A meetings pane.
     static func meetingsDocument() -> PaneContent {
         let id = UUID()

@@ -29,10 +29,22 @@ struct PaneContentView: View {
         .clipShape(Rectangle())
         .contextMenu {
             Menu("Split Right") {
-                paneSplitOptions(axis: .horizontal)
+                paneTypeOptions { content in
+                    workspaceManager.setFocusedPane(id: leaf.id)
+                    _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content)
+                }
             }
             Menu("Split Down") {
-                paneSplitOptions(axis: .vertical)
+                paneTypeOptions { content in
+                    workspaceManager.setFocusedPane(id: leaf.id)
+                    _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: content)
+                }
+            }
+            Divider()
+            Menu("Replace With") {
+                paneTypeOptions { content in
+                    workspaceManager.updatePaneContent(paneId: leaf.id, content: content)
+                }
             }
             Divider()
             Button("Close Pane") {
@@ -42,23 +54,12 @@ struct PaneContentView: View {
     }
 
     @ViewBuilder
-    private func paneSplitOptions(axis: PaneNode.Split.Axis) -> some View {
-        Button("Terminal") {
-            workspaceManager.setFocusedPane(id: leaf.id)
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .terminal)
-        }
-        Button("Empty Page") {
-            workspaceManager.setFocusedPane(id: leaf.id)
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .emptyDocument())
-        }
-        Button("Calendar") {
-            workspaceManager.setFocusedPane(id: leaf.id)
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .calendarDocument())
-        }
-        Button("Meetings") {
-            workspaceManager.setFocusedPane(id: leaf.id)
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .meetingsDocument())
-        }
+    private func paneTypeOptions(action: @escaping (PaneContent) -> Void) -> some View {
+        Button("Terminal") { action(.terminal) }
+        Button("Empty Page") { action(.emptyDocument()) }
+        Button("Calendar") { action(.calendarDocument()) }
+        Button("Meetings") { action(.meetingsDocument()) }
+        Button("Graph View") { action(.graphDocument()) }
     }
 
     @ViewBuilder

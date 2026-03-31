@@ -112,6 +112,9 @@ struct WorkspaceTabBar: View {
         Button("Meetings") {
             _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .meetingsDocument())
         }
+        Button("Graph View") {
+            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .graphDocument())
+        }
     }
 }
 
