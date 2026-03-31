@@ -18,6 +18,7 @@ struct BlockCellView: View {
     @State private var showSlashMenu = false
     @State private var showBlockMenu = false
     @State private var showPagePicker = false
+    @State private var showMentionPicker = false
     @State private var showAiPrompt = false
 
     var body: some View {
@@ -30,6 +31,7 @@ struct BlockCellView: View {
                 showSlashMenu: $showSlashMenu,
                 showBlockMenu: $showBlockMenu,
                 showPagePicker: $showPagePicker,
+                showMentionPicker: $showMentionPicker,
                 showAiPrompt: $showAiPrompt
             ))
     }
@@ -292,12 +294,14 @@ private struct PopoverSyncModifier: ViewModifier {
     @Binding var showSlashMenu: Bool
     @Binding var showBlockMenu: Bool
     @Binding var showPagePicker: Bool
+    @Binding var showMentionPicker: Bool
     @Binding var showAiPrompt: Bool
 
     /// Whether this block is the target of any popover right now.
     private var isSlashTarget: Bool { document.slashMenuBlockId == block.id }
     private var isBlockMenuTarget: Bool { document.blockMenuBlockId == block.id }
     private var isPagePickerTarget: Bool { document.showPagePicker && document.pagePickerBlockId == block.id }
+    private var isMentionPickerTarget: Bool { document.mentionPickerBlockId == block.id }
     private var isAiPromptTarget: Bool { document.aiPromptBlockId == block.id }
 
     func body(content: Content) -> some View {
@@ -306,6 +310,7 @@ private struct PopoverSyncModifier: ViewModifier {
                 showSlashMenu = isSlashTarget
                 showBlockMenu = isBlockMenuTarget
                 showPagePicker = isPagePickerTarget
+                showMentionPicker = isMentionPickerTarget
                 showAiPrompt = isAiPromptTarget
             }
             .onChange(of: document.slashMenuBlockId) { _, newVal in
@@ -337,6 +342,15 @@ private struct PopoverSyncModifier: ViewModifier {
             .onChange(of: showPagePicker) { _, show in
                 if !show && document.showPagePicker && document.pagePickerBlockId == block.id {
                     document.dismissPagePicker()
+                }
+            }
+            .onChange(of: document.mentionPickerBlockId) { _, newVal in
+                let shouldShow = (newVal == block.id)
+                if showMentionPicker != shouldShow { showMentionPicker = shouldShow }
+            }
+            .onChange(of: showMentionPicker) { _, show in
+                if !show && document.mentionPickerBlockId == block.id {
+                    document.dismissMentionPicker()
                 }
             }
             .onChange(of: document.aiPromptBlockId) { _, newVal in
@@ -381,6 +395,13 @@ private struct PopoverSyncModifier: ViewModifier {
                 if isPagePickerTarget {
                     Color.clear.floatingPopover(isPresented: $showPagePicker, arrowEdge: .bottom) {
                         PagePickerView(document: document)
+                    }
+                }
+            }
+            .background {
+                if isMentionPickerTarget {
+                    Color.clear.floatingPopover(isPresented: $showMentionPicker, arrowEdge: .bottom) {
+                        MentionPickerView(document: document)
                     }
                 }
             }
