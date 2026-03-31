@@ -95,12 +95,14 @@ struct MeetingBlockView: View {
                 .buttonStyle(.borderless)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
 
             meetingNotesChildBlocks
                 .frame(minHeight: 80)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.top, 2)
+                .padding(.bottom, 8)
         }
     }
 
