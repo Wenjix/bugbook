@@ -436,7 +436,7 @@ struct MeetingBlockView: View {
         }) {
             HStack(spacing: 8) {
                 if showWaveform {
-                    WaveformView(isActive: block.meetingState == .recording, phase: 0)
+                    WaveformView(isActive: block.meetingState == .recording, audioLevel: document.meetingAudioLevel)
                         .frame(width: 40, height: 16)
                 } else {
                     Text("Transcript")
@@ -818,40 +818,34 @@ private struct PulsingDot: View {
 
 private struct WaveformView: View {
     var isActive: Bool
-    var phase: CGFloat
+    var audioLevel: Float
 
-    @State private var animating = false
     private let barCount = 5
+    private let maxHeight: CGFloat = 14
+    private let minHeight: CGFloat = 3
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(isActive ? Color.red : Color.fallbackTextMuted)
-                    .frame(width: 3, height: barHeight(for: i))
-                    .animation(
-                        isActive
-                            ? .easeInOut(duration: 0.4 + Double(i) * 0.1)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(i) * 0.08)
-                            : .easeOut(duration: 0.3),
-                        value: animating
-                    )
+        TimelineView(.animation(minimumInterval: 0.1, paused: !isActive)) { timeline in
+            HStack(spacing: 2) {
+                ForEach(0..<barCount, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(isActive ? Color.red : Color.fallbackTextMuted)
+                        .frame(width: 3, height: barHeight(for: i, date: timeline.date))
+                        .animation(.easeInOut(duration: 0.1), value: audioLevel)
+                }
             }
-        }
-        .onAppear {
-            if isActive { animating = true }
-        }
-        .onChange(of: isActive) { _, active in
-            animating = active
         }
     }
 
-    private func barHeight(for index: Int) -> CGFloat {
-        if !isActive { return 3 }
-        let base: CGFloat = animating ? 14 : 3
-        let variance: CGFloat = animating ? CGFloat(index % 3) * 3 : 0
-        return max(3, base - variance)
+    private func barHeight(for index: Int, date: Date) -> CGFloat {
+        guard isActive else { return minHeight }
+        let level = CGFloat(audioLevel)
+        // Each bar gets a slightly different offset from the audio level for organic movement
+        let t = date.timeIntervalSinceReferenceDate
+        let freq = 2.5 + Double(index) * 1.3
+        let jitter = CGFloat(sin(t * freq) * 0.15)
+        let height = minHeight + (maxHeight - minHeight) * (level + jitter)
+        return max(minHeight, min(maxHeight, height))
     }
 }
 
