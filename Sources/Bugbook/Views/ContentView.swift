@@ -319,13 +319,19 @@ struct ContentView: View {
                 openDailyNote()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openGraphView)) { _ in
-                appState.openGraphView()
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.graphDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
-                appState.openCalendar()
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.calendarDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
-                appState.openMeetings()
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.meetingsDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
@@ -983,6 +989,14 @@ struct ContentView: View {
         }
     }
 
+    /// Replace the focused pane's content with the given PaneContent.
+    private func openContentInFocusedPane(_ content: PaneContent) {
+        guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId else { return }
+        // Clean up old terminal session if replacing a terminal pane
+        terminalManager.closeSession(paneId)
+        workspaceManager.updatePaneContent(paneId: paneId, content: content)
+    }
+
     /// Routes a pane's OpenFile to the correct content view based on its TabKind.
     @ViewBuilder
     private func paneContentRouting(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
@@ -1021,6 +1035,17 @@ struct ContentView: View {
                     navigateToFilePath(path)
                 }
             )
+        } else if file.isGraphView {
+            if let workspace = appState.workspacePath {
+                GraphView(
+                    backlinkService: backlinkService,
+                    workspacePath: workspace,
+                    currentPagePath: workspaceManager.focusedOpenFile?.path,
+                    onNavigateToFile: { path in
+                        navigateToFilePath(path)
+                    }
+                )
+            }
         } else if file.isDatabase {
             DatabaseFullPageView(dbPath: file.path, initialRowId: dbInitialRowId)
                 .id(leaf.id)

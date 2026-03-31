@@ -17,6 +17,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var isDatabase: Bool { kind.isDatabase }
     var isCalendar: Bool { kind.isCalendar }
     var isMeetings: Bool { kind.isMeetings }
+    var isGraphView: Bool { kind.isGraphView }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }
