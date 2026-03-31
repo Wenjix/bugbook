@@ -3,14 +3,14 @@ import SwiftUI
 import AppKit
 #endif
 
-/// Workspace-level tab bar. Each tab represents a workspace (owns a pane tree).
-/// Replaces TabBarView for the pane system.
+/// Tab bar at the top of the content area. Each tab owns a pane layout.
 struct WorkspaceTabBar: View {
     var workspaceManager: WorkspaceManager
     var sidebarOpen: Bool
 
     @State private var dragOverIndex: Int?
-    @State private var draggingWorkspaceId: UUID?
+    @State private var draggingId: UUID?
+    @State private var showNewMenu = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -25,23 +25,24 @@ struct WorkspaceTabBar: View {
                                     .padding(.vertical, ShellZoomMetrics.size(4))
                             }
 
-                            WorkspaceTabItemView(
-                                workspace: workspace,
+                            TabItemView(
+                                title: tabTitle(for: workspace),
+                                icon: tabIcon(for: workspace),
                                 isActive: index == workspaceManager.activeWorkspaceIndex,
                                 onSelect: { workspaceManager.switchWorkspace(to: index) },
                                 onClose: { workspaceManager.closeWorkspace(at: index) }
                             )
                             .zIndex(index == workspaceManager.activeWorkspaceIndex ? 1 : 0)
-                            .opacity(draggingWorkspaceId == workspace.id ? 0.4 : 1.0)
+                            .opacity(draggingId == workspace.id ? 0.4 : 1.0)
                             .onDrag {
-                                draggingWorkspaceId = workspace.id
+                                draggingId = workspace.id
                                 return NSItemProvider(object: workspace.id.uuidString as NSString)
                             }
-                            .onDrop(of: [.text], delegate: WorkspaceTabDropDelegate(
+                            .onDrop(of: [.text], delegate: TabDropDelegate(
                                 targetIndex: index,
                                 workspaceManager: workspaceManager,
                                 dragOverIndex: $dragOverIndex,
-                                draggingId: $draggingWorkspaceId
+                                draggingId: $draggingId
                             ))
                         }
                     }
@@ -53,31 +54,24 @@ struct WorkspaceTabBar: View {
                             .padding(.vertical, ShellZoomMetrics.size(4))
                     }
 
-                    Menu {
-                        Button("New Workspace") { workspaceManager.addWorkspace() }
-                        Divider()
-                        Menu("Split Right") {
-                            splitContentOptions(axis: .horizontal)
-                        }
-                        Menu("Split Down") {
-                            splitContentOptions(axis: .vertical)
-                        }
-                    } label: {
+                    // + button with content picker
+                    Button { showNewMenu = true } label: {
                         Image(systemName: "plus")
                             .font(ShellZoomMetrics.font(Typography.bodySmall))
                             .foregroundStyle(.secondary)
                             .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
+                    .buttonStyle(.plain)
                     .padding(.leading, ShellZoomMetrics.size(8))
                     .padding(.bottom, ShellZoomMetrics.size(2))
-                    .onDrop(of: [.text], delegate: WorkspaceTabDropDelegate(
+                    .popover(isPresented: $showNewMenu, arrowEdge: .bottom) {
+                        NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
+                    }
+                    .onDrop(of: [.text], delegate: TabDropDelegate(
                         targetIndex: workspaceManager.workspaces.count,
                         workspaceManager: workspaceManager,
                         dragOverIndex: $dragOverIndex,
-                        draggingId: $draggingWorkspaceId
+                        draggingId: $draggingId
                     ))
                 }
                 .padding(.leading, ShellZoomMetrics.size(2))
@@ -98,30 +92,117 @@ struct WorkspaceTabBar: View {
         )
     }
 
-    @ViewBuilder
-    private func splitContentOptions(axis: PaneNode.Split.Axis) -> some View {
-        Button("Terminal") {
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .terminal)
+    private func tabTitle(for ws: Workspace) -> String {
+        // Derive name from the focused pane's content
+        if let leaf = ws.focusedLeaf {
+            switch leaf.content {
+            case .document(let file):
+                if let name = file.displayName, !name.isEmpty { return name }
+                if file.isEmptyTab { return "New Tab" }
+                if file.isCalendar { return "Calendar" }
+                if file.isMeetings { return "Meetings" }
+                if file.isGraphView { return "Graph" }
+                let fileName = (file.path as NSString).lastPathComponent
+                return fileName.hasSuffix(".md") ? String(fileName.dropLast(3)) : fileName
+            case .terminal:
+                return "Terminal"
+            }
         }
-        Button("Empty Page") {
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .emptyDocument())
-        }
-        Button("Calendar") {
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .calendarDocument())
-        }
-        Button("Meetings") {
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .meetingsDocument())
-        }
-        Button("Graph View") {
-            _ = workspaceManager.splitFocusedPane(axis: axis, newContent: .graphDocument())
+        return ws.name
+    }
+
+    private func tabIcon(for ws: Workspace) -> String? {
+        guard let leaf = ws.focusedLeaf else { return nil }
+        switch leaf.content {
+        case .document(let file):
+            if file.isCalendar { return "sf:calendar" }
+            if file.isMeetings { return "sf:person.2" }
+            if file.isGraphView { return "sf:point.3.connected.trianglepath.dotted" }
+            return file.icon
+        case .terminal:
+            return "sf:terminal"
         }
     }
 }
 
-// MARK: - Workspace Tab Item
+// MARK: - New Pane Popover
 
-struct WorkspaceTabItemView: View {
-    let workspace: Workspace
+/// Fast content picker shown when clicking the + button.
+private struct NewPanePopover: View {
+    let workspaceManager: WorkspaceManager
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("New Tab")
+                .font(.system(size: Typography.caption, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+
+            contentRow(icon: "doc.text", label: "Page") {
+                workspaceManager.addWorkspace()
+                dismiss()
+            }
+            contentRow(icon: "terminal", label: "Terminal") {
+                workspaceManager.addWorkspaceWith(content: .terminal)
+                dismiss()
+            }
+            contentRow(icon: "calendar", label: "Calendar") {
+                workspaceManager.addWorkspaceWith(content: .calendarDocument())
+                dismiss()
+            }
+            contentRow(icon: "person.2", label: "Meetings") {
+                workspaceManager.addWorkspaceWith(content: .meetingsDocument())
+                dismiss()
+            }
+
+            Divider().padding(.vertical, 4)
+
+            Text("Split Pane")
+                .font(.system(size: Typography.caption, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            contentRow(icon: "rectangle.split.1x2", label: "Split Right") {
+                _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal)
+                dismiss()
+            }
+            contentRow(icon: "rectangle.split.2x1", label: "Split Down") {
+                _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: .terminal)
+                dismiss()
+            }
+        }
+        .padding(.bottom, 8)
+        .frame(width: 180)
+    }
+
+    private func contentRow(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: Typography.caption))
+                    .frame(width: 16)
+                    .foregroundStyle(.secondary)
+                Text(label)
+                    .font(.system(size: Typography.bodySmall))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Tab Item
+
+private struct TabItemView: View {
+    let title: String
+    var icon: String?
     let isActive: Bool
     var onSelect: () -> Void
     var onClose: () -> Void
@@ -133,11 +214,9 @@ struct WorkspaceTabItemView: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: ShellZoomMetrics.size(6)) {
-                if let icon = workspace.icon, !icon.isEmpty {
-                    Text(icon).font(ShellZoomMetrics.font(14))
-                }
+                tabIconView
 
-                Text(workspace.name)
+                Text(title)
                     .font(ShellZoomMetrics.font(Typography.bodySmall))
                     .lineLimit(1)
 
@@ -188,25 +267,32 @@ struct WorkspaceTabItemView: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
     }
+
+    @ViewBuilder
+    private var tabIconView: some View {
+        if let icon, !icon.isEmpty {
+            if icon.hasPrefix("sf:") {
+                Image(systemName: String(icon.dropFirst(3)))
+                    .font(ShellZoomMetrics.font(Typography.caption))
+                    .foregroundStyle(.secondary)
+            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+                Text(icon).font(ShellZoomMetrics.font(14))
+            }
+        }
+    }
 }
 
-// MARK: - Workspace Tab Drop Delegate
+// MARK: - Tab Drop Delegate
 
-struct WorkspaceTabDropDelegate: DropDelegate {
+private struct TabDropDelegate: DropDelegate {
     let targetIndex: Int
     let workspaceManager: WorkspaceManager
     @Binding var dragOverIndex: Int?
     @Binding var draggingId: UUID?
 
     func dropEntered(info: DropInfo) { dragOverIndex = targetIndex }
-
-    func dropExited(info: DropInfo) {
-        if dragOverIndex == targetIndex { dragOverIndex = nil }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
+    func dropExited(info: DropInfo) { if dragOverIndex == targetIndex { dragOverIndex = nil } }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
 
     func performDrop(info: DropInfo) -> Bool {
         dragOverIndex = nil
@@ -215,13 +301,8 @@ struct WorkspaceTabDropDelegate: DropDelegate {
             self.draggingId = nil
             return false
         }
-        guard sourceIndex != targetIndex else {
-            self.draggingId = nil
-            return true
-        }
-
+        guard sourceIndex != targetIndex else { self.draggingId = nil; return true }
         workspaceManager.reorderWorkspace(from: sourceIndex, to: targetIndex)
-
         self.draggingId = nil
         return true
     }
@@ -231,8 +312,6 @@ struct WorkspaceTabDropDelegate: DropDelegate {
 
 // MARK: - Connected Tab Shape
 
-/// A tab shape with rounded top corners and inverse-radius "wings" at the bottom
-/// that curve into the page, like browser/Notion tabs.
 struct ConnectedTabShape: Shape {
     let cornerRadius: CGFloat
     let wingRadius: CGFloat
