@@ -1370,41 +1370,35 @@ private struct OptionButtonRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 6) {
-                if let color {
-                    Circle()
-                        .fill(color)
-                        .frame(width: 8, height: 8)
-                }
-                Text(label)
-                    .font(.callout)
-                    .foregroundStyle(isAction ? Color.secondary : Color.primary)
-                Spacer()
-                if showKebab && isHovered {
-                    Button {
-                        onKebab()
-                    } label: {
-                        Text("···")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                if isActive {
-                    Image(systemName: "checkmark")
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                }
+        HStack(spacing: 6) {
+            if let color {
+                Circle()
+                    .fill(color)
+                    .frame(width: 8, height: 8)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
-            .contentShape(Rectangle())
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(isAction ? Color.secondary : Color.primary)
+            Spacer()
+            if showKebab {
+                Text("···")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isHovered ? .primary : .tertiary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onKebab() }
+            }
+            if isActive {
+                Image(systemName: "checkmark")
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 4).fill(isHovered ? Color.primary.opacity(0.06) : Color.clear))
+        .contentShape(Rectangle())
+        .onTapGesture { onSelect() }
         .onHover { isHovered = $0 }
     }
 }
