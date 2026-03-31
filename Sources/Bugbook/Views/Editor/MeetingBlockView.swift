@@ -428,28 +428,19 @@ struct MeetingBlockView: View {
 
     private var notesView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if block.children.isEmpty && block.meetingNotes.isEmpty {
-                Text("No notes recorded.")
-                    .font(.system(size: Typography.bodySmall))
-                    .foregroundStyle(Color.fallbackTextMuted)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 20)
-            } else if block.children.isEmpty {
+            if block.children.isEmpty && !block.meetingNotes.isEmpty {
                 // Legacy plain-text notes (backwards compat)
                 Text(block.meetingNotes)
                     .font(.system(size: Typography.bodySmall))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .textSelection(.enabled)
                     .padding(14)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(block.children) { child in
-                        BlockCellView(document: document, block: child)
-                            .padding(.vertical, 1)
-                    }
-                }
-                .padding(14)
             }
+
+            meetingNotesChildBlocks
+                .frame(minHeight: 80)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
         }
     }
 
