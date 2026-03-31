@@ -45,6 +45,7 @@ struct MCPServerInfo: Identifiable {
     var mcpServers: [MCPServerInfo] = []
 
     var isRecording: Bool = false
+    var recordingBlockId: UUID?
     var flashcardReviewOpen: Bool = false
     @ObservationIgnored lazy var aiThreadStore = AiThreadStore()
 
