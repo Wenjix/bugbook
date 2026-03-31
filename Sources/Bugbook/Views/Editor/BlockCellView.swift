@@ -71,14 +71,24 @@ struct BlockCellView: View {
         block.type == .paragraph && block.text.isEmpty
     }
 
-    /// Returns tighter vertical padding (1pt) when both the current block and its
-    /// neighbor are list items, keeping consecutive list items visually grouped.
-    /// Non-list blocks and list edges retain normal spacing (2pt). Horizontal rules
-    /// always use 1pt.
+    /// Returns tighter vertical padding when consecutive list items or
+    /// heading→list transitions should feel visually grouped.
+    /// - Consecutive list items: 1pt
+    /// - Heading ↔ list item boundary: 1pt (grouped feel)
+    /// - Horizontal rules: 1pt
+    /// - Everything else: 2pt
     private func listEdgePadding(neighbor: BlockType?) -> CGFloat {
         if block.type == .horizontalRule { return 1 }
-        guard block.type.isListItem, let neighbor, neighbor.isListItem else { return 2 }
-        return 1
+        guard let neighbor else { return 2 }
+        let currentIsList = block.type.isListItem
+        let neighborIsList = neighbor.isListItem
+        let currentIsHeading = block.type == .heading || block.type == .headingToggle
+        let neighborIsHeading = neighbor == .heading || neighbor == .headingToggle
+        // Consecutive list items
+        if currentIsList && neighborIsList { return 1 }
+        // Heading → list or list → heading boundary
+        if (currentIsList && neighborIsHeading) || (currentIsHeading && neighborIsList) { return 1 }
+        return 2
     }
 
     private var blockUsesOwnInteractions: Bool {
