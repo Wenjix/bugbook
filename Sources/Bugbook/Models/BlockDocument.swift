@@ -616,7 +616,7 @@ class BlockDocument {
         }
         updateBlockProperty(id: id) { block in
             block.type = type
-            if type == .heading {
+            if type == .heading || type == .headingToggle {
                 block.headingLevel = 1
             } else {
                 block.headingLevel = 0
@@ -626,7 +626,10 @@ class BlockDocument {
 
     func setHeadingLevel(id: UUID, level: Int) {
         updateBlockProperty(id: id) { block in
-            block.type = .heading
+            // Preserve the current type when it's already a heading variant
+            if block.type != .heading && block.type != .headingToggle {
+                block.type = .heading
+            }
             block.headingLevel = level
         }
     }
