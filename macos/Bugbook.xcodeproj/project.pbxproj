@@ -74,6 +74,7 @@
 		736679A853BAC31DAE966F2D /* WorkspaceWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B24F4424F4FA89F1B070108 /* WorkspaceWatcher.swift */; };
 		73733159AA52E171C502A90A /* Agent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D16799A267ED55B558F74BD /* Agent.swift */; };
 		74D36D5BBF4F6AD3BBF4076D /* AgentHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC7A3DE49ABD6E0CA5243482 /* AgentHubView.swift */; };
+		E290413799A28A17CC50C957 /* SkillDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9376FE426E025E11737D6737 /* SkillDetailView.swift */; };
 		7599744149050661CCF8FB27 /* DatabaseDateValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1FDBEE7FFDAA06C8410D140 /* DatabaseDateValue.swift */; };
 		76139D5A678EE0329AD1280B /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = D399795586ADE5448AB72D1C /* Schema.swift */; };
 		76E3F554517581E83297A297 /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33262B570A72E09F2E88ECF2 /* TrashView.swift */; };
@@ -120,6 +121,7 @@
 		B7A63C757BE15766F127FAB6 /* InlineRowPeekPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61811B37BBD5AE6F10496772 /* InlineRowPeekPanel.swift */; };
 		BAC17E1581B72C2E679063F4 /* MarkdownParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A436514B7FF9F95D479AF4FF /* MarkdownParser.swift */; };
 		BB63147ADC84BB1CB310FAD6 /* TableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D7150DDE83E7ED425899B1 /* TableView.swift */; };
+		A54F4BE359B93B383EA9A932 /* ThreadPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61331AF78FDF197552FCAC84 /* ThreadPickerRow.swift */; };
 		BD8320F85A870BCF0237959A /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6639981D84F86643DBB91CD /* AISettingsView.swift */; };
 		BE90067291DE6CF6F3B58A69 /* CalendarEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B580BF5FABDE8C0C3CF4D6 /* CalendarEvent.swift */; };
 		C145A3D5D629947B2A390937 /* CalendarDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE7800E7CF8238041F8CE22 /* CalendarDayView.swift */; };
@@ -326,6 +328,7 @@
 		D914C317DA10399836E4DECC /* DatabaseTemplatePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseTemplatePickerView.swift; sourceTree = "<group>"; };
 		DBE7800E7CF8238041F8CE22 /* CalendarDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarDayView.swift; sourceTree = "<group>"; };
 		DE522C3AF53714E545B79D65 /* AiSidePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiSidePanelView.swift; sourceTree = "<group>"; };
+		61331AF78FDF197552FCAC84 /* ThreadPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadPickerRow.swift; sourceTree = "<group>"; };
 		E071A97E9E6B0892FA767898 /* BacklinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BacklinkService.swift; sourceTree = "<group>"; };
 		E14D46F5252C474875D2AE94 /* SlashCommandMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandMenu.swift; sourceTree = "<group>"; };
 		E2B315BD3D01519D8E6333A3 /* FileSystemService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemService.swift; sourceTree = "<group>"; };
@@ -337,6 +340,7 @@
 		EAE175C836C7455A3A8153B2 /* SidebarReferenceDragPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarReferenceDragPayload.swift; sourceTree = "<group>"; };
 		EBC605E52D91C41E419FBF35 /* FloatingPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPopover.swift; sourceTree = "<group>"; };
 		EC7A3DE49ABD6E0CA5243482 /* AgentHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHubView.swift; sourceTree = "<group>"; };
+		9376FE426E025E11737D6737 /* SkillDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillDetailView.swift; sourceTree = "<group>"; };
 		ED677E977CBBB33D0ECA74CE /* GraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphView.swift; sourceTree = "<group>"; };
 		ED7530043DEEF28753C2CD6C /* Query.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Query.swift; sourceTree = "<group>"; };
 		EFF0F24D7EAF03362E0B0441 /* QmdService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QmdService.swift; sourceTree = "<group>"; };
@@ -467,6 +471,7 @@
 			children = (
 				DE522C3AF53714E545B79D65 /* AiSidePanelView.swift */,
 				4BF275F9F3243851AD6E2B97 /* NotesChatView.swift */,
+				61331AF78FDF197552FCAC84 /* ThreadPickerRow.swift */,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -475,6 +480,7 @@
 			isa = PBXGroup;
 			children = (
 				EC7A3DE49ABD6E0CA5243482 /* AgentHubView.swift */,
+				9376FE426E025E11737D6737 /* SkillDetailView.swift */,
 			);
 			path = Agent;
 			sourceTree = "<group>";
@@ -923,6 +929,8 @@
 				74D36D5BBF4F6AD3BBF4076D /* AgentHubView.swift in Sources */,
 				3AA74BAA18B9F57D4266402F /* AgentHubViewModel.swift in Sources */,
 				0044A6D4562A8D96730E1E8E /* AgentsSettingsView.swift in Sources */,
+				E290413799A28A17CC50C957 /* SkillDetailView.swift in Sources */,
+				A54F4BE359B93B383EA9A932 /* ThreadPickerRow.swift in Sources */,
 				C615A4810265456A1BFD7665 /* AiContextItem.swift in Sources */,
 				D809F8300B119795D5F00A8B /* AiService.swift in Sources */,
 				7ED64068786FC4125769B869 /* AiSidePanelView.swift in Sources */,
@@ -1187,10 +1195,13 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../Frameworks/GhosttyKit.xcframework/macos-arm64";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = "-lghostty-fat";
 				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.Bugbook;
 				PRODUCT_NAME = Bugbook;
 				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../Frameworks/GhosttyKit.xcframework/macos-arm64/Headers";
 			};
 			name = Release;
 		};
@@ -1208,10 +1219,13 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../Frameworks/GhosttyKit.xcframework/macos-arm64";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = "-lghostty-fat";
 				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.Bugbook;
 				PRODUCT_NAME = Bugbook;
 				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../Frameworks/GhosttyKit.xcframework/macos-arm64/Headers";
 			};
 			name = Debug;
 		};
