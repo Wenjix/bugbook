@@ -1048,6 +1048,9 @@ struct ContentView: View {
             MeetingsView(
                 appState: appState,
                 viewModel: meetingsVM,
+                meetingNoteService: meetingNoteService,
+                transcriptionService: transcriptionService,
+                aiService: aiService,
                 onNavigateToFile: { path in
                     navigateToFilePath(path)
                 }
