@@ -1299,9 +1299,11 @@ struct ContentView: View {
                         lastVolatile = volatile
                         var entries = segments
                         if !volatile.isEmpty { entries.append(volatile) }
+                        let fullText = entries.joined(separator: " ")
                         doc?.updateBlockProperty(id: blockId) { block in
                             block.transcriptEntries = entries
-                            block.meetingTranscript = entries.joined(separator: " ")
+                            block.meetingTranscript = fullText
+                            block.text = fullText
                         }
                         doc?.meetingVolatileText = volatile
                     }
@@ -1319,6 +1321,7 @@ struct ContentView: View {
             doc.updateBlockProperty(id: blockId) { block in
                 block.meetingState = .complete
                 block.meetingTranscript = transcript
+                block.text = transcript
             }
         }
         doc.onDropPageFromSidebar = { [weak appState, weak doc] sourcePath, insertionIndex in
