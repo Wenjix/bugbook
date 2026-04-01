@@ -1,0 +1,14 @@
+parent_config: .swiftlint.yml
+
+disabled_rules:
+  - trailing_comma
+  - todo
+  - opening_brace
+  - multiple_closures_with_trailing_closure
+  - force_cast
+  - force_try
+  - shorthand_operator
+  - cyclomatic_complexity
+  - function_body_length
+  - type_body_length
+  - file_length
