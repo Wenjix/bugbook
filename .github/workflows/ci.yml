@@ -27,7 +27,9 @@ jobs:
           fi
 
           swift --version
-          XCODE_VERSION="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
+          XCODE_BUILD_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_BUILD_VERSION"
+          XCODE_VERSION="$(printf '%s\n' "$XCODE_BUILD_VERSION" | awk '/^Xcode / { print $2 }')"
           echo "xcode_version=$XCODE_VERSION" >> "$GITHUB_OUTPUT"
 
           SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version || echo 0)"
