@@ -3,6 +3,7 @@ import Foundation
 enum TabKind: Equatable, Hashable, Codable {
     case page
     case database
+    case mail
     case calendar
     case meetings
     case graphView
@@ -11,6 +12,7 @@ enum TabKind: Equatable, Hashable, Codable {
     case databaseRow(dbPath: String, rowId: String)
 
     var isDatabase: Bool { self == .database }
+    var isMail: Bool { self == .mail }
     var isCalendar: Bool { self == .calendar }
     var isMeetings: Bool { self == .meetings }
     var isGraphView: Bool { self == .graphView }
@@ -33,6 +35,7 @@ struct FileEntry: Identifiable, Hashable {
 
     // Shims forwarding to kind for incremental migration
     var isDatabase: Bool { kind.isDatabase }
+    var isMail: Bool { kind.isMail }
     var isSkill: Bool { kind.isSkill }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }

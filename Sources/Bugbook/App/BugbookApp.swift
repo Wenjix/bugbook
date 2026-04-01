@@ -91,6 +91,11 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
+                Button("Mail") {
+                    NotificationCenter.default.post(name: .openMail, object: nil)
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+
                 Button("Calendar") {
                     NotificationCenter.default.post(name: .openCalendar, object: nil)
                 }
@@ -370,6 +375,7 @@ extension Notification.Name {
     static let navigateForward = Notification.Name("navigateForward")
     static let openDailyNote = Notification.Name("openDailyNote")
     static let openGraphView = Notification.Name("openGraphView")
+    static let openMail = Notification.Name("openMail")
     static let editorZoomIn = Notification.Name("editorZoomIn")
     static let editorZoomOut = Notification.Name("editorZoomOut")
     static let editorZoomReset = Notification.Name("editorZoomReset")

@@ -267,14 +267,6 @@ class FileSystemService {
                           userInfo: [NSLocalizedDescriptionKey: "Cannot move a page into its own sub-pages."])
         }
 
-        // Prevent moving a database folder into a new companion folder — databases
-        // should only be moved via explicit user actions, not nested inside pages.
-        let sourceIsDatabase = isDatabaseFolder(at: sourcePath)
-        if sourceIsDatabase && !fileManager.fileExists(atPath: destDir) {
-            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteInvalidFileNameError,
-                          userInfo: [NSLocalizedDescriptionKey: "Cannot move a database into a new sub-page folder."])
-        }
-
         // Create destination directory if needed (e.g. companion folder for a parent page)
         let createdDestDir = !fileManager.fileExists(atPath: destDir)
         if createdDestDir {
@@ -806,7 +798,7 @@ class FileSystemService {
 
     // MARK: - Path Rewriting
 
-    func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
+    nonisolated func rewritePathsInFile(at filePath: String, oldBase: String, newBase: String) {
         guard filePath.hasSuffix(".md"),
               oldBase != newBase,
               var content = try? String(contentsOfFile: filePath, encoding: .utf8),
@@ -815,7 +807,7 @@ class FileSystemService {
         try? content.write(toFile: filePath, atomically: true, encoding: .utf8)
     }
 
-    func rewritePathsRecursively(in directory: String, oldBase: String, newBase: String) {
+    nonisolated func rewritePathsRecursively(in directory: String, oldBase: String, newBase: String) {
         guard oldBase != newBase,
               FileManager.default.fileExists(atPath: directory) else { return }
         guard let items = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return }

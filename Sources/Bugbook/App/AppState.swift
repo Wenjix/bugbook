@@ -242,6 +242,21 @@ struct MCPServerInfo: Identifiable {
     }
 
     private func resolveEntry(for path: String) -> FileEntry {
+        switch path {
+        case "bugbook://mail":
+            return FileEntry(id: path, name: "Mail", path: path, isDirectory: false, kind: .mail, icon: "envelope")
+        case "bugbook://calendar":
+            return FileEntry(id: path, name: "Calendar", path: path, isDirectory: false, kind: .calendar, icon: "calendar.badge.clock")
+        case "bugbook://meetings":
+            return FileEntry(id: path, name: "Meetings", path: path, isDirectory: false, kind: .meetings, icon: "person.2")
+        case "bugbook://graph":
+            return FileEntry(id: path, name: "Graph View", path: path, isDirectory: false, kind: .graphView, icon: "sf:point.3.connected.trianglepath.dotted")
+        case "bugbook://gateway":
+            return FileEntry(id: path, name: "Gateway", path: path, isDirectory: false, kind: .gateway, icon: "square.grid.2x2")
+        default:
+            break
+        }
+
         if let row = DatabaseRowNavigationPath.parse(path) {
             return FileEntry(
                 id: path,

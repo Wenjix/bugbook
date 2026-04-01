@@ -30,7 +30,7 @@ struct SidebarView: View {
         ("general", "General", "gearshape"),
         ("appearance", "Appearance", "paintbrush"),
         ("ai", "AI", "cpu"),
-        ("calendar", "Calendar", "calendar"),
+        ("google", "Google", "person.badge.key"),
         ("agents", "Agents", "person.2"),
         ("search", "Search", "magnifyingglass"),
         ("shortcuts", "Shortcuts", "keyboard"),
@@ -246,6 +246,25 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "graph" : nil }
+
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openMail, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
+                        Image(systemName: "envelope")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Text("Mail")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
+                    .background(hoveredButton == "mail" ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "mail" : nil }
 
                 Button(action: { invokeAction { NotificationCenter.default.post(name: .openCalendar, object: nil) } }) {
                     HStack(spacing: chromeButtonSpacing) {

@@ -68,6 +68,7 @@ struct PaneContentView: View {
     private func paneTypeMenu(action: @escaping (PaneContent) -> Void) -> some View {
         Button("Terminal") { action(.terminal) }
         Button("Empty Page") { action(.emptyDocument()) }
+        Button("Mail") { action(.mailDocument()) }
         Button("Calendar") { action(.calendarDocument()) }
         Button("Meetings") { action(.meetingsDocument()) }
         Button("Graph View") { action(.graphDocument()) }
@@ -163,6 +164,7 @@ private struct PaneActionBar: View {
         Menu {
             Button("Terminal") { action(.terminal) }
             Button("Empty Page") { action(.emptyDocument()) }
+            Button("Mail") { action(.mailDocument()) }
             Button("Calendar") { action(.calendarDocument()) }
             Button("Meetings") { action(.meetingsDocument()) }
             Button("Graph View") { action(.graphDocument()) }

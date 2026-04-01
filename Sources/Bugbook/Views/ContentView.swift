@@ -10,9 +10,11 @@ struct ContentView: View {
     private let editorDraftStore = EditorDraftStore()
 
     @State private var appState = AppState()
+    @State private var appSettingsStore = AppSettingsStore()
     @State private var fileSystem = FileSystemService()
     @State private var aiService = AiService()
     @State private var calendarService = CalendarService()
+    @State private var mailService = MailService()
     @State private var calendarVM = CalendarViewModel()
     @State private var meetingNoteService = MeetingNoteService()
     @State private var transcriptionService = TranscriptionService()
@@ -89,7 +91,9 @@ struct ContentView: View {
     private var configuredLayout: some View {
         applyDatabaseNotifications(
             to: applyCommandNotifications(
-                to: applyLifecycle(to: baseLayout)
+                to: applyWorkspaceNotifications(
+                    to: applyLifecycle(to: baseLayout)
+                )
             )
         )
     }
@@ -99,10 +103,14 @@ struct ContentView: View {
             .ignoresSafeArea()
             .frame(minWidth: 800, minHeight: 500)
             .task {
+                loadAppSettings()
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
                 editorZoomScale = clampedEditorZoomScale(editorZoomScale)
                 editorUI.focusModeEnabled = appState.settings.focusModeOnType
+            }
+            .onChange(of: appState.settings) { _, newSettings in
+                appSettingsStore.save(newSettings)
             }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
@@ -181,6 +189,7 @@ struct ContentView: View {
             }
             .onDisappear {
                 flushDirtyTabs()
+                appSettingsStore.save(appState.settings)
                 terminalManager.shutdown()
                 aiInitTask?.cancel()
                 aiInitTask = nil
@@ -189,6 +198,10 @@ struct ContentView: View {
                 workspaceWatcher?.stop()
                 recordingPillController.cleanup()
             }
+    }
+
+    private func applyWorkspaceNotifications<V: View>(to view: V) -> some View {
+        view
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 if let path = notification.object as? String {
                     saveTask?.cancel()
@@ -347,6 +360,11 @@ struct ContentView: View {
                 appState.currentView = .editor
                 appState.showSettings = false
                 openContentInFocusedPane(.graphDocument())
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openMail)) { _ in
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.mailDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
                 appState.currentView = .editor
@@ -828,10 +846,11 @@ struct ContentView: View {
     }
 
     private var activeTabLeadingPadding: CGFloat {
+        let isMail = appState.activeTab?.isMail ?? false
         let isCalendar = appState.activeTab?.isCalendar ?? false
         let isMeetings = appState.activeTab?.isMeetings ?? false
         let isGateway = appState.activeTab?.isGateway ?? false
-        if isCalendar || isMeetings || isGateway { return 0 }
+        if isMail || isCalendar || isMeetings || isGateway { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -943,7 +962,7 @@ struct ContentView: View {
     @ViewBuilder
     private func paneDocumentContent(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
         VStack(spacing: 0) {
-            if !file.isEmptyTab && !file.isCalendar && !file.isMeetings && !file.isGateway {
+            if !file.isEmptyTab && !file.isMail && !file.isCalendar && !file.isMeetings && !file.isGateway {
                 HStack {
                     BreadcrumbView(
                         items: breadcrumbs(for: file),
@@ -987,7 +1006,7 @@ struct ContentView: View {
     }
 
     private func paneLeadingPadding(for file: OpenFile) -> CGFloat {
-        if file.isCalendar || file.isMeetings || file.isGateway { return 0 }
+        if file.isMail || file.isCalendar || file.isMeetings || file.isGateway { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -1033,6 +1052,11 @@ struct ContentView: View {
                 fullWidth: databaseRowFullWidth[leaf.id, default: false]
             )
             .id(leaf.id)
+        } else if file.isMail {
+            MailPaneView(
+                appState: appState,
+                mailService: mailService
+            )
         } else if file.isCalendar {
             WorkspaceCalendarView(
                 appState: appState,
@@ -1048,9 +1072,6 @@ struct ContentView: View {
             MeetingsView(
                 appState: appState,
                 viewModel: meetingsVM,
-                meetingNoteService: meetingNoteService,
-                transcriptionService: transcriptionService,
-                aiService: aiService,
                 onNavigateToFile: { path in
                     navigateToFilePath(path)
                 }
@@ -1879,6 +1900,9 @@ struct ContentView: View {
         return !isDir.boolValue
     }
 
+    private func loadAppSettings() {
+        appState.settings = appSettingsStore.load()
+    }
 
     private func initializeWorkspace() {
         // Restore the most recently used workspace, falling back to the default

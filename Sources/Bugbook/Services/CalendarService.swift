@@ -1,142 +1,112 @@
 import Foundation
-import AuthenticationServices
 import BugbookCore
 
 enum CalendarError: LocalizedError {
     case notAuthenticated
     case apiError(String)
-    case tokenRefreshFailed
-    case oauthFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .notAuthenticated: return "Not signed in to Google Calendar."
         case .apiError(let msg): return msg
-        case .tokenRefreshFailed: return "Failed to refresh Google Calendar token. Try signing in again."
-        case .oauthFailed(let msg): return "Google sign-in failed: \(msg)"
         }
     }
 }
 
-// MARK: - Google OAuth Token
+struct CalendarEventDraft: Equatable {
+    var title: String
+    var startDate: Date
+    var endDate: Date
+    var isAllDay: Bool
+    var location: String
+    var notes: String
+    var calendarId: String
 
-struct GoogleOAuthToken: Codable {
-    var accessToken: String
-    var refreshToken: String
-    var expiresAt: Date
+    init(
+        title: String = "",
+        startDate: Date,
+        endDate: Date,
+        isAllDay: Bool = false,
+        location: String = "",
+        notes: String = "",
+        calendarId: String = "primary"
+    ) {
+        self.title = title
+        self.startDate = startDate
+        self.endDate = endDate
+        self.isAllDay = isAllDay
+        self.location = location
+        self.notes = notes
+        self.calendarId = calendarId
+    }
 
-    var isExpired: Bool { Date() >= expiresAt }
-}
+    func normalized(calendar: Calendar = .current) -> CalendarEventDraft {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
 
-// MARK: - Google OAuth Browser Flow
+        if isAllDay {
+            let normalizedStart = calendar.startOfDay(for: startDate)
+            let normalizedEnd = max(calendar.startOfDay(for: endDate), normalizedStart)
+            return CalendarEventDraft(
+                title: trimmedTitle,
+                startDate: normalizedStart,
+                endDate: normalizedEnd,
+                isAllDay: true,
+                location: trimmedLocation,
+                notes: trimmedNotes,
+                calendarId: calendarId
+            )
+        }
 
-struct GoogleOAuthResult {
-    var accessToken: String
-    var refreshToken: String
-    var expiresAt: Date
-    var email: String
-}
-
-enum GoogleOAuthFlow {
-    // Register a "Desktop app" OAuth client in Google Cloud Console with the Calendar API enabled.
-    // For installed/desktop apps, Google documents that the client ID and secret are not truly secret.
-    // Replace these with your registered credentials.
-    static let clientID = "YOUR_CLIENT_ID_HERE"
-    static let clientSecret = "YOUR_CLIENT_SECRET_HERE"
-    private static let redirectURI = "http://127.0.0.1"
-    private static let scopes = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email"
-
-    @MainActor
-    static func signIn() async throws -> GoogleOAuthResult {
-        let authCode = try await requestAuthCode()
-        let tokenResult = try await exchangeCode(authCode)
-        let email = try await fetchUserEmail(accessToken: tokenResult.0)
-        return GoogleOAuthResult(
-            accessToken: tokenResult.0,
-            refreshToken: tokenResult.1,
-            expiresAt: tokenResult.2,
-            email: email
+        let normalizedEnd = endDate > startDate ? endDate : startDate.addingTimeInterval(3600)
+        return CalendarEventDraft(
+            title: trimmedTitle,
+            startDate: startDate,
+            endDate: normalizedEnd,
+            isAllDay: false,
+            location: trimmedLocation,
+            notes: trimmedNotes,
+            calendarId: calendarId
         )
     }
-
-    @MainActor
-    private static func requestAuthCode() async throws -> String {
-        var components = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: scopes),
-            URLQueryItem(name: "access_type", value: "offline"),
-            URLQueryItem(name: "prompt", value: "consent"),
-        ]
-        return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: components.url!,
-                callbackURLScheme: "http"
-            ) { callbackURL, error in
-                if let error {
-                    continuation.resume(throwing: CalendarError.oauthFailed(error.localizedDescription))
-                    return
-                }
-                guard let callbackURL,
-                      let items = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?.queryItems,
-                      let code = items.first(where: { $0.name == "code" })?.value else {
-                    continuation.resume(throwing: CalendarError.oauthFailed("No authorization code received."))
-                    return
-                }
-                continuation.resume(returning: code)
-            }
-            session.prefersEphemeralWebBrowserSession = true
-            session.presentationContextProvider = OAuthPresentationContext.shared
-            session.start()
-        }
-    }
-
-    private static func exchangeCode(_ code: String) async throws -> (String, String, Date) {
-        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        var body = URLComponents()
-        body.queryItems = [
-            URLQueryItem(name: "code", value: code),
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "client_secret", value: clientSecret),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "grant_type", value: "authorization_code"),
-        ]
-        request.httpBody = body.query?.data(using: .utf8)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? ""
-            throw CalendarError.oauthFailed("Token exchange failed: \(msg)")
-        }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let accessToken = json["access_token"] as? String,
-              let refreshToken = json["refresh_token"] as? String,
-              let expiresIn = json["expires_in"] as? Int else {
-            throw CalendarError.oauthFailed("Unexpected token response format.")
-        }
-        return (accessToken, refreshToken, Date().addingTimeInterval(TimeInterval(expiresIn)))
-    }
-
-    private static func fetchUserEmail(accessToken: String) async throws -> String {
-        var request = URLRequest(url: URL(string: "https://www.googleapis.com/oauth2/v2/userinfo")!)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let email = json["email"] as? String else {
-            return ""
-        }
-        return email
-    }
 }
 
-private class OAuthPresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding {
-    static let shared = OAuthPresentationContext()
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        NSApplication.shared.keyWindow ?? ASPresentationAnchor()
+enum GoogleCalendarEventRequestEncoder {
+    static func requestBody(for draft: CalendarEventDraft, timeZone: TimeZone = .current) throws -> Data {
+        let normalized = draft.normalized()
+        let eventTitle = normalized.title.isEmpty ? "Untitled event" : normalized.title
+        var payload: [String: Any] = [
+            "summary": eventTitle,
+        ]
+
+        if !normalized.location.isEmpty {
+            payload["location"] = normalized.location
+        }
+        if !normalized.notes.isEmpty {
+            payload["description"] = normalized.notes
+        }
+
+        if normalized.isAllDay {
+            let exclusiveEnd = Calendar.current.date(byAdding: .day, value: 1, to: normalized.endDate) ?? normalized.endDate.addingTimeInterval(86400)
+            payload["start"] = [
+                "date": CalendarFormatters.allDay.string(from: normalized.startDate),
+            ]
+            payload["end"] = [
+                "date": CalendarFormatters.allDay.string(from: exclusiveEnd),
+            ]
+        } else {
+            payload["start"] = [
+                "dateTime": CalendarFormatters.isoFallback.string(from: normalized.startDate),
+                "timeZone": timeZone.identifier,
+            ]
+            payload["end"] = [
+                "dateTime": CalendarFormatters.isoFallback.string(from: normalized.endDate),
+                "timeZone": timeZone.identifier,
+            ]
+        }
+
+        return try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     }
 }
 
@@ -189,13 +159,8 @@ class CalendarService {
         defer { isSyncing = false }
 
         do {
-            var currentToken = token
-            if currentToken.isExpired {
-                currentToken = try await refreshToken(currentToken)
-            }
-
             let syncToken = store.loadSyncToken(in: workspace)
-            let result = try await fetchGoogleEvents(token: currentToken, syncToken: syncToken)
+            let result = try await fetchGoogleEvents(token: token, syncToken: syncToken)
 
             try store.upsertEvents(result.events, in: workspace)
             if let newSyncToken = result.nextSyncToken {
@@ -205,25 +170,44 @@ class CalendarService {
             events = store.loadEvents(in: workspace)
             lastSyncDate = Date()
 
-            let calendars = try await fetchGoogleCalendarList(token: currentToken)
-            let existingSources = store.loadSources(in: workspace)
-            let existingVisibility: [String: Bool] = Dictionary(
-                existingSources.map { ($0.id, $0.isVisible) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let mergedSources = calendars.map { cal in
-                CalendarSource(
-                    id: cal.id,
-                    name: cal.name,
-                    color: cal.color,
-                    isVisible: existingVisibility[cal.id] ?? true
-                )
-            }
-            try store.saveSources(mergedSources, in: workspace)
-            sources = mergedSources
+            let calendars = try await fetchGoogleCalendarList(token: token)
+            try persistSources(calendars, in: workspace)
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    func createGoogleEvent(workspace: String, token: GoogleOAuthToken, draft: CalendarEventDraft) async throws -> CalendarEvent {
+        let normalizedDraft = draft.normalized()
+        var request = URLRequest(url: googleEventsURL(calendarId: normalizedDraft.calendarId))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try GoogleCalendarEventRequestEncoder.requestBody(for: normalizedDraft)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw CalendarError.apiError("No response from Google Calendar API")
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw CalendarError.apiError("Google Calendar create error \(http.statusCode): \(body)")
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let event = parseGoogleEvent(json, calendarId: normalizedDraft.calendarId) else {
+            throw CalendarError.apiError("Google Calendar returned an unreadable event response.")
+        }
+
+        try store.upsertEvents([event], in: workspace)
+        events = store.loadEvents(in: workspace)
+        lastSyncDate = Date()
+
+        try ensureLocalSourceExists(for: event.calendarId, in: workspace)
+        if let calendars = try? await fetchGoogleCalendarList(token: token) {
+            try? persistSources(calendars, in: workspace, ensuringVisible: event.calendarId)
+        }
+
+        return event
     }
 
     // MARK: - Database Overlay Items
@@ -413,6 +397,59 @@ class CalendarService {
         }
     }
 
+    private func persistSources(_ calendars: [CalendarSource], in workspace: String, ensuringVisible ensuredSourceID: String? = nil) throws {
+        let existingSources = store.loadSources(in: workspace)
+        let existingVisibility: [String: Bool] = Dictionary(
+            existingSources.map { ($0.id, $0.isVisible) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var mergedSources = calendars.map { cal in
+            CalendarSource(
+                id: cal.id,
+                name: cal.name,
+                color: cal.color,
+                isVisible: existingVisibility[cal.id] ?? true
+            )
+        }
+
+        if let ensuredSourceID,
+           !mergedSources.contains(where: { $0.id == ensuredSourceID }) {
+            let fallbackName = ensuredSourceID == "primary" ? "Primary" : ensuredSourceID
+            mergedSources.append(
+                CalendarSource(
+                    id: ensuredSourceID,
+                    name: fallbackName,
+                    color: "#4285F4",
+                    isVisible: existingVisibility[ensuredSourceID] ?? true
+                )
+            )
+        }
+
+        try store.saveSources(mergedSources, in: workspace)
+        sources = mergedSources
+    }
+
+    private func ensureLocalSourceExists(for calendarId: String, in workspace: String) throws {
+        guard !sources.contains(where: { $0.id == calendarId }) else { return }
+        var updatedSources = sources
+        updatedSources.append(
+            CalendarSource(
+                id: calendarId,
+                name: calendarId == "primary" ? "Primary" : calendarId,
+                color: "#4285F4",
+                isVisible: true
+            )
+        )
+        try store.saveSources(updatedSources, in: workspace)
+        sources = updatedSources
+    }
+
+    private func googleEventsURL(calendarId: String) -> URL {
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+        let encodedCalendarID = calendarId.addingPercentEncoding(withAllowedCharacters: allowed) ?? calendarId
+        return URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarID)/events")!
+    }
+
     private func parseGoogleEvent(_ json: [String: Any], calendarId: String = "primary") -> CalendarEvent? {
         guard let id = json["id"] as? String,
               let summary = json["summary"] as? String else { return nil }
@@ -471,39 +508,4 @@ class CalendarService {
             htmlLink: json["htmlLink"] as? String
         )
     }
-
-    // MARK: - Token Refresh
-
-    private func refreshToken(_ token: GoogleOAuthToken) async throws -> GoogleOAuthToken {
-        var components = URLComponents(string: "https://oauth2.googleapis.com/token")!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: GoogleOAuthFlow.clientID),
-            URLQueryItem(name: "client_secret", value: GoogleOAuthFlow.clientSecret),
-            URLQueryItem(name: "refresh_token", value: token.refreshToken),
-            URLQueryItem(name: "grant_type", value: "refresh_token"),
-        ]
-
-        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = components.query?.data(using: .utf8)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw CalendarError.tokenRefreshFailed
-        }
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let accessToken = json["access_token"] as? String,
-              let expiresIn = json["expires_in"] as? Int else {
-            throw CalendarError.tokenRefreshFailed
-        }
-
-        return GoogleOAuthToken(
-            accessToken: accessToken,
-            refreshToken: token.refreshToken,
-            expiresAt: Date().addingTimeInterval(TimeInterval(expiresIn))
-        )
-    }
-
 }

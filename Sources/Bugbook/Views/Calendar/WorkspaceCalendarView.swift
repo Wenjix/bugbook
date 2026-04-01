@@ -12,6 +12,13 @@ struct WorkspaceCalendarView: View {
 
     @State private var transcriptionService = TranscriptionService()
     @State private var showImportRecording = false
+    @State private var showCreateEventSheet = false
+    @State private var createEventDraft = CalendarEventDraft(
+        startDate: Date(),
+        endDate: Date().addingTimeInterval(3600)
+    )
+    @State private var isCreatingEvent = false
+    @State private var createEventError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +30,19 @@ struct WorkspaceCalendarView: View {
         .ignoresSafeArea(.container, edges: .top)
         .background(Color.fallbackEditorBg)
         .animation(.easeInOut(duration: 0.15), value: calendarVM.viewMode)
+        .sheet(isPresented: $showCreateEventSheet) {
+            CalendarEventComposerSheet(
+                draft: $createEventDraft,
+                connectedEmail: appState.settings.googleConnectedEmail,
+                isSaving: isCreatingEvent,
+                errorMessage: createEventError,
+                onCancel: {
+                    showCreateEventSheet = false
+                    createEventError = nil
+                },
+                onSave: createCalendarEvent
+            )
+        }
         .onAppear {
             if let workspace = appState.workspacePath {
                 calendarService.loadCachedData(workspace: workspace)
@@ -145,6 +165,15 @@ struct WorkspaceCalendarView: View {
                 )
             }
 
+            // Create event button
+            Button(action: handleCreateEventButton) {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(appState.settings.googleConnected ? "Create Google Calendar event" : "Connect Google Calendar to create events")
+
             // Import recording button
             Button(action: { showImportRecording = true }) {
                 Image(systemName: "waveform.badge.plus")
@@ -233,25 +262,92 @@ struct WorkspaceCalendarView: View {
 
     private func syncCalendar() {
         guard let workspace = appState.workspacePath else { return }
-        let token = loadGoogleToken()
-        guard let token else {
-            calendarService.error = "No Google Calendar credentials configured. Go to Settings > Calendar."
-            return
-        }
         Task {
-            await calendarService.syncGoogleCalendar(workspace: workspace, token: token)
-            await calendarService.loadDatabaseOverlayItems(workspace: workspace)
+            do {
+                var settings = appState.settings
+                let token = try await GoogleAuthService.validToken(using: &settings, requiredScopes: GoogleScopeSet.calendar)
+                appState.settings = settings
+                await calendarService.syncGoogleCalendar(workspace: workspace, token: token)
+                await calendarService.loadDatabaseOverlayItems(workspace: workspace)
+            } catch {
+                calendarService.error = error.localizedDescription
+            }
         }
     }
 
-    private func loadGoogleToken() -> GoogleOAuthToken? {
-        let settings = appState.settings
-        guard !settings.googleCalendarRefreshToken.isEmpty else { return nil }
-        return GoogleOAuthToken(
-            accessToken: settings.googleCalendarAccessToken,
-            refreshToken: settings.googleCalendarRefreshToken,
-            expiresAt: Date(timeIntervalSince1970: settings.googleCalendarTokenExpiry)
+    private func handleCreateEventButton() {
+        guard appState.settings.googleConfigured, appState.settings.googleConnected else {
+            appState.showSettings = true
+            appState.selectedSettingsTab = "google"
+            return
+        }
+
+        createEventDraft = makeCreateEventDraft()
+        createEventError = nil
+        showCreateEventSheet = true
+    }
+
+    private func createCalendarEvent() {
+        guard let workspace = appState.workspacePath, !isCreatingEvent else { return }
+        createEventError = nil
+        isCreatingEvent = true
+
+        Task {
+            defer { isCreatingEvent = false }
+
+            do {
+                var settings = appState.settings
+                let token = try await GoogleAuthService.validToken(using: &settings, requiredScopes: GoogleScopeSet.calendar)
+                let createdEvent = try await calendarService.createGoogleEvent(
+                    workspace: workspace,
+                    token: token,
+                    draft: createEventDraft
+                )
+                appState.settings = settings
+                calendarVM.selectedDate = createdEvent.startDate
+                createEventDraft = makeCreateEventDraft()
+                showCreateEventSheet = false
+            } catch {
+                createEventError = error.localizedDescription
+            }
+        }
+    }
+
+    private func makeCreateEventDraft() -> CalendarEventDraft {
+        let calendar = Calendar.current
+        let selectedDayStart = calendar.startOfDay(for: calendarVM.selectedDate)
+        let now = Date()
+
+        var startDate: Date
+        switch calendarVM.viewMode {
+        case .month:
+            startDate = calendar.date(byAdding: .hour, value: 9, to: selectedDayStart) ?? selectedDayStart
+        case .day, .week:
+            let candidate = max(now, calendarVM.selectedDate)
+            startDate = alignedToNextHalfHour(candidate)
+            if calendar.isDate(startDate, inSameDayAs: selectedDayStart) == false {
+                startDate = calendar.date(byAdding: .hour, value: 9, to: selectedDayStart) ?? selectedDayStart
+            }
+        }
+
+        return CalendarEventDraft(
+            startDate: startDate,
+            endDate: startDate.addingTimeInterval(3600),
+            calendarId: "primary"
         )
+    }
+
+    private func alignedToNextHalfHour(_ date: Date) -> Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        let minute = components.minute ?? 0
+        let remainder = minute % 30
+        if remainder == 0, let exact = calendar.date(from: components) {
+            return exact
+        }
+        components.minute = minute + (30 - remainder)
+        components.second = 0
+        return calendar.date(from: components) ?? date
     }
 }
 
@@ -330,5 +426,114 @@ struct CalendarSourcePicker: View {
             return Color(hex: String(hex.dropFirst()))
         }
         return TagColor.color(for: hex)
+    }
+}
+
+struct CalendarEventComposerSheet: View {
+    @Binding var draft: CalendarEventDraft
+    let connectedEmail: String
+    let isSaving: Bool
+    let errorMessage: String?
+    var onCancel: () -> Void
+    var onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("New Event")
+                    .font(.system(size: 18, weight: .semibold))
+
+                if !connectedEmail.isEmpty {
+                    Label(connectedEmail, systemImage: "calendar.badge.plus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Title")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    TextField("Planning review", text: $draft.title)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Toggle("All-day", isOn: $draft.isAllDay)
+                    .toggleStyle(.switch)
+
+                if draft.isAllDay {
+                    DatePicker("Starts", selection: $draft.startDate, displayedComponents: [.date])
+                    DatePicker("Ends", selection: $draft.endDate, displayedComponents: [.date])
+
+                    Text("All-day events end on the selected day in Bugbook and are sent to Google Calendar with the correct exclusive end date.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    DatePicker("Starts", selection: $draft.startDate)
+                    DatePicker("Ends", selection: $draft.endDate)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Location")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    TextField("Conference room or link", text: $draft.location)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Notes")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $draft.notes)
+                        .font(.system(size: 13))
+                        .frame(minHeight: 110)
+                        .padding(8)
+                        .background(Color.primary.opacity(0.04))
+                        .clipShape(.rect(cornerRadius: 8))
+                }
+            }
+
+            if let errorMessage, !errorMessage.isEmpty {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.borderless)
+
+                Button(action: onSave) {
+                    HStack(spacing: 8) {
+                        if isSaving {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text("Create Event")
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .onChange(of: draft.isAllDay) { _, isAllDay in
+            guard isAllDay else {
+                if draft.endDate <= draft.startDate {
+                    draft.endDate = draft.startDate.addingTimeInterval(3600)
+                }
+                return
+            }
+
+            let calendar = Calendar.current
+            draft.startDate = calendar.startOfDay(for: draft.startDate)
+            draft.endDate = calendar.startOfDay(for: max(draft.startDate, draft.endDate))
+        }
     }
 }

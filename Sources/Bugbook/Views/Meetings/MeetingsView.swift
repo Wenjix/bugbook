@@ -1,16 +1,9 @@
 import SwiftUI
-import AppKit
-import UniformTypeIdentifiers
 
 struct MeetingsView: View {
     var appState: AppState
     @Bindable var viewModel: MeetingsViewModel
-    var meetingNoteService: MeetingNoteService
-    var transcriptionService: TranscriptionService
-    var aiService: AiService
     var onNavigateToFile: (String) -> Void
-
-    @State private var isImporting = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +24,8 @@ struct MeetingsView: View {
     }
 
     // MARK: - Header
+    // NOTE: Audio import (NSOpenPanel → TranscriptionService) was removed 2026-03-31.
+    // The plumbing exists in MeetingNoteService.importRecording if we revisit later.
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -44,15 +39,6 @@ struct MeetingsView: View {
                 ProgressView()
                     .controlSize(.small)
             }
-
-            Button(action: importRecording) {
-                Image(systemName: "square.and.arrow.down")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(isImporting)
-            .help("Import Recording")
 
             Button(action: { appState.openNotesChat() }) {
                 HStack(spacing: 4) {
@@ -168,36 +154,6 @@ struct MeetingsView: View {
     }
 
     // MARK: - Helpers
-
-    private func importRecording() {
-        let panel = NSOpenPanel()
-        panel.title = "Import Recording"
-        panel.allowedContentTypes = [.audio]
-        panel.allowsMultipleSelection = false
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard TranscriptionService.isSupportedAudioFile(url) else { return }
-
-        isImporting = true
-        Task {
-            defer { isImporting = false }
-            guard let workspace = appState.workspacePath else { return }
-            let apiKey = appState.settings.anthropicApiKey
-            let model = appState.settings.anthropicModel
-
-            if let path = await meetingNoteService.importRecording(
-                fileURL: url,
-                workspace: workspace,
-                transcriptionService: transcriptionService,
-                aiService: aiService,
-                apiKey: apiKey,
-                model: model
-            ) {
-                onNavigateToFile(path)
-                rescan()
-            }
-        }
-    }
 
     private func rescan() {
         guard let workspace = appState.workspacePath else { return }

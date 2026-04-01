@@ -413,6 +413,9 @@ struct CommandPaletteView: View {
             PaletteCommand(id: "toggle_theme", name: "Toggle Theme", icon: "circle.lefthalf.filled", shortcut: nil) {
                 NotificationCenter.default.post(name: .toggleTheme, object: nil)
             },
+            PaletteCommand(id: "open_mail", name: "Open Mail", icon: "envelope", shortcut: "Cmd+Shift+M") {
+                NotificationCenter.default.post(name: .openMail, object: nil)
+            },
         ]
     }
 
