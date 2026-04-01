@@ -20,6 +20,8 @@ enum Log {
     static let agent = Logger(subsystem: subsystem, category: "Agent")
     /// Audio capture and transcription
     static let transcription = Logger(subsystem: subsystem, category: "Transcription")
+    /// Gmail sync, thread actions, and compose/send flows
+    static let mail = Logger(subsystem: subsystem, category: "Mail")
     /// General app lifecycle
     static let app = Logger(subsystem: subsystem, category: "App")
 

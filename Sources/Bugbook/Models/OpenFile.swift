@@ -15,9 +15,12 @@ struct OpenFile: Identifiable, Equatable, Codable {
 
     // Shims forwarding to kind for incremental migration
     var isDatabase: Bool { kind.isDatabase }
+    var isMail: Bool { kind.isMail }
     var isCalendar: Bool { kind.isCalendar }
     var isMeetings: Bool { kind.isMeetings }
     var isGraphView: Bool { kind.isGraphView }
+    var isSkill: Bool { kind.isSkill }
+    var isGateway: Bool { kind.isGateway }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }

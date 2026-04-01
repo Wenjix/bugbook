@@ -105,10 +105,20 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
+                Button("Mail") {
+                    NotificationCenter.default.post(name: .openMail, object: nil)
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+
                 Button("Calendar") {
                     NotificationCenter.default.post(name: .openCalendar, object: nil)
                 }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
+
+                Button("Gateway") {
+                    NotificationCenter.default.post(name: .openGateway, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: [.command, .shift])
 
                 Button("Toggle Theme") {
                     NotificationCenter.default.post(name: .toggleTheme, object: nil)
@@ -379,15 +389,18 @@ extension Notification.Name {
     static let navigateForward = Notification.Name("navigateForward")
     static let openDailyNote = Notification.Name("openDailyNote")
     static let openGraphView = Notification.Name("openGraphView")
+    static let openMail = Notification.Name("openMail")
     static let editorZoomIn = Notification.Name("editorZoomIn")
     static let editorZoomOut = Notification.Name("editorZoomOut")
     static let editorZoomReset = Notification.Name("editorZoomReset")
     static let openCalendar = Notification.Name("openCalendar")
     static let openMeetings = Notification.Name("openMeetings")
+    static let openGateway = Notification.Name("openGateway")
     static let fileDeleted = Notification.Name("fileDeleted")
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")
     static let movePageToDir = Notification.Name("movePageToDir")
+    static let addToSidebar = Notification.Name("addToSidebar")
 
     // Pane/Workspace system
     static let splitPaneRight = Notification.Name("splitPaneRight")

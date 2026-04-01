@@ -8,7 +8,7 @@ struct SettingsView: View {
         case "general": return "General"
         case "appearance": return "Appearance"
         case "ai": return "AI"
-        case "calendar": return "Calendar"
+        case "google", "calendar": return "Google"
         case "agents": return "Agents"
         case "search": return "Search"
         case "shortcuts": return "Shortcuts"
@@ -32,8 +32,8 @@ struct SettingsView: View {
                     AppearanceSettingsView(appState: appState)
                 case "ai":
                     AISettingsView(appState: appState)
-                case "calendar":
-                    CalendarSettingsView(appState: appState)
+                case "google", "calendar":
+                    GoogleSettingsView(appState: appState)
                 case "agents":
                     AgentsSettingsView(appState: appState)
                 case "search":
