@@ -95,10 +95,13 @@ final class MailFeatureTests: XCTestCase {
         let directoryURL = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
 
-        let store = AppSettingsStore(fileURL: directoryURL.appendingPathComponent("app-settings.json"))
+        let secretStore = InMemorySecretStore()
+        let fileURL = directoryURL.appendingPathComponent("app-settings.json")
+        let store = AppSettingsStore(fileURL: fileURL, secretStore: secretStore)
         var settings = AppSettings.default
         settings.googleClientID = "client-id"
         settings.googleClientSecret = "client-secret"
+        settings.anthropicApiKey = "sk-ant-test"
         settings.googleAccessToken = "access-token"
         settings.googleRefreshToken = "refresh-token"
         settings.googleTokenExpiry = 9_999
@@ -107,8 +110,15 @@ final class MailFeatureTests: XCTestCase {
 
         store.save(settings)
         let loaded = store.load()
+        let onDisk = try? String(contentsOf: fileURL, encoding: .utf8)
 
         XCTAssertEqual(loaded, settings)
+        XCTAssertEqual(secretStore.string(for: .anthropicApiKey), "sk-ant-test")
+        XCTAssertEqual(secretStore.string(for: .googleAccessToken), "access-token")
+        XCTAssertEqual(secretStore.string(for: .googleRefreshToken), "refresh-token")
+        XCTAssertFalse(onDisk?.contains("sk-ant-test") ?? true)
+        XCTAssertFalse(onDisk?.contains("access-token") ?? true)
+        XCTAssertFalse(onDisk?.contains("refresh-token") ?? true)
     }
 
     func testMailCacheStoreRoundTripsSnapshot() throws {
@@ -197,6 +207,26 @@ final class MailFeatureTests: XCTestCase {
         XCTAssertFalse(restored.contains("TRASH"))
     }
 
+    func testGoogleOAuthLoopbackRequestParserExtractsCodeAndState() throws {
+        let callback = try GoogleOAuthLoopbackRequestParser.parse(
+            requestLine: "GET /oauth/callback?code=test-code&state=test-state HTTP/1.1",
+            host: "127.0.0.1"
+        )
+
+        XCTAssertEqual(callback, GoogleOAuthLoopbackCallback(code: "test-code", state: "test-state"))
+    }
+
+    func testGoogleOAuthLoopbackRequestParserSurfacesReturnedOAuthError() {
+        XCTAssertThrowsError(
+            try GoogleOAuthLoopbackRequestParser.parse(
+                requestLine: "GET /oauth/callback?error=access_denied HTTP/1.1",
+                host: "127.0.0.1"
+            )
+        ) { error in
+            XCTAssertEqual(error.localizedDescription, "Google sign-in failed: access_denied")
+        }
+    }
+
     private func sampleSnapshot(savedAt: Date) -> MailCacheSnapshot {
         let sender = MailMessageRecipient(name: "Alice", email: "alice@example.com")
         let message = MailMessage(
@@ -224,7 +254,10 @@ final class MailFeatureTests: XCTestCase {
             participants: [sender.displayName],
             messages: [message],
             labelIds: ["INBOX", "UNREAD"],
-            historyId: "history-1"
+            historyId: "history-1",
+            annotation: nil,
+            draftSuggestion: nil,
+            senderContext: nil
         )
 
         let summary = MailThreadSummary(
@@ -235,7 +268,9 @@ final class MailFeatureTests: XCTestCase {
             participants: [sender.displayName],
             date: Date(timeIntervalSince1970: 100),
             messageCount: 1,
-            labelIds: ["INBOX", "UNREAD"]
+            labelIds: ["INBOX", "UNREAD"],
+            historyId: "history-1",
+            annotation: nil
         )
 
         return MailCacheSnapshot(

@@ -125,7 +125,7 @@ private struct PaneActionBar: View {
             }
 
             // Merge another tab into this pane (show when other tabs exist)
-            if otherTabs.count > 0 {
+            if !otherTabs.isEmpty {
                 divider
 
                 mergeMenu

@@ -183,6 +183,18 @@ final class MailService {
         }
     }
 
+    func fetchThreadDetailSnapshot(id: String, mailbox: MailMailbox?, token: GoogleOAuthToken) async throws -> MailThreadDetail {
+        if let cached = threadDetails[id] {
+            return cached
+        }
+
+        let detail = try await GmailMailAPI.fetchThreadDetail(id: id, mailbox: mailbox, token: token)
+        threadDetails[id] = detail
+        updateSummary(for: detail)
+        persistSnapshot()
+        return detail
+    }
+
     func apply(action: MailThreadAction, to threadID: String, token: GoogleOAuthToken) async {
         isLoadingThread = true
         error = nil
@@ -253,7 +265,9 @@ final class MailService {
             participants: detail.participants,
             date: detail.lastDate,
             messageCount: detail.messages.count,
-            labelIds: detail.labelIds
+            labelIds: detail.labelIds,
+            historyId: detail.historyId,
+            annotation: detail.annotation
         )
 
         for mailbox in MailMailbox.allCases {
@@ -328,7 +342,7 @@ final class MailService {
         return lhs.subject.localizedCaseInsensitiveCompare(rhs.subject) == .orderedAscending
     }
 
-    private static func replySubject(for subject: String) -> String {
+    static func replySubject(for subject: String) -> String {
         let trimmed = subject.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.lowercased().hasPrefix("re:") else { return trimmed }
         return trimmed.isEmpty ? "Re:" : "Re: \(trimmed)"
@@ -337,6 +351,33 @@ final class MailService {
     private func uniqueStrings(_ values: [String]) -> [String] {
         var seen = Set<String>()
         return values.filter { seen.insert($0.lowercased()).inserted }
+    }
+
+    func applyIntelligenceRecords(_ records: [String: MailThreadIntelligenceRecord]) {
+        for record in records.values {
+            applyIntelligenceRecord(record)
+        }
+    }
+
+    func applyIntelligenceRecord(_ record: MailThreadIntelligenceRecord) {
+        for mailbox in MailMailbox.allCases {
+            guard var list = mailboxThreads[mailbox] else { continue }
+            guard let index = list.firstIndex(where: { $0.id == record.threadID }) else { continue }
+            list[index].annotation = record.annotation
+            mailboxThreads[mailbox] = list
+        }
+
+        if let index = searchResults.firstIndex(where: { $0.id == record.threadID }) {
+            searchResults[index].annotation = record.annotation
+        }
+
+        if var detail = threadDetails[record.threadID] {
+            detail.annotation = record.annotation
+            detail.draftSuggestion = record.draftSuggestion
+            detail.senderContext = record.senderContext
+            threadDetails[record.threadID] = detail
+            updateSummary(for: detail)
+        }
     }
 }
 
@@ -470,7 +511,9 @@ private enum GmailMailAPI {
             participants: participants,
             date: parseRFC2822Date(newestHeaders["Date"]),
             messageCount: messages.count,
-            labelIds: thread["labelIds"] as? [String] ?? []
+            labelIds: thread["labelIds"] as? [String] ?? [],
+            historyId: thread["historyId"] as? String,
+            annotation: nil
         )
     }
 
@@ -496,7 +539,10 @@ private enum GmailMailAPI {
             participants: participants,
             messages: messages,
             labelIds: thread["labelIds"] as? [String] ?? [],
-            historyId: thread["historyId"] as? String
+            historyId: thread["historyId"] as? String,
+            annotation: nil,
+            draftSuggestion: nil,
+            senderContext: nil
         )
     }
 
@@ -588,11 +634,12 @@ private enum GmailMailAPI {
     private static func headerMap(from message: [String: Any]) -> [String: String] {
         let payload = message["payload"] as? [String: Any] ?? [:]
         let headers = payload["headers"] as? [[String: Any]] ?? []
-        return Dictionary(uniqueKeysWithValues: headers.compactMap { header in
+        return headers.reduce(into: [String: String]()) { result, header in
             guard let name = header["name"] as? String,
-                  let value = header["value"] as? String else { return nil }
-            return (name, value)
-        })
+                  let value = header["value"] as? String,
+                  result[name] == nil else { return }
+            result[name] = value
+        }
     }
 
     private static func parseMessage(_ json: [String: Any], threadID: String) -> MailMessage? {

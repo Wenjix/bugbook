@@ -63,6 +63,16 @@ struct AISettingsView: View {
                 }
             }
 
+            SettingsSection("Mail Intelligence") {
+                Toggle("Background inbox analysis", isOn: $appState.settings.mailBackgroundAnalysisEnabled)
+                Toggle("Background draft generation", isOn: $appState.settings.mailBackgroundDraftGenerationEnabled)
+                Toggle("Sender context lookup", isOn: $appState.settings.mailSenderLookupEnabled)
+                Toggle("Learn from edits locally", isOn: $appState.settings.mailMemoryLearningEnabled)
+                Text("Mail AI stays local-first. Gmail remains a direct app-to-Google connection, and Bugbook only stores derived mail intelligence on-device.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             SettingsSection("Execution Policy") {
                 Picker("Policy", selection: $appState.settings.executionPolicy) {
                     ForEach(ExecutionPolicy.allCases, id: \.self) { policy in

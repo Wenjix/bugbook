@@ -159,19 +159,41 @@ class CalendarService {
         defer { isSyncing = false }
 
         do {
-            let syncToken = store.loadSyncToken(in: workspace)
-            let result = try await fetchGoogleEvents(token: token, syncToken: syncToken)
+            let calendars = try await fetchGoogleCalendarList(token: token)
+            let calendarIds = syncedCalendarIDs(from: calendars)
 
-            try store.upsertEvents(result.events, in: workspace)
-            if let newSyncToken = result.nextSyncToken {
-                try store.saveSyncToken(newSyncToken, in: workspace)
+            var fetchedEvents: [CalendarEvent] = []
+            var failedCalendarIDs: [String] = []
+            for calendarId in calendarIds {
+                do {
+                    let result = try await fetchGoogleEvents(token: token, syncToken: nil, calendarId: calendarId)
+                    fetchedEvents.append(contentsOf: result.events)
+                } catch {
+                    failedCalendarIDs.append(calendarId)
+                }
             }
+
+            let existingEvents = store.loadEvents(in: workspace)
+            let fetchedIds = Set(fetchedEvents.map(\.id))
+            let syncedSourceIds = Set(calendarIds)
+            let staleIds = Set(
+                existingEvents
+                    .filter { syncedSourceIds.contains($0.calendarId) && !fetchedIds.contains($0.id) }
+                    .map(\.id)
+            )
+
+            try store.upsertEvents(fetchedEvents, in: workspace)
+            if staleIds.isEmpty == false {
+                try store.removeEvents(withIds: staleIds, in: workspace)
+            }
+
+            try persistSources(calendars, in: workspace, ensuringVisible: "primary")
 
             events = store.loadEvents(in: workspace)
             lastSyncDate = Date()
-
-            let calendars = try await fetchGoogleCalendarList(token: token)
-            try persistSources(calendars, in: workspace)
+            if failedCalendarIDs.isEmpty == false {
+                error = "Some Google calendars could not be synced. Loaded \(fetchedEvents.count) events from the rest."
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -301,7 +323,7 @@ class CalendarService {
     }
 
     private func fetchGoogleEvents(token: GoogleOAuthToken, syncToken: String? = nil, calendarId: String = "primary") async throws -> FetchResult {
-        var components = URLComponents(string: "https://www.googleapis.com/calendar/v3/calendars/\(calendarId)/events")!
+        var components = URLComponents(url: googleEventsURL(calendarId: calendarId), resolvingAgainstBaseURL: false)!
         var queryItems: [URLQueryItem] = []
         if let syncToken {
             queryItems.append(URLQueryItem(name: "syncToken", value: syncToken))
@@ -326,7 +348,7 @@ class CalendarService {
         }
 
         if http.statusCode == 410 {
-            return try await fetchGoogleEvents(token: token, syncToken: nil)
+            return try await fetchGoogleEvents(token: token, syncToken: nil, calendarId: calendarId)
         }
 
         guard http.statusCode == 200 else {
@@ -450,8 +472,20 @@ class CalendarService {
         return URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarID)/events")!
     }
 
+    private func syncedCalendarIDs(from calendars: [CalendarSource]) -> [String] {
+        var orderedIds = ["primary"]
+        for calendar in calendars where orderedIds.contains(calendar.id) == false {
+            orderedIds.append(calendar.id)
+        }
+        return orderedIds
+    }
+
+    private func eventID(remoteID: String, calendarId: String) -> String {
+        "\(calendarId)::\(remoteID)"
+    }
+
     private func parseGoogleEvent(_ json: [String: Any], calendarId: String = "primary") -> CalendarEvent? {
-        guard let id = json["id"] as? String,
+        guard let remoteID = json["id"] as? String,
               let summary = json["summary"] as? String else { return nil }
 
         let start = json["start"] as? [String: Any] ?? [:]
@@ -495,7 +529,7 @@ class CalendarService {
         }
 
         return CalendarEvent(
-            id: id,
+            id: eventID(remoteID: remoteID, calendarId: calendarId),
             title: summary,
             startDate: startDate,
             endDate: endDate,

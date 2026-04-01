@@ -122,6 +122,8 @@ struct MailThreadSummary: Identifiable, Codable, Equatable {
     var date: Date?
     var messageCount: Int
     var labelIds: [String]
+    var historyId: String? = nil
+    var annotation: MailThreadAnnotation? = nil
 
     var isUnread: Bool { labelIds.contains("UNREAD") }
     var isStarred: Bool { labelIds.contains("STARRED") }
@@ -135,7 +137,10 @@ struct MailThreadDetail: Identifiable, Codable, Equatable {
     var participants: [String]
     var messages: [MailMessage]
     var labelIds: [String]
-    var historyId: String?
+    var historyId: String? = nil
+    var annotation: MailThreadAnnotation? = nil
+    var draftSuggestion: MailDraftSuggestion? = nil
+    var senderContext: MailSenderContext? = nil
 
     var isUnread: Bool { labelIds.contains("UNREAD") }
     var isStarred: Bool { labelIds.contains("STARRED") }

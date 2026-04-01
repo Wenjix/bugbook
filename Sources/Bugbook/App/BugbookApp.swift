@@ -11,6 +11,20 @@ struct BugbookApp: App {
         WindowGroup {
             ContentView()
                 .tint(Color.fallbackAccent)
+                .overlay(alignment: .topTrailing) {
+                    if AppEnvironment.isDev {
+                        Text("DEV")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.85))
+                            .clipShape(.capsule)
+                            .padding(.top, 4)
+                            .padding(.trailing, 72)
+                            .allowsHitTesting(false)
+                    }
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)

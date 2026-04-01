@@ -23,6 +23,9 @@ struct WorkspaceCalendarView: View {
     var body: some View {
         VStack(spacing: 0) {
             calendarHeader
+            if let error = calendarService.error, !error.isEmpty {
+                calendarErrorBanner(error)
+            }
             calendarContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -48,6 +51,11 @@ struct WorkspaceCalendarView: View {
                 calendarService.loadCachedData(workspace: workspace)
                 Task {
                     await calendarService.loadDatabaseOverlayItems(workspace: workspace)
+                }
+                if appState.settings.googleConnected,
+                   calendarService.events.isEmpty,
+                   calendarService.isSyncing == false {
+                    syncCalendar()
                 }
             }
         }
@@ -207,6 +215,21 @@ struct WorkspaceCalendarView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
+    }
+
+    private func calendarErrorBanner(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+            Text(message)
+                .font(.system(size: 12))
+                .lineLimit(2)
+            Spacer()
+        }
+        .foregroundStyle(.red)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.red.opacity(0.08))
     }
 
     // MARK: - Data

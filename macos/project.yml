@@ -59,10 +59,20 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Bugbook
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
         SUFeedURL: ""
         SUPublicEDKey: ""
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.bugbook.sidebar-reference
+            UTTypeDescription: Bugbook Sidebar Reference
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification: {}
+        NSMicrophoneUsageDescription: Bugbook needs microphone access to record meeting audio for live transcription.
+        NSSpeechRecognitionUsageDescription: Bugbook uses speech recognition to transcribe meeting recordings in real-time.
     entitlements:
       path: App/Bugbook.entitlements
       properties:
@@ -76,12 +86,21 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook
         PRODUCT_NAME: Bugbook
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
         OTHER_LDFLAGS: ["-lz", "-lc++"]
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DEBUG, BUGBOOK_DEV]
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: []
   BugbookUITests:
     type: bundle.ui-testing
     platform: macOS

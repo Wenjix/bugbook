@@ -164,22 +164,10 @@ struct ContentView: View {
                 closeDatabaseRowModal()
             }
             .onChange(of: appState.currentView) { _, newView in
-                SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "view.change.\(newView)"))
-                hideFormattingPanel()
-                closeDatabaseRowModal()
-                if newView == .chat {
-                    ensureAiInitializedIfNeeded()
-                }
+                handleCurrentViewChange(newView)
             }
             .onChange(of: appState.isRecording) { _, recording in
-                if recording, let blockId = appState.recordingBlockId {
-                    // Find the document that owns this recording block
-                    let doc = blockDocuments.values.first { $0.blocks.contains(where: { $0.id == blockId }) }
-                    recordingPillController.onStop = { [weak doc] in
-                        doc?.onStopMeeting?(blockId)
-                    }
-                }
-                recordingPillController.isRecording = recording
+                handleRecordingChange(recording)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
                 flushDirtyTabs()
@@ -250,6 +238,26 @@ struct ContentView: View {
                     addSidebarReference(payload)
                 }
             }
+    }
+
+    private func handleCurrentViewChange(_ newView: ViewMode) {
+        let breadcrumb = Breadcrumb(level: .info, category: "view.change.\(String(describing: newView))")
+        SentrySDK.addBreadcrumb(breadcrumb)
+        hideFormattingPanel()
+        closeDatabaseRowModal()
+        if case .chat = newView {
+            ensureAiInitializedIfNeeded()
+        }
+    }
+
+    private func handleRecordingChange(_ recording: Bool) {
+        if recording, let blockId = appState.recordingBlockId {
+            let doc = blockDocuments.values.first { $0.blocks.contains(where: { $0.id == blockId }) }
+            recordingPillController.onStop = { [weak doc] in
+                doc?.onStopMeeting?(blockId)
+            }
+        }
+        recordingPillController.isRecording = recording
     }
 
     private func applyCommandNotifications<V: View>(to view: V) -> some View {

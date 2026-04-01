@@ -79,8 +79,7 @@ class MeetingNoteService {
         event: CalendarEvent?,
         workspace: String,
         aiService: AiService,
-        apiKey: String,
-        model: AnthropicModel = .sonnet
+        apiKey: String
     ) async -> String? {
         // If there's an event with an existing linked page, return it
         if let event, let existing = event.linkedPagePath,
@@ -99,7 +98,7 @@ class MeetingNoteService {
         let summary: AiService.TranscriptSummary
         if !apiKey.isEmpty {
             do {
-                summary = try await aiService.summarizeTranscript(transcription.fullText, apiKey: apiKey, model: model)
+                summary = try await aiService.summarizeTranscript(transcription.fullText, apiKey: apiKey)
             } catch {
                 self.error = "AI summary failed: \(error.localizedDescription)"
                 summary = AiService.TranscriptSummary(summary: "_(AI summary unavailable)_", actionItems: "- [ ] ")
@@ -186,8 +185,15 @@ class MeetingNoteService {
             // Try AI summary if API key available
             if !apiKey.isEmpty {
                 let plainTranscript = segments.map { $0.text }.joined(separator: " ")
-                if let summary: String = try? await aiService.summarizeTranscript(plainTranscript, apiKey: apiKey, model: model) {
-                    content = content.replacingOccurrences(of: "## Summary\n\n_AI summary will appear here when an API key is configured._", with: "## Summary\n\n\(summary)")
+                if let summary = try? await aiService.summarizeTranscript(plainTranscript, apiKey: apiKey, model: model) {
+                    content = content.replacingOccurrences(
+                        of: "## Summary\n\n_AI summary will appear here when an API key is configured._",
+                        with: "## Summary\n\n\(summary.summary)"
+                    )
+                    content = content.replacingOccurrences(
+                        of: "## Action Items\n\n- [ ] ",
+                        with: "## Action Items\n\n\(summary.actionItems)"
+                    )
                 }
             }
 

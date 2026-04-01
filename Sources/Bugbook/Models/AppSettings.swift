@@ -43,6 +43,10 @@ struct AppSettings: Codable, Equatable {
     var qmdSearchMode: QmdSearchMode
     var anthropicApiKey: String
     var anthropicModel: AnthropicModel
+    var mailBackgroundAnalysisEnabled: Bool
+    var mailBackgroundDraftGenerationEnabled: Bool
+    var mailSenderLookupEnabled: Bool
+    var mailMemoryLearningEnabled: Bool
     /// Path to the page opened for new/empty tabs. Empty string = default Bugbook landing page.
     var defaultNewTabPage: String
 
@@ -65,6 +69,10 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode: .bm25,
         anthropicApiKey: "",
         anthropicModel: .sonnet,
+        mailBackgroundAnalysisEnabled: true,
+        mailBackgroundDraftGenerationEnabled: true,
+        mailSenderLookupEnabled: true,
+        mailMemoryLearningEnabled: true,
         defaultNewTabPage: "",
         googleClientID: "",
         googleClientSecret: "",
@@ -85,6 +93,10 @@ struct AppSettings: Codable, Equatable {
         case qmdSearchMode
         case anthropicApiKey
         case anthropicModel
+        case mailBackgroundAnalysisEnabled
+        case mailBackgroundDraftGenerationEnabled
+        case mailSenderLookupEnabled
+        case mailMemoryLearningEnabled
         case defaultNewTabPage
         case googleClientID
         case googleClientSecret
@@ -113,6 +125,10 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode = try container.decodeIfPresent(QmdSearchMode.self, forKey: .qmdSearchMode) ?? .bm25
         anthropicApiKey = try container.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
         anthropicModel = try container.decodeIfPresent(AnthropicModel.self, forKey: .anthropicModel) ?? .sonnet
+        mailBackgroundAnalysisEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundAnalysisEnabled) ?? true
+        mailBackgroundDraftGenerationEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundDraftGenerationEnabled) ?? true
+        mailSenderLookupEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailSenderLookupEnabled) ?? true
+        mailMemoryLearningEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailMemoryLearningEnabled) ?? true
         defaultNewTabPage = try container.decodeIfPresent(String.self, forKey: .defaultNewTabPage) ?? ""
         googleClientID = try container.decodeIfPresent(String.self, forKey: .googleClientID) ?? ""
         googleClientSecret = try container.decodeIfPresent(String.self, forKey: .googleClientSecret) ?? ""
@@ -137,6 +153,10 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode: QmdSearchMode,
         anthropicApiKey: String,
         anthropicModel: AnthropicModel = .sonnet,
+        mailBackgroundAnalysisEnabled: Bool = true,
+        mailBackgroundDraftGenerationEnabled: Bool = true,
+        mailSenderLookupEnabled: Bool = true,
+        mailMemoryLearningEnabled: Bool = true,
         defaultNewTabPage: String,
         googleClientID: String = "",
         googleClientSecret: String = "",
@@ -155,6 +175,10 @@ struct AppSettings: Codable, Equatable {
         self.qmdSearchMode = qmdSearchMode
         self.anthropicApiKey = anthropicApiKey
         self.anthropicModel = anthropicModel
+        self.mailBackgroundAnalysisEnabled = mailBackgroundAnalysisEnabled
+        self.mailBackgroundDraftGenerationEnabled = mailBackgroundDraftGenerationEnabled
+        self.mailSenderLookupEnabled = mailSenderLookupEnabled
+        self.mailMemoryLearningEnabled = mailMemoryLearningEnabled
         self.defaultNewTabPage = defaultNewTabPage
         self.googleClientID = googleClientID
         self.googleClientSecret = googleClientSecret
@@ -176,6 +200,10 @@ struct AppSettings: Codable, Equatable {
         try container.encode(qmdSearchMode, forKey: .qmdSearchMode)
         try container.encode(anthropicApiKey, forKey: .anthropicApiKey)
         try container.encode(anthropicModel, forKey: .anthropicModel)
+        try container.encode(mailBackgroundAnalysisEnabled, forKey: .mailBackgroundAnalysisEnabled)
+        try container.encode(mailBackgroundDraftGenerationEnabled, forKey: .mailBackgroundDraftGenerationEnabled)
+        try container.encode(mailSenderLookupEnabled, forKey: .mailSenderLookupEnabled)
+        try container.encode(mailMemoryLearningEnabled, forKey: .mailMemoryLearningEnabled)
         try container.encode(defaultNewTabPage, forKey: .defaultNewTabPage)
         try container.encode(googleClientID, forKey: .googleClientID)
         try container.encode(googleClientSecret, forKey: .googleClientSecret)
