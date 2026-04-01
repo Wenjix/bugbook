@@ -64,6 +64,20 @@ struct GeneralSettingsView: View {
             }
 
             SettingsSection("App") {
+                if AppEnvironment.isDev {
+                    HStack(spacing: 6) {
+                        Text("DEV")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange)
+                            .clipShape(.capsule)
+                        Text("Development build")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 infoRow(label: "Bundle ID", value: bundleIdentifier)
                 infoRow(label: "Version", value: appVersion)
                 infoRow(label: "Build", value: appBuild)

@@ -55,6 +55,7 @@
 		5071CA6077BA5B0723C3AFE1 /* FormattingToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9365350F95628047D144D9F7 /* FormattingToolbar.swift */; };
 		50C208360E6765C158168DBC /* MeetingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE556881D0438C7C049970E /* MeetingsViewModel.swift */; };
 		51AB2AEE8B0AD275F03073F6 /* KanbanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2421DB7DD227294C11A1041 /* KanbanView.swift */; };
+		53A7E1F2D8B4C60A3E91F7D0 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C3D9E847F5B20C6E83A4F1 /* AppEnvironment.swift */; };
 		5475FA131B72603118B5EE61 /* BugbookApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F47A85AD47A48232C52EB55B /* BugbookApp.swift */; };
 		55300AEF3CA2B3AABA0FF66D /* DatabaseZoomMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50668C95CB17560B1073D973 /* DatabaseZoomMetrics.swift */; };
 		55AED705FAC0BD8F729640FD /* FileEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 189FFD8CFB64645025DB5876 /* FileEntry.swift */; };
@@ -334,6 +335,7 @@
 		E3F3E4BACD1A0D354E4A9DAA /* MovePagePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovePagePickerView.swift; sourceTree = "<group>"; };
 		E5CF30FE4A58B2212047CA84 /* FileTreeItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTreeItemView.swift; sourceTree = "<group>"; };
 		E5E33F7472EFFA78D901306D /* TextBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextBlockView.swift; sourceTree = "<group>"; };
+		A1C3D9E847F5B20C6E83A4F1 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
 		E99B66C38F452E8D9E75E81F /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		EA1B04557D2E66868F56829B /* PaneNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneNode.swift; sourceTree = "<group>"; };
 		EAE175C836C7455A3A8153B2 /* SidebarReferenceDragPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarReferenceDragPayload.swift; sourceTree = "<group>"; };
@@ -625,6 +627,7 @@
 		99A769FA75817DC84A883F15 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				A1C3D9E847F5B20C6E83A4F1 /* AppEnvironment.swift */,
 				E99B66C38F452E8D9E75E81F /* AppState.swift */,
 				F47A85AD47A48232C52EB55B /* BugbookApp.swift */,
 			);
@@ -930,6 +933,7 @@
 				D809F8300B119795D5F00A8B /* AiService.swift in Sources */,
 				7ED64068786FC4125769B869 /* AiSidePanelView.swift in Sources */,
 				D152B548059890320AA5F1F5 /* AiThreadStore.swift in Sources */,
+				53A7E1F2D8B4C60A3E91F7D0 /* AppEnvironment.swift in Sources */,
 				290D6457E202795F776249B1 /* AppSettings.swift in Sources */,
 				7C8D7191B8B1FF31105C4608 /* AppState.swift in Sources */,
 				EAC88178F0063A660612B990 /* AppearanceSettingsView.swift in Sources */,
@@ -1185,6 +1189,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Bugbook.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1192,6 +1197,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.Bugbook;
 				PRODUCT_NAME = Bugbook;
 				SDKROOT = macosx;
@@ -1206,6 +1212,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Bugbook.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1213,9 +1220,14 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.Bugbook;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.maxforsey.Bugbook.dev";
 				PRODUCT_NAME = Bugbook;
 				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (
+					DEBUG,
+					BUGBOOK_DEV,
+				);
 			};
 			name = Debug;
 		};
