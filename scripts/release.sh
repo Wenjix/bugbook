@@ -17,6 +17,67 @@ APP_NAME="Bugbook.app"
 APP_PATH="$INSTALL_DIR/$APP_NAME"
 BUNDLE_ID="com.bugbook.Bugbook"
 
+contains_item() {
+    local needle="$1"
+    shift
+
+    local item
+    for item in "$@"; do
+        if [ "$item" = "$needle" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+copy_swift_runtime_libraries() {
+    local queue=()
+    local copied=()
+    local search_dirs=()
+    local library=""
+    local dependency=""
+    local search_dir=""
+    local source_path=""
+    local i=0
+
+    while IFS= read -r library; do
+        [ -n "$library" ] && queue+=("$library")
+    done < <(otool -L "$MACOS_DIR/Bugbook" | awk '$1 ~ /^@rpath\/libswift.*\.dylib$/ { sub("^@rpath/", "", $1); print $1 }')
+
+    while IFS= read -r search_dir; do
+        [ -d "$search_dir" ] && search_dirs+=("$search_dir")
+    done < <(otool -l "$MACOS_DIR/Bugbook" | awk '$1 == "path" && $2 ~ /^\// { print $2 }')
+
+    for ((i = 0; i < ${#queue[@]}; i++)); do
+        library="${queue[$i]}"
+
+        if [ ${#copied[@]} -gt 0 ] && contains_item "$library" "${copied[@]}"; then
+            continue
+        fi
+
+        source_path=""
+        for search_dir in "${search_dirs[@]}"; do
+            if [ -f "$search_dir/$library" ]; then
+                source_path="$search_dir/$library"
+                break
+            fi
+        done
+
+        if [ -z "$source_path" ]; then
+            echo "ERROR: Swift runtime library not found: $library"
+            exit 1
+        fi
+
+        cp -R "$source_path" "$FRAMEWORKS_DIR/"
+        copied+=("$library")
+
+        while IFS= read -r dependency; do
+            [ -n "$dependency" ] && queue+=("$dependency")
+        done < <(otool -L "$source_path" | awk '$1 ~ /^@rpath\/libswift.*\.dylib$/ { sub("^@rpath/", "", $1); print $1 }')
+    done
+}
+
 # --- Version from git ---
 VERSION="0.$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
@@ -28,7 +89,8 @@ echo "-- Building Bugbook $VERSION (build $BUILD_NUMBER, $GIT_SHA)"
 echo "-- swift build --configuration release --product Bugbook"
 swift build --configuration release --product Bugbook 2>&1 | tail -5
 
-BINARY="$REPO_ROOT/.build/release/Bugbook"
+BIN_DIR="$(swift build -c release --show-bin-path)"
+BINARY="$BIN_DIR/Bugbook"
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: Binary not found at $BINARY"
     exit 1
@@ -42,11 +104,33 @@ rm -rf "$STAGE_DIR"
 CONTENTS="$STAGE_DIR/$APP_NAME/Contents"
 MACOS_DIR="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
+FRAMEWORKS_DIR="$CONTENTS/Frameworks"
 
-mkdir -p "$MACOS_DIR" "$RESOURCES"
+mkdir -p "$MACOS_DIR" "$RESOURCES" "$FRAMEWORKS_DIR"
 
 # Copy binary
 cp "$BINARY" "$MACOS_DIR/Bugbook"
+
+# Teach the SwiftPM-built executable to resolve bundled frameworks.
+if ! otool -l "$MACOS_DIR/Bugbook" | grep -Fq "@executable_path/../Frameworks"; then
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/Bugbook"
+fi
+
+# Copy runtime frameworks, bundles, and dylibs emitted by SwiftPM.
+shopt -s nullglob
+for framework in "$BIN_DIR"/*.framework; do
+    cp -R "$framework" "$FRAMEWORKS_DIR/"
+done
+for library in "$BIN_DIR"/*.dylib; do
+    cp -R "$library" "$FRAMEWORKS_DIR/"
+done
+for bundle in "$BIN_DIR"/*.bundle; do
+    cp -R "$bundle" "$RESOURCES/"
+done
+shopt -u nullglob
+
+# Bundle non-system Swift runtime libraries referenced through @rpath.
+copy_swift_runtime_libraries
 
 # Compile asset catalog if actool is available, otherwise skip
 XCASSETS="$REPO_ROOT/macos/App/Assets.xcassets"

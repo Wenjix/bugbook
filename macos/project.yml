@@ -58,10 +58,20 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Bugbook
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
         SUFeedURL: ""
         SUPublicEDKey: ""
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.bugbook.sidebar-reference
+            UTTypeDescription: Bugbook Sidebar Reference
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification: {}
+        NSMicrophoneUsageDescription: Bugbook needs microphone access to record meeting audio for live transcription.
+        NSSpeechRecognitionUsageDescription: Bugbook uses speech recognition to transcribe meeting recordings in real-time.
     entitlements:
       path: App/Bugbook.entitlements
       properties:
