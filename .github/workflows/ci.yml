@@ -12,6 +12,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
 
       - name: Select Xcode
         id: toolchain
@@ -25,7 +28,9 @@ jobs:
           fi
 
           swift --version
-          XCODE_VERSION="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
+          XCODE_BUILD_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_BUILD_VERSION"
+          XCODE_VERSION="$(printf '%s\n' "$XCODE_BUILD_VERSION" | awk '/^Xcode / { print $2 }')"
           echo "xcode_version=$XCODE_VERSION" >> "$GITHUB_OUTPUT"
 
           SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version || echo 0)"
@@ -40,14 +45,48 @@ jobs:
             ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-
             ${{ runner.os }}-spm-
 
+      - name: Verify Ghostty archive
+        run: |
+          set -euo pipefail
+          ARCHIVE="Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty-fat.a"
+          test -f "$ARCHIVE"
+          file "$ARCHIVE"
+          ar -t "$ARCHIVE" >/dev/null
+
       - name: Build
         run: |
           swift build
 
       - name: Run SwiftLint
         run: |
+          set -euo pipefail
           brew install swiftlint
-          swiftlint lint Sources/
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            SWIFT_FILES="$(find Sources -name '*.swift' -print | sort)"
+          else
+            SWIFT_FILES="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" | grep '^Sources/.*\.swift$' || true)"
+          fi
+
+          if [ -z "$SWIFT_FILES" ]; then
+            echo "No changed Swift source files to lint."
+            exit 0
+          fi
+
+          FILE_COUNT="$(printf '%s\n' "$SWIFT_FILES" | sed '/^$/d' | wc -l | tr -d ' ')"
+          printf 'Linting %s changed Swift files\n' "$FILE_COUNT"
+          printf '%s\n' "$SWIFT_FILES" | while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            swiftlint lint --config .swiftlint-ci.yml "$file"
+          done
 
       - name: Run tests
         run: swift test

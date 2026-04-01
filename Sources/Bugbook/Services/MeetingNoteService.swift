@@ -186,7 +186,14 @@ class MeetingNoteService {
             if !apiKey.isEmpty {
                 let plainTranscript = segments.map { $0.text }.joined(separator: " ")
                 if let summary = try? await aiService.summarizeTranscript(plainTranscript, apiKey: apiKey, model: model) {
-                    content = content.replacingOccurrences(of: "## Summary\n\n_AI summary will appear here when an API key is configured._", with: "## Summary\n\n\(summary)")
+                    content = content.replacingOccurrences(
+                        of: "## Summary\n\n_AI summary will appear here when an API key is configured._",
+                        with: "## Summary\n\n\(summary.summary)"
+                    )
+                    content = content.replacingOccurrences(
+                        of: "## Action Items\n\n- [ ] ",
+                        with: "## Action Items\n\n\(summary.actionItems)"
+                    )
                 }
             }
 

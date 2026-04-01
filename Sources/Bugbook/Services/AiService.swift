@@ -114,6 +114,13 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         hasDetectedEngines = true
     }
 
+    func ensureDetectedEngines() async -> AiEngineStatus {
+        if !hasDetectedEngines {
+            await detectEngines()
+        }
+        return engineStatus
+    }
+
     // MARK: - Chat
 
     func chatWithNotes(engine: PreferredAIEngine, workspacePath: String, question: String, apiKey: String = "", model: AnthropicModel = .sonnet) async throws -> String {
@@ -208,7 +215,7 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         let actionItems: String
     }
 
-    func summarizeTranscript(_ transcript: String, apiKey: String) async throws -> TranscriptSummary {
+    func summarizeTranscript(_ transcript: String, apiKey: String, model: AnthropicModel = .sonnet) async throws -> TranscriptSummary {
         guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
 
         let systemPrompt = """
@@ -227,7 +234,8 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
             apiKey: apiKey,
             systemPrompt: systemPrompt,
             userPrompt: "Summarize this meeting transcript:\n\n\(transcript)",
-            maxTokens: 2048
+            maxTokens: 2048,
+            model: model
         )
 
         // Split the AI response into summary and action items sections
@@ -304,39 +312,81 @@ NEVER produce empty blocks or consecutive blank lines. Every block must contain 
         }
     }
 
+    func executePrompt(
+        engine: PreferredAIEngine,
+        workspacePath: String?,
+        systemPrompt: String? = nil,
+        prompt: String,
+        apiKey: String = "",
+        model: AnthropicModel = .sonnet,
+        maxTokens: Int = 2048
+    ) async throws -> String {
+        if engine == .claudeAPI {
+            guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
+            isRunning = true
+            error = nil
+            phase = .generating
+            defer { isRunning = false; phase = .idle }
+            do {
+                return try await callAPI(
+                    apiKey: apiKey,
+                    systemPrompt: systemPrompt,
+                    userPrompt: prompt,
+                    maxTokens: maxTokens,
+                    model: model
+                )
+            } catch {
+                self.error = error.localizedDescription
+                throw error
+            }
+        }
+
+        let status = await ensureDetectedEngines()
+        engineStatus = status
+
+        let resolvedEngine = resolveEngine(engine)
+        guard let cli = resolvedEngine else {
+            throw AiError.noEngineAvailable
+        }
+
+        isRunning = true
+        error = nil
+        phase = .generating
+        defer { isRunning = false; phase = .idle }
+
+        let fullPrompt: String
+        if let systemPrompt, !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            fullPrompt = "\(systemPrompt)\n\n\(prompt)"
+        } else {
+            fullPrompt = prompt
+        }
+
+        let command: String
+        switch cli {
+        case .claude:
+            command = "claude -p \(shellSingleQuoted(fullPrompt))"
+        case .codex:
+            command = "codex \(shellSingleQuoted(fullPrompt))"
+        case .auto, .claudeAPI:
+            throw AiError.noEngineAvailable
+        }
+
+        do {
+            return try await runCommand(command, cwd: workspacePath)
+        } catch let err as AiError {
+            error = err.errorDescription
+            throw err
+        } catch {
+            self.error = error.localizedDescription
+            throw error
+        }
+    }
+
     // MARK: - CLI Execution
 
     /// Execute a bugbook CLI command and return the output.
     func executeBugbookCommand(_ command: String) async throws -> String {
         try await runCommand("bugbook \(command)")
-    }
-
-    // MARK: - Transcript Summarization
-
-    func summarizeTranscript(_ transcript: String, apiKey: String, model: AnthropicModel = .sonnet) async throws -> String {
-        guard !apiKey.isEmpty else { throw AiError.noEngineAvailable }
-        isRunning = true
-        error = nil
-        defer { isRunning = false }
-        let systemPrompt = """
-        You are a meeting assistant. Given a transcript, produce a concise meeting summary in markdown with these sections:
-        ## Summary
-        A brief overview of what was discussed.
-
-        ## Key Points
-        - Bullet list of main topics and decisions
-
-        ## Action Items
-        - [ ] Task items identified in the meeting
-
-        Return ONLY the markdown. No explanations or code fences.
-        """
-        do {
-            return try await callAPI(apiKey: apiKey, systemPrompt: systemPrompt, userPrompt: transcript, maxTokens: 2048, model: model)
-        } catch {
-            self.error = error.localizedDescription
-            throw error
-        }
     }
 
     // MARK: - Pre-warming

@@ -16,11 +16,13 @@ enum PreferredAIEngine: String, Codable, CaseIterable {
 enum AnthropicModel: String, Codable, CaseIterable {
     case haiku = "claude-haiku-4-5-20251001"
     case sonnet = "claude-sonnet-4-20250514"
+    case opus = "claude-opus-4-20250514"
 
     var displayName: String {
         switch self {
         case .haiku: return "Haiku (fast)"
         case .sonnet: return "Sonnet (quality)"
+        case .opus: return "Opus (best)"
         }
     }
 }
@@ -31,7 +33,7 @@ enum ExecutionPolicy: String, Codable, CaseIterable {
     case denyAll = "Deny All"
 }
 
-struct AppSettings: Codable {
+struct AppSettings: Codable, Equatable {
     var theme: ThemeMode
     var focusModeOnType: Bool
     var preferredAIEngine: PreferredAIEngine
@@ -41,15 +43,21 @@ struct AppSettings: Codable {
     var qmdSearchMode: QmdSearchMode
     var anthropicApiKey: String
     var anthropicModel: AnthropicModel
+    var mailBackgroundAnalysisEnabled: Bool
+    var mailBackgroundDraftGenerationEnabled: Bool
+    var mailSenderLookupEnabled: Bool
+    var mailMemoryLearningEnabled: Bool
     /// Path to the page opened for new/empty tabs. Empty string = default Bugbook landing page.
     var defaultNewTabPage: String
 
-    // Google Calendar
-    var googleCalendarRefreshToken: String
-    var googleCalendarAccessToken: String
-    var googleCalendarTokenExpiry: Double
-    var googleCalendarConnectedEmail: String
-    var googleCalendarBannerDismissed: Bool
+    // Shared Google account
+    var googleClientID: String
+    var googleClientSecret: String
+    var googleRefreshToken: String
+    var googleAccessToken: String
+    var googleTokenExpiry: Double
+    var googleConnectedEmail: String
+    var googleGrantedScopes: [String]
 
     static let `default` = AppSettings(
         theme: .system,
@@ -61,15 +69,51 @@ struct AppSettings: Codable {
         qmdSearchMode: .bm25,
         anthropicApiKey: "",
         anthropicModel: .sonnet,
+        mailBackgroundAnalysisEnabled: true,
+        mailBackgroundDraftGenerationEnabled: true,
+        mailSenderLookupEnabled: true,
+        mailMemoryLearningEnabled: true,
         defaultNewTabPage: "",
-        googleCalendarRefreshToken: "",
-        googleCalendarAccessToken: "",
-        googleCalendarTokenExpiry: 0,
-        googleCalendarConnectedEmail: "",
-        googleCalendarBannerDismissed: false
+        googleClientID: "",
+        googleClientSecret: "",
+        googleRefreshToken: "",
+        googleAccessToken: "",
+        googleTokenExpiry: 0,
+        googleConnectedEmail: "",
+        googleGrantedScopes: []
     )
 
-    // Backward-compatible decoding — new fields default gracefully
+    private enum CodingKeys: String, CodingKey {
+        case theme
+        case focusModeOnType
+        case preferredAIEngine
+        case executionPolicy
+        case bugbookSkillEnabled
+        case agentsMdContent
+        case qmdSearchMode
+        case anthropicApiKey
+        case anthropicModel
+        case mailBackgroundAnalysisEnabled
+        case mailBackgroundDraftGenerationEnabled
+        case mailSenderLookupEnabled
+        case mailMemoryLearningEnabled
+        case defaultNewTabPage
+        case googleClientID
+        case googleClientSecret
+        case googleRefreshToken
+        case googleAccessToken
+        case googleTokenExpiry
+        case googleConnectedEmail
+        case googleGrantedScopes
+
+        // Legacy calendar-only auth keys.
+        case googleCalendarRefreshToken
+        case googleCalendarAccessToken
+        case googleCalendarTokenExpiry
+        case googleCalendarConnectedEmail
+    }
+
+    // Backward-compatible decoding — new fields default gracefully.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         theme = try container.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? .system
@@ -81,12 +125,22 @@ struct AppSettings: Codable {
         qmdSearchMode = try container.decodeIfPresent(QmdSearchMode.self, forKey: .qmdSearchMode) ?? .bm25
         anthropicApiKey = try container.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
         anthropicModel = try container.decodeIfPresent(AnthropicModel.self, forKey: .anthropicModel) ?? .sonnet
+        mailBackgroundAnalysisEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundAnalysisEnabled) ?? true
+        mailBackgroundDraftGenerationEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundDraftGenerationEnabled) ?? true
+        mailSenderLookupEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailSenderLookupEnabled) ?? true
+        mailMemoryLearningEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailMemoryLearningEnabled) ?? true
         defaultNewTabPage = try container.decodeIfPresent(String.self, forKey: .defaultNewTabPage) ?? ""
-        googleCalendarRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarRefreshToken) ?? ""
-        googleCalendarAccessToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarAccessToken) ?? ""
-        googleCalendarTokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleCalendarTokenExpiry) ?? 0
-        googleCalendarConnectedEmail = try container.decodeIfPresent(String.self, forKey: .googleCalendarConnectedEmail) ?? ""
-        googleCalendarBannerDismissed = try container.decodeIfPresent(Bool.self, forKey: .googleCalendarBannerDismissed) ?? false
+        googleClientID = try container.decodeIfPresent(String.self, forKey: .googleClientID) ?? ""
+        googleClientSecret = try container.decodeIfPresent(String.self, forKey: .googleClientSecret) ?? ""
+        let legacyRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarRefreshToken)
+        let legacyAccessToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarAccessToken)
+        let legacyTokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleCalendarTokenExpiry)
+        let legacyConnectedEmail = try container.decodeIfPresent(String.self, forKey: .googleCalendarConnectedEmail)
+        googleRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleRefreshToken) ?? legacyRefreshToken ?? ""
+        googleAccessToken = try container.decodeIfPresent(String.self, forKey: .googleAccessToken) ?? legacyAccessToken ?? ""
+        googleTokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleTokenExpiry) ?? legacyTokenExpiry ?? 0
+        googleConnectedEmail = try container.decodeIfPresent(String.self, forKey: .googleConnectedEmail) ?? legacyConnectedEmail ?? ""
+        googleGrantedScopes = try container.decodeIfPresent([String].self, forKey: .googleGrantedScopes) ?? []
     }
 
     init(
@@ -99,12 +153,18 @@ struct AppSettings: Codable {
         qmdSearchMode: QmdSearchMode,
         anthropicApiKey: String,
         anthropicModel: AnthropicModel = .sonnet,
+        mailBackgroundAnalysisEnabled: Bool = true,
+        mailBackgroundDraftGenerationEnabled: Bool = true,
+        mailSenderLookupEnabled: Bool = true,
+        mailMemoryLearningEnabled: Bool = true,
         defaultNewTabPage: String,
-        googleCalendarRefreshToken: String = "",
-        googleCalendarAccessToken: String = "",
-        googleCalendarTokenExpiry: Double = 0,
-        googleCalendarConnectedEmail: String = "",
-        googleCalendarBannerDismissed: Bool = false
+        googleClientID: String = "",
+        googleClientSecret: String = "",
+        googleRefreshToken: String = "",
+        googleAccessToken: String = "",
+        googleTokenExpiry: Double = 0,
+        googleConnectedEmail: String = "",
+        googleGrantedScopes: [String] = []
     ) {
         self.theme = theme
         self.focusModeOnType = focusModeOnType
@@ -115,11 +175,84 @@ struct AppSettings: Codable {
         self.qmdSearchMode = qmdSearchMode
         self.anthropicApiKey = anthropicApiKey
         self.anthropicModel = anthropicModel
+        self.mailBackgroundAnalysisEnabled = mailBackgroundAnalysisEnabled
+        self.mailBackgroundDraftGenerationEnabled = mailBackgroundDraftGenerationEnabled
+        self.mailSenderLookupEnabled = mailSenderLookupEnabled
+        self.mailMemoryLearningEnabled = mailMemoryLearningEnabled
         self.defaultNewTabPage = defaultNewTabPage
-        self.googleCalendarRefreshToken = googleCalendarRefreshToken
-        self.googleCalendarAccessToken = googleCalendarAccessToken
-        self.googleCalendarTokenExpiry = googleCalendarTokenExpiry
-        self.googleCalendarConnectedEmail = googleCalendarConnectedEmail
-        self.googleCalendarBannerDismissed = googleCalendarBannerDismissed
+        self.googleClientID = googleClientID
+        self.googleClientSecret = googleClientSecret
+        self.googleRefreshToken = googleRefreshToken
+        self.googleAccessToken = googleAccessToken
+        self.googleTokenExpiry = googleTokenExpiry
+        self.googleConnectedEmail = googleConnectedEmail
+        self.googleGrantedScopes = googleGrantedScopes
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(theme, forKey: .theme)
+        try container.encode(focusModeOnType, forKey: .focusModeOnType)
+        try container.encode(preferredAIEngine, forKey: .preferredAIEngine)
+        try container.encode(executionPolicy, forKey: .executionPolicy)
+        try container.encode(bugbookSkillEnabled, forKey: .bugbookSkillEnabled)
+        try container.encode(agentsMdContent, forKey: .agentsMdContent)
+        try container.encode(qmdSearchMode, forKey: .qmdSearchMode)
+        try container.encode(anthropicApiKey, forKey: .anthropicApiKey)
+        try container.encode(anthropicModel, forKey: .anthropicModel)
+        try container.encode(mailBackgroundAnalysisEnabled, forKey: .mailBackgroundAnalysisEnabled)
+        try container.encode(mailBackgroundDraftGenerationEnabled, forKey: .mailBackgroundDraftGenerationEnabled)
+        try container.encode(mailSenderLookupEnabled, forKey: .mailSenderLookupEnabled)
+        try container.encode(mailMemoryLearningEnabled, forKey: .mailMemoryLearningEnabled)
+        try container.encode(defaultNewTabPage, forKey: .defaultNewTabPage)
+        try container.encode(googleClientID, forKey: .googleClientID)
+        try container.encode(googleClientSecret, forKey: .googleClientSecret)
+        try container.encode(googleRefreshToken, forKey: .googleRefreshToken)
+        try container.encode(googleAccessToken, forKey: .googleAccessToken)
+        try container.encode(googleTokenExpiry, forKey: .googleTokenExpiry)
+        try container.encode(googleConnectedEmail, forKey: .googleConnectedEmail)
+        try container.encode(googleGrantedScopes, forKey: .googleGrantedScopes)
+    }
+
+    var googleConfigured: Bool {
+        !googleClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !googleClientSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var googleConnected: Bool {
+        !googleRefreshToken.isEmpty
+    }
+
+    var googleToken: GoogleOAuthToken? {
+        guard googleConnected else { return nil }
+        return GoogleOAuthToken(
+            accessToken: googleAccessToken,
+            refreshToken: googleRefreshToken,
+            expiresAt: Date(timeIntervalSince1970: googleTokenExpiry),
+            grantedScopes: googleGrantedScopes
+        )
+    }
+
+    mutating func applyGoogleAuthResult(_ result: GoogleOAuthResult) {
+        googleAccessToken = result.accessToken
+        googleRefreshToken = result.refreshToken
+        googleTokenExpiry = result.expiresAt.timeIntervalSince1970
+        googleConnectedEmail = result.email
+        googleGrantedScopes = result.grantedScopes
+    }
+
+    mutating func updateGoogleToken(_ token: GoogleOAuthToken) {
+        googleAccessToken = token.accessToken
+        googleRefreshToken = token.refreshToken
+        googleTokenExpiry = token.expiresAt.timeIntervalSince1970
+        googleGrantedScopes = token.grantedScopes
+    }
+
+    mutating func disconnectGoogle() {
+        googleRefreshToken = ""
+        googleAccessToken = ""
+        googleTokenExpiry = 0
+        googleConnectedEmail = ""
+        googleGrantedScopes = []
     }
 }

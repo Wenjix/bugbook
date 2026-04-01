@@ -68,9 +68,11 @@ struct PaneContentView: View {
     private func paneTypeMenu(action: @escaping (PaneContent) -> Void) -> some View {
         Button("Terminal") { action(.terminal) }
         Button("Empty Page") { action(.emptyDocument()) }
+        Button("Mail") { action(.mailDocument()) }
         Button("Calendar") { action(.calendarDocument()) }
         Button("Meetings") { action(.meetingsDocument()) }
         Button("Graph View") { action(.graphDocument()) }
+        Button("Gateway") { action(.gatewayDocument()) }
     }
 
     @ViewBuilder
@@ -123,7 +125,7 @@ private struct PaneActionBar: View {
             }
 
             // Merge another tab into this pane (show when other tabs exist)
-            if otherTabs.count > 0 {
+            if !otherTabs.isEmpty {
                 divider
 
                 mergeMenu
@@ -162,6 +164,7 @@ private struct PaneActionBar: View {
         Menu {
             Button("Terminal") { action(.terminal) }
             Button("Empty Page") { action(.emptyDocument()) }
+            Button("Mail") { action(.mailDocument()) }
             Button("Calendar") { action(.calendarDocument()) }
             Button("Meetings") { action(.meetingsDocument()) }
             Button("Graph View") { action(.graphDocument()) }

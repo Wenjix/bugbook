@@ -16,6 +16,15 @@ enum PaneContent: Codable, Equatable {
         return .document(openFile: OpenFile(id: id, path: "", content: "", isDirty: false, isEmptyTab: true))
     }
 
+    /// A mail pane.
+    static func mailDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://mail", content: "", isDirty: false, isEmptyTab: false,
+            kind: .mail, displayName: "Mail", icon: "envelope"
+        ))
+    }
+
     /// A calendar pane.
     static func calendarDocument() -> PaneContent {
         let id = UUID()
@@ -31,6 +40,15 @@ enum PaneContent: Codable, Equatable {
         return .document(openFile: OpenFile(
             id: id, path: "bugbook://graph", content: "", isDirty: false, isEmptyTab: false,
             kind: .graphView, displayName: "Graph View", icon: "sf:point.3.connected.trianglepath.dotted"
+        ))
+    }
+
+    /// A gateway dashboard pane.
+    static func gatewayDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://gateway", content: "", isDirty: false, isEmptyTab: false,
+            kind: .gateway, displayName: "Gateway", icon: "square.grid.2x2"
         ))
     }
 

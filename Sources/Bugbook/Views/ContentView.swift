@@ -10,9 +10,11 @@ struct ContentView: View {
     private let editorDraftStore = EditorDraftStore()
 
     @State private var appState = AppState()
+    @State private var appSettingsStore = AppSettingsStore()
     @State private var fileSystem = FileSystemService()
     @State private var aiService = AiService()
     @State private var calendarService = CalendarService()
+    @State private var mailService = MailService()
     @State private var calendarVM = CalendarViewModel()
     @State private var meetingNoteService = MeetingNoteService()
     @State private var transcriptionService = TranscriptionService()
@@ -51,6 +53,16 @@ struct ContentView: View {
     @State private var showPageOptionsMenu = false
     @State private var databaseRowFullWidth: [UUID: Bool] = [:]
 
+    // Cmd+K deferred navigation: set by palette closure, consumed by .onChange in ContentView's own cycle
+    @State private var pendingCmdKNavigation: CmdKNavRequest?
+
+    private struct CmdKNavRequest: Equatable {
+        let entry: FileEntry
+        let inNewTab: Bool
+        let searchQuery: String?
+        let id: UUID  // unique per request so repeated selections of the same entry still fire
+    }
+
     var body: some View {
         configuredLayout
     }
@@ -79,7 +91,9 @@ struct ContentView: View {
     private var configuredLayout: some View {
         applyDatabaseNotifications(
             to: applyCommandNotifications(
-                to: applyLifecycle(to: baseLayout)
+                to: applyWorkspaceNotifications(
+                    to: applyLifecycle(to: baseLayout)
+                )
             )
         )
     }
@@ -89,10 +103,14 @@ struct ContentView: View {
             .ignoresSafeArea()
             .frame(minWidth: 800, minHeight: 500)
             .task {
+                loadAppSettings()
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
                 editorZoomScale = clampedEditorZoomScale(editorZoomScale)
                 editorUI.focusModeEnabled = appState.settings.focusModeOnType
+            }
+            .onChange(of: appState.settings) { _, newSettings in
+                appSettingsStore.save(newSettings)
             }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
@@ -146,15 +164,10 @@ struct ContentView: View {
                 closeDatabaseRowModal()
             }
             .onChange(of: appState.currentView) { _, newView in
-                SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "view.change.\(newView)"))
-                hideFormattingPanel()
-                closeDatabaseRowModal()
-                if newView == .chat {
-                    ensureAiInitializedIfNeeded()
-                }
+                handleCurrentViewChange(newView)
             }
             .onChange(of: appState.isRecording) { _, recording in
-                recordingPillController.isRecording = recording
+                handleRecordingChange(recording)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
                 flushDirtyTabs()
@@ -164,6 +177,7 @@ struct ContentView: View {
             }
             .onDisappear {
                 flushDirtyTabs()
+                appSettingsStore.save(appState.settings)
                 terminalManager.shutdown()
                 aiInitTask?.cancel()
                 aiInitTask = nil
@@ -172,6 +186,10 @@ struct ContentView: View {
                 workspaceWatcher?.stop()
                 recordingPillController.cleanup()
             }
+    }
+
+    private func applyWorkspaceNotifications<V: View>(to view: V) -> some View {
+        view
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 if let path = notification.object as? String {
                     saveTask?.cancel()
@@ -215,6 +233,25 @@ struct ContentView: View {
                     performMovePage(from: sourcePath, toDirectory: destDir, insertIndex: insertIndex, siblingNames: siblingNames)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .addToSidebar)) { notification in
+                if let payload = notification.object as? SidebarReferenceDragPayload {
+                    addSidebarReference(payload)
+                }
+            }
+    }
+
+    private func handleCurrentViewChange(_ newView: ViewMode) {
+        let breadcrumb = Breadcrumb(level: .info, category: "view.change.\(String(describing: newView))")
+        SentrySDK.addBreadcrumb(breadcrumb)
+        hideFormattingPanel()
+        closeDatabaseRowModal()
+        if case .chat = newView {
+            ensureAiInitializedIfNeeded()
+        }
+    }
+
+    private func handleRecordingChange(_ recording: Bool) {
+        recordingPillController.isRecording = recording
     }
 
     private func applyCommandNotifications<V: View>(to view: V) -> some View {
@@ -229,6 +266,9 @@ struct ContentView: View {
 
     private func applyPaneNotifications<V: View>(to view: V) -> some View {
         view
+            .onChange(of: pendingCmdKNavigation) { _, request in
+                handlePendingCmdKNavigation(request)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .splitPaneRight)) { _ in
                 _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal)
             }
@@ -323,6 +363,11 @@ struct ContentView: View {
                 appState.showSettings = false
                 openContentInFocusedPane(.graphDocument())
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openMail)) { _ in
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.mailDocument())
+            }
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
                 appState.currentView = .editor
                 appState.showSettings = false
@@ -332,6 +377,11 @@ struct ContentView: View {
                 appState.currentView = .editor
                 appState.showSettings = false
                 openContentInFocusedPane(.meetingsDocument())
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openGateway)) { _ in
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.gatewayDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
@@ -361,13 +411,14 @@ struct ContentView: View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .openAIPanel)) { _ in
                 ensureAiInitializedIfNeeded()
-                appState.toggleAiPanel()
+                appState.openNotesChat()
             }
             .onReceive(NotificationCenter.default.publisher(for: .askAI)) { notification in
                 let prompt = notification.userInfo?["prompt"] as? String
                     ?? notification.userInfo?["query"] as? String
                 ensureAiInitializedIfNeeded()
-                appState.openAiPanel(prompt: prompt)
+                appState.aiInitialPrompt = prompt
+                appState.openNotesChat()
             }
             .onReceive(NotificationCenter.default.publisher(for: .blockTypeShortcut)) { notification in
                 handleBlockTypeShortcut(notification.object as? String)
@@ -515,32 +566,17 @@ struct ContentView: View {
                         appState: appState,
                         isPresented: $appState.commandPaletteOpen,
                         onSelectFile: { entry in
-                            navigateToEntry(entry)
+                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: false, searchQuery: nil, id: UUID())
                         },
                         onSelectFileNewTab: { entry in
-                            navigateToEntry(entry, inNewTab: true)
+                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: true, searchQuery: nil, id: UUID())
                         },
                         onCreateFile: { name in
                             createNewFileWithName(name)
                         },
                         onSelectContentMatch: { entry, query in
-                            if appState.commandPaletteMode == .newTab {
-                                navigateToEntry(entry, inNewTab: true)
-                            } else {
-                                navigateToEntry(entry)
-                            }
-                            // Jump to the block containing the match
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                guard let tab = appState.activeTab,
-                                      let doc = blockDocuments[tab.id] else { return }
-                                let lowerQuery = query.lowercased()
-                                if let block = doc.blocks.first(where: {
-                                    $0.text.lowercased().contains(lowerQuery)
-                                }) {
-                                    doc.focusedBlockId = block.id
-                                    doc.cursorPosition = 0
-                                }
-                            }
+                            let newTab = appState.commandPaletteMode == .newTab
+                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: newTab, searchQuery: query, id: UUID())
                         }
                     )
                     Spacer()
@@ -812,9 +848,11 @@ struct ContentView: View {
     }
 
     private var activeTabLeadingPadding: CGFloat {
+        let isMail = appState.activeTab?.isMail ?? false
         let isCalendar = appState.activeTab?.isCalendar ?? false
         let isMeetings = appState.activeTab?.isMeetings ?? false
-        if isCalendar || isMeetings { return 0 }
+        let isGateway = appState.activeTab?.isGateway ?? false
+        if isMail || isCalendar || isMeetings || isGateway { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -926,7 +964,7 @@ struct ContentView: View {
     @ViewBuilder
     private func paneDocumentContent(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
         VStack(spacing: 0) {
-            if !file.isEmptyTab && !file.isCalendar && !file.isMeetings {
+            if !file.isEmptyTab && !file.isMail && !file.isCalendar && !file.isMeetings && !file.isGateway {
                 HStack {
                     BreadcrumbView(
                         items: breadcrumbs(for: file),
@@ -936,7 +974,7 @@ struct ContentView: View {
 
                     Spacer()
 
-                    if !file.isEmptyTab && !file.isDatabase {
+                    if !file.isEmptyTab && !file.isDatabase && !file.isSkill {
                         Button {
                             showPageOptionsMenu.toggle()
                         } label: {
@@ -970,7 +1008,7 @@ struct ContentView: View {
     }
 
     private func paneLeadingPadding(for file: OpenFile) -> CGFloat {
-        if file.isCalendar || file.isMeetings { return 0 }
+        if file.isMail || file.isCalendar || file.isMeetings || file.isGateway { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -1016,6 +1054,11 @@ struct ContentView: View {
                 fullWidth: databaseRowFullWidth[leaf.id, default: false]
             )
             .id(leaf.id)
+        } else if file.isMail {
+            MailPaneView(
+                appState: appState,
+                mailService: mailService
+            )
         } else if file.isCalendar {
             WorkspaceCalendarView(
                 appState: appState,
@@ -1046,6 +1089,31 @@ struct ContentView: View {
                     }
                 )
             }
+        } else if file.isSkill {
+            SkillDetailView(
+                filePath: file.path,
+                displayName: file.displayName ?? (file.path as NSString).lastPathComponent
+            )
+        } else if file.isGateway {
+            GatewayView(
+                appState: appState,
+                workspacePath: appState.workspacePath,
+                onNavigateToFile: { path in
+                    navigateToFilePath(path)
+                },
+                onOpenGatewayLink: { link in
+                    switch link {
+                    case .calendar:
+                        openContentInFocusedPane(.calendarDocument())
+                    case .graph:
+                        openContentInFocusedPane(.graphDocument())
+                    case .meetings:
+                        openContentInFocusedPane(.meetingsDocument())
+                    case .database(let path):
+                        navigateToFilePath(path)
+                    }
+                }
+            )
         } else if file.isDatabase {
             DatabaseFullPageView(dbPath: file.path, initialRowId: dbInitialRowId)
                 .id(leaf.id)
@@ -1068,12 +1136,22 @@ struct ContentView: View {
                             icon: Binding(
                                 get: { document.icon },
                                 set: {
-                                    document.icon = $0
+                                    let newIcon = $0
+                                    document.icon = newIcon
                                     markActiveEditorTabDirty()
+                                    // Update via pane system
+                                    if let ws = workspaceManager.activeWorkspace,
+                                       let leaf = ws.focusedLeaf,
+                                       case .document(let openFile) = leaf.content {
+                                        workspaceManager.updatePaneOpenFile(paneId: leaf.id) { file in
+                                            file.icon = newIcon
+                                        }
+                                        appState.updateFileTreeIcon(for: openFile.path, icon: newIcon)
+                                    }
+                                    // Legacy tab path (fallback)
                                     if appState.activeTabIndex < appState.openTabs.count {
-                                        let tab = appState.openTabs[appState.activeTabIndex]
-                                        appState.openTabs[appState.activeTabIndex].icon = $0
-                                        appState.updateFileTreeIcon(for: tab.path, icon: $0)
+                                        appState.openTabs[appState.activeTabIndex].icon = newIcon
+                                        appState.updateFileTreeIcon(for: appState.openTabs[appState.activeTabIndex].path, icon: newIcon)
                                     }
                                     scheduleSave()
                                 }
@@ -1276,9 +1354,11 @@ struct ContentView: View {
         }
         let ts = transcriptionService
         doc.transcriptionService = ts
-        doc.onStartMeeting = { [weak doc] blockId in
+        doc.onStartMeeting = { [weak appState, weak doc] blockId in
             Task {
                 await ts.startRecording()
+                appState?.isRecording = true
+                appState?.recordingBlockId = blockId
                 // Poll confirmed segments and audio level after recording starts
                 var lastSegmentCount = 0
                 var lastVolatile = ""
@@ -1299,9 +1379,11 @@ struct ContentView: View {
                         lastVolatile = volatile
                         var entries = segments
                         if !volatile.isEmpty { entries.append(volatile) }
+                        let fullText = entries.joined(separator: " ")
                         doc?.updateBlockProperty(id: blockId) { block in
                             block.transcriptEntries = entries
-                            block.meetingTranscript = entries.joined(separator: " ")
+                            block.meetingTranscript = fullText
+                            block.text = fullText
                         }
                         doc?.meetingVolatileText = volatile
                     }
@@ -1312,13 +1394,16 @@ struct ContentView: View {
                 doc?.meetingVolatileText = ""
             }
         }
-        doc.onStopMeeting = { [weak doc] blockId in
+        doc.onStopMeeting = { [weak appState, weak doc] blockId in
             _ = ts.stopRecording()
+            appState?.isRecording = false
+            appState?.recordingBlockId = nil
             guard let doc else { return }
             let transcript = ts.currentTranscript
             doc.updateBlockProperty(id: blockId) { block in
                 block.meetingState = .complete
                 block.meetingTranscript = transcript
+                block.text = transcript
             }
         }
         doc.onDropPageFromSidebar = { [weak appState, weak doc] sourcePath, insertionIndex in
@@ -1616,9 +1701,46 @@ struct ContentView: View {
         loadFileContentForPane(entry: entry, paneId: targetPaneId)
     }
 
+    /// Open a file entry in a new workspace tab (used by Cmd+K new-tab mode).
+    private func openEntryInNewWorkspaceTab(_ entry: FileEntry) {
+        appState.currentView = .editor
+        appState.showSettings = false
+
+        let paneId = UUID()
+        let file = makeOpenFile(for: entry, id: paneId)
+        workspaceManager.addWorkspaceWith(content: .document(openFile: file))
+        if let actualPaneId = workspaceManager.activeWorkspace?.focusedPaneId {
+            loadFileContentForPane(entry: entry, paneId: actualPaneId)
+        }
+    }
+
+    /// Handle deferred Cmd+K navigation in ContentView's own render cycle.
+    private func handlePendingCmdKNavigation(_ request: CmdKNavRequest?) {
+        guard let request else { return }
+        pendingCmdKNavigation = nil
+        if request.inNewTab {
+            openEntryInNewWorkspaceTab(request.entry)
+        } else {
+            navigateToEntryInPane(request.entry)
+        }
+        if let query = request.searchQuery {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard let ws = workspaceManager.activeWorkspace,
+                      let doc = blockDocuments[ws.focusedPaneId] else { return }
+                let lowerQuery = query.lowercased()
+                if let block = doc.blocks.first(where: {
+                    $0.text.lowercased().contains(lowerQuery)
+                }) {
+                    doc.focusedBlockId = block.id
+                    doc.cursorPosition = 0
+                }
+            }
+        }
+    }
+
     /// Load file content from disk into a pane's BlockDocument.
     private func loadFileContentForPane(entry: FileEntry, paneId: UUID) {
-        guard !entry.isDatabase, !entry.isDatabaseRow else { return }
+        guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
@@ -1780,6 +1902,9 @@ struct ContentView: View {
         return !isDir.boolValue
     }
 
+    private func loadAppSettings() {
+        appState.settings = appSettingsStore.load()
+    }
 
     private func initializeWorkspace() {
         // Restore the most recently used workspace, falling back to the default
@@ -1993,7 +2118,7 @@ struct ContentView: View {
     }
 
     private func loadFileContent(for entry: FileEntry) {
-        guard !entry.isDatabase, !entry.isDatabaseRow else { return }
+        guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
