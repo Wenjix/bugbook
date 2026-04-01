@@ -12,6 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Select Xcode
         id: toolchain
@@ -39,6 +41,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-
             ${{ runner.os }}-spm-
+
+      - name: Verify Ghostty archive
+        run: |
+          set -euo pipefail
+          ARCHIVE="Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty-fat.a"
+          test -f "$ARCHIVE"
+          file "$ARCHIVE"
+          ar -t "$ARCHIVE" >/dev/null
 
       - name: Build
         run: |
