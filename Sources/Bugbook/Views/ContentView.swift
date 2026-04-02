@@ -1,9 +1,11 @@
+// swiftlint:disable file_length
 import SwiftUI
 import AppKit
 import os
 import Sentry
 import BugbookCore
 
+// swiftlint:disable:next type_body_length
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -15,6 +17,7 @@ struct ContentView: View {
     @State private var aiService = AiService()
     @State private var calendarService = CalendarService()
     @State private var mailService = MailService()
+    @State private var messageStore = MessageStore()
     @State private var calendarVM = CalendarViewModel()
     @State private var meetingNoteService = MeetingNoteService()
     @State private var transcriptionService = TranscriptionService()
@@ -32,6 +35,7 @@ struct ContentView: View {
     @State private var formattingPanel: FormattingToolbarPanel?
     @State private var aiInitTask: Task<Void, Never>?
     @State private var aiInitCompleted = false
+    @State private var didRegisterMessageAdapters = false
     @State private var workspaceWatcher: WorkspaceWatcher?
     @State private var lastTrashPurgeWorkspace: String?
     @State private var recordingPillController = FloatingRecordingPillController()
@@ -104,11 +108,16 @@ struct ContentView: View {
             .frame(minWidth: 800, minHeight: 500)
             .task {
                 loadAppSettings()
+                messageStore.loadCachedData()
+                registerMessageAdaptersIfNeeded()
+                await messageStore.startAll()
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
                 editorZoomScale = clampedEditorZoomScale(editorZoomScale)
                 editorUI.focusModeEnabled = appState.settings.focusModeOnType
-                warmUpTranscriptionModel()
+                // warmUpTranscriptionModel() — disabled: eager FluidAudio init triggers
+                // macOS permission prompts (Apple Music, Photos) on every first launch.
+                // The model is prepared lazily on first recording instead.
             }
             .onChange(of: appState.settings) { _, newSettings in
                 appSettingsStore.save(newSettings)
@@ -127,6 +136,16 @@ struct ContentView: View {
             }
             .onChange(of: appState.settings.qmdSearchMode) { _, _ in
                 // v2: no daemon needed, qmd query runs locally
+            }
+            .onChange(of: appState.settings.slackConnected) { _, connected in
+                registerMessageAdaptersIfNeeded()
+                if connected {
+                    Task {
+                        await messageStore.startAll()
+                    }
+                } else {
+                    messageStore.stopAll()
+                }
             }
             .onChange(of: appState.sidebarOpen) { _, _ in
                 sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
@@ -177,15 +196,7 @@ struct ContentView: View {
                 flushDirtyTabs()
             }
             .onDisappear {
-                flushDirtyTabs()
-                appSettingsStore.save(appState.settings)
-                terminalManager.shutdown()
-                aiInitTask?.cancel()
-                aiInitTask = nil
-                editorUI.cleanUp()
-                sidebarPeek.cleanUp()
-                workspaceWatcher?.stop()
-                recordingPillController.cleanup()
+                handleViewDisappear()
             }
     }
 
@@ -378,6 +389,11 @@ struct ContentView: View {
                 appState.showSettings = false
                 openContentInFocusedPane(.mailDocument())
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openMessages)) { _ in
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.messagesDocument())
+            }
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
                 appState.currentView = .editor
                 appState.showSettings = false
@@ -454,6 +470,7 @@ struct ContentView: View {
         if appState.sidebarOpen {
             SidebarView(
                 appState: appState,
+                unreadMessagesCount: messageStore.unreadCount,
                 fileSystem: fileSystem,
                 onSelectFile: { entry in
                     handleSidebarFileSelect(entry)
@@ -511,6 +528,7 @@ struct ContentView: View {
         if sidebarPeekEligible {
             SidebarView(
                 appState: appState,
+                unreadMessagesCount: messageStore.unreadCount,
                 fileSystem: fileSystem,
                 onSelectFile: { entry in
                     handleSidebarFileSelect(entry)
@@ -859,10 +877,11 @@ struct ContentView: View {
 
     private var activeTabLeadingPadding: CGFloat {
         let isMail = appState.activeTab?.isMail ?? false
+        let isMessages = appState.activeTab?.isMessages ?? false
         let isCalendar = appState.activeTab?.isCalendar ?? false
         let isMeetings = appState.activeTab?.isMeetings ?? false
         let isGateway = appState.activeTab?.isGateway ?? false
-        if isMail || isCalendar || isMeetings || isGateway { return 0 }
+        if isMail || isMessages || isCalendar || isMeetings || isGateway { return 0 }
         return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
     }
 
@@ -1069,6 +1088,11 @@ struct ContentView: View {
                 appState: appState,
                 mailService: mailService
             )
+        } else if file.isMessages {
+            MessagesPaneView(
+                appState: appState,
+                messageStore: messageStore
+            )
         } else if file.isCalendar {
             WorkspaceCalendarView(
                 appState: appState,
@@ -1088,6 +1112,7 @@ struct ContentView: View {
                     navigateToFilePath(path)
                 }
             )
+            .task { warmUpTranscriptionModel() }
         } else if file.isGraphView {
             if let workspace = appState.workspacePath {
                 GraphView(
@@ -1108,6 +1133,7 @@ struct ContentView: View {
             GatewayView(
                 appState: appState,
                 workspacePath: appState.workspacePath,
+                mailService: mailService,
                 onNavigateToFile: { path in
                     navigateToFilePath(path)
                 },
@@ -1121,6 +1147,8 @@ struct ContentView: View {
                         openContentInFocusedPane(.meetingsDocument())
                     case .database(let path):
                         navigateToFilePath(path)
+                    case .terminal:
+                        openContentInFocusedPane(.terminal)
                     }
                 }
             )
@@ -1928,6 +1956,26 @@ struct ContentView: View {
 
     private func loadAppSettings() {
         appState.settings = appSettingsStore.load()
+    }
+
+    private func handleViewDisappear() {
+        flushDirtyTabs()
+        let settings = appState.settings
+        appSettingsStore.save(settings)
+        terminalManager.shutdown()
+        aiInitTask?.cancel()
+        aiInitTask = nil
+        editorUI.cleanUp()
+        sidebarPeek.cleanUp()
+        workspaceWatcher?.stop()
+        recordingPillController.cleanup()
+        messageStore.stopAll()
+    }
+
+    private func registerMessageAdaptersIfNeeded() {
+        guard !didRegisterMessageAdapters else { return }
+        messageStore.register(adapter: SlackAdapter(appState: appState))
+        didRegisterMessageAdapters = true
     }
 
     private func initializeWorkspace() {

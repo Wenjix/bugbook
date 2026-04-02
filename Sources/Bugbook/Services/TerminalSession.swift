@@ -103,7 +103,7 @@ class GhosttySurfaceHostView: NSView {
         guard let surface else { super.keyDown(with: event); return }
         let text = event.ghosttyCharacters
         var keyEv = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
-        if let text, text.count > 0, let codepoint = text.utf8.first, codepoint >= 0x20 {
+        if let text, !text.isEmpty, let codepoint = text.utf8.first, codepoint >= 0x20 {
             text.withCString { ptr in
                 keyEv.text = ptr
                 _ = ghostty_surface_key(surface, keyEv)

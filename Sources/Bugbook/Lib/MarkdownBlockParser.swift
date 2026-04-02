@@ -79,6 +79,7 @@ enum MarkdownBlockParser {
 
     // MARK: - Parse
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     static func parse(_ markdown: String) -> [Block] {
         guard !markdown.isEmpty else {
             return [Block(type: .paragraph)]

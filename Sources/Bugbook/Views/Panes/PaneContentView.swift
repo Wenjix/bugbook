@@ -27,7 +27,8 @@ struct PaneContentView: View {
 
             if isHovered {
                 PaneActionBar(leaf: leaf, workspaceManager: workspaceManager, isOnlyPane: !showFocusBorder)
-                    .padding(6)
+                    .padding(.top, 38)
+                    .padding([.trailing, .bottom], 6)
                     .transition(.opacity)
             }
         }
@@ -69,10 +70,11 @@ struct PaneContentView: View {
         Button("Terminal") { action(.terminal) }
         Button("Empty Page") { action(.emptyDocument()) }
         Button("Mail") { action(.mailDocument()) }
+        Button("Inbox") { action(.messagesDocument()) }
         Button("Calendar") { action(.calendarDocument()) }
         Button("Meetings") { action(.meetingsDocument()) }
         Button("Graph View") { action(.graphDocument()) }
-        Button("Gateway") { action(.gatewayDocument()) }
+        Button("Home") { action(.gatewayDocument()) }
     }
 
     @ViewBuilder
@@ -165,6 +167,7 @@ private struct PaneActionBar: View {
             Button("Terminal") { action(.terminal) }
             Button("Empty Page") { action(.emptyDocument()) }
             Button("Mail") { action(.mailDocument()) }
+            Button("Inbox") { action(.messagesDocument()) }
             Button("Calendar") { action(.calendarDocument()) }
             Button("Meetings") { action(.meetingsDocument()) }
             Button("Graph View") { action(.graphDocument()) }
