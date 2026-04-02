@@ -162,6 +162,7 @@
 		D809F8300B119795D5F00A8B /* AiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C68748E44202E7C8D638C24B /* AiService.swift */; };
 		D9AC923C602E5B918B9171D6 /* GatewayViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB095B5E515A2CC72C6F391 /* GatewayViewModel.swift */; };
 		DA7A9136A777D4A1E7E649A8 /* SearchSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37262953A2E00C21609C6836 /* SearchSettingsView.swift */; };
+		DB652669C66A472349133778 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 7C4D37FADAAFA4137EF3A9F6 /* FluidAudio */; };
 		DBF41C1912A5B93FD20BDE90 /* DatabaseRowFullPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B116D36FE355D650ADC6B0F6 /* DatabaseRowFullPageView.swift */; };
 		DC399F897D16862221AE55FF /* RowPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89D0872A52B79E2B456963C /* RowPageView.swift */; };
 		DCFE62E13519F6558F86E4D4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 1CDECA1DBDA6CAE3AC8E4CDA /* Sparkle */; };
@@ -267,6 +268,7 @@
 		40FCF6F845DD2446799C49B5 /* MutationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MutationEngine.swift; sourceTree = "<group>"; };
 		425B08EB298C262A170FC229 /* ViewModePickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModePickerButton.swift; sourceTree = "<group>"; };
 		4358B9082C37BE1854810696 /* PaneContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneContentView.swift; sourceTree = "<group>"; };
+		4761C541993589BF2FBC460D /* ThreadPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadPickerRow.swift; sourceTree = "<group>"; };
 		476358F19D676EC12E2AC59A /* CoreText.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreText.framework; path = System/Library/Frameworks/CoreText.framework; sourceTree = SDKROOT; };
 		47CC5A6C9F18F716799F484C /* AgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStore.swift; sourceTree = "<group>"; };
 		4A3E7869C11972E917693DA0 /* WorkspaceKnowledgeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceKnowledgeService.swift; sourceTree = "<group>"; };
@@ -407,6 +409,7 @@
 				AF07B36AE2F3E64AE73487EB /* BugbookCore.framework in Frameworks */,
 				DCFE62E13519F6558F86E4D4 /* Sparkle in Frameworks */,
 				0150805DFE2AF45CF4B0E7DC /* Sentry in Frameworks */,
+				DB652669C66A472349133778 /* FluidAudio in Frameworks */,
 				8666FC986F5D189ADE7D49AE /* GhosttyKit.xcframework in Frameworks */,
 				8121BFA67D4FBF6DE190E808 /* Carbon.framework in Frameworks */,
 				1D7E279DFDE3F1EF429518E0 /* Metal.framework in Frameworks */,
@@ -903,6 +906,7 @@
 			packageProductDependencies = (
 				1CDECA1DBDA6CAE3AC8E4CDA /* Sparkle */,
 				093BE9A2C3A2769A90DE0579 /* Sentry */,
+				7C4D37FADAAFA4137EF3A9F6 /* FluidAudio */,
 			);
 			productName = BugbookApp;
 			productReference = C7935F81E8213A92201CFAA6 /* BugbookApp.app */;
@@ -953,6 +957,7 @@
 			mainGroup = C62E41F6C7F9C9F59BB7D2C2;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				3D81A7EAFF439A6CDDDB7824 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				CC287E7EEA871293A456C2C1 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				368C986EAAE39D176CF27DDA /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
@@ -1505,6 +1510,14 @@
 				minimumVersion = 2.6.0;
 			};
 		};
+		3D81A7EAFF439A6CDDDB7824 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.7.9;
+			};
+		};
 		CC287E7EEA871293A456C2C1 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
@@ -1525,6 +1538,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 368C986EAAE39D176CF27DDA /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		7C4D37FADAAFA4137EF3A9F6 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3D81A7EAFF439A6CDDDB7824 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

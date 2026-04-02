@@ -30,13 +30,16 @@ final class FloatingRecordingPillPanel: NSPanel {
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
         contentView = hostingView
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
-    func showPill(startDate: Date, onStop: @escaping () -> Void) {
+    func showPill(startDate: Date, onStop: @escaping () -> Void, onTap: @escaping () -> Void = {}) {
         hostingView.rootView = RecordingPillView(
             isAnimating: true,
             recordingStart: startDate,
-            onStop: onStop
+            onStop: onStop,
+            onTap: onTap
         )
 
         // Re-evaluate size and position each show (handles display changes)
@@ -64,6 +67,7 @@ private struct RecordingPillView: View {
     var isAnimating: Bool = true
     var recordingStart: Date = .now
     var onStop: (() -> Void)?
+    var onTap: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -83,6 +87,7 @@ private struct RecordingPillView: View {
             .contentShape(Capsule())
             .onTapGesture {
                 NSApplication.shared.activate(ignoringOtherApps: true)
+                onTap?()
             }
 
             if isAnimating {
@@ -152,7 +157,7 @@ private struct AudioBar: View {
     var seed: Int
     var isAnimating: Bool
 
-    private let green = Color(hex: "4ade80")
+    private let green = Color(hex: "B1D4F9")
     private let maxHeight: CGFloat = 14
     private let minFraction: CGFloat = 0.25
 
@@ -185,6 +190,8 @@ final class FloatingRecordingPillController {
 
     /// Called when the user taps the stop button on the pill.
     var onStop: (() -> Void)?
+    /// Called when the user taps the pill body (navigate to meeting block).
+    var onTap: (() -> Void)?
 
     /// Whether recording is active. Set from outside; the controller handles show/hide.
     var isRecording: Bool = false {
@@ -209,6 +216,8 @@ final class FloatingRecordingPillController {
             }
             panel?.showPill(startDate: recordingStart ?? .now, onStop: { [weak self] in
                 Task { @MainActor in self?.onStop?() }
+            }, onTap: { [weak self] in
+                Task { @MainActor in self?.onTap?() }
             })
         } else {
             panel?.hidePill()

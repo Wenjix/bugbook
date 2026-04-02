@@ -108,6 +108,7 @@ struct ContentView: View {
                 applyTheme(appState.settings.theme)
                 editorZoomScale = clampedEditorZoomScale(editorZoomScale)
                 editorUI.focusModeEnabled = appState.settings.focusModeOnType
+                warmUpTranscriptionModel()
             }
             .onChange(of: appState.settings) { _, newSettings in
                 appSettingsStore.save(newSettings)
@@ -255,6 +256,9 @@ struct ContentView: View {
             let doc = blockDocuments.values.first { $0.blocks.contains(where: { $0.id == blockId }) }
             recordingPillController.onStop = { [weak doc] in
                 doc?.onStopMeeting?(blockId)
+            }
+            recordingPillController.onTap = { [weak doc] in
+                doc?.scrollToBlockId = blockId
             }
         }
         recordingPillController.isRecording = recording
@@ -1370,6 +1374,14 @@ struct ContentView: View {
                 var lastVolatile = ""
                 var lastLevel: Float = -1
                 while ts.isRecording {
+                    // Stop if the recording block was deleted
+                    if let doc, doc.index(for: blockId) == nil {
+                        _ = ts.stopRecording()
+                        appState?.isRecording = false
+                        appState?.recordingBlockId = nil
+                        break
+                    }
+
                     let level = ts.audioLevel
                     if level != lastLevel {
                         lastLevel = level
@@ -1906,6 +1918,12 @@ struct ContentView: View {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
         return !isDir.boolValue
+    }
+
+    private func warmUpTranscriptionModel() {
+        Task(priority: .background) {
+            try? await transcriptionService.prepareFluidAsrManager()
+        }
     }
 
     private func loadAppSettings() {

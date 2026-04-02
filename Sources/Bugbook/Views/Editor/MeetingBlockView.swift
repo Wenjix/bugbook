@@ -12,18 +12,13 @@ struct MeetingBlockView: View {
     @State private var isTranscriptOpen = false
     @State private var transcriptSearch = ""
     @State private var isSearchingTranscript = false
-    @State private var isSummaryExpanded = false
-    @State private var showSummary = true
-    @State private var isHovered = false
-    private var hasVoiceActivity: Bool { document.meetingAudioLevel > 0.01 }
-
     @State private var processingStatus = ""
     @State private var showTranscriptSheet = false
+    @State private var copiedTranscript = false
+    @State private var isGenerating = false
+    @FocusState private var searchFocused: Bool
 
-    // Ask anything Q&A state (transient)
-    @State private var askQuestion = ""
-    @State private var askPairs: [(question: String, answer: String)] = []
-    @State private var isAskLoading = false
+    private let transcriptBottomAnchorID = "transcript-bottom"
 
     init(document: BlockDocument, block: Block) {
         self.document = document
@@ -52,8 +47,8 @@ struct MeetingBlockView: View {
             RoundedRectangle(cornerRadius: Radius.lg)
                 .strokeBorder(Color.fallbackBorderColor, lineWidth: 1)
         )
+        .frame(maxWidth: .infinity)
         .contentShape(RoundedRectangle(cornerRadius: Radius.lg))
-        .onHover { isHovered = $0 }
         .padding(.vertical, 4)
         .overlay {
             if showTranscriptSheet {
@@ -117,6 +112,7 @@ struct MeetingBlockView: View {
                     .background(Color.primary.opacity(Opacity.subtle))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                    .contentShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
             }
@@ -125,10 +121,9 @@ struct MeetingBlockView: View {
             .padding(.bottom, 4)
 
             meetingNotesChildBlocks
-                .frame(minHeight: 80)
-                .padding(.horizontal, 10)
-                .padding(.top, 2)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 12)
         }
     }
 
@@ -149,8 +144,6 @@ struct MeetingBlockView: View {
 
                 Spacer()
 
-                ladybugButton
-
                 Button(action: stopRecording) {
                     HStack(spacing: 5) {
                         RoundedRectangle(cornerRadius: 2)
@@ -164,6 +157,7 @@ struct MeetingBlockView: View {
                     .background(Color.primary.opacity(Opacity.subtle))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                    .contentShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
             }
@@ -171,19 +165,17 @@ struct MeetingBlockView: View {
             .padding(.vertical, 12)
 
             meetingNotesChildBlocks
-                .frame(minHeight: 160)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
 
             Divider()
 
             bottomBar(showWaveform: true)
+                .zIndex(1)
 
             if isTranscriptOpen {
                 transcriptDrawer
             }
-
-            askAnythingSection
         }
     }
 
@@ -215,26 +207,34 @@ struct MeetingBlockView: View {
     // MARK: - After State (Complete)
 
     private var afterStateView: some View {
-        VStack(spacing: 0) {
+        let sections = parseSections(block.language)
+        return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(block.meetingTitle.isEmpty ? "Meeting" : block.meetingTitle)
-                        .font(.system(size: Typography.title3, weight: .semibold))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-                }
+                TextField("Meeting", text: $title, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: Typography.title3, weight: .semibold))
+                    .foregroundStyle(Color.fallbackTextPrimary)
+                    .lineLimit(1...)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: title) { _, newVal in
+                        document.updateMeetingTitle(blockId: block.id, title: newVal)
+                    }
 
-                Spacer()
-
-                ladybugButton
-
-                // Generate summary button (only when no summary exists)
-                if parseSections(block.language).isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty && (!block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty || !block.children.isEmpty) {
+                // Generate summary button (only when no summary exists and not already generating)
+                let hasHeadingChild = block.children.contains(where: { $0.type == .heading })
+                if sections.isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty && !hasHeadingChild && (!block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty || !block.children.isEmpty) {
                     Button {
                         Task { await generateSummary() }
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 10))
+                            if isGenerating {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                    .frame(width: 11, height: 11)
+                            } else {
+                                Image(systemName: "ladybug")
+                                    .font(.system(size: 11))
+                            }
                             Text("Generate")
                                 .font(.system(size: Typography.caption, weight: .medium))
                         }
@@ -244,38 +244,8 @@ struct MeetingBlockView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
                     }
                     .buttonStyle(.borderless)
+                    .disabled(isGenerating)
                 }
-
-                // Expand button (hover only)
-                if isHovered {
-                    Button(action: { withAnimation(.easeInOut(duration: 0.25)) { isSummaryExpanded.toggle() } }) {
-                        Image(systemName: isSummaryExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.fallbackTextSecondary)
-                            .frame(width: 24, height: 24)
-                            .background(Color.primary.opacity(Opacity.subtle))
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
-                    }
-                    .buttonStyle(.borderless)
-                    .transition(.opacity)
-                }
-
-                // Toggle AI summary visibility
-                Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showSummary.toggle() } }) {
-                    HStack(spacing: 4) {
-                        Text("Summary")
-                            .font(.system(size: Typography.caption, weight: .medium))
-                            .foregroundStyle(Color.fallbackTextSecondary)
-                        Image(systemName: showSummary ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Color.fallbackTextSecondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(Opacity.subtle))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
-                }
-                .buttonStyle(.borderless)
 
                 Button(action: resumeRecording) {
                     HStack(spacing: 5) {
@@ -290,147 +260,96 @@ struct MeetingBlockView: View {
                     .background(Color.primary.opacity(Opacity.subtle))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                    .contentShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
                 .buttonStyle(.borderless)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
 
-            // Combined content area: summary (toggleable) + notes
-            if showSummary {
-                summaryView
+            if !sections.isEmpty || !block.meetingActionItems.isEmpty || !block.meetingSummary.isEmpty {
+                summaryView(sections)
             }
             notesView
 
             Divider()
 
             bottomBar(showWaveform: false)
+                .zIndex(1)
 
             if isTranscriptOpen {
                 transcriptDrawer
             }
-
-            askAnythingSection
         }
     }
 
     // MARK: - Summary View
 
-    private var summaryView: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Parse structured summary from the language field (dev convention)
-                    let sections = parseSections(block.language)
-
-                    if !sections.isEmpty {
-                        ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                            VStack(alignment: .leading, spacing: 4) {
-                                if !section.heading.isEmpty {
-                                    Text(section.heading)
-                                        .font(.system(size: Typography.bodySmall, weight: .semibold))
-                                        .foregroundStyle(Color.fallbackTextPrimary)
-                                }
-                                ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
-                                    if item.isActionItem {
-                                        HStack(alignment: .top, spacing: 6) {
-                                            Image(systemName: "square")
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(Color.fallbackTextSecondary)
-                                                .padding(.top, 2)
-                                            Text(item.text)
-                                                .font(.system(size: Typography.bodySmall))
-                                                .foregroundStyle(Color.fallbackTextPrimary)
-                                        }
-                                    } else if item.isUserNote {
-                                        Text(item.text)
-                                            .font(.system(size: Typography.bodySmall).italic())
-                                            .foregroundStyle(Color.accentColor)
-                                            .padding(.leading, 8)
-                                    } else if item.isSummaryText {
-                                        Text(item.text)
-                                            .font(.system(size: Typography.bodySmall))
-                                            .foregroundStyle(Color.fallbackTextSecondary)
-                                    } else {
-                                        HStack(alignment: .top, spacing: 6) {
-                                            Text("\u{2022}")
-                                                .foregroundStyle(Color.fallbackTextSecondary)
-                                            Text(item.text)
-                                                .font(.system(size: Typography.bodySmall))
-                                                .foregroundStyle(Color.fallbackTextPrimary)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Action items from dedicated field
-                    if !block.meetingActionItems.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Action Items")
+    private func summaryView(_ sections: [MeetingSection]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !sections.isEmpty {
+                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !section.heading.isEmpty {
+                            Text(section.heading)
                                 .font(.system(size: Typography.bodySmall, weight: .semibold))
                                 .foregroundStyle(Color.fallbackTextPrimary)
-
-                            ForEach(parseActionItems(block.meetingActionItems), id: \.self) { item in
+                        }
+                        ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                            if item.isActionItem {
                                 HStack(alignment: .top, spacing: 6) {
                                     Image(systemName: "square")
                                         .font(.system(size: 12))
                                         .foregroundStyle(Color.fallbackTextSecondary)
                                         .padding(.top, 2)
-                                    Text(item)
+                                    Text(item.text)
                                         .font(.system(size: Typography.bodySmall))
-                                        .foregroundStyle(Color.fallbackTextPrimary)
+                                        .foregroundStyle(Color.fallbackTextSecondary)
+                                }
+                            } else if item.isUserNote {
+                                Text(item.text)
+                                    .font(.system(size: Typography.bodySmall).italic())
+                                    .foregroundStyle(Color.accentColor)
+                                    .padding(.leading, 8)
+                            } else if item.isSummaryText {
+                                Text(item.text)
+                                    .font(.system(size: Typography.bodySmall))
+                                    .foregroundStyle(Color.fallbackTextSecondary)
+                            } else {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("\u{2022}")
+                                        .foregroundStyle(Color.fallbackTextSecondary)
+                                    Text(item.text)
+                                        .font(.system(size: Typography.bodySmall))
+                                        .foregroundStyle(Color.fallbackTextSecondary)
                                 }
                             }
-                        }
-                    }
-
-                    if sections.isEmpty && block.meetingActionItems.isEmpty && block.meetingSummary.isEmpty {
-                        // Generate button when no summary exists yet
-                        if !block.meetingTranscript.isEmpty || !block.meetingNotes.isEmpty {
-                            Button {
-                                Task { await generateSummary() }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "ladybug.fill")
-                                        .font(.system(size: 12))
-                                    Text("Generate Summary")
-                                        .font(.system(size: Typography.bodySmall, weight: .medium))
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor))
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 12)
-                        } else {
-                            Text("No summary generated yet.")
-                                .font(.system(size: Typography.bodySmall))
-                                .foregroundStyle(Color.fallbackTextMuted)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 20)
                         }
                     }
                 }
-                .padding(14)
             }
-            .frame(maxHeight: isSummaryExpanded ? nil : 200)
-            .clipped()
 
-            if !isSummaryExpanded {
-                LinearGradient(
-                    colors: [Color.fallbackCardBg.opacity(0), Color.fallbackCardBg],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 40)
-                .allowsHitTesting(false)
+            if !block.meetingActionItems.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Action Items")
+                        .font(.system(size: Typography.bodySmall, weight: .semibold))
+                        .foregroundStyle(Color.fallbackTextPrimary)
+
+                    ForEach(parseActionItems(block.meetingActionItems), id: \.self) { item in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "square")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.fallbackTextSecondary)
+                                .padding(.top, 2)
+                            Text(item)
+                                .font(.system(size: Typography.bodySmall))
+                                .foregroundStyle(Color.fallbackTextSecondary)
+                        }
+                    }
+                }
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: isSummaryExpanded)
+        .padding(14)
     }
 
     // MARK: - Notes View
@@ -447,8 +366,7 @@ struct MeetingBlockView: View {
             }
 
             meetingNotesChildBlocks
-                .frame(minHeight: 80)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 8)
         }
     }
@@ -456,67 +374,79 @@ struct MeetingBlockView: View {
     // MARK: - Bottom Bar
 
     private func bottomBar(showWaveform: Bool) -> some View {
-        Button(action: {
+        HStack(spacing: 8) {
+            if showWaveform {
+                WaveformView(isActive: block.meetingState == .recording, audioLevel: document.meetingAudioLevel)
+                    .frame(width: 40, height: 16)
+            } else {
+                Text("Transcript")
+                    .font(.system(size: Typography.caption, weight: .medium))
+                    .foregroundStyle(Color.fallbackTextSecondary)
+            }
+
+            Spacer()
+
+            if isTranscriptOpen {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isSearchingTranscript.toggle()
+                        if isSearchingTranscript {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                searchFocused = true
+                            }
+                        } else {
+                            transcriptSearch = ""
+                        }
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isSearchingTranscript ? Color.accentColor : Color.fallbackTextSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    let entries = !block.transcriptEntries.isEmpty
+                        ? block.transcriptEntries
+                        : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(entries.joined(separator: "\n\n"), forType: .string)
+                    copiedTranscript = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        copiedTranscript = false
+                    }
+                } label: {
+                    Image(systemName: copiedTranscript ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(copiedTranscript ? Color.accentColor : Color.fallbackTextSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Copy transcript")
+            } else if !showWaveform && !block.meetingTranscript.isEmpty {
+                Text("\(block.meetingTranscript.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count) words")
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(Color.fallbackTextMuted)
+            }
+
+            Image(systemName: isTranscriptOpen ? "chevron.down" : "chevron.up")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.fallbackTextSecondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture {
             withAnimation(.easeInOut(duration: 0.25)) {
                 isTranscriptOpen.toggle()
             }
             if isTranscriptOpen {
                 document.scrollToBlockId = block.id
             }
-        }) {
-            HStack(spacing: 8) {
-                if showWaveform {
-                    WaveformView(isActive: block.meetingState == .recording, audioLevel: document.meetingAudioLevel)
-                        .frame(width: 40, height: 16)
-                } else {
-                    Text("Transcript")
-                        .font(.system(size: Typography.caption, weight: .medium))
-                        .foregroundStyle(Color.fallbackTextSecondary)
-                }
-
-                Spacer()
-
-                if isTranscriptOpen {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isSearchingTranscript ? Color.accentColor : Color.fallbackTextSecondary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                        .highPriorityGesture(TapGesture().onEnded {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isSearchingTranscript.toggle()
-                                if !isSearchingTranscript { transcriptSearch = "" }
-                            }
-                        })
-
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.fallbackTextSecondary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                        .highPriorityGesture(TapGesture().onEnded {
-                            let entries = !block.transcriptEntries.isEmpty
-                                ? block.transcriptEntries
-                                : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(entries.joined(separator: "\n\n"), forType: .string)
-                        })
-                        .help("Copy transcript")
-                } else if !showWaveform && !block.meetingTranscript.isEmpty {
-                    Text("\(block.meetingTranscript.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count) words")
-                        .font(.system(size: Typography.caption))
-                        .foregroundStyle(Color.fallbackTextMuted)
-                }
-
-                Image(systemName: isTranscriptOpen ? "chevron.down" : "chevron.up")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.fallbackTextSecondary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .background(
             Color.primary.opacity(Opacity.subtle),
             in: UnevenRoundedRectangle(
@@ -540,6 +470,7 @@ struct MeetingBlockView: View {
                     TextField("Search transcript...", text: $transcriptSearch)
                         .textFieldStyle(.plain)
                         .font(.system(size: Typography.bodySmall))
+                        .focused($searchFocused)
                     if !transcriptSearch.isEmpty {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
@@ -552,137 +483,60 @@ struct MeetingBlockView: View {
                 .background(Color.primary.opacity(Opacity.subtle))
             }
 
-            ScrollView {
-                LazyVStack(spacing: 6) {
-                    let allEntries = !block.transcriptEntries.isEmpty
-                        ? block.transcriptEntries
-                        : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
-                    let entries = transcriptSearch.isEmpty
-                        ? allEntries
-                        : allEntries.filter { $0.localizedCaseInsensitiveContains(transcriptSearch) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        let rawEntries = !block.transcriptEntries.isEmpty
+                            ? block.transcriptEntries
+                            : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
+                        let allEntries = rawEntries.flatMap { splitTranscriptEntry($0) }
+                        let entries = transcriptSearch.isEmpty
+                            ? allEntries
+                            : allEntries.filter { $0.localizedCaseInsensitiveContains(transcriptSearch) }
+                        let isLive = block.meetingState == .recording
+                        let bubbleBg = isLive
+                            ? Color(red: 0.694, green: 0.831, blue: 0.976) // #B1D4F9
+                            : Color.primary.opacity(0.07)
 
-                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                        HStack {
-                            Text(entry)
-                                .font(.system(size: Typography.caption2))
-                                .foregroundStyle(Color.fallbackTextPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Color(nsColor: .controlBackgroundColor))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            Spacer(minLength: 40)
+                        ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                            HStack {
+                                Spacer(minLength: 40)
+                                Text(entry)
+                                    .font(.system(size: Typography.caption2))
+                                    .foregroundStyle(Color.fallbackTextPrimary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(bubbleBg)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
                         }
-                    }
 
-                    if block.meetingState == .recording {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .controlSize(.mini)
-                            Text("Listening...")
-                                .font(.system(size: Typography.caption2))
-                                .foregroundStyle(Color.fallbackTextMuted)
+                        if isLive {
+                            HStack(spacing: 4) {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                Text("Listening...")
+                                    .font(.system(size: Typography.caption2))
+                                    .foregroundStyle(Color.fallbackTextMuted)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+
+                        Color.clear.frame(height: 1).id(transcriptBottomAnchorID)
                     }
+                    .padding(10)
                 }
-                .padding(10)
+                .frame(maxHeight: 400)
+                .onAppear {
+                    proxy.scrollTo(transcriptBottomAnchorID, anchor: .bottom)
+                }
             }
-            .frame(maxHeight: 400)
         }
         .transition(.asymmetric(
             insertion: .push(from: .bottom).combined(with: .opacity),
             removal: .push(from: .top).combined(with: .opacity)
         ))
-    }
-
-    // MARK: - Ask Anything
-
-    private var askAnythingSection: some View {
-        VStack(spacing: 0) {
-            if !askPairs.isEmpty {
-                Divider()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(Array(askPairs.enumerated()), id: \.offset) { _, pair in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(pair.question)
-                                    .font(.system(size: Typography.bodySmall, weight: .medium))
-                                    .foregroundStyle(Color.fallbackTextPrimary)
-                                Text(pair.answer)
-                                    .font(.system(size: Typography.bodySmall))
-                                    .foregroundStyle(Color.fallbackTextSecondary)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                }
-                .frame(maxHeight: 200)
-            }
-
-            Divider()
-
-            HStack(spacing: 8) {
-                if isAskLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                TextField("Ask anything...", text: $askQuestion)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: Typography.bodySmall))
-                    .onSubmit { submitAskQuestion() }
-                    .disabled(isAskLoading)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Color.primary.opacity(Opacity.subtle))
-        }
-    }
-
-    private func submitAskQuestion() {
-        let question = askQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty else { return }
-        askQuestion = ""
-        isAskLoading = true
-
-        let transcript = block.meetingTranscript
-        let notes = block.children.isEmpty
-            ? block.meetingNotes
-            : block.children.map { $0.text }.joined(separator: "\n")
-        let summary = block.meetingSummary
-
-        Task {
-            var context = ""
-            if !transcript.isEmpty { context += "Transcript:\n\(transcript)\n\n" }
-            if !notes.isEmpty { context += "Notes:\n\(notes)\n\n" }
-            if !summary.isEmpty { context += "Summary:\n\(summary)\n\n" }
-
-            let prompt = """
-            You are answering questions about a meeting. Be concise and specific.
-
-            \(context)Question: \(question)
-            """
-
-            let answer = await runClaude(prompt: prompt) ?? "Could not generate an answer."
-            askPairs.append((question: question, answer: answer))
-            isAskLoading = false
-        }
-    }
-
-    // MARK: - Ladybug AI Button
-
-    private var ladybugButton: some View {
-        Button(action: openAiWithContext) {
-            Image("BugbookAI")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 20, height: 20)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-        }
-        .buttonStyle(.borderless)
-        .help("Ask AI about this meeting")
     }
 
     // MARK: - Meeting Notes (Child Blocks)
@@ -729,11 +583,36 @@ struct MeetingBlockView: View {
         document.onStartMeeting?(block.id)
     }
 
-    private func openAiWithContext() {
-        NotificationCenter.default.post(name: .openAIPanel, object: nil)
+    // MARK: - Helpers
+
+    /// Splits a single transcript entry into sentence-sized bubbles.
+    /// Splits on sentence-ending punctuation or every ~20 words if unpunctuated.
+    private func splitTranscriptEntry(_ text: String) -> [String] {
+        let words = text.components(separatedBy: " ").filter { !$0.isEmpty }
+        guard words.count > 6 else { return [text] }
+        var result: [String] = []
+        var chunk: [String] = []
+        for word in words {
+            chunk.append(word)
+            let ends = word.hasSuffix(".") || word.hasSuffix("?") || word.hasSuffix("!")
+            if ends || chunk.count >= 20 {
+                result.append(chunk.joined(separator: " "))
+                chunk = []
+            }
+        }
+        if !chunk.isEmpty { result.append(chunk.joined(separator: " ")) }
+        return result.isEmpty ? [text] : result
     }
 
-    // MARK: - Helpers
+    private func markdownToBlocks(_ sections: String, actionItems: String) -> [Block] {
+        var markdown = sections.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedItems = actionItems.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedItems.isEmpty {
+            if !markdown.isEmpty { markdown += "\n\n" }
+            markdown += "## Action Items\n" + trimmedItems
+        }
+        return MarkdownBlockParser.parse(markdown)
+    }
 
     private func parseActionItems(_ raw: String) -> [String] {
         raw.components(separatedBy: "\n")
@@ -751,6 +630,8 @@ struct MeetingBlockView: View {
     // MARK: - AI Summary Generation (from dev)
 
     private func generateSummary() async {
+        isGenerating = true
+        defer { isGenerating = false }
         let transcript = block.meetingTranscript
         let userNotes = block.children.isEmpty
             ? block.meetingNotes
@@ -776,10 +657,14 @@ struct MeetingBlockView: View {
                 if !parsed.title.isEmpty {
                     document.updateMeetingTitle(blockId: block.id, title: parsed.title)
                 }
-                if !parsed.actionItems.isEmpty {
-                    document.updateMeetingActionItems(blockId: block.id, actionItems: parsed.actionItems)
+                // Convert summary + action items into editable child blocks prepended before user notes
+                let summaryBlocks = markdownToBlocks(parsed.sections, actionItems: parsed.actionItems)
+                if !summaryBlocks.isEmpty {
+                    let existingChildren = block.children
+                    let combined = summaryBlocks + existingChildren
+                    guard let idx = document.index(for: block.id) else { return }
+                    document.blocks[idx].children = combined
                 }
-                document.updateMeetingSummary(blockId: block.id, summary: parsed.sections)
             }
         }
 
@@ -863,6 +748,8 @@ struct MeetingBlockView: View {
         ## Action Items
         - [ ] action item 1
         - [ ] action item 2
+
+        IMPORTANT: Only include ## Action Items if there are real, concrete next steps. If there are no clear action items, omit the section entirely — do NOT write placeholder text like "No action items" or "---".
         """
 
         if !notes.isEmpty {
@@ -891,7 +778,7 @@ struct MeetingBlockView: View {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/zsh")
                 let escaped = prompt.replacingOccurrences(of: "'", with: "'\"'\"'")
-                process.arguments = ["-l", "-c", "claude --model haiku --print '\(escaped)'"]
+                process.arguments = ["-c", "PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$HOME/.npm-global/bin\" claude --model haiku --print '\(escaped)'"]
                 let pipe = Pipe()
                 process.standardOutput = pipe
                 process.standardError = pipe
