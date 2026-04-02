@@ -101,6 +101,7 @@ struct WorkspaceTabBar: View {
                 if let name = file.displayName, !name.isEmpty { return name }
                 if file.isEmptyTab { return "New Tab" }
                 if file.isCalendar { return "Calendar" }
+                if file.isMessages { return "Inbox" }
                 if file.isMeetings { return "Meetings" }
                 if file.isGraphView { return "Graph" }
                 let fileName = (file.path as NSString).lastPathComponent
@@ -116,6 +117,7 @@ struct WorkspaceTabBar: View {
         guard let leaf = ws.focusedLeaf else { return nil }
         switch leaf.content {
         case .document(let file):
+            if file.isMessages { return "sf:tray.full.fill" }
             if file.isCalendar { return "sf:calendar" }
             if file.isMeetings { return "sf:person.2" }
             if file.isGraphView { return "sf:point.3.connected.trianglepath.dotted" }
@@ -150,6 +152,10 @@ private struct NewPanePopover: View {
                 workspaceManager.addWorkspaceWith(content: .terminal)
                 dismiss()
             }
+            contentRow(icon: "tray.full.fill", label: "Inbox") {
+                workspaceManager.addWorkspaceWith(content: .messagesDocument())
+                dismiss()
+            }
             contentRow(icon: "calendar", label: "Calendar") {
                 workspaceManager.addWorkspaceWith(content: .calendarDocument())
                 dismiss()
@@ -158,7 +164,7 @@ private struct NewPanePopover: View {
                 workspaceManager.addWorkspaceWith(content: .meetingsDocument())
                 dismiss()
             }
-            contentRow(icon: "square.grid.2x2", label: "Gateway") {
+            contentRow(icon: "house", label: "Home") {
                 workspaceManager.addWorkspaceWith(content: .gatewayDocument())
                 dismiss()
             }

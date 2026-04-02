@@ -44,6 +44,7 @@ struct DatabaseFullPageView: View {
     @State private var viewTabDropTargetId: String?
     @State private var showTemplatePicker = false
     @State private var editingTemplate: DatabaseTemplate? = nil
+    @AppStorage("home.pinnedDatabasePaths") private var pinnedPathsJSON: String = "[]"
 
     init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
@@ -471,11 +472,27 @@ struct DatabaseFullPageView: View {
                     .padding(.vertical, DatabaseZoomMetrics.size(3))
                 }
 
+                Divider().padding(.top, 4)
+
+                Button { togglePinToHome() } label: {
+                    HStack {
+                        Text("Pin to Home").font(DatabaseZoomMetrics.font(15))
+                        Spacer()
+                        if isPinnedToHome {
+                            Image(systemName: "checkmark").font(DatabaseZoomMetrics.font(12)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, DatabaseZoomMetrics.size(12))
+                .padding(.vertical, DatabaseZoomMetrics.size(3))
+
                 Spacer(minLength: 12)
             }
         }
         .frame(width: DatabaseZoomMetrics.size(280))
-        .frame(maxHeight: DatabaseZoomMetrics.size(420))
+        .frame(maxHeight: DatabaseZoomMetrics.size(500))
         .popoverSurface()
     }
 
@@ -895,6 +912,16 @@ struct DatabaseFullPageView: View {
 
     private func iconForViewType(_ type: ViewType) -> String {
         type.systemImageName
+    }
+
+    // MARK: - Pin to Home
+
+    private var isPinnedToHome: Bool {
+        PinnedDatabasesHelper.decodePaths(from: pinnedPathsJSON).contains(dbPath)
+    }
+
+    private func togglePinToHome() {
+        pinnedPathsJSON = PinnedDatabasesHelper.togglePath(dbPath, in: pinnedPathsJSON)
     }
 }
 

@@ -7,6 +7,7 @@ enum GatewayLink {
     case graph
     case meetings
     case database(path: String)
+    case terminal
 }
 
 /// Native mission-control dashboard — the home screen of Bugbook.
@@ -14,6 +15,7 @@ enum GatewayLink {
 struct GatewayView: View {
     var appState: AppState
     var workspacePath: String?
+    var mailService: MailService
     var onNavigateToFile: (String) -> Void
     var onOpenGatewayLink: (GatewayLink) -> Void
 
@@ -25,30 +27,20 @@ struct GatewayView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                ticketOverview
-                quickLinks
-                databasesGrid
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.fallbackEditorBg)
-        .onAppear {
-            if let workspace = workspacePath {
-                viewModel.scan(workspacePath: workspace)
-            }
-        }
+        HomeView(
+            appState: appState,
+            workspacePath: workspacePath,
+            mailService: mailService,
+            onNavigateToFile: onNavigateToFile,
+            onOpenGatewayLink: onOpenGatewayLink
+        )
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("Gateway")
+            Text("Home")
                 .font(.system(size: Typography.title2, weight: .semibold))
 
             Spacer()

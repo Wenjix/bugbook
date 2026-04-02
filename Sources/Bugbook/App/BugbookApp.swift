@@ -115,7 +115,7 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
 
-                Button("Gateway") {
+                Button("Home") {
                     NotificationCenter.default.post(name: .openGateway, object: nil)
                 }
                 .keyboardShortcut("0", modifiers: [.command, .shift])
@@ -390,6 +390,7 @@ extension Notification.Name {
     static let openDailyNote = Notification.Name("openDailyNote")
     static let openGraphView = Notification.Name("openGraphView")
     static let openMail = Notification.Name("openMail")
+    static let openMessages = Notification.Name("openMessages")
     static let editorZoomIn = Notification.Name("editorZoomIn")
     static let editorZoomOut = Notification.Name("editorZoomOut")
     static let editorZoomReset = Notification.Name("editorZoomReset")
