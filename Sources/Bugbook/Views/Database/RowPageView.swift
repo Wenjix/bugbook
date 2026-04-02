@@ -23,6 +23,7 @@ struct RowPageView: View {
     var templates: [DatabaseTemplate] = []
     var onApplyTemplate: ((DatabaseTemplate) -> Void)?
     var onNewTemplate: (() -> Void)?
+    var onSaveAsTemplate: (() -> Void)?
 
     @Environment(\.workspacePath) private var workspacePath
     @State private var editingTitle: String = ""
@@ -141,6 +142,12 @@ struct RowPageView: View {
 
                             if !templates.isEmpty, isRowEmpty {
                                 templateSection
+                            } else if isRowEmpty, onNewTemplate != nil {
+                                newTemplateOnlySection
+                            }
+
+                            if !isRowEmpty, onSaveAsTemplate != nil {
+                                saveAsTemplateRow
                             }
                         }
                         .padding(.vertical, 8)
@@ -330,6 +337,57 @@ struct RowPageView: View {
                 .onHover { hovering in templateHoveredId = hovering ? "_new" : nil }
             }
         }
+    }
+
+    /// Shown on empty rows when no templates exist yet, but creating is possible.
+    private var newTemplateOnlySection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Press \u{23CE} to continue with an empty page")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
+
+            Button {
+                onNewTemplate?()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("New template")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(templateHoveredId == "_new_only" ? Color.primary.opacity(0.06) : Color.clear)
+                .clipShape(.rect(cornerRadius: Radius.xs))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in templateHoveredId = hovering ? "_new_only" : nil }
+        }
+    }
+
+    /// "Save as template" shown on non-empty rows.
+    private var saveAsTemplateRow: some View {
+        Button {
+            onSaveAsTemplate?()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.badge.plus")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("Save as template")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

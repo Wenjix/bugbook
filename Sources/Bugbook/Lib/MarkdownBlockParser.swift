@@ -248,7 +248,7 @@ enum MarkdownBlockParser {
             }
 
             // Callout block
-            if let calloutVariant = parseCalloutOpenComment(trimmed) {
+            if let calloutMeta = parseCalloutOpenComment(trimmed) {
                 i += 1
                 let title = i < lines.count ? String(lines[i]) : ""
                 i += 1
@@ -263,7 +263,8 @@ enum MarkdownBlockParser {
                 }
                 let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
                 var block = makeBlock(type: .callout, text: title, children: children)
-                block.calloutType = calloutVariant
+                block.calloutIcon = calloutMeta.icon
+                block.calloutColor = calloutMeta.color
                 blocks.append(block)
                 continue
             }
@@ -678,7 +679,7 @@ enum MarkdownBlockParser {
                 }
 
             case .callout:
-                lines.append("<!-- callout \(block.calloutType) -->")
+                lines.append("<!-- callout icon:\(block.calloutIcon) color:\(block.calloutColor) -->")
                 lines.append(block.text)
                 if !block.children.isEmpty {
                     lines.append(serialize(block.children, includeBlockIDComments: includeBlockIDComments))
@@ -954,15 +955,40 @@ enum MarkdownBlockParser {
         return level
     }
 
-    private static func parseCalloutOpenComment(_ trimmed: String) -> String? {
+    private static func parseCalloutOpenComment(_ trimmed: String) -> (icon: String, color: String)? {
         guard trimmed.hasPrefix("<!-- callout"), trimmed.hasSuffix("-->") else { return nil }
         let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
-        // inner is like "callout info" or "callout warning"
+        // inner is like "callout icon:lightbulb color:default" or legacy "callout info"
         guard inner.hasPrefix("callout") else { return nil }
         let rest = inner.dropFirst("callout".count).trimmingCharacters(in: .whitespaces)
+
+        // New format: key:value pairs
+        if rest.contains("icon:") || rest.contains("color:") {
+            var icon = "lightbulb"
+            var color = "default"
+            let parts = rest.split(separator: " ")
+            for part in parts {
+                if part.hasPrefix("icon:") {
+                    icon = String(part.dropFirst("icon:".count))
+                } else if part.hasPrefix("color:") {
+                    color = String(part.dropFirst("color:".count))
+                }
+            }
+            return (icon: icon, color: color)
+        }
+
+        // Legacy format: "callout info", "callout warning", etc.
+        let legacyMap: [String: (String, String)] = [
+            "info": ("lightbulb", "default"),
+            "warning": ("exclamationmark.triangle", "orange"),
+            "success": ("checkmark.circle", "green"),
+            "error": ("xmark.circle", "red"),
+        ]
         let variant = rest.isEmpty ? "info" : String(rest)
-        let validVariants = ["info", "warning", "success", "error"]
-        return validVariants.contains(variant) ? variant : "info"
+        if let mapped = legacyMap[variant] {
+            return (icon: mapped.0, color: mapped.1)
+        }
+        return (icon: "lightbulb", color: "default")
     }
 
     private static func parsePageLinkComment(_ line: String) -> String? {

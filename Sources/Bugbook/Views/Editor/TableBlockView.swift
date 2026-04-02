@@ -33,16 +33,25 @@ struct TableBlockView: View {
     private var colCount: Int { rows.map(\.count).max() ?? 3 }
     private var rowCount: Int { rows.count }
 
+    /// Darker border color for better visibility (issue #1).
+    private var tableBorderColor: Color {
+        Color(light: Color(hex: "d4d4d0"), dark: Color(hex: "454545"))
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Main table
+            // Grip dots column — outside the table grid (issue #2)
+            gripDotsColumn
+                .opacity(isHovering ? 1 : 0)
+
+            // Main table + add-row bar
             VStack(alignment: .leading, spacing: 0) {
                 tableGrid
                     .background(Color(nsColor: .controlBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
                     .overlay(
                         RoundedRectangle(cornerRadius: Radius.xs)
-                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                            .stroke(tableBorderColor, lineWidth: 1)
                     )
 
                 // Add row bar
@@ -50,15 +59,34 @@ struct TableBlockView: View {
                     .opacity(isHovering ? 1 : 0)
             }
 
-            // Add column button — outside the table, to the right
+            // Add column button — outside the table, to the right (issue #4)
             addColumnButton
                 .opacity(isHovering ? 1 : 0)
         }
-        .contentShape(Rectangle())
-        .onTapGesture { selectedCell = nil }
         .onAppear { initColumnWidths() }
         .onChange(of: colCount) { _, _ in initColumnWidths() }
         .onHover { isHovering = $0 }
+        // Use background NSView monitor to detect clicks outside cells (issue #3).
+        // The SwiftUI .onTapGesture on the container was being eaten by
+        // highPriorityGesture on cells, so we use an AppKit-level approach.
+        .background(TableClickOutsideMonitor(onClickOutside: { selectedCell = nil }))
+    }
+
+    // MARK: - Grip Dots Column (outside table)
+
+    /// Renders grip dots to the left of each row, aligned by row index.
+    /// Positioned outside the table grid so they don't create padding inside cells (issue #2).
+    private var gripDotsColumn: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<rowCount, id: \.self) { rowIdx in
+                if rowIdx > 0 {
+                    // Spacer matching the border line height
+                    Color.clear.frame(height: 1)
+                }
+                rowDragHandle(rowIdx)
+                    .frame(minHeight: 32)
+            }
+        }
     }
 
     // MARK: - Table Grid
@@ -71,8 +99,8 @@ struct TableBlockView: View {
                         Rectangle().fill(Color.dragIndicator).frame(height: 2)
                     } else {
                         Rectangle()
-                            .fill(Color(nsColor: .separatorColor))
-                            .frame(height: 0.5)
+                            .fill(tableBorderColor)
+                            .frame(height: 1)
                     }
                 }
                 tableRow(rowIdx)
@@ -101,10 +129,6 @@ struct TableBlockView: View {
         let isHeader = block.hasHeaderRow && rowIdx == 0
 
         HStack(spacing: 0) {
-            // Row drag handle
-            rowDragHandle(rowIdx)
-                .opacity(isHovering ? 1 : 0)
-
             ForEach(0..<colCount, id: \.self) { colIdx in
                 if colIdx > 0 {
                     // Resize handle doubles as the column separator
@@ -159,9 +183,8 @@ struct TableBlockView: View {
 
     private func columnResizeHandle(_ colIdx: Int) -> some View {
         Rectangle()
-            .fill(dragColumnIndex == colIdx ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor))
-            .frame(width: dragColumnIndex == colIdx ? 2 : 0.5)
-            .padding(.horizontal, dragColumnIndex == colIdx ? 0 : 1.75)
+            .fill(dragColumnIndex == colIdx ? Color.accentColor.opacity(0.5) : tableBorderColor)
+            .frame(width: dragColumnIndex == colIdx ? 2 : 1)
             .contentShape(Rectangle().size(width: 8, height: .infinity))
             .onHover { hovering in
                 if hovering { NSCursor.resizeLeftRight.push() }
@@ -201,16 +224,24 @@ struct TableBlockView: View {
         .help("Click to add a new row")
     }
 
+    /// Add-column button with generous hit target (issue #4).
+    /// The button fills a fixed-width column to the right of the table and uses
+    /// `.frame(maxHeight: .infinity)` plus `.contentShape(Rectangle())` to ensure
+    /// the entire area is clickable.
     private var addColumnButton: some View {
         Button { addColumn() } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+            VStack {
+                Spacer(minLength: 0)
+                Image(systemName: "plus")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+            }
+            .frame(width: 28, height: 32)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(width: 24)
+        .frame(width: 28)
         .help("Add column")
     }
 
@@ -368,6 +399,61 @@ struct TableBlockView: View {
         document.deleteTableColumn(id: block.id, at: index)
         if index < columnWidths.count { columnWidths.remove(at: index) }
     }
+}
+
+// MARK: - Click-Outside Monitor (issue #3)
+//
+// Clears cell selection when the user clicks anywhere outside the table.
+// Uses an AppKit local event monitor because SwiftUI's onTapGesture on the
+// container is swallowed by the highPriorityGesture on individual cells.
+
+private struct TableClickOutsideMonitor: NSViewRepresentable {
+    var onClickOutside: () -> Void
+
+    func makeNSView(context: Context) -> TableClickMonitorView {
+        let view = TableClickMonitorView()
+        view.onClickOutside = onClickOutside
+        return view
+    }
+
+    func updateNSView(_ nsView: TableClickMonitorView, context: Context) {
+        nsView.onClickOutside = onClickOutside
+    }
+}
+
+final class TableClickMonitorView: NSView {
+    var onClickOutside: (() -> Void)?
+    private var monitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil && monitor == nil {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                guard let self, let window = self.window, event.window === window else { return event }
+                // Check if the click is inside our parent table view's bounds
+                guard let tableParent = self.superview else { return event }
+                let locationInTable = tableParent.convert(event.locationInWindow, from: nil)
+                if !tableParent.bounds.contains(locationInTable) {
+                    self.onClickOutside?()
+                }
+                return event
+            }
+        } else if window == nil, let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
+        }
+    }
+
+    override func removeFromSuperview() {
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        super.removeFromSuperview()
+    }
+
+    deinit {
+        if let m = monitor { NSEvent.removeMonitor(m) }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - Cell Text Field

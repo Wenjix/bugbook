@@ -158,6 +158,10 @@ private struct NewPanePopover: View {
                 workspaceManager.addWorkspaceWith(content: .meetingsDocument())
                 dismiss()
             }
+            contentRow(icon: "square.grid.2x2", label: "Gateway") {
+                workspaceManager.addWorkspaceWith(content: .gatewayDocument())
+                dismiss()
+            }
 
             Divider().padding(.vertical, 4)
 

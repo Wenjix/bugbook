@@ -41,6 +41,11 @@ class BlockDocument {
     var pagePickerSearch: String = ""
     var pagePickerSelectedIndex: Int = 0
     var showTemplatePicker: Bool = false
+    var mentionPickerBlockId: UUID?
+    var mentionPickerFilter: String = ""
+    var mentionPickerSelectedIndex: Int = 0
+    /// Character index in the block text where '@' was typed.
+    var mentionPickerAnchorPos: Int = 0
     var aiPromptBlockId: UUID?
     var aiPromptText: String = ""
     var isAiGenerating: Bool = false
@@ -159,6 +164,14 @@ class BlockDocument {
 
     func updateMeetingTitle(blockId: UUID, title: String) {
         updateBlockProperty(id: blockId) { $0.meetingTitle = title }
+    }
+
+    func updateMeetingTranscript(blockId: UUID, transcript: String) {
+        updateBlockProperty(id: blockId) { $0.meetingTranscript = transcript }
+    }
+
+    func updateMeetingActionItems(blockId: UUID, actionItems: String) {
+        updateBlockProperty(id: blockId) { $0.meetingActionItems = actionItems }
     }
 
     func updateMeetingState(blockId: UUID, state: MeetingBlockState) {
@@ -616,7 +629,7 @@ class BlockDocument {
         }
         updateBlockProperty(id: id) { block in
             block.type = type
-            if type == .heading {
+            if type == .heading || type == .headingToggle {
                 block.headingLevel = 1
             } else {
                 block.headingLevel = 0
@@ -626,7 +639,10 @@ class BlockDocument {
 
     func setHeadingLevel(id: UUID, level: Int) {
         updateBlockProperty(id: id) { block in
-            block.type = .heading
+            // Preserve the current type when it's already a heading variant
+            if block.type != .heading && block.type != .headingToggle {
+                block.type = .heading
+            }
             block.headingLevel = level
         }
     }
@@ -1003,12 +1019,13 @@ class BlockDocument {
             return
 
         case let .blockType(type, headingLevel):
-            // Callout needs special handling — set calloutType and focus after
+            // Callout needs special handling — set icon/color defaults and focus after
             if type == .callout {
                 saveUndo()
                 updateBlockProperty(id: blockId) { block in
                     block.type = .callout
-                    block.calloutType = "info"
+                    block.calloutIcon = "lightbulb"
+                    block.calloutColor = "default"
                     block.text = ""
                 }
                 focusOrInsertParagraphAfter(blockId: blockId)
@@ -1030,12 +1047,12 @@ class BlockDocument {
                 return
             }
 
-            // Table block — initialize with empty 3x2 grid
+            // Table block — initialize with empty 3x3 grid
             if type == .table {
                 saveUndo()
                 updateBlockProperty(id: blockId) { block in
                     block.type = .table
-                    block.tableData = Array(repeating: Array(repeating: "", count: 3), count: 2)
+                    block.tableData = Array(repeating: Array(repeating: "", count: 3), count: 3)
                     block.hasHeaderRow = false
                 }
                 focusOrInsertParagraphAfter(blockId: blockId)
@@ -1145,6 +1162,58 @@ class BlockDocument {
         slashMenuBlockId = nil
         slashMenuFilter = ""
         slashMenuSelectedIndex = 0
+    }
+
+    // MARK: - Mention Picker (@-mention)
+
+    @ObservationIgnored private var _mentionPickerCache: (search: String, entries: [FileEntry])?
+
+    var filteredMentionEntries: [FileEntry] {
+        if let cache = _mentionPickerCache, cache.search == mentionPickerFilter {
+            return cache.entries
+        }
+        let flat = flattenEntries(availablePages)
+            .filter { !$0.isDirectory && ($0.name.hasSuffix(".md") || $0.isDatabase) }
+        let result = mentionPickerFilter.isEmpty
+            ? flat
+            : flat.filter { $0.name.localizedCaseInsensitiveContains(mentionPickerFilter) }
+        _mentionPickerCache = (search: mentionPickerFilter, entries: result)
+        return result
+    }
+
+    func executeMentionPicker() {
+        let items = filteredMentionEntries
+        guard !items.isEmpty else { return }
+        let idx = min(mentionPickerSelectedIndex, items.count - 1)
+        guard idx >= 0 else { dismissMentionPicker(); return }
+        let name = items[idx].name.replacingOccurrences(of: ".md", with: "")
+        insertMention(name: name)
+    }
+
+    func insertMention(name: String) {
+        guard let blockId = mentionPickerBlockId,
+              blockLocation(for: blockId) != nil else {
+            dismissMentionPicker()
+            return
+        }
+        let searchToken = "@" + mentionPickerFilter
+        let mention = "@[[" + name + "]]"
+        saveUndo()
+        updateBlockProperty(id: blockId) { block in
+            // Find the @<filter> token nearest to the anchor and replace it.
+            if let range = block.text.range(of: searchToken) {
+                block.text.replaceSubrange(range, with: mention)
+            }
+        }
+        dismissMentionPicker()
+    }
+
+    func dismissMentionPicker() {
+        mentionPickerBlockId = nil
+        mentionPickerFilter = ""
+        mentionPickerSelectedIndex = 0
+        mentionPickerAnchorPos = 0
+        _mentionPickerCache = nil
     }
 
     // MARK: - Inline AI Prompt

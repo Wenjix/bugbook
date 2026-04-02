@@ -30,6 +30,15 @@ struct WikiLinkView: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onNavigate)
         .appCursor(.pointingHand)
+        .contextMenu {
+            if let sidebarReferencePayload {
+                Button {
+                    NotificationCenter.default.post(name: .addToSidebar, object: sidebarReferencePayload)
+                } label: {
+                    Label("Add to Sidebar", systemImage: "sidebar.left")
+                }
+            }
+        }
     }
 
     private var dragPreview: some View {

@@ -18,6 +18,7 @@ struct BlockCellView: View {
     @State private var showSlashMenu = false
     @State private var showBlockMenu = false
     @State private var showPagePicker = false
+    @State private var showMentionPicker = false
     @State private var showAiPrompt = false
 
     var body: some View {
@@ -30,6 +31,7 @@ struct BlockCellView: View {
                 showSlashMenu: $showSlashMenu,
                 showBlockMenu: $showBlockMenu,
                 showPagePicker: $showPagePicker,
+                showMentionPicker: $showMentionPicker,
                 showAiPrompt: $showAiPrompt
             ))
     }
@@ -71,14 +73,24 @@ struct BlockCellView: View {
         block.type == .paragraph && block.text.isEmpty
     }
 
-    /// Returns tighter vertical padding (1pt) when both the current block and its
-    /// neighbor are list items, keeping consecutive list items visually grouped.
-    /// Non-list blocks and list edges retain normal spacing (2pt). Horizontal rules
-    /// always use 1pt.
+    /// Returns tighter vertical padding when consecutive list items or
+    /// heading→list transitions should feel visually grouped.
+    /// - Consecutive list items: 1pt
+    /// - Heading ↔ list item boundary: 1pt (grouped feel)
+    /// - Horizontal rules: 1pt
+    /// - Everything else: 2pt
     private func listEdgePadding(neighbor: BlockType?) -> CGFloat {
         if block.type == .horizontalRule { return 1 }
-        guard block.type.isListItem, let neighbor, neighbor.isListItem else { return 2 }
-        return 1
+        guard let neighbor else { return 2 }
+        let currentIsList = block.type.isListItem
+        let neighborIsList = neighbor.isListItem
+        let currentIsHeading = block.type == .heading || block.type == .headingToggle
+        let neighborIsHeading = neighbor == .heading || neighbor == .headingToggle
+        // Consecutive list items
+        if currentIsList && neighborIsList { return 1 }
+        // Heading → list or list → heading boundary
+        if (currentIsList && neighborIsHeading) || (currentIsHeading && neighborIsList) { return 1 }
+        return 2
     }
 
     private var blockUsesOwnInteractions: Bool {
@@ -103,7 +115,7 @@ struct BlockCellView: View {
 
     private var blockInteractionCursor: NSCursor {
         switch block.type {
-        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .codeBlock, .toggle, .callout:
+        case .paragraph, .heading, .bulletListItem, .numberedListItem, .taskItem, .blockquote, .codeBlock, .toggle, .headingToggle, .callout:
             return .iBeam
         default:
             return .arrow
@@ -292,12 +304,14 @@ private struct PopoverSyncModifier: ViewModifier {
     @Binding var showSlashMenu: Bool
     @Binding var showBlockMenu: Bool
     @Binding var showPagePicker: Bool
+    @Binding var showMentionPicker: Bool
     @Binding var showAiPrompt: Bool
 
     /// Whether this block is the target of any popover right now.
     private var isSlashTarget: Bool { document.slashMenuBlockId == block.id }
     private var isBlockMenuTarget: Bool { document.blockMenuBlockId == block.id }
     private var isPagePickerTarget: Bool { document.showPagePicker && document.pagePickerBlockId == block.id }
+    private var isMentionPickerTarget: Bool { document.mentionPickerBlockId == block.id }
     private var isAiPromptTarget: Bool { document.aiPromptBlockId == block.id }
 
     func body(content: Content) -> some View {
@@ -306,6 +320,7 @@ private struct PopoverSyncModifier: ViewModifier {
                 showSlashMenu = isSlashTarget
                 showBlockMenu = isBlockMenuTarget
                 showPagePicker = isPagePickerTarget
+                showMentionPicker = isMentionPickerTarget
                 showAiPrompt = isAiPromptTarget
             }
             .onChange(of: document.slashMenuBlockId) { _, newVal in
@@ -337,6 +352,15 @@ private struct PopoverSyncModifier: ViewModifier {
             .onChange(of: showPagePicker) { _, show in
                 if !show && document.showPagePicker && document.pagePickerBlockId == block.id {
                     document.dismissPagePicker()
+                }
+            }
+            .onChange(of: document.mentionPickerBlockId) { _, newVal in
+                let shouldShow = (newVal == block.id)
+                if showMentionPicker != shouldShow { showMentionPicker = shouldShow }
+            }
+            .onChange(of: showMentionPicker) { _, show in
+                if !show && document.mentionPickerBlockId == block.id {
+                    document.dismissMentionPicker()
                 }
             }
             .onChange(of: document.aiPromptBlockId) { _, newVal in
@@ -381,6 +405,13 @@ private struct PopoverSyncModifier: ViewModifier {
                 if isPagePickerTarget {
                     Color.clear.floatingPopover(isPresented: $showPagePicker, arrowEdge: .bottom) {
                         PagePickerView(document: document)
+                    }
+                }
+            }
+            .background {
+                if isMentionPickerTarget {
+                    Color.clear.floatingPopover(isPresented: $showMentionPicker, arrowEdge: .bottom) {
+                        MentionPickerView(document: document)
                     }
                 }
             }

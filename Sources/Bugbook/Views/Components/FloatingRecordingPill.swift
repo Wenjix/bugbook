@@ -3,9 +3,9 @@ import SwiftUI
 
 // MARK: - Floating Recording Pill Panel
 
-/// A small always-on-top pill that appears when a meeting is recording and Bugbook
-/// loses focus. Shows animated green audio bars inside a dark capsule.
-/// Clicking it brings Bugbook back to the front.
+/// A small always-on-top pill that appears when a meeting is recording.
+/// Shows animated green audio bars, a live duration counter, and a stop button.
+/// Clicking the pill body brings Bugbook back to the front.
 final class FloatingRecordingPillPanel: NSPanel {
     private let hostingView: NSHostingView<RecordingPillView>
 
@@ -16,7 +16,7 @@ final class FloatingRecordingPillPanel: NSPanel {
         self.hostingView = NSHostingView(rootView: RecordingPillView())
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 60, height: 30),
+            contentRect: NSRect(x: 0, y: 0, width: 140, height: 30),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -30,10 +30,17 @@ final class FloatingRecordingPillPanel: NSPanel {
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
         contentView = hostingView
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
-    func showPill() {
-        hostingView.rootView = RecordingPillView(isAnimating: true)
+    func showPill(startDate: Date, onStop: @escaping () -> Void, onTap: @escaping () -> Void = {}) {
+        hostingView.rootView = RecordingPillView(
+            isAnimating: true,
+            recordingStart: startDate,
+            onStop: onStop,
+            onTap: onTap
+        )
 
         // Re-evaluate size and position each show (handles display changes)
         let size = hostingView.fittingSize
@@ -58,17 +65,42 @@ final class FloatingRecordingPillPanel: NSPanel {
 
 private struct RecordingPillView: View {
     var isAnimating: Bool = true
+    var recordingStart: Date = .now
+    var onStop: (() -> Void)?
+    var onTap: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 6) {
-            // App icon (small ladybug)
-            Image(systemName: "ladybug.fill")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.9))
+            // Tappable area: icon + bars + duration → brings app to front
+            HStack(spacing: 6) {
+                Image(systemName: "ladybug.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.9))
 
-            // Animated audio bars
-            AudioBarsView(isAnimating: isAnimating)
-                .frame(width: 16, height: 14)
+                AudioBarsView(isAnimating: isAnimating)
+                    .frame(width: 16, height: 14)
+
+                if isAnimating {
+                    DurationLabel(since: recordingStart)
+                }
+            }
+            .contentShape(Capsule())
+            .onTapGesture {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                onTap?()
+            }
+
+            if isAnimating {
+                // Stop button
+                Button {
+                    onStop?()
+                } label: {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.white)
+                        .frame(width: 8, height: 8)
+                }
+                .buttonStyle(.borderless)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -77,9 +109,22 @@ private struct RecordingPillView: View {
                 .fill(Color(hex: "1a1a1a"))
                 .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         )
-        .contentShape(Capsule())
-        .onTapGesture {
-            NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
+// MARK: - Duration Label
+
+private struct DurationLabel: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            let elapsed = Int(context.date.timeIntervalSince(since))
+            let m = elapsed / 60
+            let s = elapsed % 60
+            Text(String(format: "%d:%02d", m, s))
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .foregroundStyle(Color.white.opacity(0.85))
         }
     }
 }
@@ -112,7 +157,7 @@ private struct AudioBar: View {
     var seed: Int
     var isAnimating: Bool
 
-    private let green = Color(hex: "4ade80")
+    private let green = Color(hex: "B1D4F9")
     private let maxHeight: CGFloat = 14
     private let minFraction: CGFloat = 0.25
 
@@ -127,10 +172,9 @@ private struct AudioBar: View {
     /// Pseudo-random bar height derived from time + seed for organic movement.
     private func barHeight(date: Date, seed: Int) -> CGFloat {
         let t = date.timeIntervalSinceReferenceDate
-        // Different frequency per bar so they don't sync up
         let freq = 2.5 + Double(seed) * 1.3
-        let raw = (sin(t * freq) + 1) / 2       // 0...1
-        let jitter = sin(t * freq * 2.7) * 0.15  // small wobble
+        let raw = (sin(t * freq) + 1) / 2
+        let jitter = sin(t * freq * 2.7) * 0.15
         return max(minFraction, min(1.0, raw + jitter))
     }
 }
@@ -138,59 +182,46 @@ private struct AudioBar: View {
 // MARK: - Controller
 
 /// Manages the lifecycle of the floating recording pill.
-/// Owns the panel and responds to app activation / recording state changes.
+/// Owns the panel and responds to recording state changes.
 @MainActor
 final class FloatingRecordingPillController {
     private var panel: FloatingRecordingPillPanel?
-    private var activateObserver: NSObjectProtocol?
-    private var resignObserver: NSObjectProtocol?
+    private var recordingStart: Date?
+
+    /// Called when the user taps the stop button on the pill.
+    var onStop: (() -> Void)?
+    /// Called when the user taps the pill body (navigate to meeting block).
+    var onTap: (() -> Void)?
 
     /// Whether recording is active. Set from outside; the controller handles show/hide.
     var isRecording: Bool = false {
         didSet {
             guard isRecording != oldValue else { return }
+            if isRecording {
+                recordingStart = .now
+            }
             updateVisibility()
         }
     }
 
-    init() {
-        activateObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.updateVisibility() }
-        }
-
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.updateVisibility() }
-        }
-    }
-
-    /// Tear down the panel and notification observers. Call from `.onDisappear`
-    /// so cleanup runs on MainActor (deinit is nonisolated and can't do this safely).
     func cleanup() {
-        if let o = activateObserver { NotificationCenter.default.removeObserver(o) }
-        if let o = resignObserver { NotificationCenter.default.removeObserver(o) }
-        activateObserver = nil
-        resignObserver = nil
         panel?.orderOut(nil)
         panel = nil
     }
 
     private func updateVisibility() {
-        let shouldShow = isRecording && !NSApplication.shared.isActive
-        if shouldShow {
+        if isRecording {
             if panel == nil {
                 panel = FloatingRecordingPillPanel()
             }
-            panel?.showPill()
+            panel?.showPill(startDate: recordingStart ?? .now, onStop: { [weak self] in
+                Task { @MainActor in self?.onStop?() }
+            }, onTap: { [weak self] in
+                Task { @MainActor in self?.onTap?() }
+            })
         } else {
             panel?.hidePill()
+            recordingStart = nil
         }
     }
 }

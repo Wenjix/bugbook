@@ -167,10 +167,10 @@ struct SidebarView: View {
 
                 Button(action: { invokeAction { NotificationCenter.default.post(name: .openAIPanel, object: nil) } }) {
                     HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "sparkles")
+                        Image(systemName: "bubble.left.and.bubble.right")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
-                        Text("Ask AI")
+                        Text("Chat")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -192,10 +192,10 @@ struct SidebarView: View {
             VStack(spacing: sectionSpacing) {
                 Button(action: { invokeAction { NotificationCenter.default.post(name: .openGateway, object: nil) } }) {
                     HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "square.grid.2x2")
+                        Image(systemName: "house")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
-                        Text("Gateway")
+                        Text("Home")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -208,44 +208,6 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "gateway" : nil }
-
-                Button(action: { invokeAction { NotificationCenter.default.post(name: .openDailyNote, object: nil) } }) {
-                    HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "calendar")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Text("Today")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, rowHorizontalPadding)
-                    .padding(.vertical, rowVerticalPadding)
-                    .background(hoveredButton == "today" ? Color.primary.opacity(0.06) : Color.clear)
-                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in hoveredButton = hovering ? "today" : nil }
-
-                Button(action: { invokeAction { NotificationCenter.default.post(name: .openGraphView, object: nil) } }) {
-                    HStack(spacing: chromeButtonSpacing) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Text("Graph")
-                            .font(ShellZoomMetrics.font(Typography.body))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, rowHorizontalPadding)
-                    .padding(.vertical, rowVerticalPadding)
-                    .background(hoveredButton == "graph" ? Color.primary.opacity(0.06) : Color.clear)
-                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in hoveredButton = hovering ? "graph" : nil }
 
                 Button(action: { invokeAction { NotificationCenter.default.post(name: .openMail, object: nil) } }) {
                     HStack(spacing: chromeButtonSpacing) {
@@ -290,7 +252,7 @@ struct SidebarView: View {
                         Image(systemName: "waveform")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
-                        Text("AI Meeting Notes")
+                        Text("Meetings")
                             .font(ShellZoomMetrics.font(Typography.body))
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -336,6 +298,44 @@ struct SidebarView: View {
             ScrollView {
                 VStack(spacing: ShellZoomMetrics.size(isCompact ? 3 : 4)) {
                 if workspaceExpanded {
+                    Button(action: { invokeAction { NotificationCenter.default.post(name: .openDailyNote, object: nil) } }) {
+                        HStack(spacing: chromeButtonSpacing) {
+                            Image(systemName: "calendar")
+                                .font(ShellZoomMetrics.font(Typography.body))
+                                .foregroundStyle(.secondary)
+                            Text("Today")
+                                .font(ShellZoomMetrics.font(Typography.body))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, rowHorizontalPadding)
+                        .padding(.vertical, rowVerticalPadding)
+                        .background(hoveredButton == "today" ? Color.primary.opacity(0.06) : Color.clear)
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovering in hoveredButton = hovering ? "today" : nil }
+
+                    Button(action: { invokeAction { NotificationCenter.default.post(name: .openGraphView, object: nil) } }) {
+                        HStack(spacing: chromeButtonSpacing) {
+                            Image(systemName: "point.3.connected.trianglepath.dotted")
+                                .font(ShellZoomMetrics.font(Typography.body))
+                                .foregroundStyle(.secondary)
+                            Text("Graph")
+                                .font(ShellZoomMetrics.font(Typography.body))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, rowHorizontalPadding)
+                        .padding(.vertical, rowVerticalPadding)
+                        .background(hoveredButton == "graph" ? Color.primary.opacity(0.06) : Color.clear)
+                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovering in hoveredButton = hovering ? "graph" : nil }
+
                     if !appState.sidebarReferences.isEmpty {
                         VStack(spacing: ShellZoomMetrics.size(1)) {
                             ForEach(appState.sidebarReferences) { entry in

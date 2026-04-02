@@ -92,55 +92,54 @@ struct PropertyEditorView: View {
     }
 
     private func editOptionPopover(optionId: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Edit Option")
-                .font(.subheadline)
-                .fontWeight(.medium)
-
-            TextField("Name", text: $editingOptionName)
+        VStack(alignment: .leading, spacing: 0) {
+            // Rename field
+            TextField("Option name", text: $editingOptionName)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 200)
-                .onSubmit {
-                    commitOptionEdit(optionId: optionId)
-                }
+                .font(.callout)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .onSubmit { commitOptionEdit(optionId: optionId) }
 
-            // Color picker grid
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Color")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(22), spacing: 4), count: 5), spacing: 4) {
-                    ForEach(Self.optionColors, id: \.self) { color in
-                        Button {
-                            editingOptionColor = color
-                        } label: {
-                            Circle()
-                                .fill(colorForName(color))
-                                .frame(width: 18, height: 18)
-                                .overlay {
-                                    if editingOptionColor == color {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 9, weight: .bold))
-                                            .foregroundStyle(.white)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
-                    }
+            // Delete
+            Button {
+                showDeleteConfirm = optionId
+                editingOptionId = nil
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "trash")
+                        .font(.callout)
+                    Text("Delete")
+                        .font(.callout)
+                    Spacer()
                 }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            HStack {
-                Spacer()
-                Button("Cancel") { editingOptionId = nil }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                Button("Save") {
-                    commitOptionEdit(optionId: optionId)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(editingOptionName.trimmingCharacters(in: .whitespaces).isEmpty)
+            Divider()
+                .padding(.vertical, 4)
+
+            // Color list (Notion-style: vertical list with color swatch + name)
+            Text("Colors")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            ForEach(Self.optionColors, id: \.self) { color in
+                OptionColorRow(
+                    name: color.capitalized,
+                    color: colorForName(color),
+                    isSelected: editingOptionColor == color,
+                    onSelect: {
+                        editingOptionColor = color
+                        commitOptionEdit(optionId: optionId)
+                    }
+                )
             }
         }
         .padding(12)
@@ -239,7 +238,7 @@ struct PropertyEditorView: View {
             }
             Divider().padding(.vertical, 2)
             ForEach(options) { option in
-                optionButton(option.name, color: option.color, isActive: option.id == currentValue) {
+                optionButton(option.name, color: option.color, isActive: option.id == currentValue, option: option) {
                     value = .select(option.id)
                     showSelectPopover = false
                 }
@@ -319,7 +318,7 @@ struct PropertyEditorView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(options) { option in
                 let isSelected = selectedIds.contains(option.id)
-                optionButton(option.name, color: option.color, isActive: isSelected) {
+                optionButton(option.name, color: option.color, isActive: isSelected, option: option) {
                     var updated = selectedIds
                     if isSelected {
                         updated.removeAll { $0 == option.id }
@@ -348,30 +347,22 @@ struct PropertyEditorView: View {
 
     // MARK: - Shared Option Button
 
-    private func optionButton(_ label: String, color: String? = nil, isActive: Bool = false, isAction: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if let color = color {
-                    Circle()
-                        .fill(colorForName(color))
-                        .frame(width: 8, height: 8)
-                }
-                Text(label)
-                    .font(.callout)
-                    .foregroundStyle(isAction ? Color.secondary : Color.primary)
-                Spacer()
-                if isActive {
-                    Image(systemName: "checkmark")
-                        .font(.caption)
-                        .foregroundStyle(.primary)
+    private func optionButton(_ label: String, color: String? = nil, isActive: Bool = false, isAction: Bool = false, option: SelectOption? = nil, action: @escaping () -> Void) -> some View {
+        OptionButtonRow(
+            label: label,
+            color: color.map { colorForName($0) },
+            isActive: isActive,
+            isAction: isAction,
+            showKebab: option != nil,
+            onSelect: action,
+            onKebab: {
+                if let option = option {
+                    editingOptionId = option.id
+                    editingOptionName = option.name
+                    editingOptionColor = option.color
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        )
     }
 
     // MARK: - Option Context Menu
@@ -1361,6 +1352,106 @@ private struct RelationFlowLayout: Layout {
             rows.append((count: currentCount, height: currentHeight))
         }
         return rows
+    }
+}
+
+// MARK: - Option Button Row (Notion-style: pill + grip dots + kebab on hover)
+
+private struct OptionButtonRow: View {
+    let label: String
+    let color: Color?
+    let isActive: Bool
+    let isAction: Bool
+    let showKebab: Bool
+    let onSelect: () -> Void
+    let onKebab: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            // Grip dots (hover only, like Notion's drag handle)
+            if showKebab {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 14)
+                    .opacity(isHovered ? 1 : 0)
+            }
+
+            // Colored pill (tag style)
+            if let color, !isAction {
+                Text(label)
+                    .font(.callout)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(color.opacity(0.15))
+                    .foregroundStyle(.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            } else {
+                Text(label)
+                    .font(.callout)
+                    .foregroundStyle(isAction ? Color.secondary : Color.primary)
+            }
+
+            Spacer()
+
+            // Kebab (hover only)
+            if showKebab {
+                Text("···")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onKebab() }
+                    .opacity(isHovered ? 1 : 0)
+            }
+
+            if isActive {
+                Image(systemName: "checkmark")
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 4).fill(isHovered ? Color.primary.opacity(0.04) : Color.clear))
+        .contentShape(Rectangle())
+        .onTapGesture { onSelect() }
+        .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Option Color Row (Notion-style: swatch + name + checkmark)
+
+private struct OptionColorRow: View {
+    let name: String
+    let color: Color
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(color.opacity(0.2))
+                .frame(width: 18, height: 18)
+            Text(name)
+                .font(.callout)
+            Spacer()
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .background(isHovered ? Color.primary.opacity(0.04) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture { onSelect() }
+        .onHover { isHovered = $0 }
     }
 }
 

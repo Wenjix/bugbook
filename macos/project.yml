@@ -11,6 +11,9 @@ packages:
   SentryCocoa:
     url: https://github.com/getsentry/sentry-cocoa
     from: "8.40.0"
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    from: "0.7.9"
   # GhosttyKit: GPU-accelerated terminal engine (local XCFramework)
   # Linked via Frameworks/GhosttyKit.xcframework
 targets:
@@ -46,6 +49,7 @@ targets:
       - package: Sparkle
       - package: SentryCocoa
         product: Sentry
+      - package: FluidAudio
       - framework: ../Frameworks/GhosttyKit.xcframework
         embed: false
       - sdk: Carbon.framework
@@ -54,6 +58,7 @@ targets:
       - sdk: CoreText.framework
       - sdk: QuartzCore.framework
       - sdk: IOSurface.framework
+      - sdk: WebKit.framework
     info:
       path: App/Info.plist
       properties:
@@ -71,7 +76,6 @@ targets:
               - public.data
             UTTypeTagSpecification: {}
         NSMicrophoneUsageDescription: Bugbook needs microphone access to record meeting audio for live transcription.
-        NSSpeechRecognitionUsageDescription: Bugbook uses speech recognition to transcribe meeting recordings in real-time.
     entitlements:
       path: App/Bugbook.entitlements
       properties:

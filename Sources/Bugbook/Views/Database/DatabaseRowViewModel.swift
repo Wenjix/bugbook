@@ -276,6 +276,26 @@ final class DatabaseRowViewModel {
             .map { RelationDatabaseCandidate(id: $0.id, name: $0.name, path: $0.path) }
     }
 
+    @discardableResult
+    func createTemplate(name: String, defaultProperties: [String: PropertyValue] = [:], body: String = "") -> DatabaseTemplate {
+        let template = DatabaseTemplate(
+            id: "tmpl_\(UUID().uuidString.prefix(8).lowercased())",
+            name: name,
+            defaultProperties: defaultProperties,
+            body: body
+        )
+        if schema?.templates == nil { schema?.templates = [] }
+        schema?.templates?.append(template)
+        if let s = schema {
+            Task { [weak self] in
+                guard let self else { return }
+                try? dbService.saveSchema(s, at: dbPath)
+                postChangeNotification()
+            }
+        }
+        return template
+    }
+
     func setRelationTarget(_ propertyId: String, target: String) {
         guard var s = schema,
               let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
@@ -312,7 +332,16 @@ final class DatabaseRowViewModel {
     }
 
     @ViewBuilder
-    func rowPageView(onBack: @escaping () -> Void = {}, autoFocusTitle: Bool = false, fullWidth: Bool = false, workspacePath: String? = nil, templates: [DatabaseTemplate] = [], onApplyTemplate: ((DatabaseTemplate) -> Void)? = nil, onNewTemplate: (() -> Void)? = nil) -> some View {
+    func rowPageView( // swiftlint:disable:next function_parameter_count
+        onBack: @escaping () -> Void = {},
+        autoFocusTitle: Bool = false,
+        fullWidth: Bool = false,
+        workspacePath: String? = nil,
+        templates: [DatabaseTemplate] = [],
+        onApplyTemplate: ((DatabaseTemplate) -> Void)? = nil,
+        onNewTemplate: (() -> Void)? = nil,
+        onSaveAsTemplate: (() -> Void)? = nil
+    ) -> some View {
         if let schema = schema, row != nil {
             RowPageView(
                 schema: schema,
@@ -338,7 +367,8 @@ final class DatabaseRowViewModel {
                 dbPath: dbPath,
                 templates: templates,
                 onApplyTemplate: onApplyTemplate,
-                onNewTemplate: onNewTemplate
+                onNewTemplate: onNewTemplate,
+                onSaveAsTemplate: onSaveAsTemplate
             )
         }
     }

@@ -738,6 +738,11 @@ struct BlockTextView: NSViewRepresentable {
                 parent.document.dismissSlashMenu()
             }
 
+            // Mention picker detection: look for '@' before cursor
+            if !isTitleBlock {
+                detectMentionTrigger(textView)
+            }
+
             // Auto-detect markdown prefixes (e.g. "## ", "- ", "- [ ] ", "> ")
             // Skip title block to avoid converting heading to other types
             if !isTitleBlock {
@@ -787,6 +792,55 @@ struct BlockTextView: NSViewRepresentable {
         }
 
         // MARK: - Markdown shortcut auto-detection
+
+        /// Detects '@' before cursor and activates/updates the mention picker.
+        private func detectMentionTrigger(_ textView: NSTextView) {
+            let text = textView.string
+            let cursorLoc = textView.selectedRange().location
+
+            // If mention picker is already active for this block, update filter
+            if parent.document.mentionPickerBlockId == parent.blockId {
+                let anchor = parent.document.mentionPickerAnchorPos
+                if anchor < text.count, cursorLoc > anchor {
+                    let startIdx = text.index(text.startIndex, offsetBy: anchor)
+                    if text[startIdx] == "@" {
+                        let filterStart = text.index(after: startIdx)
+                        let filterEnd = text.index(text.startIndex, offsetBy: cursorLoc, limitedBy: text.endIndex) ?? text.endIndex
+                        let filter = String(text[filterStart..<filterEnd])
+                        // Dismiss if user typed a space (end of mention trigger)
+                        if filter.contains(" ") || filter.contains("\n") {
+                            parent.document.dismissMentionPicker()
+                            return
+                        }
+                        parent.document.mentionPickerFilter = filter
+                        parent.document.mentionPickerSelectedIndex = 0
+                        if parent.document.filteredMentionEntries.isEmpty {
+                            parent.document.dismissMentionPicker()
+                        }
+                        return
+                    }
+                }
+                // Cursor moved before anchor or '@' gone — dismiss
+                parent.document.dismissMentionPicker()
+                return
+            }
+
+            // Check if '@' was just typed: look at character before cursor
+            guard cursorLoc > 0, cursorLoc <= text.count else { return }
+            let charBeforeCursor = text[text.index(text.startIndex, offsetBy: cursorLoc - 1)]
+            guard charBeforeCursor == "@" else { return }
+
+            // '@' must be at start of text or preceded by whitespace
+            if cursorLoc > 1 {
+                let charBeforeAt = text[text.index(text.startIndex, offsetBy: cursorLoc - 2)]
+                guard charBeforeAt == " " || charBeforeAt == "\t" || charBeforeAt == "\n" else { return }
+            }
+
+            parent.document.mentionPickerBlockId = parent.blockId
+            parent.document.mentionPickerAnchorPos = cursorLoc - 1
+            parent.document.mentionPickerFilter = ""
+            parent.document.mentionPickerSelectedIndex = 0
+        }
 
         /// Detects markdown prefixes typed at the start of a paragraph block
         /// and auto-converts the block type (like Notion does).
@@ -1048,6 +1102,31 @@ struct BlockTextView: NSViewRepresentable {
                     } else {
                         parent.document.dismissPagePicker()
                     }
+                    return true
+                }
+            }
+
+            // Mention picker intercepts (when active)
+            if parent.document.mentionPickerBlockId == parent.blockId {
+                if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                    if parent.document.mentionPickerSelectedIndex > 0 {
+                        parent.document.mentionPickerSelectedIndex -= 1
+                    }
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                    let count = min(parent.document.filteredMentionEntries.count, 8)
+                    if parent.document.mentionPickerSelectedIndex < count - 1 {
+                        parent.document.mentionPickerSelectedIndex += 1
+                    }
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                    parent.document.executeMentionPicker()
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                    parent.document.dismissMentionPicker()
                     return true
                 }
             }

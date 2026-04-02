@@ -58,6 +58,12 @@ struct DatabaseRowModalView: View {
                     templates: vm.schema?.templates ?? [],
                     onApplyTemplate: { template in
                         applyTemplate(template)
+                    },
+                    onNewTemplate: {
+                        createNewTemplate()
+                    },
+                    onSaveAsTemplate: {
+                        saveCurrentRowAsTemplate()
                     }
                 )
             } else {
@@ -106,5 +112,30 @@ struct DatabaseRowModalView: View {
         }
         currentRow.body = template.body
         vm.debouncedSave(currentRow, schema: schema)
+    }
+
+    private func createNewTemplate() {
+        vm.createTemplate(name: "Untitled")
+    }
+
+    private func saveCurrentRowAsTemplate() {
+        guard let row = vm.row, let schema = vm.schema else { return }
+        var defaults: [String: PropertyValue] = [:]
+        for prop in schema.properties where prop.type != .title {
+            if let val = row.properties[prop.id], val != .empty {
+                defaults[prop.id] = val
+            }
+        }
+        let titleText: String
+        if let titleProp = schema.titleProperty, let val = row.properties[titleProp.id], case .text(let t) = val {
+            titleText = t
+        } else {
+            titleText = "Untitled"
+        }
+        vm.createTemplate(
+            name: "\(titleText) template",
+            defaultProperties: defaults,
+            body: row.body
+        )
     }
 }
