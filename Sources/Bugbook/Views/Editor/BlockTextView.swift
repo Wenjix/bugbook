@@ -163,6 +163,10 @@ struct BlockTextView: NSViewRepresentable {
                 doc.insertPageLinkBlock(at: idx + 1, name: pageName)
             }
         }
+        textView.toggleBlockExpandAction = { [weak coordinator] in
+            guard let coordinator = coordinator else { return }
+            coordinator.parent.document.toggleBlockExpanded(id: coordinator.parent.blockId)
+        }
         textView.copySelectionAction = { [weak coordinator] in
             coordinator?.handleCopySelection() ?? false
         }
@@ -1303,6 +1307,7 @@ class BlockNSTextView: NSTextView {
     var onPageLinkDrop: ((String) -> Void)?
     var copySelectionAction: (() -> Bool)?
     var cutSelectionAction: (() -> Bool)?
+    var toggleBlockExpandAction: (() -> Void)?
     var onFrameWidthChanged: (() -> Void)?
     var isInBlockSelection = false
     private var lastKnownWidth: CGFloat = 0
@@ -1500,6 +1505,11 @@ class BlockNSTextView: NSTextView {
         }
 
         if flags.contains([.command, .shift]) && !flags.contains(.option) && !flags.contains(.control) {
+            // Cmd+Shift+Return — toggle expand/collapse for toggle/headingToggle blocks
+            if event.keyCode == 36 {
+                toggleBlockExpandAction?()
+                return
+            }
             if let chars = event.charactersIgnoringModifiers?.lowercased() {
                 if chars == "x" {
                     formatStrikethroughAction?()
