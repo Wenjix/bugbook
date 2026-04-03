@@ -370,6 +370,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard !window.titlebarAppearsTransparent else { continue }
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
+            window.title = "Bugbook"
             window.styleMask.insert(.fullSizeContentView)
             window.isMovableByWindowBackground = true
         }
