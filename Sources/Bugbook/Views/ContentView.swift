@@ -848,6 +848,12 @@ struct ContentView: View {
                 if appState.showSettings {
                     SettingsView(appState: appState)
                 } else if appState.currentView == .chat {
+                    WorkspaceTabBar(
+                        workspaceManager: workspaceManager,
+                        sidebarOpen: appState.sidebarOpen,
+                        currentView: appState.currentView
+                    )
+                    .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
                     NotesChatView(appState: appState, aiService: aiService)
                 } else if appState.currentView == .graphView {
                     if let workspace = appState.workspacePath {

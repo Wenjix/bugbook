@@ -767,48 +767,42 @@ struct DatabaseFullPageView: View {
 
         switch state.activeView?.type ?? .table {
         case .table:
-            GeometryReader { geo in
-                ScrollView([.horizontal, .vertical]) {
-                    TableView(
-                        schema: schema,
-                        rows: boundRows,
-                        viewConfig: state.activeView ?? state.defaultViewConfig(),
-                        onOpenRow: { row in openRow(row) },
-                        onSave: { row in state.saveRow(row) },
-                        onDelete: { row in state.deleteRow(row) },
-                        onToggleColumn: { propId in state.toggleColumnVisibility(propId) },
-                        onAddProperty: { type in state.addPropertyFromTable(type: type) },
-                        onRenameProperty: { propId, newName in
-                            state.renameProperty(propId, to: newName)
-                        },
-                        onDeleteProperty: { propId in state.deleteProperty(propId) },
-                        onChangePropertyType: { propId, newType in state.changePropertyType(propId, to: newType) },
-                        onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
-                        onUpdateSelectOption: { propId, optId, name, color in state.updateSelectOption(propId, optionId: optId, name: name, color: color) },
-                        onDeleteSelectOption: { propId, optId in state.deleteSelectOption(propId, optionId: optId) },
-                        onLoadRelationRows: { prop in state.loadRelationRows(for: prop) },
-                        onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
-                        onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
-                        onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
-                        onReorderRows: { draggedId, targetId in
-                            state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
-                        },
-                        onClearSorts: { state.clearSorts() },
-                        onNewRow: { createNewRow() },
-                        onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
-                        calculationResults: state.calculationResults(for: filtered),
-                        showVerticalLines: showVerticalLines,
-                        usesInnerScroll: false,
-                        containerWidth: geo.size.width
-                    )
-                    .frame(
-                        minWidth: geo.size.width,
-                        alignment: .topLeading
-                    )
-                    .fixedSize(horizontal: true, vertical: true)
-                }
+            ScrollView([.horizontal, .vertical]) {
+                TableView(
+                    schema: schema,
+                    rows: boundRows,
+                    viewConfig: state.activeView ?? state.defaultViewConfig(),
+                    onOpenRow: { row in openRow(row) },
+                    onSave: { row in state.saveRow(row) },
+                    onDelete: { row in state.deleteRow(row) },
+                    onToggleColumn: { propId in state.toggleColumnVisibility(propId) },
+                    onAddProperty: { type in state.addPropertyFromTable(type: type) },
+                    onRenameProperty: { propId, newName in
+                        state.renameProperty(propId, to: newName)
+                    },
+                    onDeleteProperty: { propId in state.deleteProperty(propId) },
+                    onChangePropertyType: { propId, newType in state.changePropertyType(propId, to: newType) },
+                    onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
+                    onUpdateSelectOption: { propId, optId, name, color in state.updateSelectOption(propId, optionId: optId, name: name, color: color) },
+                    onDeleteSelectOption: { propId, optId in state.deleteSelectOption(propId, optionId: optId) },
+                    onLoadRelationRows: { prop in state.loadRelationRows(for: prop) },
+                    onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
+                    onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
+                    onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
+                    onReorderRows: { draggedId, targetId in
+                        state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
+                    },
+                    onClearSorts: { state.clearSorts() },
+                    onNewRow: { createNewRow() },
+                    onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                    calculationResults: state.calculationResults(for: filtered),
+                    showVerticalLines: showVerticalLines,
+                    usesInnerScroll: false,
+                    containerWidth: 0
+                )
+                .fixedSize(horizontal: true, vertical: true)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         case .kanban:
             KanbanView(
                 schema: schema,

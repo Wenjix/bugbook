@@ -6,14 +6,10 @@ import SwiftUI
 struct OutlineBlockView: View {
     var document: BlockDocument
 
-    private var headings: [(id: UUID, text: String, level: Int)] {
+    private var headings: [(id: UUID, text: String, depth: Int)] {
         // Skip H1 (page title) — TOC should only show sub-headings
-        collectHeadings(from: document.blocks).filter { $0.level > 1 }
-    }
-
-    /// The shallowest heading level in the TOC, used as base indent (0).
-    private var minLevel: Int {
-        headings.map(\.level).min() ?? 2
+        // depth = nesting depth in the block tree, not heading level number
+        collectHeadings(from: document.blocks, depth: 0).filter { $0.depth > 0 || true }
     }
 
     var body: some View {
@@ -42,8 +38,8 @@ struct OutlineBlockView: View {
 
     // MARK: - Rows
 
-    private func headingRow(_ entry: (id: UUID, text: String, level: Int)) -> some View {
-        let indent = CGFloat(max(0, entry.level - minLevel)) * 16
+    private func headingRow(_ entry: (id: UUID, text: String, depth: Int)) -> some View {
+        let indent = CGFloat(entry.depth) * 16
 
         return Button {
             document.focusedBlockId = entry.id
@@ -72,15 +68,17 @@ struct OutlineBlockView: View {
 
     // MARK: - Heading Collection
 
-    private func collectHeadings(from blocks: [Block]) -> [(id: UUID, text: String, level: Int)] {
-        var result: [(id: UUID, text: String, level: Int)] = []
+    /// Collect headings with their nesting depth in the block tree (not heading level number).
+    /// depth 0 = top-level heading, depth 1 = heading inside a toggle/callout/etc.
+    private func collectHeadings(from blocks: [Block], depth: Int) -> [(id: UUID, text: String, depth: Int)] {
+        var result: [(id: UUID, text: String, depth: Int)] = []
         for block in blocks {
-            if block.type == .heading || block.type == .headingToggle {
+            if (block.type == .heading || block.type == .headingToggle), block.headingLevel > 1 {
                 let plainText = AttributedStringConverter.plainText(from: block.text)
-                result.append((id: block.id, text: plainText, level: block.headingLevel))
+                result.append((id: block.id, text: plainText, depth: depth))
             }
             if !block.children.isEmpty {
-                result.append(contentsOf: collectHeadings(from: block.children))
+                result.append(contentsOf: collectHeadings(from: block.children, depth: depth + 1))
             }
         }
         return result
