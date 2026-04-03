@@ -78,16 +78,11 @@ struct DatabaseFullPageView: View {
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let schema = state.schema {
-                ScrollView(.vertical) {
-                    VStack(spacing: 0) {
-                        dbHeader(schema: schema)
-                        viewTabs(schema: schema)
-                        Divider()
-                        viewContent(schema: schema)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                    }
-                    .padding(.bottom, 48)
-                }
+                dbHeader(schema: schema)
+                viewTabs(schema: schema)
+                Divider()
+                viewContent(schema: schema)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 ProgressView("Loading database...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -772,7 +767,7 @@ struct DatabaseFullPageView: View {
 
         switch state.activeView?.type ?? .table {
         case .table:
-            ScrollView(.horizontal) {
+            ScrollView([.horizontal, .vertical]) {
                 TableView(
                     schema: schema,
                     rows: boundRows,
@@ -806,8 +801,9 @@ struct DatabaseFullPageView: View {
                     containerWidth: 0
                 )
                 .fixedSize(horizontal: true, vertical: true)
+                .padding(.bottom, 48)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .kanban:
             KanbanView(
                 schema: schema,
