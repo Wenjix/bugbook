@@ -46,6 +46,16 @@ struct MailPaneView: View {
             mailService.loadCachedData(accountEmail: newEmail)
             refreshSelectedMailbox(force: false)
         }
+        .task {
+            // Auto-refresh inbox every 60 seconds while the mail pane is visible.
+            // SwiftUI cancels this task automatically when the view disappears.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { break }
+                guard appState.settings.googleConnected else { continue }
+                refreshSelectedMailbox(force: true)
+            }
+        }
     }
 
     private var header: some View {
