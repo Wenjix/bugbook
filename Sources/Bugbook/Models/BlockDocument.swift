@@ -944,7 +944,7 @@ class BlockDocument {
 
     static let slashCommands: [SlashCommand] = [
         // Suggested
-        SlashCommand(name: "Chat", icon: "ladybug", action: .askAI, section: "Suggested", keywords: ["ai", "chat", "generate", "write", "ask"]),
+        SlashCommand(name: "Ask AI", icon: "ladybug", action: .askAI, section: "Suggested", keywords: ["ai", "chat", "generate", "write", "ask"]),
         SlashCommand(name: "Image", icon: "photo", action: .imagePicker, section: "Suggested", keywords: ["photo", "picture", "media", "upload"]),
         SlashCommand(name: "Template", icon: "doc.on.doc", action: .template, section: "Suggested", keywords: ["snippet", "preset"]),
         SlashCommand(name: "Meeting", icon: "mic.fill", action: .meeting, section: "Suggested", keywords: ["record", "transcribe", "audio", "notes"]),

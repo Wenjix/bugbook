@@ -57,7 +57,7 @@ struct CalloutBlockView: View {
                     document: document,
                     blockId: block.id,
                     selectionVersion: document.selectionVersion,
-                    font: .systemFont(ofSize: EditorTypography.bodyFontSize, weight: .semibold),
+                    font: .systemFont(ofSize: EditorTypography.bodyFontSize, weight: .regular),
                     textColor: .labelColor,
                     placeholder: "Callout",
                     onTextChange: onTyping,

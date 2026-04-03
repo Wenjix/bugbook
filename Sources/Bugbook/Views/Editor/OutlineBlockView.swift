@@ -46,6 +46,7 @@ struct OutlineBlockView: View {
             Text(entry.text.isEmpty ? "Untitled" : entry.text)
                 .font(.system(size: EditorTypography.bodyFontSize - 1))
                 .foregroundStyle(Color.fallbackTextSecondary)
+                .underline()
                 .lineLimit(1)
                 .padding(.leading, indent)
                 .padding(.vertical, 3)

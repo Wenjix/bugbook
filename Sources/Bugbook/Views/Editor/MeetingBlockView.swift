@@ -123,7 +123,7 @@ struct MeetingBlockView: View {
             meetingNotesChildBlocks
                 .padding(.horizontal, 14)
                 .padding(.top, 4)
-                .padding(.bottom, 12)
+                .padding(.bottom, 20)
         }
     }
 

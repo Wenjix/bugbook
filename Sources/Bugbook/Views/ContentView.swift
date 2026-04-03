@@ -434,7 +434,7 @@ struct ContentView: View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .openAIPanel)) { _ in
                 ensureAiInitializedIfNeeded()
-                appState.toggleAiPanel()
+                appState.openNotesChat()
             }
             .onReceive(NotificationCenter.default.publisher(for: .askAI)) { notification in
                 let prompt = notification.userInfo?["prompt"] as? String
