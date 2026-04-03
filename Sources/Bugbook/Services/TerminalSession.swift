@@ -5,6 +5,10 @@ import os
 
 private let log = Logger(subsystem: "com.bugbook.app", category: "Terminal")
 
+/// Tracks the most recently focused Ghostty surface for clipboard callbacks.
+/// Set on the main thread in becomeFirstResponder; read in C callbacks that also run on main.
+nonisolated(unsafe) var _activeSurface: ghostty_surface_t? = nil
+
 /// Manages a single terminal instance backed by a libghostty surface.
 @MainActor
 @Observable
@@ -87,14 +91,27 @@ class GhosttySurfaceHostView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if let surface { ghostty_surface_set_focus(surface, true) }
+        if let surface {
+            ghostty_surface_set_focus(surface, true)
+            _activeSurface = surface
+        }
         return result
     }
 
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
-        if let surface { ghostty_surface_set_focus(surface, false) }
+        if let surface {
+            ghostty_surface_set_focus(surface, false)
+            if _activeSurface == surface { _activeSurface = nil }
+        }
         return result
+    }
+
+    // MARK: - Paste
+
+    @objc func paste(_ sender: Any?) {
+        guard let surface else { return }
+        _ = ghostty_surface_binding_action(surface, "paste_from_clipboard", 0)
     }
 
     // MARK: - Keyboard Input

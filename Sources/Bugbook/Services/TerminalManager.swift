@@ -20,18 +20,19 @@ final class TerminalManager {
     func ensureInitialized() {
         guard ghosttyApp == nil else { return }
 
-        // ghostty_init must be called before any other API call
-        let initResult = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv)
+        // ghostty_init: pass empty args so libghostty doesn't touch the parent TTY
+        let initResult = ghostty_init(0, nil)
         guard initResult == GHOSTTY_SUCCESS else {
             log.error("ghostty_init failed with code \(initResult)")
             return
         }
 
-        // Create config
+        // Create config and load the user's Ghostty config (~/.config/ghostty/config)
         guard let cfg = ghostty_config_new() else {
             log.error("ghostty_config_new failed")
             return
         }
+        ghostty_config_load_default_files(cfg)
         ghostty_config_finalize(cfg)
         self.ghosttyConfig = cfg
 
@@ -50,13 +51,17 @@ final class TerminalManager {
                 // (new tab, new window, etc.). We don't support those yet.
                 return false
             },
-            read_clipboard_cb: { _, _, _ in
-                // Read clipboard: ghostty wants to read the clipboard.
-                // Return false to indicate we don't support this yet.
-                return false
+            read_clipboard_cb: { userdata, clipboard, state in
+                guard let surface = _activeSurface else { return false }
+                guard let text = NSPasteboard.general.string(forType: .string) else { return false }
+                text.withCString { cStr in
+                    ghostty_surface_complete_clipboard_request(surface, cStr, state, true)
+                }
+                return true
             },
-            confirm_read_clipboard_cb: { _, _, _, _ in
-                // Confirm clipboard read: no-op for now.
+            confirm_read_clipboard_cb: { userdata, content, state, requestType in
+                guard let surface = _activeSurface, let content else { return }
+                ghostty_surface_complete_clipboard_request(surface, content, state, true)
             },
             write_clipboard_cb: { userdata, loc, content, len, confirm in
                 // Write to system clipboard
