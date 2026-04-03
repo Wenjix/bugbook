@@ -218,6 +218,13 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut(",")
             }
+
+            CommandGroup(replacing: .help) {
+                Button("Keyboard Shortcuts") {
+                    NotificationCenter.default.post(name: .toggleShortcutOverlay, object: nil)
+                }
+                .keyboardShortcut("/")
+            }
         }
     }
 }
@@ -397,6 +404,8 @@ extension Notification.Name {
     static let openCalendar = Notification.Name("openCalendar")
     static let openMeetings = Notification.Name("openMeetings")
     static let openGateway = Notification.Name("openGateway")
+    static let openTerminal = Notification.Name("openTerminal")
+    static let toggleShortcutOverlay = Notification.Name("toggleShortcutOverlay")
     static let fileDeleted = Notification.Name("fileDeleted")
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")

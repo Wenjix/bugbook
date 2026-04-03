@@ -87,6 +87,7 @@ struct ContentView: View {
             movePageOverlay
             themeToastOverlay
             editorZoomOverlay
+            shortcutOverlay
         }
     }
 
@@ -394,6 +395,16 @@ struct ContentView: View {
                 appState.currentView = .editor
                 appState.showSettings = false
                 openContentInFocusedPane(.gatewayDocument())
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openTerminal)) { _ in
+                appState.currentView = .editor
+                appState.showSettings = false
+                openContentInFocusedPane(.terminal)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleShortcutOverlay)) { _ in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    appState.showShortcutOverlay.toggle()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .newDatabase)) { _ in
                 createNewDatabase()
@@ -1086,6 +1097,9 @@ struct ContentView: View {
             MeetingsView(
                 appState: appState,
                 viewModel: meetingsVM,
+                transcriptionService: transcriptionService,
+                meetingNoteService: meetingNoteService,
+                aiService: aiService,
                 onNavigateToFile: { path in
                     navigateToFilePath(path)
                 }
@@ -2330,6 +2344,20 @@ struct ContentView: View {
         case .light: return "Light"
         case .dark: return "Dark"
         case .system: return "System"
+        }
+    }
+
+    // MARK: - Shortcut Overlay
+
+    @ViewBuilder
+    private var shortcutOverlay: some View {
+        if appState.showShortcutOverlay {
+            KeyboardShortcutOverlay {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    appState.showShortcutOverlay = false
+                }
+            }
+            .transition(.opacity)
         }
     }
 

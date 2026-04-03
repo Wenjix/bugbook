@@ -7,110 +7,46 @@ struct HomeBottomZone: View {
     @State private var showingPinPicker = false
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) {
-                calendarColumn
-                inboxColumn
-            }
-            VStack(spacing: 12) {
-                calendarColumn
-                inboxColumn
-            }
+        VStack(spacing: 12) {
+            pinnedSection
         }
     }
 
-    private var calendarColumn: some View {
+    private var pinnedSection: some View {
         surface {
-            VStack(alignment: .leading, spacing: 8) {
-                sectionHeader("TODAY")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    sectionHeader("PINNED")
+                    Spacer()
+                    if !unpinnedDatabases.isEmpty {
+                        Button {
+                            showingPinPicker = true
+                        } label: {
+                            Text("+")
+                                .font(.system(size: Typography.caption, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.fallbackTextMuted)
+                                .frame(minWidth: 24, minHeight: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .floatingPopover(isPresented: $showingPinPicker) {
+                            pinPickerPopover
+                        }
+                    }
+                }
 
-                if vm.todayTimeline.isEmpty {
-                    Text("No events on the calendar today.")
+                if vm.pinnedDatabases.isEmpty {
+                    Text("Pin a database to track it here.")
                         .font(.system(size: Typography.caption))
                         .foregroundStyle(Color.fallbackTextSecondary)
                 } else {
-                    ForEach(vm.todayTimeline) { item in
-                        switch item.kind {
-                        case .freeGap(let label):
-                            HStack(spacing: 8) {
-                                Rectangle()
-                                    .fill(Color.fallbackBorderColor)
-                                    .frame(height: 1)
-                                Text(label)
-                                    .font(.system(size: 10))
-                                    .italic()
-                                    .foregroundStyle(Color.fallbackTextMuted)
-                                    .fixedSize()
-                                Rectangle()
-                                    .fill(Color.fallbackBorderColor)
-                                    .frame(height: 1)
-                            }
-                            .padding(.vertical, 3)
-                            .padding(.horizontal, 8)
-                        case .event(let event):
-                            calendarRow(event)
-                                .opacity(event.isPast ? 0.35 : 1)
+                    ForEach(vm.pinnedDatabases) { database in
+                        PinnedDatabaseCard(database: database) {
+                            onNavigateToFile(database.path)
                         }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
-    private var inboxColumn: some View {
-        VStack(spacing: 12) {
-            surface {
-                VStack(alignment: .leading, spacing: 6) {
-                    sectionHeader("INBOX")
-
-                    if vm.inboxThreads.isEmpty {
-                        Text("No recent threads.")
-                            .font(.system(size: Typography.caption))
-                            .foregroundStyle(Color.fallbackTextSecondary)
-                    } else {
-                        ForEach(Array(vm.inboxThreads.enumerated()), id: \.element.id) { index, item in
-                            inboxRow(index: index + 1, item: item)
-                        }
-                    }
-                }
-            }
-
-            surface {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        sectionHeader("PINNED")
-                        Spacer()
-                        if !unpinnedDatabases.isEmpty {
-                            Button {
-                                showingPinPicker = true
-                            } label: {
-                                Text("+")
-                                    .font(.system(size: Typography.caption, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(Color.fallbackTextMuted)
-                                    .frame(minWidth: 24, minHeight: 24)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .floatingPopover(isPresented: $showingPinPicker) {
-                                pinPickerPopover
-                            }
-                        }
-                    }
-
-                    if vm.pinnedDatabases.isEmpty {
-                        Text("Pin a database to track it here.")
-                            .font(.system(size: Typography.caption))
-                            .foregroundStyle(Color.fallbackTextSecondary)
-                    } else {
-                        ForEach(vm.pinnedDatabases) { database in
-                            PinnedDatabaseCard(database: database) {
-                                onNavigateToFile(database.path)
-                            }
-                            .contextMenu {
-                                Button("Unpin") {
-                                    vm.togglePin(database.path)
-                                }
+                        .contextMenu {
+                            Button("Unpin") {
+                                vm.togglePin(database.path)
                             }
                         }
                     }
@@ -146,90 +82,6 @@ struct HomeBottomZone: View {
         .padding(.vertical, 6)
         .frame(minWidth: 180)
         .popoverSurface()
-    }
-
-    private func calendarRow(_ event: HomeViewModel.CalendarItem) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(event.isAllDay ? "all day" : event.startDate.formatted(.dateTime.hour(.defaultDigits(amPM: .narrow)).minute()))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color.fallbackTextMuted)
-                .frame(width: 42, alignment: .trailing)
-
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    if event.isPast {
-                        Text("✓")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.fallbackTextMuted)
-                    }
-                    if let hex = event.calendarColor {
-                        Circle()
-                            .fill(Color(hex: hex))
-                            .frame(width: 4, height: 4)
-                    }
-                    Text(event.title)
-                        .font(.system(size: Typography.caption, weight: .medium))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-                        .lineLimit(1)
-                }
-
-                if let context = event.context {
-                    Text(context)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.fallbackTextSecondary)
-                }
-
-                if let contextLine = event.contextLine {
-                    Text(contextLine)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.fallbackTextMuted)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(Color.fallbackSurfaceSubtle)
-        .clipShape(.rect(cornerRadius: Radius.sm))
-    }
-
-    private func inboxRow(index: Int, item: HomeViewModel.InboxItem) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("\(index)")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color.fallbackTextMuted)
-                .frame(width: 12, alignment: .trailing)
-                .padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.subject)
-                    .font(.system(size: Typography.caption, weight: .medium))
-                    .foregroundStyle(Color.fallbackTextPrimary)
-                    .lineLimit(1)
-                Text(inboxSecondaryText(for: item))
-                    .font(.system(size: Typography.caption2))
-                    .foregroundStyle(Color.fallbackTextMuted)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-
-            if item.showsReplyBadge {
-                Text("reply")
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(0.3)
-                    .foregroundStyle(TagColor.color(for: "blue"))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(TagColor.color(for: "blue").opacity(0.12))
-                    .clipShape(.rect(cornerRadius: 3))
-            }
-        }
-        .padding(.vertical, 3)
-    }
-
-    private func inboxSecondaryText(for item: HomeViewModel.InboxItem) -> String {
-        item.sender
     }
 
     private func sectionHeader(_ title: String) -> some View {

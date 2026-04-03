@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bugbook — Tiling Panes</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --canvas: #151515;
+    --chrome: #1a1a1a;
+    --chrome-up: #222;
+    --text-1: #e8e6e1;
+    --text-2: #8a8a86;
+    --text-3: #555551;
+    --text-4: #3a3a37;
+    --accent: #c4a46c;
+    --accent-dim: rgba(196,164,108,0.12);
+    --border: #262624;
+    --border-hi: #3a3a37;
+    --red: #d95f5f;
+    --green: #5da88a;
+    --blue: #5c8fd4;
+    --purple: #9882cc;
+    --orange: #d4943c;
+    --r-xs: 4px;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Instrument Sans', system-ui, sans-serif;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-1);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: var(--accent); color: var(--bg); }
+
+  .page { max-width: 1320px; margin: 0 auto; padding: 48px 48px 80px; }
+
+  .frame {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    background: var(--canvas);
+    box-shadow: 0 2px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02);
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    align-items: stretch;
+    background: var(--chrome);
+    border-bottom: 1px solid var(--border);
+    min-height: 32px;
+  }
+  .tab {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-3);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    border-right: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--text-2); }
+  .tab.active { background: var(--canvas); color: var(--text-1); font-weight: 500; }
+  .tab .ti { font-size: 9px; color: var(--text-4); letter-spacing: 2px; margin-left: 2px; }
+  .tab-add { padding: 0 8px; color: var(--text-4); display: flex; align-items: center; cursor: pointer; font-size: 13px; }
+  .tab-add:hover { color: var(--text-2); }
+  .tab-saved { margin-left: auto; padding-right: 10px; font-family: var(--mono); font-size: 9px; color: var(--text-4); display: flex; align-items: center; gap: 4px; }
+  .tab-saved .sd { width: 4px; height: 4px; border-radius: 50%; background: var(--green); }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 150px;
+    min-width: 150px;
+    background: var(--chrome);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 8px 5px;
+    gap: 1px;
+    font-size: 11px;
+  }
+  .sb-l { font-family: var(--mono); font-size: 8px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-4); padding: 8px 7px 3px; }
+  .sb-i { display: flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: var(--r-xs); color: var(--text-2); cursor: pointer; }
+  .sb-i:hover { background: rgba(255,255,255,0.04); color: var(--text-1); }
+  .sb-i.on { background: rgba(196,164,108,0.08); color: var(--accent); }
+  .sb-i .ic { width: 13px; text-align: center; font-size: 11px; opacity: 0.5; }
+  .sb-i.on .ic { opacity: 1; }
+  .sb-badge { margin-left: auto; background: var(--orange); color: var(--bg); font-size: 8px; font-weight: 700; padding: 0 4px; border-radius: 5px; min-width: 13px; text-align: center; line-height: 14px; }
+
+  /* ── Pane (no text header — just icon on hover) ── */
+  .p { display: flex; flex-direction: column; min-width: 0; background: var(--canvas); overflow: hidden; }
+  .p + .p { border-left: 1px solid var(--border); }
+
+  /* ── Dividers ── */
+  .dv { width: 6px; flex-shrink: 0; cursor: col-resize; position: relative; display: flex; align-items: center; justify-content: center; }
+  .dv .bar { width: 1px; height: 100%; background: var(--border); transition: all 0.15s; }
+  .dv .dots { position: absolute; display: flex; flex-direction: column; gap: 3px; opacity: 0; transition: opacity 0.15s; }
+  .dv:hover .bar { width: 3px; background: var(--accent); border-radius: 1px; }
+  .dv:hover .dots { opacity: 1; }
+  .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--accent); opacity: 0.5; }
+
+  .dh { height: 6px; flex-shrink: 0; cursor: row-resize; position: relative; display: flex; align-items: center; justify-content: center; }
+  .dh .bar { height: 1px; width: 100%; background: var(--border); transition: all 0.15s; }
+  .dh .dots { position: absolute; display: flex; gap: 3px; opacity: 0; transition: opacity 0.15s; }
+  .dh:hover .bar { height: 3px; background: var(--accent); border-radius: 1px; }
+  .dh:hover .dots { opacity: 1; }
+
+  /* ── Mail ── */
+  .mt { display: flex; gap: 3px; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .mt span { font-size: 10px; font-weight: 500; padding: 2px 6px; border-radius: 7px; color: var(--text-3); cursor: pointer; }
+  .mt span:hover { color: var(--text-2); }
+  .mt span.on { color: var(--text-1); background: rgba(255,255,255,0.06); }
+
+  .mr { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.02); cursor: pointer; }
+  .mr:hover { background: rgba(255,255,255,0.02); }
+  .mr-top { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+  .mr-from { font-size: 11px; font-weight: 500; color: var(--text-1); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+  .ud { width: 4px; height: 4px; border-radius: 50%; background: var(--orange); flex-shrink: 0; }
+  .mr-t { font-size: 9px; font-family: var(--mono); color: var(--text-3); }
+  .mr-s { font-size: 10px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+
+  /* ── Calendar ── */
+  .ch { display: flex; align-items: baseline; gap: 6px; padding: 6px 8px 3px; }
+  .cn { font-size: 22px; font-weight: 700; font-family: var(--mono); line-height: 1; color: var(--accent); }
+  .cd { font-size: 10px; color: var(--text-3); font-weight: 500; }
+  .cm { font-size: 8px; color: var(--text-4); font-family: var(--mono); }
+  .cnav { margin-left: auto; display: flex; gap: 1px; }
+  .cnav span { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: 3px; color: var(--text-3); cursor: pointer; font-size: 9px; }
+  .cnav span:hover { background: var(--chrome-up); }
+
+  .hr { display: flex; min-height: 36px; padding: 0 8px; }
+  .hl { width: 32px; font-size: 8px; font-family: var(--mono); color: var(--text-4); padding-top: 2px; flex-shrink: 0; }
+  .hb { flex: 1; border-top: 1px solid rgba(255,255,255,0.03); padding: 2px 0; }
+
+  .ev { padding: 3px 7px; border-radius: var(--r-xs); font-size: 10px; cursor: pointer; border-left: 2px solid; margin-bottom: 1px; }
+  .ev:hover { opacity: 0.8; }
+  .ev .et { font-weight: 500; display: flex; align-items: center; gap: 3px; }
+  .ev .etm { font-size: 8px; font-family: var(--mono); opacity: 0.7; }
+  .ev .badge { font-size: 7px; opacity: 0.6; }
+  .ev.blue { background: rgba(92,143,212,0.1); border-color: var(--blue); color: #8bb4f0; }
+  .ev.green { background: rgba(93,168,138,0.1); border-color: var(--green); color: #7dcfbe; }
+  .ev.orange { background: rgba(212,148,60,0.08); border-color: var(--orange); color: #f0b76a; }
+  .ev.purple { background: rgba(152,130,204,0.08); border-color: var(--purple); color: #b5a8f0; }
+
+  /* ── Chat ── */
+  .cb { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; gap: 5px; overflow-y: auto; }
+  .chip { font-size: 9px; padding: 2px 7px; border-radius: 8px; border: 1px solid var(--border); color: var(--text-2); cursor: pointer; }
+  .chip:hover { border-color: var(--border-hi); color: var(--text-1); }
+  .msg { max-width: 88%; padding: 6px 9px; border-radius: 9px; font-size: 11px; line-height: 1.5; }
+  .msg.u { align-self: flex-end; background: rgba(255,255,255,0.07); border-bottom-right-radius: 3px; }
+  .msg.a { align-self: flex-start; background: var(--chrome); border-bottom-left-radius: 3px; color: var(--text-2); }
+  .ci { padding: 5px 8px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .cf { display: flex; align-items: center; gap: 5px; padding: 5px 8px; background: var(--chrome); border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 11px; color: var(--text-4); }
+  .cf .se { cursor: pointer; }
+  .cf .se:hover { color: var(--text-2); }
+
+  /* ── Terminal ── */
+  .tm { flex: 1; background: #0c0c0c; font-family: var(--mono); font-size: 10px; line-height: 1.7; padding: 6px 8px; color: #a8a8a8; }
+  .tm .pr { color: var(--green); }
+  .tm .pa { color: var(--blue); }
+  .tm .co { color: var(--text-1); }
+  .tm .ou { color: #777; }
+  .tm .ok { color: var(--green); }
+  .tc { display: inline-block; width: 6px; height: 12px; background: var(--text-1); animation: blink 1s step-end infinite; vertical-align: text-bottom; }
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+  .ts { display: flex; justify-content: space-between; padding: 2px 8px; border-top: 1px solid var(--border); background: var(--chrome); font-size: 8px; font-family: var(--mono); color: var(--text-4); flex-shrink: 0; }
+
+  /* ── Meetings ── */
+  .rec-btn { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; background: rgba(217,95,95,0.08); border: 1px solid rgba(217,95,95,0.2); border-radius: var(--r-md); cursor: pointer; font-size: 12px; font-weight: 500; }
+  .rec-btn:hover { background: rgba(217,95,95,0.14); }
+  .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(1.3); } }
+  .rec-wave { display: flex; gap: 2px; align-items: center; height: 14px; }
+  .rec-wave span { width: 2px; border-radius: 1px; background: var(--red); opacity: 0.6; animation: wave 1.2s ease-in-out infinite; }
+  .rec-wave span:nth-child(1) { height: 8px; }
+  .rec-wave span:nth-child(2) { height: 5px; animation-delay: 0.15s; }
+  .rec-wave span:nth-child(3) { height: 11px; animation-delay: 0.3s; }
+  .rec-wave span:nth-child(4) { height: 4px; animation-delay: 0.45s; }
+  @keyframes wave { 0%,100% { transform:scaleY(1); } 50% { transform:scaleY(0.4); } }
+
+  .stop-btn { display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: rgba(255,255,255,0.06); border-radius: var(--r-sm); cursor: pointer; font-size: 11px; font-weight: 500; }
+  .stop-btn:hover { background: rgba(255,255,255,0.1); }
+
+  /* Toggle tabs (notes/transcript) */
+  .tog { display: flex; gap: 2px; padding: 3px 8px; }
+  .tog span { font-size: 9px; font-weight: 500; padding: 2px 6px; border-radius: 6px; color: var(--text-3); cursor: pointer; }
+  .tog span.on { color: var(--text-1); background: rgba(255,255,255,0.06); }
+
+  /* ── Home ── */
+  .home-greet { padding: 10px 12px 4px; }
+  .home-time { font-size: 9px; font-family: var(--mono); color: var(--text-4); }
+  .home-hello { font-size: 16px; font-weight: 700; }
+  .home-search { margin: 5px 12px 8px; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--chrome); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text-4); font-size: 11px; cursor: text; }
+  .home-qa { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 0 12px; }
+  .home-a { display: flex; align-items: center; gap: 6px; padding: 7px 9px; background: var(--chrome); border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer; font-size: 10px; }
+  .home-a:hover { border-color: var(--border-hi); }
+  .home-a .al { font-weight: 500; color: var(--text-1); }
+  .home-a .ak { font-family: var(--mono); font-size: 8px; color: var(--text-4); }
+
+  .note { font-size: 11px; color: var(--text-3); margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ═══════════════════════════════════════
+       FULL WORKSPACE — Comms
+       ═══════════════════════════════════════ -->
+  <div class="frame">
+    <div class="tabs">
+      <div class="tab active">Comms <span class="ti">✉ ▦ ◈</span></div>
+      <div class="tab">Dev</div>
+      <div class="tab">Harbor</div>
+      <div class="tab-add">+</div>
+      <div class="tab-saved"><span class="sd"></span> Saved</div>
+    </div>
+
+    <div style="display:flex;height:560px;">
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="sb-i" style="margin-bottom:4px;">
+          <span class="ic">⌕</span> Search
+          <span style="margin-left:auto;font-family:var(--mono);font-size:8px;color:var(--text-4)">⌘K</span>
+        </div>
+        <div class="sb-l">Navigate</div>
+        <div class="sb-i"><span class="ic">⌂</span> Home</div>
+        <div class="sb-i on"><span class="ic">✉</span> Mail <span class="sb-badge">2</span></div>
+        <div class="sb-i"><span class="ic">▦</span> Calendar</div>
+        <div class="sb-i"><span class="ic">◉</span> Meetings</div>
+        <div class="sb-i"><span class="ic">◈</span> Chat</div>
+        <div class="sb-i"><span class="ic">▸</span> Terminal</div>
+        <div class="sb-l">Workspace</div>
+        <div class="sb-i"><span class="ic">📄</span> Today</div>
+        <div class="sb-i"><span class="ic">🗃</span> Tickets</div>
+        <div class="sb-i"><span class="ic">📄</span> Harbor</div>
+        <div style="margin-top:auto;">
+          <div class="sb-i"><span class="ic">⚙</span> Settings</div>
+        </div>
+      </div>
+
+      <!-- Tiling area -->
+      <div style="flex:1;display:flex;flex-direction:column;">
+        <!-- Top row: Mail + Calendar -->
+        <div style="flex:1.3;display:flex;min-height:0;">
+          <div class="p" style="flex:0.55;">
+            <div class="mt">
+              <span class="on">All</span>
+              <span>Unread</span>
+              <span>Starred</span>
+              <span>Sent</span>
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+              <div class="mr">
+                <div class="mr-top"><div class="mr-from"><span class="ud"></span> Sudhanshu Kasewa</div><span class="mr-t">2h</span></div>
+                <div class="mr-s">Re: 80,000 Hours Follow Up</div>
+              </div>
+              <div class="mr">
+                <div class="mr-top"><div class="mr-from"><span class="ud"></span> Nathan Baugh</div><span class="mr-t">5h</span></div>
+                <div class="mr-s">The 8 Shapes of Stories</div>
+              </div>
+              <div class="mr">
+                <div class="mr-top"><div class="mr-from">GitHub</div><span class="mr-t">8h</span></div>
+                <div class="mr-s">PR merged: feat/pane-tiling</div>
+              </div>
+              <div class="mr">
+                <div class="mr-top"><div class="mr-from">Contrary Weekly</div><span class="mr-t">1d</span></div>
+                <div class="mr-s">Portfolio Update: March Recap</div>
+              </div>
+              <div class="mr">
+                <div class="mr-top"><div class="mr-from">South Park Commons</div><span class="mr-t">1d</span></div>
+                <div class="mr-s">SPC Applications Open</div>
+              </div>
+              <div class="mr">
+                <div class="mr-top"><div class="mr-from">Zhanel</div><span class="mr-t">2d</span></div>
+                <div class="mr-s">dinner tonight?</div>
+              </div>
+              <div class="mr">
+                <div class="mr-top"><div class="mr-from">RunPod Alerts</div><span class="mr-t">3d</span></div>
+                <div class="mr-s">GPU cluster scaling event</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dv"><div class="bar"></div><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+
+          <div class="p" style="flex:0.45;">
+            <div class="ch">
+              <span class="cn">02</span>
+              <div><div class="cd">Thursday</div><div class="cm">APR 2026</div></div>
+              <div class="cnav"><span>◂</span><span>▸</span></div>
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+              <div class="hr"><div class="hl">9 AM</div><div class="hb">
+                <div class="ev blue"><div class="et">Standup</div><div class="etm">9:00 – 9:15</div></div>
+              </div></div>
+              <div class="hr"><div class="hl">10 AM</div><div class="hb">
+                <div class="ev green"><div class="et">SDK Review <span class="badge">≋</span></div><div class="etm">10:00 – 11:00</div></div>
+              </div></div>
+              <div class="hr"><div class="hl">12 PM</div><div class="hb">
+                <div class="ev orange"><div class="et">Lunch w/ Zhanel</div><div class="etm">12:30 – 1:30</div></div>
+              </div></div>
+              <div class="hr"><div class="hl">2 PM</div><div class="hb">
+                <div class="ev purple"><div class="et">Harbor Prototype</div><div class="etm">2:00 – 3:30</div></div>
+              </div></div>
+              <div class="hr"><div class="hl">4 PM</div><div class="hb">
+                <div class="ev blue"><div class="et">Contrary Hours</div><div class="etm">4:00 – 5:00</div></div>
+              </div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dh"><div class="bar"></div><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+
+        <!-- Bottom row: Chat + Terminal -->
+        <div style="flex:0.7;display:flex;min-height:0;">
+          <div class="p" style="flex:1;">
+            <div class="cb">
+              <div class="msg u">What do I need to prep for the Harbor session?</div>
+              <div class="msg a">Based on the SDK Review transcript: bring the Pixel 9 prototype, prepare the context-switching demo, review @Harbor Notes.</div>
+              <div class="msg u">Show me unread from Contrary</div>
+              <div class="msg a">1 unread — "Portfolio Update: March Recap" — three new investments this month.</div>
+            </div>
+            <div class="ci"><div class="cf"><span style="flex:1;">Message…</span><span class="se">↑</span></div></div>
+          </div>
+
+          <div class="dv"><div class="bar"></div><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+
+          <div class="p" style="flex:1;">
+            <div class="tm">
+              <div><span class="pr">❯</span> <span class="pa">~/Code/bugbook</span> <span class="co">git status</span></div>
+              <div class="ou">On branch dev</div>
+              <div class="ou">nothing to commit, working tree clean</div>
+              <div style="margin-top:4px"><span class="pr">❯</span> <span class="pa">~/Code/bugbook</span> <span class="co">swift build 2>&1 | tail -1</span></div>
+              <div class="ok">Build complete! (0.19s)</div>
+              <div style="margin-top:4px"><span class="pr">❯</span> <span class="pa">~/Code/bugbook</span> <span class="tc"></span></div>
+            </div>
+            <div class="ts"><span>zsh</span><span>session-1</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">≋ = has transcript. Drag dividers to resize. Double-click resets 50/50. <span style="font-family:var(--mono);font-size:9px;background:rgba(255,255,255,0.04);border:1px solid var(--border);padding:1px 4px;border-radius:3px;">⌘/</span> for all shortcuts.</div>
+
+  <div style="height:48px;"></div>
+
+  <!-- ═══════════════════════════════════════
+       MEETINGS + HOME
+       ═══════════════════════════════════════ -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:48px;">
+    <!-- Meetings: idle -->
+    <div class="frame">
+      <div class="p" style="height:340px;">
+        <div style="display:flex;flex-direction:column;flex:1;">
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:16px;">
+            <input type="text" placeholder="Meeting title (optional)" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 9px;color:var(--text-1);font-family:var(--sans);font-size:11px;outline:none;margin-bottom:8px;">
+            <div class="rec-btn"><span class="rec-dot"></span> Start recording</div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding:6px 8px;">
+            <div style="font-family:var(--mono);font-size:8px;font-weight:600;letter-spacing:0.8px;color:var(--text-4);text-transform:uppercase;margin-bottom:3px;">Recent</div>
+            <div style="display:flex;gap:5px;padding:2px 0;font-size:10px;">
+              <span style="font-family:var(--mono);color:var(--text-4);width:40px;text-align:right;">10:00a</span>
+              <span style="color:var(--text-2);">SDK Review — RunPod</span>
+            </div>
+            <div style="display:flex;gap:5px;padding:2px 0;font-size:10px;">
+              <span style="font-family:var(--mono);color:var(--text-4);width:40px;text-align:right;">Yest</span>
+              <span style="color:var(--text-2);">JustBuild Sync</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Meetings: recording (notes view) -->
+    <div class="frame" style="border-color:rgba(217,95,95,0.3);">
+      <div class="p" style="height:340px;">
+        <div style="display:flex;flex-direction:column;flex:1;">
+          <div style="padding:5px 8px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:11px;font-weight:500;">Contrary Office Hours</span>
+            <span style="display:flex;align-items:center;gap:4px;"><span class="pulse-dot"></span><span style="font-size:9px;color:var(--red);font-weight:500;">REC</span></span>
+          </div>
+          <div class="tog">
+            <span class="on">Notes</span>
+            <span>Transcript</span>
+          </div>
+          <div style="border-top:1px solid var(--border);flex:1;padding:8px;font-size:11px;line-height:1.7;color:var(--text-1);">
+            <div>- Harbor prototype: bring Pixel 9 build</div>
+            <div style="margin-top:3px;">- Context-switching demo needs new state model</div>
+            <div style="margin-top:3px;">- Follow up with SPC on timeline</div>
+            <div style="margin-top:10px;color:var(--text-4);font-style:italic;">Type notes while recording…</div>
+          </div>
+          <div style="padding:6px 8px;border-top:1px solid var(--border);display:flex;align-items:center;">
+            <div class="rec-wave"><span></span><span></span><span></span><span></span></div>
+            <span style="flex:1;"></span>
+            <div class="stop-btn"><span style="width:7px;height:7px;background:var(--text-1);border-radius:1px;"></span> Stop</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Home -->
+    <div class="frame">
+      <div class="p" style="height:340px;">
+        <div style="display:flex;flex-direction:column;flex:1;">
+          <div class="home-greet">
+            <div class="home-time">THU 02 APR · 10:14 AM</div>
+            <div class="home-hello">Morning, Max</div>
+          </div>
+          <div class="home-search"><span style="opacity:0.4;">⌕</span> Search or jump to… <span style="margin-left:auto;font-family:var(--mono);font-size:8px;opacity:0.3;">⌘K</span></div>
+          <div class="home-qa">
+            <div class="home-a"><span style="font-size:12px;">✎</span><div><div class="al">New page</div><div class="ak">⌘N</div></div></div>
+            <div class="home-a"><span style="font-size:12px;">✉</span><div><div class="al">Compose</div><div class="ak">⌘⇧M</div></div></div>
+            <div class="home-a"><span style="font-size:12px;">◈</span><div><div class="al">Ask AI</div><div class="ak">⌘I</div></div></div>
+            <div class="home-a"><span style="font-size:12px;">▸</span><div><div class="al">Terminal</div><div class="ak">⌘`</div></div></div>
+          </div>
+          <div style="padding:8px 12px;margin-top:8px;">
+            <div style="font-family:var(--mono);font-size:8px;font-weight:600;letter-spacing:0.8px;color:var(--text-4);text-transform:uppercase;margin-bottom:4px;">Recent</div>
+            <div style="display:flex;align-items:center;gap:5px;padding:3px 0;font-size:10px;color:var(--text-2);cursor:pointer;">📄 Pane Tiling Architecture <span style="margin-left:auto;font-family:var(--mono);font-size:8px;color:var(--text-4);">2m</span></div>
+            <div style="display:flex;align-items:center;gap:5px;padding:3px 0;font-size:10px;color:var(--text-2);cursor:pointer;">🗃 Agent Tickets <span style="margin-left:auto;font-family:var(--mono);font-size:8px;color:var(--text-4);">18m</span></div>
+            <div style="display:flex;align-items:center;gap:5px;padding:3px 0;font-size:10px;color:var(--text-2);cursor:pointer;">📄 Harbor Notes <span style="margin-left:auto;font-family:var(--mono);font-size:8px;color:var(--text-4);">1h</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size:11px;color:var(--text-3);text-align:center;">
+    See <a href="interactions.html" style="color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(196,164,108,0.3);">interactions.html</a> for keyboard shortcuts, pane operations, drag swap, and the full pane roster.
+  </div>
+
+</div>
+
+</body>
+</html>

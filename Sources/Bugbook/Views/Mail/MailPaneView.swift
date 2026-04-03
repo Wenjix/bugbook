@@ -6,6 +6,7 @@ struct MailPaneView: View {
     @Bindable var mailService: MailService
 
     @State private var searchText = ""
+    @State private var activeFilter: MailFilter = .all
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,14 +24,9 @@ struct MailPaneView: View {
                     message: "Sign in once and Bugbook will use that Google account for both Mail and Calendar."
                 )
             } else {
-                HStack(spacing: 0) {
-                    mailboxRail
-                        .frame(width: 180)
-                    Divider()
+                VStack(spacing: 0) {
+                    mailFilterTabs
                     threadList
-                        .frame(width: 320)
-                    Divider()
-                    detailPane
                 }
             }
         }
@@ -82,7 +78,7 @@ struct MailPaneView: View {
             .padding(.vertical, 7)
             .background(Color.primary.opacity(0.05))
             .clipShape(.rect(cornerRadius: 8))
-            .frame(width: 320)
+            .frame(maxWidth: 320)
 
             if mailService.isSearching || mailService.isLoadingMailbox || mailService.isLoadingThread || mailService.isSending {
                 ProgressView()
@@ -105,6 +101,38 @@ struct MailPaneView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    private var mailFilterTabs: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                ForEach(MailFilter.allCases) { filter in
+                    Button {
+                        activeFilter = filter
+                        mailService.selectMailbox(filter.mailbox)
+                        refreshSelectedMailbox(force: false)
+                    } label: {
+                        Text(filter.label)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(activeFilter == filter ? .primary : .tertiary)
+                            .padding(.vertical, 3)
+                            .padding(.horizontal, 8)
+                            .background(
+                                activeFilter == filter
+                                    ? Color.primary.opacity(0.08)
+                                    : Color.clear
+                            )
+                            .clipShape(.rect(cornerRadius: Radius.xs))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+
+            Divider()
+        }
     }
 
     private var mailboxRail: some View {
@@ -506,6 +534,29 @@ struct MailPaneView: View {
             } catch {
                 mailService.error = error.localizedDescription
             }
+        }
+    }
+}
+
+private enum MailFilter: String, CaseIterable, Identifiable {
+    case all, unread, starred, sent
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .unread: return "Unread"
+        case .starred: return "Starred"
+        case .sent: return "Sent"
+        }
+    }
+
+    var mailbox: MailMailbox {
+        switch self {
+        case .all, .unread: return .inbox
+        case .starred: return .starred
+        case .sent: return .sent
         }
     }
 }

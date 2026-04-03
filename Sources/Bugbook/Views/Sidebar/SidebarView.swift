@@ -265,6 +265,25 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "meetings" : nil }
+
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openTerminal, object: nil) } }) {
+                    HStack(spacing: chromeButtonSpacing) {
+                        Image(systemName: "terminal")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Text("Terminal")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, rowHorizontalPadding)
+                    .padding(.vertical, rowVerticalPadding)
+                    .background(hoveredButton == "terminal" ? Color.primary.opacity(0.06) : Color.clear)
+                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.sm)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in hoveredButton = hovering ? "terminal" : nil }
             }
             .padding(.horizontal, sectionHorizontalPadding)
             }

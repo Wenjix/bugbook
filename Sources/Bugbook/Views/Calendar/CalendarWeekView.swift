@@ -233,9 +233,16 @@ struct CalendarWeekView: View {
                             .opacity(0.8)
                     }
                 } else {
-                    Text(event.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .lineLimit(h > hourHeight ? 3 : 1)
+                    HStack(spacing: 3) {
+                        Text(event.title)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(h > hourHeight ? 3 : 1)
+                        if event.linkedPagePath != nil {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 8))
+                                .opacity(0.7)
+                        }
+                    }
                     Text("\(calendarVM.timeString(for: event.startDate))–\(calendarVM.timeString(for: event.endDate))")
                         .font(.system(size: 10))
                         .opacity(0.8)

@@ -13,6 +13,7 @@ struct PaneContentView: View {
     let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
 
     @State private var isHovered = false
+    @State private var isDropTarget = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -31,9 +32,28 @@ struct PaneContentView: View {
                     .padding([.trailing, .bottom], 6)
                     .transition(.opacity)
             }
+
+            // Drop target highlight for pane swap
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: 0)
+                    .strokeBorder(Color.fallbackAccent.opacity(Opacity.strong), lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
         }
         .clipShape(Rectangle())
         .onHover { isHovered = $0 }
+        .onDrop(of: [.text], isTargeted: $isDropTarget) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: NSString.self) { item, _ in
+                guard let idString = item as? String,
+                      let sourceId = UUID(uuidString: idString),
+                      sourceId != leaf.id else { return }
+                DispatchQueue.main.async {
+                    workspaceManager.swapPaneContents(paneA: sourceId, paneB: leaf.id)
+                }
+            }
+            return true
+        }
         .contextMenu {
             Menu("Split Right") {
                 paneTypeMenu { content in
@@ -99,6 +119,19 @@ private struct PaneActionBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // Drag handle for pane swap
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+                .onDrag {
+                    NSItemProvider(object: leaf.id.uuidString as NSString)
+                }
+                .help("Drag to swap panes")
+
+            divider
+
             // Split right
             splitMenu(direction: .right, help: "Split right") { content in
                 workspaceManager.setFocusedPane(id: leaf.id)

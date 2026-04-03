@@ -6,6 +6,7 @@ struct CalendarDayView: View {
     let events: [CalendarEvent]
     let databaseItems: [CalendarDatabaseItem]
     let calendarVM: CalendarViewModel
+    let calendarSources: [CalendarSource]
     var onEventTapped: (CalendarEvent) -> Void
     var onDatabaseItemTapped: (CalendarDatabaseItem) -> Void
 
@@ -14,138 +15,303 @@ struct CalendarDayView: View {
     private let hourHeight: CGFloat = 48
     private let timeGutterWidth: CGFloat = 44
 
-    var body: some View {
-        ScrollView(.vertical) {
-            ZStack(alignment: .topLeading) {
-                // Time grid
-                VStack(spacing: 0) {
-                    ForEach(calendarVM.visibleHours, id: \.self) { hour in
-                        HStack(spacing: 0) {
-                            HStack {
-                                Spacer()
-                                Text(calendarVM.hourLabel(hour))
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.quaternary)
-                                    .padding(.trailing, 4)
-                            }
-                            .frame(width: timeGutterWidth, alignment: .topTrailing)
-                            .offset(y: -6)
+    private var dayEvents: [CalendarEvent] {
+        calendarVM.events(for: date, from: events)
+    }
 
-                            VStack(spacing: 0) {
-                                Divider().opacity(0.3)
-                                Spacer()
+    private var timedEvents: [CalendarEvent] {
+        dayEvents.filter { !$0.isAllDay }
+    }
+
+    private var allDayEvents: [CalendarEvent] {
+        dayEvents.filter { $0.isAllDay }
+    }
+
+    private var dayDbItems: [CalendarDatabaseItem] {
+        calendarVM.databaseItems(for: date, from: databaseItems)
+            .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            dateHeader
+            Divider()
+
+            if !allDayEvents.isEmpty {
+                allDaySection
+                Divider()
+            }
+
+            ScrollView(.vertical) {
+                ScrollViewReader { proxy in
+                    ZStack(alignment: .topLeading) {
+                        timeGrid
+                        eventOverlays
+                        nowIndicator
+
+                        // Empty state — shown over the grid when no events
+                        if dayEvents.isEmpty && dayDbItems.isEmpty {
+                            VStack(spacing: 6) {
+                                Text("Nothing scheduled")
+                                    .font(.system(size: Typography.bodySmall, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                Text("Your day is clear")
+                                    .font(.system(size: Typography.caption))
+                                    .foregroundStyle(.tertiary)
                             }
                             .frame(maxWidth: .infinity)
+                            .padding(.top, hourHeight * 2)
                         }
-                        .frame(height: hourHeight)
+                    }
+                    .frame(height: CGFloat(calendarVM.visibleHours.count) * hourHeight)
+                    .onAppear {
+                        let targetHour = max(calendarVM.dayStartHour, Calendar.current.component(.hour, from: Date()) - 1)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            proxy.scrollTo(targetHour, anchor: .top)
+                        }
                     }
                 }
+            }
+        }
+    }
 
-                // Events
+    // MARK: - Date Header
+
+    private var dateHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(Calendar.current.component(.day, from: date))")
+                .font(.system(size: Typography.title, design: .monospaced).weight(.bold))
+                .foregroundStyle(Calendar.current.isDateInToday(date) ? Color.accentColor : .primary)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(dayNameString)
+                    .font(.system(size: Typography.body, weight: .medium))
+                    .foregroundStyle(.primary)
+                Text(monthYearString)
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - All-Day Section
+
+    private var allDaySection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(allDayEvents, id: \.id) { event in
+                let color = eventColor(for: event)
+                Button(action: { onEventTapped(event) }) {
+                    HStack(spacing: 6) {
+                        Circle().fill(color).frame(width: 6, height: 6)
+                        Text(event.title)
+                            .font(.system(size: Typography.caption, weight: .medium))
+                            .lineLimit(1)
+                        Spacer()
+                        Text("All day")
+                            .font(.system(size: Typography.caption2))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(color.opacity(Opacity.light))
+                    .foregroundStyle(color)
+                    .clipShape(.rect(cornerRadius: Radius.sm))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+    }
+
+    // MARK: - Time Grid
+
+    private var timeGrid: some View {
+        VStack(spacing: 0) {
+            ForEach(calendarVM.visibleHours, id: \.self) { hour in
                 HStack(spacing: 0) {
-                    Color.clear.frame(width: timeGutterWidth)
-
-                    ZStack(alignment: .topLeading) {
-                        let timedEvents = calendarVM.events(for: date, from: events)
-                            .filter { !$0.isAllDay }
-
-                        ForEach(timedEvents, id: \.id) { event in
-                            let y = calendarVM.yPosition(for: event.startDate, hourHeight: hourHeight)
-                            let h = calendarVM.eventHeight(start: event.startDate, end: event.endDate, hourHeight: hourHeight)
-                            let isHovered = hoveredEventId == event.id
-                            let eventColor = Color.accentColor
-
-                            Button(action: { onEventTapped(event) }) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(event.title)
-                                        .font(.system(size: Typography.body, weight: .medium))
-                                        .lineLimit(3)
-                                    Text("\(calendarVM.timeString(for: event.startDate))–\(calendarVM.timeString(for: event.endDate))")
-                                        .font(.system(size: Typography.caption))
-                                        .opacity(0.8)
-                                    if let location = event.location, !location.isEmpty {
-                                        Text(location)
-                                            .font(.system(size: Typography.caption))
-                                            .opacity(0.6)
-                                    }
-                                }
-                                .padding(.leading, 8)
-                                .padding(.trailing, 6)
-                                .padding(.vertical, 4)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .frame(height: h, alignment: .top)
-                                .foregroundStyle(eventColor)
-                                .background(eventColor.opacity(isHovered ? 0.14 : 0.08))
-                                .overlay(alignment: .leading) {
-                                    Rectangle().fill(eventColor).frame(width: 2)
-                                }
-                                .clipShape(.rect(cornerRadius: Radius.sm))
-                            }
-                            .buttonStyle(.plain)
-                            .onHover { hovering in hoveredEventId = hovering ? event.id : nil }
-                            .padding(.horizontal, 4)
-                            .offset(y: y)
+                    HStack {
+                        Spacer()
+                        if !shouldHideHourLabel(hour) {
+                            Text(calendarVM.hourLabel(hour))
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                                .padding(.trailing, 4)
                         }
+                    }
+                    .frame(width: timeGutterWidth, alignment: .topTrailing)
+                    .offset(y: -6)
 
-                        // Database items
-                        let dbItems = calendarVM.databaseItems(for: date, from: databaseItems)
-                            .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                        ForEach(dbItems, id: \.id) { item in
-                            let y = calendarVM.yPosition(for: item.date, hourHeight: hourHeight)
-                            let color = TagColor.color(for: item.color)
-
-                            Button(action: { onDatabaseItemTapped(item) }) {
-                                HStack(spacing: 6) {
-                                    Circle().fill(color).frame(width: 5, height: 5)
-                                    Text(item.title)
-                                        .font(.system(size: Typography.bodySmall))
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(color.opacity(0.06))
-                                .clipShape(.rect(cornerRadius: Radius.xs))
-                                .foregroundStyle(color)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 4)
-                            .offset(y: y)
-                        }
+                    VStack(spacing: 0) {
+                        Divider().opacity(0.3)
+                        Spacer()
                     }
                     .frame(maxWidth: .infinity)
                 }
+                .frame(height: hourHeight)
+                .id(hour)
+            }
+        }
+    }
 
-                // Current time
-                if Calendar.current.isDateInToday(date) {
-                    let now = Date()
-                    let y = calendarVM.yPosition(for: now, hourHeight: hourHeight)
-                    let nowColor = StatusColor.error
+    // MARK: - Event Overlays
 
-                    // Time label in gutter
-                    HStack(spacing: 0) {
-                        HStack {
-                            Spacer()
-                            Text(calendarVM.timeString(for: now))
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(nowColor)
-                                .padding(.trailing, 4)
-                        }
-                        .frame(width: timeGutterWidth)
-                        Spacer()
-                    }
-                    .offset(y: y - 6)
-                    .allowsHitTesting(false)
+    private var eventOverlays: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: timeGutterWidth)
 
-                    HStack(spacing: 0) {
-                        Color.clear.frame(width: timeGutterWidth - 4)
-                        Circle().fill(nowColor).frame(width: 8, height: 8)
-                        Rectangle().fill(nowColor).frame(height: 1.5)
-                    }
-                    .offset(y: y - 4)
-                    .allowsHitTesting(false)
+            ZStack(alignment: .topLeading) {
+                ForEach(timedEvents, id: \.id) { event in
+                    timedEventCard(event)
+                }
+
+                ForEach(dayDbItems, id: \.id) { item in
+                    databaseItemCard(item)
                 }
             }
-            .frame(height: CGFloat(calendarVM.visibleHours.count) * hourHeight)
+            .frame(maxWidth: .infinity)
         }
+    }
+
+    private func timedEventCard(_ event: CalendarEvent) -> some View {
+        let y = calendarVM.yPosition(for: event.startDate, hourHeight: hourHeight)
+        let h = calendarVM.eventHeight(start: event.startDate, end: event.endDate, hourHeight: hourHeight)
+        let isHovered = hoveredEventId == event.id
+        let color = eventColor(for: event)
+
+        return Button(action: { onEventTapped(event) }) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(event.title)
+                        .font(.system(size: Typography.body, weight: .medium))
+                        .lineLimit(3)
+                    if event.linkedPagePath != nil {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 9))
+                            .opacity(0.7)
+                    }
+                }
+                Text("\(calendarVM.timeString(for: event.startDate)) – \(calendarVM.timeString(for: event.endDate))")
+                    .font(.system(size: Typography.caption))
+                    .opacity(0.8)
+                if let location = event.location, !location.isEmpty {
+                    Text(location)
+                        .font(.system(size: Typography.caption))
+                        .opacity(0.6)
+                }
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 6)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: h, alignment: .top)
+            .foregroundStyle(color)
+            .background(color.opacity(isHovered ? 0.14 : Opacity.light))
+            .overlay(alignment: .leading) {
+                Rectangle().fill(color).frame(width: 3)
+            }
+            .clipShape(.rect(cornerRadius: Radius.sm))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in hoveredEventId = hovering ? event.id : nil }
+        .padding(.horizontal, 4)
+        .offset(y: y)
+    }
+
+    private func databaseItemCard(_ item: CalendarDatabaseItem) -> some View {
+        let y = calendarVM.yPosition(for: item.date, hourHeight: hourHeight)
+        let color = TagColor.color(for: item.color)
+
+        return Button(action: { onDatabaseItemTapped(item) }) {
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(item.title)
+                    .font(.system(size: Typography.bodySmall))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.06))
+            .clipShape(.rect(cornerRadius: Radius.xs))
+            .foregroundStyle(color)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+        .offset(y: y)
+    }
+
+    // MARK: - Now Indicator
+
+    @ViewBuilder
+    private var nowIndicator: some View {
+        if Calendar.current.isDateInToday(date) {
+            let now = Date()
+            let y = calendarVM.yPosition(for: now, hourHeight: hourHeight)
+            let nowColor = StatusColor.error
+
+            // Time label in gutter
+            HStack(spacing: 0) {
+                HStack {
+                    Spacer()
+                    Text(calendarVM.timeString(for: now))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(nowColor)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.trailing, 4)
+                }
+                .frame(width: timeGutterWidth)
+                Spacer()
+            }
+            .offset(y: y - 6)
+            .allowsHitTesting(false)
+
+            // Dot + line
+            HStack(spacing: 0) {
+                Color.clear.frame(width: timeGutterWidth - 4)
+                Circle().fill(nowColor).frame(width: 8, height: 8)
+                Rectangle().fill(nowColor).frame(height: 1.5)
+            }
+            .offset(y: y - 4)
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func shouldHideHourLabel(_ hour: Int) -> Bool {
+        guard Calendar.current.isDateInToday(date) else { return false }
+        let nowHour = Calendar.current.component(.hour, from: Date())
+        let nowMinute = Calendar.current.component(.minute, from: Date())
+        if hour == nowHour && nowMinute > 20 { return true }
+        if hour == nowHour + 1 && nowMinute >= 40 { return true }
+        return false
+    }
+
+    private func eventColor(for event: CalendarEvent) -> Color {
+        if let source = calendarSources.first(where: { $0.id == event.calendarId }) {
+            let hex = source.color
+            if hex.hasPrefix("#") {
+                return Color(hex: String(hex.dropFirst()))
+            }
+            return TagColor.color(for: hex)
+        }
+        return Color.accentColor
+    }
+
+    private var dayNameString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: date)
+    }
+
+    private var monthYearString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: date)
     }
 }

@@ -164,24 +164,21 @@ struct NotesChatView: View {
     @ViewBuilder
     private var messageArea: some View {
         if messages.isEmpty && !aiService.isRunning {
-            Spacer()
-            VStack(spacing: 16) {
-                Image("BugbookLogo")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .opacity(0.85)
-                VStack(spacing: 6) {
-                    Text("Chat with your notes")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.fallbackTextPrimary)
-                    Text("Ask anything about your workspace")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Ask anything about your workspace")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+
+                WrappingHStack(spacing: 6) {
+                    suggestionChip("Summarize today's meetings")
+                    suggestionChip("What changed this week?")
+                    suggestionChip("Draft a follow-up email")
+                    suggestionChip("Open tickets overview")
                 }
             }
-            Spacer()
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -640,6 +637,28 @@ struct NotesChatView: View {
         """
     }
 
+    // MARK: - Suggestion Chips
+
+    private func suggestionChip(_ text: String) -> some View {
+        Button {
+            inputText = text
+            sendMessage()
+        } label: {
+            Text(text)
+                .font(.system(size: Typography.caption))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.primary.opacity(Opacity.subtle))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.primary.opacity(Opacity.light), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Helpers
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
@@ -650,6 +669,48 @@ struct NotesChatView: View {
 
     private func relativeTimestamp(_ date: Date) -> String {
         Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+private struct WrappingHStack: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return CGSize(width: maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 

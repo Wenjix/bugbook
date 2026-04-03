@@ -11,6 +11,8 @@ struct WorkspaceTabBar: View {
     @State private var dragOverIndex: Int?
     @State private var draggingId: UUID?
     @State private var showNewMenu = false
+    @State private var showSavedIndicator = false
+    @State private var savedIndicatorTask: Task<Void, Never>?
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -80,6 +82,7 @@ struct WorkspaceTabBar: View {
             .scrollIndicators(.hidden)
             .padding(.leading, sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(112))
             Spacer()
+            layoutSavedIndicator
         }
         .padding(.top, ShellZoomMetrics.size(6))
         .frame(height: ShellZoomMetrics.size(36))
@@ -91,6 +94,26 @@ struct WorkspaceTabBar: View {
                     .frame(height: 1)
             }
         )
+        .onChange(of: workspaceManager.lastSavedAt) { _, _ in
+            savedIndicatorTask?.cancel()
+            withAnimation(.easeIn(duration: 0.15)) { showSavedIndicator = true }
+            savedIndicatorTask = Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.3)) { showSavedIndicator = false }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var layoutSavedIndicator: some View {
+        if showSavedIndicator {
+            Text("Saved")
+                .font(.system(size: Typography.caption2))
+                .foregroundStyle(.tertiary)
+                .padding(.trailing, ShellZoomMetrics.size(12))
+                .transition(.opacity)
+        }
     }
 
     private func tabTitle(for ws: Workspace) -> String {

@@ -9,6 +9,8 @@ private let log = Logger(subsystem: "com.bugbook.app", category: "WorkspaceManag
 class WorkspaceManager {
     var workspaces: [Workspace] = []
     var activeWorkspaceIndex: Int = 0
+    /// Set after each successful layout save; UI can observe this for a brief indicator.
+    var lastSavedAt: Date?
 
     @ObservationIgnored private var persistTask: Task<Void, Never>?
 
@@ -261,6 +263,19 @@ class WorkspaceManager {
         activeWorkspace = ws
     }
 
+    /// Swap the content of two panes by their IDs.
+    func swapPaneContents(paneA: UUID, paneB: UUID) {
+        guard var ws = activeWorkspace else { return }
+        guard let leafA = ws.root.findLeaf(id: paneA),
+              let leafB = ws.root.findLeaf(id: paneB) else { return }
+        let contentA = leafA.content
+        let contentB = leafB.content
+        ws.root = ws.root.updatingLeafContent(leafId: paneA, content: contentB)
+        ws.root = ws.root.updatingLeafContent(leafId: paneB, content: contentA)
+        activeWorkspace = ws
+        schedulePersist()
+    }
+
     // MARK: - Queries
 
     /// All document-type leaves across all workspaces.
@@ -322,6 +337,7 @@ class WorkspaceManager {
         do {
             let data = try JSONEncoder().encode(layout)
             try data.write(to: Self.layoutFileURL, options: .atomic)
+            lastSavedAt = Date()
         } catch {
             log.error("Failed to persist workspace layout: \(error)")
         }

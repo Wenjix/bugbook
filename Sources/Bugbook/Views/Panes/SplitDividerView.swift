@@ -4,7 +4,7 @@ import AppKit
 #endif
 
 /// Draggable divider between two panes in a split.
-/// Visual: 1px line with 8px hit area. Hover/drag shows thicker accent line.
+/// Visual: 2px line with 8px hit area. Hover/drag shows thicker accent line with grip dots.
 struct SplitDividerView: View {
     let axis: PaneNode.Split.Axis
     @Binding var ratio: Double
@@ -25,6 +25,11 @@ struct SplitDividerView: View {
                     width: isVerticalLine ? lineThickness : nil,
                     height: isVerticalLine ? nil : lineThickness
                 )
+
+            // Grip dots — centered on divider, visible on hover/drag
+            if isHovered || isDragging {
+                gripDots
+            }
 
             // Transparent hit area
             Color.clear
@@ -75,6 +80,35 @@ struct SplitDividerView: View {
         }
     }
 
+    // MARK: - Grip Dots
+
+    /// Small dots centered on the divider to signal draggability.
+    private var gripDots: some View {
+        let dotCount = 3
+        let dotSize: CGFloat = 3
+        let dotSpacing: CGFloat = 3
+
+        return Group {
+            if isVerticalLine {
+                VStack(spacing: dotSpacing) {
+                    ForEach(0..<dotCount, id: \.self) { _ in
+                        Circle()
+                            .fill(Color.fallbackAccent.opacity(Opacity.strong))
+                            .frame(width: dotSize, height: dotSize)
+                    }
+                }
+            } else {
+                HStack(spacing: dotSpacing) {
+                    ForEach(0..<dotCount, id: \.self) { _ in
+                        Circle()
+                            .fill(Color.fallbackAccent.opacity(Opacity.strong))
+                            .frame(width: dotSize, height: dotSize)
+                    }
+                }
+            }
+        }
+    }
+
     private var lineColor: Color {
         if isDragging { return Color.fallbackAccent }
         if isHovered { return Color.fallbackAccent.opacity(Opacity.heavy) }
@@ -82,6 +116,7 @@ struct SplitDividerView: View {
     }
 
     private var lineThickness: CGFloat {
-        (isDragging || isHovered) ? 3 : 1
+        if isDragging || isHovered { return 3 }
+        return 2
     }
 }

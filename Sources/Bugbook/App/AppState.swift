@@ -47,6 +47,7 @@ struct MCPServerInfo: Identifiable {
     var isRecording: Bool = false
     var recordingBlockId: UUID?
     var flashcardReviewOpen: Bool = false
+    var showShortcutOverlay: Bool = false
     @ObservationIgnored lazy var aiThreadStore = AiThreadStore()
 
     var activeTab: OpenFile? {

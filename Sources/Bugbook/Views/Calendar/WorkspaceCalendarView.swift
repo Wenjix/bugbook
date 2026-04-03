@@ -10,6 +10,10 @@ struct WorkspaceCalendarView: View {
     var aiService: AiService
     var onNavigateToFile: (String) -> Void
 
+    /// Tracks whether the user explicitly picked a view mode (overriding width-adaptive auto).
+    @State private var userOverrodeViewMode = false
+    @State private var lastAutoMode: CalendarViewMode?
+
     @State private var transcriptionService = TranscriptionService()
     @State private var showImportRecording = false
     @State private var showCreateEventSheet = false
@@ -21,18 +25,32 @@ struct WorkspaceCalendarView: View {
     @State private var createEventError: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            calendarHeader
-            if let error = calendarService.error, !error.isEmpty {
-                calendarErrorBanner(error)
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                calendarHeader
+                if let error = calendarService.error, !error.isEmpty {
+                    calendarErrorBanner(error)
+                }
+                calendarContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            calendarContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onChange(of: geo.size.width) { _, newWidth in
+                applyWidthAdaptiveMode(width: newWidth)
+            }
+            .onAppear {
+                applyWidthAdaptiveMode(width: geo.size.width)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea(.container, edges: .top)
         .background(Color.fallbackEditorBg)
         .animation(.easeInOut(duration: 0.15), value: calendarVM.viewMode)
+        .onChange(of: calendarVM.viewMode) { oldValue, newValue in
+            // If the mode changed and it wasn't from our auto-switch, mark as user override
+            if newValue != lastAutoMode {
+                userOverrodeViewMode = true
+            }
+        }
         .sheet(isPresented: $showCreateEventSheet) {
             CalendarEventComposerSheet(
                 draft: $createEventDraft,
@@ -72,6 +90,7 @@ struct WorkspaceCalendarView: View {
                 events: visibleEvents,
                 databaseItems: calendarService.databaseItems,
                 calendarVM: calendarVM,
+                calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
                 onDatabaseItemTapped: handleDatabaseItemTapped
             )
@@ -241,6 +260,20 @@ struct WorkspaceCalendarView: View {
     private var visibleEvents: [CalendarEvent] {
         calendarService.events.filter { event in
             visibleSourceIds.isEmpty || visibleSourceIds.contains(event.calendarId)
+        }
+    }
+
+    // MARK: - Width-Adaptive Mode
+
+    /// Auto-switch between day and week based on available width.
+    /// Month is never auto-selected. User override is respected until the pane
+    /// crosses the threshold in the other direction.
+    private func applyWidthAdaptiveMode(width: CGFloat) {
+        guard !userOverrodeViewMode else { return }
+        let preferred: CalendarViewMode = width > 700 ? .week : .day
+        if calendarVM.viewMode != preferred, calendarVM.viewMode != .month {
+            lastAutoMode = preferred
+            calendarVM.viewMode = preferred
         }
     }
 

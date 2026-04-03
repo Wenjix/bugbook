@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bugbook — Interaction Design Sheet</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0e;
+    --canvas: #151515;
+    --chrome: #1a1a1a;
+    --chrome-up: #222;
+    --text-1: #e8e6e1;
+    --text-2: #8a8a86;
+    --text-3: #555551;
+    --text-4: #3a3a37;
+    --accent: #c4a46c;
+    --accent-dim: rgba(196,164,108,0.12);
+    --border: #262624;
+    --border-hi: #3a3a37;
+    --red: #d95f5f;
+    --green: #5da88a;
+    --blue: #5c8fd4;
+    --purple: #9882cc;
+    --orange: #d4943c;
+    --r-xs: 4px; --r-sm: 6px; --r-md: 10px; --r-lg: 14px;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Instrument Sans', system-ui, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text-1); font-family:var(--sans); font-size:13px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  ::selection { background:var(--accent); color:var(--bg); }
+
+  .page { max-width:1200px; margin:0 auto; padding:48px 48px 80px; }
+
+  .title { font-size:32px; font-weight:700; letter-spacing:-0.8px; margin-bottom:4px; }
+  .title span { color:var(--accent); }
+  .subtitle { font-size:14px; color:var(--text-2); margin-bottom:48px; }
+
+  .section { margin-bottom:56px; }
+  .sec-label {
+    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:1.5px;
+    text-transform:uppercase; color:var(--accent); margin-bottom:20px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .sec-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  /* ── Keyboard shortcut tables ── */
+  .sc-grid {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+  }
+
+  .sc-group { }
+  .sc-group h3 {
+    font-size:12px; font-weight:600; margin-bottom:8px; color:var(--text-1);
+    display:flex; align-items:center; gap:6px;
+  }
+  .sc-group h3 .dot { width:6px; height:6px; border-radius:50%; }
+  .sc-group.primary h3 .dot { background:var(--accent); }
+  .sc-group.secondary h3 .dot { background:var(--text-4); }
+
+  .sc-table { width:100%; }
+  .sc-table tr td {
+    padding:4px 0;
+    vertical-align:top;
+    font-size:12px;
+    border-bottom:1px solid rgba(255,255,255,0.02);
+  }
+  .sc-table tr:last-child td { border-bottom:none; }
+
+  .sc-table .k {
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--text-2);
+    width:120px;
+    white-space:nowrap;
+  }
+  .sc-table .d { color:var(--text-2); }
+
+  .sc-group.primary .sc-table .k { color:var(--text-1); }
+  .sc-group.primary .sc-table .d { color:var(--text-1); }
+
+  kbd {
+    font-family:var(--mono);
+    font-size:10px;
+    background:rgba(255,255,255,0.05);
+    border:1px solid var(--border);
+    padding:1px 5px;
+    border-radius:3px;
+    color:var(--text-2);
+  }
+
+  /* ── Workflow cards ── */
+  .wf-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+  .wf-card {
+    background:var(--chrome);
+    border:1px solid var(--border);
+    border-radius:var(--r-md);
+    padding:14px 16px;
+  }
+
+  .wf-card .wf-name {
+    font-size:12px; font-weight:600; color:var(--text-1); margin-bottom:6px;
+  }
+
+  .wf-card .wf-steps {
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-bottom:8px;
+  }
+
+  .wf-step {
+    font-family:var(--mono);
+    font-size:10px;
+    background:rgba(196,164,108,0.1);
+    border:1px solid rgba(196,164,108,0.2);
+    padding:2px 7px;
+    border-radius:4px;
+    color:var(--accent);
+  }
+
+  .wf-arrow { color:var(--text-4); font-size:10px; }
+
+  .wf-card .wf-desc { font-size:11px; color:var(--text-3); line-height:1.5; }
+
+  /* ── Pane operations ── */
+  .op-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+
+  .op-card {
+    background:var(--chrome);
+    border:1px solid var(--border);
+    border-radius:var(--r-md);
+    overflow:hidden;
+  }
+
+  .op-card .op-visual {
+    height:140px;
+    position:relative;
+    border-bottom:1px solid var(--border);
+    display:flex;
+    overflow:hidden;
+  }
+
+  .op-card .op-info { padding:12px 14px; }
+  .op-card .op-name { font-size:12px; font-weight:600; margin-bottom:3px; }
+  .op-card .op-desc { font-size:11px; color:var(--text-3); line-height:1.4; }
+  .op-card .op-key { font-family:var(--mono); font-size:9px; color:var(--text-4); margin-top:4px; }
+
+  /* Mini panes for operation visuals */
+  .mp {
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    background:var(--canvas);
+    min-width:0;
+  }
+  .mp + .mp { border-left:1px solid var(--border); }
+
+  .mp-h {
+    padding:4px 8px;
+    font-size:9px;
+    font-weight:500;
+    color:var(--text-3);
+    background:var(--chrome);
+    border-bottom:1px solid var(--border);
+    display:flex;
+    align-items:center;
+    gap:4px;
+  }
+
+  .mp-b { flex:1; padding:6px 8px; font-size:8px; color:var(--text-4); }
+
+  .mp.hl { box-shadow:inset 0 0 0 1.5px var(--accent); }
+  .mp.ghost { opacity:0.3; }
+  .mp.drop-target { box-shadow:inset 0 0 0 2px var(--accent); background:rgba(196,164,108,0.04); }
+
+  /* Arrow overlay */
+  .op-arrow {
+    position:absolute;
+    font-size:20px;
+    color:var(--accent);
+    filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));
+  }
+
+  /* Drag ghost */
+  .drag-ghost {
+    position:absolute;
+    background:var(--canvas);
+    border:1px solid var(--accent);
+    border-radius:var(--r-sm);
+    box-shadow:0 8px 24px rgba(0,0,0,0.4);
+    padding:6px 10px;
+    font-size:9px;
+    font-weight:500;
+    color:var(--accent);
+    transform:rotate(-2deg);
+    pointer-events:none;
+  }
+
+  /* Tab bar mini */
+  .mini-tabs {
+    display:flex;
+    background:var(--chrome);
+    border-bottom:1px solid var(--border);
+    font-size:9px;
+  }
+  .mini-tab {
+    padding:4px 10px;
+    color:var(--text-3);
+    border-right:1px solid var(--border);
+  }
+  .mini-tab.on { background:var(--canvas); color:var(--text-1); font-weight:500; }
+  .mini-tab.new { color:var(--accent); font-weight:500; border:1px dashed rgba(196,164,108,0.3); border-bottom:none; background:rgba(196,164,108,0.04); }
+
+  /* ── Pane roster ── */
+  .roster { display:grid; grid-template-columns:repeat(7,1fr); gap:10px; }
+
+  .roster-card {
+    background:var(--chrome);
+    border:1px solid var(--border);
+    border-radius:var(--r-md);
+    padding:14px 10px 12px;
+    text-align:center;
+    transition:border-color 0.15s;
+  }
+  .roster-card:hover { border-color:var(--border-hi); }
+
+  .roster-icon {
+    width:40px; height:40px;
+    border-radius:var(--r-sm);
+    background:var(--canvas);
+    border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    margin:0 auto 8px;
+    font-size:17px;
+  }
+
+  .roster-name { font-size:11px; font-weight:600; margin-bottom:2px; }
+  .roster-desc { font-size:9px; color:var(--text-3); line-height:1.4; }
+  .roster-role { font-family:var(--mono); font-size:8px; color:var(--text-4); margin-top:4px; letter-spacing:0.3px; }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <div class="title">Interaction <span>Design Sheet</span></div>
+  <div class="subtitle">How panes move, compose, and respond to keyboard input.</div>
+
+
+  <!-- ═══════════════════════════════════════
+       KEYBOARD SHORTCUTS
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">Keyboard Shortcuts &mdash; <kbd>⌘/</kbd> to show overlay</div>
+
+    <div class="sc-grid">
+      <div class="sc-group primary">
+        <h3><span class="dot"></span> Pane Management</h3>
+        <table class="sc-table">
+          <tr><td class="k">⌘⌥ ← → ↑ ↓</td><td class="d">Move focus between panes</td></tr>
+          <tr><td class="k">⌘D</td><td class="d">Split focused pane right</td></tr>
+          <tr><td class="k">⌘⇧E</td><td class="d">Split focused pane down</td></tr>
+          <tr><td class="k">⌘⇧W</td><td class="d">Close workspace</td></tr>
+          <tr><td class="k">Drag ☰</td><td class="d">Drag pane onto another to swap</td></tr>
+          <tr><td class="k">Double-click divider</td><td class="d">Reset split to 50/50</td></tr>
+        </table>
+      </div>
+
+      <div class="sc-group primary">
+        <h3><span class="dot"></span> Navigation</h3>
+        <table class="sc-table">
+          <tr><td class="k">⌘K</td><td class="d">Quick open / command palette</td></tr>
+          <tr><td class="k">⌘1 – 9</td><td class="d">Switch workspace by number</td></tr>
+          <tr><td class="k">⌘T</td><td class="d">New workspace tab</td></tr>
+          <tr><td class="k">⌘W</td><td class="d">Close tab</td></tr>
+          <tr><td class="k">⌘B</td><td class="d">Toggle sidebar</td></tr>
+          <tr><td class="k">⌘[ &nbsp; ⌘]</td><td class="d">Back / Forward</td></tr>
+        </table>
+      </div>
+
+      <div class="sc-group secondary">
+        <h3><span class="dot"></span> Open Views</h3>
+        <table class="sc-table">
+          <tr><td class="k">⌘⇧0</td><td class="d">Home</td></tr>
+          <tr><td class="k">⌘⇧M</td><td class="d">Mail</td></tr>
+          <tr><td class="k">⌘⇧Y</td><td class="d">Calendar</td></tr>
+          <tr><td class="k">⌘I</td><td class="d">Ask AI / Chat</td></tr>
+          <tr><td class="k">⌘⇧D</td><td class="d">Today's daily note</td></tr>
+        </table>
+      </div>
+
+      <div class="sc-group secondary">
+        <h3><span class="dot"></span> Editor &amp; Display</h3>
+        <table class="sc-table">
+          <tr><td class="k">⌘N</td><td class="d">New page</td></tr>
+          <tr><td class="k">⌘⇧L</td><td class="d">Toggle light/dark theme</td></tr>
+          <tr><td class="k">⌘+ &nbsp; ⌘−</td><td class="d">Zoom in / out</td></tr>
+          <tr><td class="k">⌘0</td><td class="d">Reset zoom</td></tr>
+          <tr><td class="k">⌘/</td><td class="d">Show shortcut overlay</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════
+       COMPOSED WORKFLOWS
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">Composed Workflows</div>
+
+    <div class="wf-grid">
+      <div class="wf-card" style="border-color:var(--border-hi);">
+        <div class="wf-name">Read a mail thread</div>
+        <div class="wf-steps">
+          <span class="wf-step">Click thread</span>
+          <span class="wf-arrow">→</span>
+          <span class="wf-step">⌘⇧E</span>
+        </div>
+        <div class="wf-desc">Click a message in Mail — the list splits down and the thread opens below it. List stays visible on top, thread content below. Press ⌘⇧E from Mail to pre-split, or click and the thread replaces an existing bottom pane. Back button or Escape returns to list-only.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-name">Calendar beside Mail</div>
+        <div class="wf-steps">
+          <span class="wf-step">⌘D</span>
+          <span class="wf-arrow">→</span>
+          <span class="wf-step">⌘⇧Y</span>
+        </div>
+        <div class="wf-desc">Split right from Mail, then open Calendar in the new pane. Instant comms layout.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-name">New dev workspace</div>
+        <div class="wf-steps">
+          <span class="wf-step">⌘T</span>
+          <span class="wf-arrow">→</span>
+          <span class="wf-step">⌘D</span>
+          <span class="wf-arrow">→</span>
+          <span class="wf-step">⌘I</span>
+        </div>
+        <div class="wf-desc">New tab, split right, open Chat. Terminal is already the default split content.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-name">Review a meeting transcript</div>
+        <div class="wf-steps">
+          <span class="wf-step">Click ≋ event</span>
+        </div>
+        <div class="wf-desc">Click a calendar event with the ≋ transcript badge. The Calendar pane slides from day view into the meeting detail: summary, action items, and transcript with notes/transcript toggle. Back arrow returns to day view.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-name">Focus on one pane</div>
+        <div class="wf-steps">
+          <span class="wf-step">⌘⌥→</span>
+          <span class="wf-arrow">→</span>
+          <span class="wf-step">Pop out ↗</span>
+        </div>
+        <div class="wf-desc">Move focus to the pane, pop it out to its own workspace tab. Full screen, no splits.</div>
+      </div>
+
+      <div class="wf-card">
+        <div class="wf-name">Quick meeting capture</div>
+        <div class="wf-steps">
+          <span class="wf-step">⌘D</span>
+          <span class="wf-arrow">→</span>
+          <span class="wf-step">Meetings</span>
+          <span class="wf-arrow">→</span>
+          <span class="wf-step">Record</span>
+        </div>
+        <div class="wf-desc">Split right, choose Meetings from the pane menu, hit record. Notes open alongside Calendar.</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════
+       PANE OPERATIONS
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">Pane Operations</div>
+
+    <div class="op-grid">
+      <!-- Split Right -->
+      <div class="op-card">
+        <div class="op-visual">
+          <div class="mp" style="flex:0.6;">
+            <div class="mp-h">✉ Mail</div>
+            <div class="mp-b">Message list</div>
+          </div>
+          <div style="width:1px;background:var(--accent);"></div>
+          <div class="mp" style="flex:0.4;background:rgba(196,164,108,0.04);">
+            <div class="mp-h" style="color:var(--accent);">+ New pane</div>
+            <div class="mp-b" style="color:var(--accent);opacity:0.5;">Choose: Terminal, Calendar, Chat…</div>
+          </div>
+          <div class="op-arrow" style="top:50%;left:55%;transform:translate(-50%,-50%);">→</div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Split Right</div>
+          <div class="op-desc">Divides the focused pane vertically. Pick what opens in the new half.</div>
+          <div class="op-key">⌘D or hover menu → ⊞→</div>
+        </div>
+      </div>
+
+      <!-- Split Down -->
+      <div class="op-card">
+        <div class="op-visual" style="flex-direction:column;">
+          <div class="mp" style="flex:0.55;">
+            <div class="mp-h">▦ Calendar</div>
+            <div class="mp-b">Day timeline</div>
+          </div>
+          <div style="height:1px;background:var(--accent);"></div>
+          <div class="mp" style="flex:0.45;background:rgba(196,164,108,0.04);">
+            <div class="mp-h" style="color:var(--accent);">+ New pane</div>
+          </div>
+          <div class="op-arrow" style="top:52%;left:50%;transform:translate(-50%,-50%);">↓</div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Split Down</div>
+          <div class="op-desc">Divides the focused pane horizontally. Same picker for the new half.</div>
+          <div class="op-key">⌘⇧E or hover menu → ⊞↓</div>
+        </div>
+      </div>
+
+      <!-- Pop Out to Tab -->
+      <div class="op-card">
+        <div class="op-visual" style="flex-direction:column;">
+          <div class="mini-tabs">
+            <div class="mini-tab on">Comms</div>
+            <div class="mini-tab new">✉ Mail</div>
+          </div>
+          <div style="display:flex;flex:1;">
+            <div class="mp ghost">
+              <div class="mp-h" style="opacity:0.4;">✉ Mail</div>
+              <div class="mp-b"></div>
+            </div>
+            <div style="width:1px;background:var(--border);"></div>
+            <div class="mp">
+              <div class="mp-h">▦ Calendar</div>
+              <div class="mp-b">Now the only pane</div>
+            </div>
+          </div>
+          <div class="op-arrow" style="top:8px;right:28%;font-size:16px;">↗</div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Pop Out to Tab</div>
+          <div class="op-desc">Extracts the pane into its own workspace tab. Remaining panes fill the gap.</div>
+          <div class="op-key">Hover menu → ↗</div>
+        </div>
+      </div>
+
+      <!-- Drag Swap -->
+      <div class="op-card">
+        <div class="op-visual" style="position:relative;">
+          <div class="mp">
+            <div class="mp-h">✉ Mail</div>
+            <div class="mp-b" style="font-size:7px;">Was on the right →<br>now on the left</div>
+          </div>
+          <div style="width:1px;background:var(--border);"></div>
+          <div class="mp drop-target">
+            <div class="mp-h" style="color:var(--accent);">▦ Calendar</div>
+            <div class="mp-b" style="font-size:7px;">Was on the left →<br>now on the right</div>
+          </div>
+          <div class="drag-ghost" style="top:30px;left:42%;">☰ ✉ Mail</div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Drag Swap</div>
+          <div class="op-desc">Drag the ☰ handle from one pane onto another. Their contents swap positions.</div>
+          <div class="op-key">Drag ☰ handle → drop on target pane</div>
+        </div>
+      </div>
+
+      <!-- Close Pane -->
+      <div class="op-card">
+        <div class="op-visual">
+          <div class="mp ghost" style="position:relative;">
+            <div class="mp-h" style="opacity:0.3;">◈ Chat</div>
+            <div class="mp-b"></div>
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--red);font-size:18px;font-weight:700;">✕</div>
+          </div>
+          <div style="width:1px;background:var(--border);"></div>
+          <div class="mp" style="flex:2;">
+            <div class="mp-h">▸ Terminal</div>
+            <div class="mp-b">Expands to fill</div>
+          </div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Close Pane</div>
+          <div class="op-desc">Removes the pane. Its sibling expands to fill the space. Last pane closes the workspace.</div>
+          <div class="op-key">Hover menu → ✕</div>
+        </div>
+      </div>
+
+      <!-- Replace With -->
+      <div class="op-card">
+        <div class="op-visual">
+          <div class="mp" style="flex:1;position:relative;">
+            <div class="mp-h" style="text-decoration:line-through;opacity:0.3;">✉ Mail</div>
+            <div class="mp-h" style="position:absolute;top:22px;left:0;right:0;color:var(--accent);border-bottom:none;">▦ Calendar</div>
+            <div class="mp-b" style="padding-top:24px;color:var(--accent);opacity:0.5;">Same pane, different content</div>
+          </div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Replace With</div>
+          <div class="op-desc">Swaps the pane's content without changing the layout. Right-click → Replace With.</div>
+          <div class="op-key">Right-click → Replace With → pick type</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════
+       IN-PANE NAVIGATION
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">In-Pane Navigation</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <!-- Mail: click thread -->
+      <div class="op-card">
+        <div class="op-visual" style="flex-direction:column;">
+          <div class="mp" style="flex:0.5;">
+            <div class="mp-h">✉ Mail — list</div>
+            <div class="mp-b" style="font-size:7px;">
+              <div style="padding:1px 0;"><span style="color:var(--orange);">●</span> Sudhanshu · Re: 80K Hours</div>
+              <div style="padding:1px 0;opacity:0.5;">Nathan · 8 Shapes of Stories</div>
+            </div>
+          </div>
+          <div style="height:1px;background:var(--accent);"></div>
+          <div class="mp" style="flex:0.5;background:rgba(196,164,108,0.04);">
+            <div class="mp-h" style="color:var(--accent);">← ✉ Thread: Re: 80K Hours</div>
+            <div class="mp-b" style="font-size:7px;color:var(--accent);opacity:0.6;">
+              Hey Max — wanted to circle back on the call we had last week…
+            </div>
+          </div>
+          <div class="op-arrow" style="top:46%;left:15%;font-size:14px;">click ↓</div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Read a mail thread</div>
+          <div class="op-desc">Click a message in the list. The Mail pane splits down — list stays on top (minimum 4 visible rows), thread content opens below. The split ratio is resizable via the same drag divider as pane splits. List selection highlights the active thread — click another row to switch without going back. ← back button collapses to list-only.</div>
+          <div class="op-key">Click thread row, or ⌘⇧E to pre-split</div>
+        </div>
+      </div>
+
+      <!-- Calendar: click event with transcript -->
+      <div class="op-card">
+        <div class="op-visual" style="flex-direction:column;">
+          <div class="mp ghost" style="flex:0.35;">
+            <div class="mp-h" style="opacity:0.3;">▦ Day view</div>
+            <div class="mp-b" style="font-size:7px;opacity:0.3;">
+              <div>10 AM — SDK Review ≋</div>
+              <div>2 PM — Harbor Prototype</div>
+            </div>
+          </div>
+          <div class="mp" style="flex:0.65;border-top:1px solid var(--border);">
+            <div class="mp-h" style="color:var(--accent);">← ▦ SDK Review — transcript</div>
+            <div class="mp-b" style="font-size:7px;">
+              <div style="color:var(--text-2);">Summary: discussed state-adaptive UI…</div>
+              <div style="margin-top:2px;color:var(--text-4);">Action items: bring Pixel 9 build…</div>
+              <div style="margin-top:2px;padding-top:2px;border-top:1px solid var(--border);color:var(--text-4);">▾ Full transcript</div>
+            </div>
+          </div>
+          <div class="op-arrow" style="top:30%;left:65%;font-size:14px;">click ≋</div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">View meeting transcript in Calendar</div>
+          <div class="op-desc">Click a calendar event with the ≋ badge. The Calendar pane transitions from day view to meeting detail: AI summary, action items, and collapsible full transcript. ← back arrow returns to the day timeline. Events without transcripts show "No transcript — attach notes" with an action to link a page.</div>
+          <div class="op-key">Click ≋ event, ← to return</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════
+       RESIZE BEHAVIOR
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">Resize &amp; Constraints</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="op-card">
+        <div class="op-visual" style="align-items:center;justify-content:center;gap:0;">
+          <div class="mp" style="flex:0.65;">
+            <div class="mp-h">✉ Mail</div>
+            <div class="mp-b">65%</div>
+          </div>
+          <!-- Divider with grip dots -->
+          <div style="width:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:col-resize;position:relative;">
+            <div style="width:3px;height:100%;background:var(--accent);border-radius:1px;"></div>
+            <div style="position:absolute;display:flex;flex-direction:column;gap:3px;">
+              <div style="width:3px;height:3px;border-radius:50%;background:var(--accent);opacity:0.6;"></div>
+              <div style="width:3px;height:3px;border-radius:50%;background:var(--accent);opacity:0.6;"></div>
+              <div style="width:3px;height:3px;border-radius:50%;background:var(--accent);opacity:0.6;"></div>
+            </div>
+          </div>
+          <div class="mp" style="flex:0.35;">
+            <div class="mp-h">▦ Calendar</div>
+            <div class="mp-b">35%</div>
+          </div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">Drag to Resize</div>
+          <div class="op-desc">Divider widens to 3px with grip dots on hover. Ratio clamped 15%–85%. Double-click resets to 50/50.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-visual">
+          <div class="mp" style="flex:0.55;">
+            <div class="mp-h">✉ Mail</div>
+            <div class="mp-b" style="font-size:7px;">Sidebar hidden<br>2 panes max</div>
+          </div>
+          <div style="width:1px;background:var(--border);"></div>
+          <div class="mp" style="flex:0.45;">
+            <div class="mp-h">◈ Chat</div>
+            <div class="mp-b" style="font-size:7px;">~200px minimum</div>
+          </div>
+        </div>
+        <div class="op-info">
+          <div class="op-name">13" Laptop &amp; Responsive Collapse</div>
+          <div class="op-desc">Sidebar auto-collapses. Panes never go below ~200px, so 2 side-by-side is the practical max. A 2×2 "Comms" workspace built on a monitor collapses to a prioritized 1×2 when undocked — the two most recently focused panes survive, others become tab-accessible. Re-dock and the full layout restores.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════
+       PANE ROSTER
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">Pane Roster &mdash; 7 types, each does one thing</div>
+
+    <div class="roster">
+      <div class="roster-card">
+        <div class="roster-icon">✉</div>
+        <div class="roster-name">Mail</div>
+        <div class="roster-desc">Gmail message list with filter tabs</div>
+        <div class="roster-role">read + triage</div>
+      </div>
+
+      <div class="roster-card">
+        <div class="roster-icon">▦</div>
+        <div class="roster-name">Calendar</div>
+        <div class="roster-desc">Day timeline with meeting history. Events with ≋ badge open transcript detail.</div>
+        <div class="roster-role">schedule + history</div>
+      </div>
+
+      <div class="roster-card">
+        <div class="roster-icon">◉</div>
+        <div class="roster-name">Meetings</div>
+        <div class="roster-desc">Quick-draw recorder. Notes-first during capture, transcript on toggle.</div>
+        <div class="roster-role">record + review</div>
+      </div>
+
+      <div class="roster-card">
+        <div class="roster-icon">◈</div>
+        <div class="roster-name">Chat</div>
+        <div class="roster-desc">AI assistant that queries across all panes</div>
+        <div class="roster-role">cross-pane glue</div>
+      </div>
+
+      <div class="roster-card">
+        <div class="roster-icon">▸</div>
+        <div class="roster-name">Terminal</div>
+        <div class="roster-desc">Ghostty shell, per-pane sessions</div>
+        <div class="roster-role">build + run</div>
+      </div>
+
+      <div class="roster-card">
+        <div class="roster-icon">⌂</div>
+        <div class="roster-name">Home</div>
+        <div class="roster-desc">Launcher and overview. Tileable — useful alongside active panes for quick actions.</div>
+        <div class="roster-role">orient + jump</div>
+      </div>
+
+      <div class="roster-card">
+        <div class="roster-icon">📄</div>
+        <div class="roster-name">Pages</div>
+        <div class="roster-desc">Notes, docs, databases, block editor</div>
+        <div class="roster-role">write + organize</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════
+       PERSISTENCE
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">Workspace Persistence</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Auto-save</div>
+          <div class="op-desc">Layout saves 500ms after any change. Green dot + "Saved" appears briefly in the tab bar.</div>
+        </div>
+      </div>
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Named workspaces</div>
+          <div class="op-desc">Each tab is a workspace. Double-click tab to rename. Drag tabs to reorder. ⌘1–9 to switch.</div>
+        </div>
+      </div>
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Full restore</div>
+          <div class="op-desc">Relaunch Bugbook → same tabs, same pane layout, same split ratios. Terminal sessions are ephemeral — new shell on restore.</div>
+        </div>
+      </div>
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Chat thread persistence</div>
+          <div class="op-desc">Chat threads are global, not workspace-scoped. Switching workspaces keeps the same active thread. Thread history is saved to disk — pick up where you left off across relaunches. Switch threads via the thread picker in the Chat pane header.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════
+       DESIGN DECISIONS & OPEN QUESTIONS
+       ═══════════════════════════════════════ -->
+  <div class="section">
+    <div class="sec-label">Design Decisions &amp; Open Questions</div>
+
+    <div style="display:grid;grid-template-columns:1fr;gap:10px;">
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Action items → Tickets flow-through</div>
+          <div class="op-desc">Calendar transcript detail shows action items from AI summary. Currently static text. Future: action items become checkable and sync to a Tickets database as rows. "Create ticket from action item" button on each line. This turns passive meeting notes into active task tracking without manual re-entry. Not built yet — worth building once the transcript detail view ships.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Chat thread pinning per workspace</div>
+          <div class="op-desc">Currently threads are global — switching workspaces keeps the same thread. After daily driving: each workspace should optionally pin a default thread that auto-loads on workspace switch. Comms always opens to the Comms chat, Dev to the Dev chat. Manual override still works. Implementation: add optional <span style="font-family:var(--mono);font-size:10px;">pinnedThreadId</span> to the Workspace model. Draft state (mid-typed message) must be preserved per thread — losing a half-written message on workspace switch would be frustrating enough to stop people switching.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Responsive collapse</div>
+          <div class="op-desc">When a 2×2 layout can't fit (undock to laptop), deprioritized panes slide out with 200ms ease, surviving panes expand. No toast on collapse — the laptop layout should feel intentional, not broken. Only toast on re-dock: "Layout restored" when the full 2×2 comes back. If you stay on laptop, the collapsed layout is just your layout now.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Pane attention highlights</div>
+          <div class="op-desc">Exactly two levels. <strong>Subtle:</strong> dim accent border on pane edge when something changed while unfocused (new mail, build finished, agent completed). <strong>Urgent:</strong> pulsing badge or brighter border for things needing action now (meeting starting, build failed, @mention). Both dismiss automatically when the pane receives focus — you looked at it, it stops asking. No third level. Two is enough.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Notification toasts</div>
+          <div class="op-desc">Bugbook-native toasts, top-right, 4s auto-dismiss, max 2 stacked. Toasts that relate to a specific pane are clickable to focus that pane — "Build failed" clicks to Terminal, "New mail from Sudhanshu" clicks to Mail. If the toast is ignored, the source pane gets the subtle attention border instead. macOS system notifications only when Bugbook is in the background.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Meeting notes editor quality</div>
+          <div class="op-desc">The notes scratchpad during recording is currently plain TextEditor. If it's a lesser editor than workspace pages, people will open a page alongside the meeting pane instead, making the notes area dead weight. Milestone: upgrade to basic block editing — markdown formatting, checklists, headings. Doesn't need to be the full block editor on day one, but needs to not feel like a downgrade.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Replace With deserves a shortcut</div>
+          <div class="op-desc">Currently right-click only. This is the fastest layout reconfiguration — swap content without changing geometry. Candidate shortcut: <span style="font-family:var(--mono);font-size:10px;">⌘⇧R</span> → opens the same type picker as Replace With. Preserves split ratios, focus state, and pane position. Especially useful on laptop where you can't afford extra splits.</div>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-info">
+          <div class="op-name">Drag preview fidelity</div>
+          <div class="op-desc">During pane drag-swap, the drag preview should be a translucent thumbnail of the pane content (not just a label). Captures a snapshot of the pane at drag start, renders at ~60% opacity and slightly reduced scale. Drop target pane shows an accent border. This gives confidence about what you're moving. If performance is an issue, fall back to icon + pane type label.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
