@@ -104,6 +104,17 @@ enum AttributedStringConverter {
                 continue
             }
 
+            // Mention: @[[Page Name]] → styled inline link
+            if let (name, end) = parseMention(markdown, from: i) {
+                var attrs = baseAttributes
+                attrs[.foregroundColor] = NSColor.controlAccentColor
+                attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                attrs[Self.markdownSourceKey] = "@[[\(name)]]"
+                result.append(NSAttributedString(string: name, attributes: attrs))
+                i = end
+                continue
+            }
+
             // Double-equals separator: " == " → arrow indicator
             if let end = parseDoubleEqualsSeparator(markdown, from: i) {
                 var attrs = baseAttributes
@@ -232,6 +243,20 @@ enum AttributedStringConverter {
         }
 
         return nil
+    }
+
+    /// Parse mention: @[[Page Name]] → (name, endIndex)
+    private static func parseMention(
+        _ str: String,
+        from start: String.Index
+    ) -> (String, String.Index)? {
+        let prefix = "@[["
+        guard str[start...].hasPrefix(prefix) else { return nil }
+        let nameStart = str.index(start, offsetBy: prefix.count)
+        guard let closingRange = str[nameStart...].range(of: "]]") else { return nil }
+        let name = String(str[nameStart..<closingRange.lowerBound])
+        guard !name.isEmpty else { return nil }
+        return (name, closingRange.upperBound)
     }
 
     /// Parse double-equals separator: " == " (with spaces on both sides)
