@@ -31,67 +31,63 @@ struct CalloutBlockView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            // Left accent border
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(accentColor.opacity(0.5))
-                .frame(width: 3)
-                .padding(.vertical, 4)
-
-            VStack(alignment: .leading, spacing: 4) {
-                // Header: icon + editable title
-                HStack(alignment: .top, spacing: 6) {
-                    Button {
-                        showPicker.toggle()
-                    } label: {
-                        Image(systemName: block.calloutIcon)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(accentColor)
-                            .frame(width: 20, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .appCursor(.pointingHand)
-                    .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-                        CalloutPickerView(
-                            document: document,
-                            blockId: block.id,
-                            currentIcon: block.calloutIcon,
-                            currentColor: block.calloutColor
-                        )
-                    }
-
-                    BlockTextView(
+        VStack(alignment: .leading, spacing: 4) {
+            // Header: icon + editable title
+            HStack(alignment: .top, spacing: 6) {
+                Button {
+                    showPicker.toggle()
+                } label: {
+                    Image(systemName: block.calloutIcon)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(accentColor)
+                        .frame(width: 20, height: 24)
+                }
+                .buttonStyle(.plain)
+                .appCursor(.pointingHand)
+                .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+                    CalloutPickerView(
                         document: document,
                         blockId: block.id,
-                        selectionVersion: document.selectionVersion,
-                        font: .systemFont(ofSize: EditorTypography.bodyFontSize, weight: .semibold),
-                        textColor: .labelColor,
-                        placeholder: "Callout",
-                        onTextChange: onTyping,
-                        textHeight: $textHeight
+                        currentIcon: block.calloutIcon,
+                        currentColor: block.calloutColor
                     )
-                    .frame(height: textHeight)
                 }
 
-                // Children
-                if !block.children.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(block.children.enumerated()), id: \.element.id) { idx, child in
-                            let prevType = idx > 0 ? block.children[idx - 1].type : nil
-                            let nextType = idx + 1 < block.children.count ? block.children[idx + 1].type : nil
-                            BlockCellView(document: document, block: child, previousBlockType: prevType, nextBlockType: nextType, onTyping: onTyping)
-                                .padding(.vertical, 1)
-                        }
-                    }
-                    .padding(.leading, 26)
-                }
+                BlockTextView(
+                    document: document,
+                    blockId: block.id,
+                    selectionVersion: document.selectionVersion,
+                    font: .systemFont(ofSize: EditorTypography.bodyFontSize, weight: .semibold),
+                    textColor: .labelColor,
+                    placeholder: "Callout",
+                    onTextChange: onTyping,
+                    textHeight: $textHeight
+                )
+                .frame(height: textHeight)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+
+            // Children
+            if !block.children.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(block.children.enumerated()), id: \.element.id) { idx, child in
+                        let prevType = idx > 0 ? block.children[idx - 1].type : nil
+                        let nextType = idx + 1 < block.children.count ? block.children[idx + 1].type : nil
+                        BlockCellView(document: document, block: child, previousBlockType: prevType, nextBlockType: nextType, onTyping: onTyping)
+                            .padding(.vertical, 1)
+                    }
+                }
+                .padding(.leading, 26)
+            }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: Radius.sm)
+            RoundedRectangle(cornerRadius: Radius.md)
                 .fill(fillColor)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md)
+                .strokeBorder(Color.primary.opacity(Opacity.light), lineWidth: 1)
         )
     }
 }
