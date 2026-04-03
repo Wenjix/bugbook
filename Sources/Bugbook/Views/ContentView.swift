@@ -589,17 +589,40 @@ struct ContentView: View {
                         appState: appState,
                         isPresented: $appState.commandPaletteOpen,
                         onSelectFile: { entry in
-                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: false, searchQuery: nil, id: UUID())
+                            DispatchQueue.main.async {
+                                navigateToEntryInPane(entry)
+                            }
                         },
                         onSelectFileNewTab: { entry in
-                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: true, searchQuery: nil, id: UUID())
+                            DispatchQueue.main.async {
+                                openEntryInNewWorkspaceTab(entry)
+                            }
                         },
                         onCreateFile: { name in
                             createNewFileWithName(name)
                         },
                         onSelectContentMatch: { entry, query in
                             let newTab = appState.commandPaletteMode == .newTab
-                            pendingCmdKNavigation = CmdKNavRequest(entry: entry, inNewTab: newTab, searchQuery: query, id: UUID())
+                            DispatchQueue.main.async {
+                                if newTab {
+                                    openEntryInNewWorkspaceTab(entry)
+                                } else {
+                                    navigateToEntryInPane(entry)
+                                }
+                                if let query = query as String? {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        guard let ws = workspaceManager.activeWorkspace,
+                                              let doc = blockDocuments[ws.focusedPaneId] else { return }
+                                        let lowerQuery = query.lowercased()
+                                        if let block = doc.blocks.first(where: {
+                                            $0.text.lowercased().contains(lowerQuery)
+                                        }) {
+                                            doc.focusedBlockId = block.id
+                                            doc.cursorPosition = 0
+                                        }
+                                    }
+                                }
+                            }
                         }
                     )
                     Spacer()
