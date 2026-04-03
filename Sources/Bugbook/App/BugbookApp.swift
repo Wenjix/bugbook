@@ -90,7 +90,7 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("p")
 
-                Button("Ask AI") {
+                Button("Chat") {
                     NotificationCenter.default.post(name: .openAIPanel, object: nil)
                 }
                 .keyboardShortcut("i")

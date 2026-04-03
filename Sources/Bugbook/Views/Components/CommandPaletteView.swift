@@ -349,7 +349,7 @@ struct CommandPaletteView: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
-                    Text("Ask AI: ")
+                    Text("Chat: ")
                         .font(.system(size: 15))
                         .foregroundStyle(.secondary)
                     + Text(query)

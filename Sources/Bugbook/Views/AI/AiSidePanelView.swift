@@ -159,7 +159,7 @@ struct AiSidePanelView: View {
             showThreadPicker.toggle()
         } label: {
             HStack(spacing: 4) {
-                Text(threadStore.activeThread?.title ?? "Ask AI")
+                Text(threadStore.activeThread?.title ?? "Chat")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.fallbackTextPrimary)
                     .lineLimit(1)

@@ -27,7 +27,7 @@ struct KeyboardShortcutOverlay: View {
             ("\u{2318}\u{21E7}0", "Home"),
             ("\u{2318}\u{21E7}M", "Mail"),
             ("\u{2318}\u{21E7}Y", "Calendar"),
-            ("\u{2318}I", "Ask AI"),
+            ("\u{2318}I", "Chat"),
             ("\u{2318}\u{21E7}D", "Today's note"),
         ]),
         ("Editor", [

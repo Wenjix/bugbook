@@ -87,16 +87,6 @@ struct NotesChatView: View {
             .help("Clear chat")
             .disabled(messages.isEmpty)
 
-            Button(action: closeChat) {
-                Label("Close", systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help("Close chat")
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 14)
