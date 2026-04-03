@@ -40,10 +40,6 @@ struct TableBlockView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Grip dots column — outside the table grid (issue #2)
-            gripDotsColumn
-                .opacity(isHovering ? 1 : 0)
-
             // Main table + add-row bar
             VStack(alignment: .leading, spacing: 0) {
                 tableGrid
@@ -59,34 +55,14 @@ struct TableBlockView: View {
                     .opacity(isHovering ? 1 : 0)
             }
 
-            // Add column button — outside the table, to the right (issue #4)
+            // Add column button — to the right of the table
             addColumnButton
                 .opacity(isHovering ? 1 : 0)
         }
         .onAppear { initColumnWidths() }
         .onChange(of: colCount) { _, _ in initColumnWidths() }
         .onHover { isHovering = $0 }
-        // Use background NSView monitor to detect clicks outside cells (issue #3).
-        // The SwiftUI .onTapGesture on the container was being eaten by
-        // highPriorityGesture on cells, so we use an AppKit-level approach.
         .background(TableClickOutsideMonitor(onClickOutside: { selectedCell = nil }))
-    }
-
-    // MARK: - Grip Dots Column (outside table)
-
-    /// Renders grip dots to the left of each row, aligned by row index.
-    /// Positioned outside the table grid so they don't create padding inside cells (issue #2).
-    private var gripDotsColumn: some View {
-        VStack(spacing: 0) {
-            ForEach(0..<rowCount, id: \.self) { rowIdx in
-                if rowIdx > 0 {
-                    // Spacer matching the border line height
-                    Color.clear.frame(height: 1)
-                }
-                rowDragHandle(rowIdx)
-                    .frame(minHeight: 32)
-            }
-        }
     }
 
     // MARK: - Table Grid
