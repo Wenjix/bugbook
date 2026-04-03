@@ -665,6 +665,39 @@ class BlockDocument {
         }
     }
 
+    /// Toggle expand/collapse for the enclosing toggle or headingToggle block.
+    /// Works whether the focused block is the toggle itself or a child inside it.
+    func toggleBlockExpanded(id: UUID) {
+        guard let loc = blockLocation(for: id) else { return }
+        let parentIdx = loc.topLevel
+        let parentType = blocks[parentIdx].type
+        guard parentType == .toggle || parentType == .headingToggle else { return }
+        withAnimation(.easeInOut(duration: 0.12)) {
+            blocks[parentIdx].isExpanded.toggle()
+        }
+    }
+
+    /// When converting a block to headingToggle, absorb subsequent sibling blocks
+    /// until hitting a heading/headingToggle of equal or larger size (level number <= ours).
+    /// Non-heading blocks are always absorbed.
+    func autoNestIntoHeadingToggle(blockId: UUID, level: Int) {
+        guard let loc = blockLocation(for: blockId), loc.child == nil else { return }
+        let idx = loc.topLevel
+        var absorbed: [Block] = []
+        while idx + 1 < blocks.count {
+            let sibling = blocks[idx + 1]
+            let isHeading = sibling.type == .heading || sibling.type == .headingToggle
+            if isHeading, sibling.headingLevel > 0, sibling.headingLevel <= level {
+                break
+            }
+            absorbed.append(blocks.remove(at: idx + 1))
+        }
+        if !absorbed.isEmpty {
+            blocks[idx].children.append(contentsOf: absorbed)
+            blocks[idx].isExpanded = true
+        }
+    }
+
     // MARK: - Table Mutations
 
     func updateTableCell(id: UUID, row: Int, col: Int, text: String) {
@@ -1086,6 +1119,9 @@ class BlockDocument {
             changeBlockType(id: blockId, to: type)
             if type == .heading || type == .headingToggle {
                 setHeadingLevel(id: blockId, level: headingLevel)
+            }
+            if type == .headingToggle {
+                autoNestIntoHeadingToggle(blockId: blockId, level: headingLevel)
             }
         }
 
