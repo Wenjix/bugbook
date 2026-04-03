@@ -70,7 +70,8 @@ struct OutlineBlockView: View {
         var result: [(id: UUID, text: String, level: Int)] = []
         for block in blocks {
             if block.type == .heading || block.type == .headingToggle {
-                result.append((id: block.id, text: block.text, level: block.headingLevel))
+                let plainText = AttributedStringConverter.plainText(from: block.text)
+                result.append((id: block.id, text: plainText, level: block.headingLevel))
             }
             if !block.children.isEmpty {
                 result.append(contentsOf: collectHeadings(from: block.children))

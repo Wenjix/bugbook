@@ -126,6 +126,7 @@ struct WorkspaceTabBar: View {
                 if file.isCalendar { return "Calendar" }
                 if file.isMeetings { return "Meetings" }
                 if file.isGraphView { return "Graph" }
+                if file.isMail { return "Mail" }
                 let fileName = (file.path as NSString).lastPathComponent
                 return fileName.hasSuffix(".md") ? String(fileName.dropLast(3)) : fileName
             case .terminal:
@@ -139,8 +140,10 @@ struct WorkspaceTabBar: View {
         guard let leaf = ws.focusedLeaf else { return nil }
         switch leaf.content {
         case .document(let file):
+            if file.isGateway { return "sf:house" }
+            if file.isMail { return "sf:envelope" }
             if file.isCalendar { return "sf:calendar" }
-            if file.isMeetings { return "sf:person.2" }
+            if file.isMeetings { return "sf:waveform" }
             if file.isGraphView { return "sf:point.3.connected.trianglepath.dotted" }
             return file.icon
         case .terminal:
