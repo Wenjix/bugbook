@@ -803,7 +803,6 @@ struct DatabaseFullPageView: View {
                     )
                     .frame(
                         minWidth: geo.size.width,
-                        minHeight: geo.size.height,
                         alignment: .topLeading
                     )
                     .fixedSize(horizontal: true, vertical: true)
