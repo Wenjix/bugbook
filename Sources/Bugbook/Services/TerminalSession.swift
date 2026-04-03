@@ -107,7 +107,29 @@ class GhosttySurfaceHostView: NSView {
         return result
     }
 
-    // MARK: - Paste
+    // MARK: - Key Equivalents (Cmd+key)
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard let surface else { return super.performKeyEquivalent(with: event) }
+
+        // Forward key equivalents to ghostty before AppKit routes them
+        // through the menu system. This ensures Cmd+V (paste), Cmd+C
+        // (copy), and other ghostty bindings are handled by the terminal.
+        let text = event.ghosttyCharacters
+        var keyEv = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
+        if let text, !text.isEmpty, let codepoint = text.utf8.first, codepoint >= 0x20 {
+            let handled = text.withCString { ptr -> Bool in
+                keyEv.text = ptr
+                return ghostty_surface_key(surface, keyEv)
+            }
+            if handled { return true }
+        } else {
+            if ghostty_surface_key(surface, keyEv) { return true }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    // MARK: - Paste (fallback for Edit menu)
 
     @objc func paste(_ sender: Any?) {
         guard let surface else { return }

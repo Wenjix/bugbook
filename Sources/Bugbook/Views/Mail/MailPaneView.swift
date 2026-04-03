@@ -585,7 +585,16 @@ private struct MailHTMLView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
-        nsView.loadHTMLString(wrappedHTML(html), baseURL: nil)
+        let wrapped = wrappedHTML(html)
+        guard context.coordinator.lastLoadedHTML != wrapped else { return }
+        context.coordinator.lastLoadedHTML = wrapped
+        nsView.loadHTMLString(wrapped, baseURL: nil)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    class Coordinator {
+        var lastLoadedHTML: String = ""
     }
 
     private func wrappedHTML(_ body: String) -> String {

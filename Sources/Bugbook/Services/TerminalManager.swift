@@ -52,16 +52,23 @@ final class TerminalManager {
                 return false
             },
             read_clipboard_cb: { userdata, clipboard, state in
-                guard let surface = _activeSurface else { return false }
-                guard let text = NSPasteboard.general.string(forType: .string) else { return false }
-                text.withCString { cStr in
-                    ghostty_surface_complete_clipboard_request(surface, cStr, state, true)
+                // Must access NSPasteboard on the main thread
+                let work = {
+                    guard let surface = _activeSurface else { return }
+                    guard let text = NSPasteboard.general.string(forType: .string) else { return }
+                    text.withCString { cStr in
+                        ghostty_surface_complete_clipboard_request(surface, cStr, state, true)
+                    }
                 }
+                if Thread.isMainThread { work() } else { DispatchQueue.main.async { work() } }
                 return true
             },
             confirm_read_clipboard_cb: { userdata, content, state, requestType in
-                guard let surface = _activeSurface, let content else { return }
-                ghostty_surface_complete_clipboard_request(surface, content, state, true)
+                let work = {
+                    guard let surface = _activeSurface, let content else { return }
+                    ghostty_surface_complete_clipboard_request(surface, content, state, true)
+                }
+                if Thread.isMainThread { work() } else { DispatchQueue.main.async { work() } }
             },
             write_clipboard_cb: { userdata, loc, content, len, confirm in
                 // Write to system clipboard

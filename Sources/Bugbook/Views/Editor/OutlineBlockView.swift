@@ -15,9 +15,7 @@ struct OutlineBlockView: View {
     }
 
     private var headings: [(id: UUID, text: String, depth: Int)] {
-        // Skip H1 (page title) — TOC should only show sub-headings
-        // depth = nesting depth in the block tree, not heading level number
-        collectHeadings(from: document.blocks, depth: 0).filter { $0.depth > 0 || true }
+        collectHeadings(from: document.blocks, depth: 0)
     }
 
     var body: some View {

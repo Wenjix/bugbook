@@ -523,10 +523,6 @@ struct NotesChatView: View {
         threadStore.createThread()
     }
 
-    private func closeChat() {
-        appState.closeNotesChat()
-    }
-
     private var allReferenceFiles: [FileEntry] {
         var files: [FileEntry] = []
         flattenFiles(appState.fileTree, into: &files)
