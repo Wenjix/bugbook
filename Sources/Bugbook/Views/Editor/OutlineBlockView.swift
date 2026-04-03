@@ -5,6 +5,14 @@ import SwiftUI
 /// Updates live as headings change.
 struct OutlineBlockView: View {
     var document: BlockDocument
+    var block: Block? = nil
+
+    private var containerFill: Color {
+        if let block, block.backgroundColor != .default {
+            return block.backgroundColor.backgroundColor
+        }
+        return Color.primary.opacity(Opacity.subtle)
+    }
 
     private var headings: [(id: UUID, text: String, depth: Int)] {
         // Skip H1 (page title) — TOC should only show sub-headings
@@ -27,7 +35,7 @@ struct OutlineBlockView: View {
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: Radius.md)
-                .fill(Color.primary.opacity(Opacity.subtle))
+                .fill(containerFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Radius.md)

@@ -297,7 +297,7 @@ struct BlockCellView: View {
             TableBlockView(document: document, block: block)
 
         case .outline:
-            OutlineBlockView(document: document)
+            OutlineBlockView(document: document, block: block)
 
         case .callout:
             CalloutBlockView(document: document, block: block, onTyping: onTyping)
