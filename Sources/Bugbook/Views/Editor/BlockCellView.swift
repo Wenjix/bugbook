@@ -57,13 +57,13 @@ struct BlockCellView: View {
         .padding(.top, listEdgePadding(neighbor: previousBlockType))
         .padding(.bottom, listEdgePadding(neighbor: nextBlockType))
         .background(
-            block.backgroundColor != .default
+            block.backgroundColor != .default && !blockHasOwnContainer
                 ? block.backgroundColor.backgroundColor
                 : Color.clear
         )
         .opacity(isBeingDragged ? 0.22 : 1)
         .background(BlockFrameReporter(document: document, blockId: block.id))
-        .clipShape(.rect(cornerRadius: block.backgroundColor != .default ? 4 : 0))
+        .clipShape(.rect(cornerRadius: block.backgroundColor != .default && !blockHasOwnContainer ? 4 : 0))
         .onHover { inside in
             isRowHovering = inside
         }
@@ -91,6 +91,18 @@ struct BlockCellView: View {
         // Heading → list or list → heading boundary
         if (currentIsList && neighborIsHeading) || (currentIsHeading && neighborIsList) { return 1 }
         return 2
+    }
+
+    /// Blocks that render their own styled container (background + border).
+    /// Row-level background color should not apply to these — it would color the entire row
+    /// instead of just the container.
+    private var blockHasOwnContainer: Bool {
+        switch block.type {
+        case .outline, .callout, .codeBlock:
+            true
+        default:
+            false
+        }
     }
 
     private var blockUsesOwnInteractions: Bool {
