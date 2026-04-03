@@ -118,11 +118,11 @@ struct MeetingBlockView: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 12)
-            .padding(.bottom, 4)
+            .padding(.bottom, 0)
 
             meetingNotesChildBlocks
                 .padding(.horizontal, 14)
-                .padding(.top, 12)
+                .padding(.top, 4)
                 .padding(.bottom, 12)
         }
     }
