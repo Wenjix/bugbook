@@ -86,6 +86,7 @@ struct DatabaseFullPageView: View {
                         viewContent(schema: schema)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
+                    .padding(.bottom, 48)
                 }
             } else {
                 ProgressView("Loading database...")
