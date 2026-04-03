@@ -43,20 +43,14 @@ struct OutlineBlockView: View {
             document.focusedBlockId = entry.id
             document.scrollToBlockId = entry.id
         } label: {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.fallbackTextSecondary.opacity(0.5))
-                    .frame(width: 4, height: 4)
-
-                Text(entry.text.isEmpty ? "Untitled" : entry.text)
-                    .font(.system(size: EditorTypography.bodyFontSize - 1))
-                    .foregroundStyle(entry.text.isEmpty ? Color.fallbackTextSecondary : .primary)
-                    .lineLimit(1)
-            }
-            .padding(.leading, indent)
-            .padding(.vertical, 3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            Text(entry.text.isEmpty ? "Untitled" : entry.text)
+                .font(.system(size: EditorTypography.bodyFontSize - 1))
+                .foregroundStyle(Color.fallbackTextSecondary)
+                .lineLimit(1)
+                .padding(.leading, indent)
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .appCursor(.pointingHand)
