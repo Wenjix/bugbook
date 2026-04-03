@@ -52,6 +52,15 @@ enum PaneContent: Codable, Equatable {
         ))
     }
 
+    /// A full-page chat pane.
+    static func chatDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://chat", content: "", isDirty: false, isEmptyTab: false,
+            kind: .chat, displayName: "Chat", icon: "bubble.left.and.bubble.right"
+        ))
+    }
+
     /// A meetings pane.
     static func meetingsDocument() -> PaneContent {
         let id = UUID()

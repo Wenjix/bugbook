@@ -436,6 +436,10 @@ struct ContentView: View {
                 ensureAiInitializedIfNeeded()
                 appState.toggleAiPanel()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openFullChat)) { _ in
+                ensureAiInitializedIfNeeded()
+                appState.openNotesChat()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .askAI)) { notification in
                 let prompt = notification.userInfo?["prompt"] as? String
                     ?? notification.userInfo?["query"] as? String
@@ -906,7 +910,8 @@ struct ContentView: View {
     private var editorModeContent: some View {
         WorkspaceTabBar(
             workspaceManager: workspaceManager,
-            sidebarOpen: appState.sidebarOpen
+            sidebarOpen: appState.sidebarOpen,
+            currentView: appState.currentView
         )
             .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
 

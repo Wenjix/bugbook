@@ -7,6 +7,7 @@ import AppKit
 struct WorkspaceTabBar: View {
     var workspaceManager: WorkspaceManager
     var sidebarOpen: Bool
+    var currentView: ViewMode = .editor
 
     @State private var dragOverIndex: Int?
     @State private var draggingId: UUID?
@@ -117,6 +118,12 @@ struct WorkspaceTabBar: View {
     }
 
     private func tabTitle(for ws: Workspace) -> String {
+        // Override for full-page views
+        if ws.id == workspaceManager.activeWorkspace?.id {
+            if currentView == .chat { return "Chat" }
+            if currentView == .graphView { return "Graph" }
+            if currentView == .calendar { return "Calendar" }
+        }
         // Derive name from the focused pane's content
         if let leaf = ws.focusedLeaf {
             switch leaf.content {
@@ -137,6 +144,11 @@ struct WorkspaceTabBar: View {
     }
 
     private func tabIcon(for ws: Workspace) -> String? {
+        if ws.id == workspaceManager.activeWorkspace?.id {
+            if currentView == .chat { return "sf:bubble.left.and.bubble.right" }
+            if currentView == .graphView { return "sf:point.3.connected.trianglepath.dotted" }
+            if currentView == .calendar { return "sf:calendar" }
+        }
         guard let leaf = ws.focusedLeaf else { return nil }
         switch leaf.content {
         case .document(let file):

@@ -7,7 +7,13 @@ struct OutlineBlockView: View {
     var document: BlockDocument
 
     private var headings: [(id: UUID, text: String, level: Int)] {
-        collectHeadings(from: document.blocks)
+        // Skip H1 (page title) — TOC should only show sub-headings
+        collectHeadings(from: document.blocks).filter { $0.level > 1 }
+    }
+
+    /// The shallowest heading level in the TOC, used as base indent (0).
+    private var minLevel: Int {
+        headings.map(\.level).min() ?? 2
     }
 
     var body: some View {
@@ -37,7 +43,7 @@ struct OutlineBlockView: View {
     // MARK: - Rows
 
     private func headingRow(_ entry: (id: UUID, text: String, level: Int)) -> some View {
-        let indent = CGFloat(max(0, entry.level - 1)) * 16
+        let indent = CGFloat(max(0, entry.level - minLevel)) * 16
 
         return Button {
             document.focusedBlockId = entry.id

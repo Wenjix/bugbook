@@ -808,7 +808,7 @@ struct DatabaseFullPageView: View {
                     .fixedSize(horizontal: true, vertical: true)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .kanban:
             KanbanView(
                 schema: schema,

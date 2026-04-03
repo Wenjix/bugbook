@@ -21,6 +21,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var isGraphView: Bool { kind.isGraphView }
     var isSkill: Bool { kind.isSkill }
     var isGateway: Bool { kind.isGateway }
+    var isChat: Bool { kind.isChat }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }

@@ -388,6 +388,7 @@ extension Notification.Name {
     static let quickOpenNewTab = Notification.Name("quickOpenNewTab")
     static let openSettings = Notification.Name("openSettings")
     static let openAIPanel = Notification.Name("openAIPanel")
+    static let openFullChat = Notification.Name("openFullChat")
     static let askAI = Notification.Name("askAI")
     static let toggleTheme = Notification.Name("toggleTheme")
     static let newDatabase = Notification.Name("newDatabase")

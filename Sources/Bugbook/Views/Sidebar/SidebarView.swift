@@ -165,7 +165,7 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .onHover { hovering in hoveredButton = hovering ? "search" : nil }
 
-                Button(action: { invokeAction { NotificationCenter.default.post(name: .openAIPanel, object: nil) } }) {
+                Button(action: { invokeAction { NotificationCenter.default.post(name: .openFullChat, object: nil) } }) {
                     HStack(spacing: chromeButtonSpacing) {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(ShellZoomMetrics.font(Typography.body))
