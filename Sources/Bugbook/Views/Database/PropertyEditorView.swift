@@ -41,7 +41,7 @@ struct PropertyEditorView: View {
         if usesOptionEditing {
             mainEditor
                 .databasePointerCursor()
-                .floatingPopover(item: $editingOptionId) { optId in
+                .floatingPopover(item: $editingOptionId, arrowEdge: .trailing) { optId in
                     editOptionPopover(optionId: optId)
                 }
                 .alert("Delete Option", isPresented: $showDeleteAlert) {
@@ -1398,13 +1398,15 @@ private struct OptionButtonRow: View {
 
             // Kebab (hover only)
             if showKebab {
-                Text("···")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onKebab() }
-                    .opacity(isHovered ? 1 : 0)
+                Button(action: onKebab) {
+                    Text("···")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovered ? 1 : 0)
             }
 
             if isActive {
