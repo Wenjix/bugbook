@@ -41,22 +41,10 @@ struct OutlineBlockView: View {
     private func headingRow(_ entry: (id: UUID, text: String, depth: Int)) -> some View {
         let indent = CGFloat(entry.depth) * 16
 
-        return Button {
+        return TOCLink(text: entry.text, indent: indent) {
             document.focusedBlockId = entry.id
             document.scrollToBlockId = entry.id
-        } label: {
-            Text(entry.text.isEmpty ? "Untitled" : entry.text)
-                .font(.system(size: EditorTypography.bodyFontSize - 1))
-                .foregroundStyle(Color.fallbackTextSecondary)
-                .underline()
-                .lineLimit(1)
-                .padding(.leading, indent)
-                .padding(.vertical, 3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .appCursor(.pointingHand)
     }
 
     private var emptyState: some View {
@@ -82,5 +70,31 @@ struct OutlineBlockView: View {
             }
         }
         return result
+    }
+}
+
+/// A single TOC link with hover highlight.
+private struct TOCLink: View {
+    let text: String
+    let indent: CGFloat
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(text.isEmpty ? "Untitled" : text)
+                .font(.system(size: EditorTypography.bodyFontSize - 1))
+                .foregroundStyle(isHovered ? Color.primary : Color.fallbackTextSecondary)
+                .underline()
+                .lineLimit(1)
+                .padding(.leading, indent)
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .appCursor(.pointingHand)
+        .onHover { isHovered = $0 }
     }
 }

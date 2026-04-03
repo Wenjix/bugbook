@@ -82,7 +82,7 @@ struct DatabaseFullPageView: View {
                 viewTabs(schema: schema)
                 Divider()
                 viewContent(schema: schema)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             } else {
                 ProgressView("Loading database...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
