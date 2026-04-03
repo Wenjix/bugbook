@@ -229,10 +229,7 @@ struct HomeBottomZone: View {
     }
 
     private func inboxSecondaryText(for item: HomeViewModel.InboxItem) -> String {
-        guard let channelLabel = item.channelLabel, !channelLabel.isEmpty else {
-            return item.sender
-        }
-        return "\(item.sender) · \(channelLabel)"
+        item.sender
     }
 
     private func sectionHeader(_ title: String) -> some View {

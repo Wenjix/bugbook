@@ -243,8 +243,6 @@ struct MCPServerInfo: Identifiable {
 
     private func resolveEntry(for path: String) -> FileEntry {
         switch path {
-        case "bugbook://inbox", "bugbook://messages":
-            return FileEntry(id: path, name: "Inbox", path: path, isDirectory: false, kind: .messages, icon: "tray.full.fill")
         case "bugbook://mail":
             return FileEntry(id: path, name: "Mail", path: path, isDirectory: false, kind: .mail, icon: "envelope")
         case "bugbook://calendar":

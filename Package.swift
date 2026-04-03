@@ -25,6 +25,10 @@ let package = Package(
             name: "BugbookMobile",
             targets: ["BugbookMobile"]
         ),
+        .executable(
+            name: "BugbookMCPSpike",
+            targets: ["BugbookMCPSpike"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
@@ -61,6 +65,7 @@ let package = Package(
                 "GhosttyKit",
             ],
             path: "Sources/Bugbook",
+            exclude: ["MCP"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Carbon"),
@@ -81,6 +86,10 @@ let package = Package(
             name: "BugbookMobile",
             dependencies: ["BugbookCore"],
             path: "Sources/BugbookMobile"
+        ),
+        .executableTarget(
+            name: "BugbookMCPSpike",
+            path: "Sources/Bugbook/MCP"
         ),
         // Unit tests for BugbookCore
         .testTarget(

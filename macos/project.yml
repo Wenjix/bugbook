@@ -43,6 +43,8 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: ../Sources/Bugbook
+        excludes:
+          - MCP
       - path: App/Assets.xcassets
     dependencies:
       - target: BugbookCore

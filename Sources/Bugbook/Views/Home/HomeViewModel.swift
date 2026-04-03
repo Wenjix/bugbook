@@ -57,7 +57,6 @@ final class HomeViewModel {
         let subject: String
         let showsReplyBadge: Bool
         let date: Date?
-        let channelLabel: String?
     }
 
     var timeState: TimeState = .morning
@@ -86,7 +85,6 @@ final class HomeViewModel {
     var todayTimeline: [CalendarTimelineItem] = []
     var inboxThreads: [InboxItem] = []
     var unreadInboxCount: Int = 0
-    var unreadMessagesCount: Int = 0
     var needsReplyCount: Int = 0
     var firstFreeGapLabel: String = "No free block left today"
     var freeUntilLabel: String? = nil
@@ -117,7 +115,6 @@ final class HomeViewModel {
         let lastSeen = lastSeenDate
         let pinnedPaths = decodedPinnedPaths()
         let connectedEmail = appState.settings.googleConnectedEmail
-        let showMessagesInHomeInbox = appState.settings.showMessagesInHomeInbox
 
         let snapshot = await Task.detached(priority: .userInitiated) {
             Self.buildSnapshot(
@@ -125,8 +122,7 @@ final class HomeViewModel {
                 connectedEmail: connectedEmail,
                 lastSeenDate: lastSeen,
                 pinnedPaths: pinnedPaths,
-                timeState: currentState,
-                showMessagesInHomeInbox: showMessagesInHomeInbox
+                timeState: currentState
             )
         }.value
 
@@ -150,7 +146,6 @@ final class HomeViewModel {
         todayTimeline = snapshot.todayTimeline
         inboxThreads = snapshot.inboxThreads
         unreadInboxCount = snapshot.unreadInboxCount
-        unreadMessagesCount = snapshot.unreadMessagesCount
         needsReplyCount = snapshot.needsReplyCount
         firstFreeGapLabel = snapshot.firstFreeGapLabel
         freeUntilLabel = snapshot.freeUntilLabel
@@ -241,7 +236,6 @@ extension HomeViewModel {
         let todayTimeline: [CalendarTimelineItem]
         let inboxThreads: [InboxItem]
         let unreadInboxCount: Int
-        let unreadMessagesCount: Int
         let needsReplyCount: Int
         let firstFreeGapLabel: String
         let freeUntilLabel: String?
@@ -258,12 +252,6 @@ extension HomeViewModel {
     struct DatedLine: Sendable {
         let date: Date
         let line: ActivityLine
-    }
-
-    struct MessageThreadSummary: Sendable {
-        let threadId: String
-        let latestMessage: UnifiedMessage
-        let unreadCount: Int
     }
 
     struct TaskLinkSummary {
@@ -285,9 +273,7 @@ extension HomeViewModel {
         lastSeenDate: Date,
         pinnedPaths: [String],
         timeState: TimeState,
-        showMessagesInHomeInbox: Bool,
-        mailCacheStore: MailCacheStore = MailCacheStore(),
-        messagesCacheStore: MessagesCacheStore = MessagesCacheStore()
+        mailCacheStore: MailCacheStore = MailCacheStore()
     ) -> Snapshot {
         let now = Date()
         let calendar = Calendar.current
@@ -300,12 +286,9 @@ extension HomeViewModel {
         let mailSnapshot = connectedEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil
             : mailCacheStore.load(accountEmail: connectedEmail)
-        let messagesSnapshot = messagesCacheStore.load()
         let allInboxThreads = (mailSnapshot?.mailboxThreads[.inbox] ?? [])
             .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         let inboxUnreadThreads = allInboxThreads.filter(\.isUnread)
-        let messageThreads = messageThreadSummaries(from: messagesSnapshot?.messages ?? [])
-        let unreadMessageThreads = messageThreads.filter { $0.unreadCount > 0 }
 
         let taskLinks = taskLinkSummary(tasks: tasks, runs: runs, startOfToday: startOfToday)
         let databaseSnapshot = databaseSnapshot(
@@ -341,30 +324,15 @@ extension HomeViewModel {
 
         let calendarSummary = calendarSummary(events: todayEvents, now: now, calendar: calendar, sourceColorMap: sourceColorMap)
         // Show recent inbox threads (not just unread) in the home inbox list
-        let mailInboxItems = allInboxThreads.map { thread in
+        let inboxItems = Array(allInboxThreads.map { thread in
             InboxItem(
                 id: thread.id,
                 sender: parseDisplayName(from: thread.participants.first ?? "Unknown sender"),
                 subject: thread.subject,
                 showsReplyBadge: thread.annotation?.statusFlags.contains(.needsReply) == true,
-                date: thread.date,
-                channelLabel: nil
+                date: thread.date
             )
-        }
-        let messageInboxItems = messageThreads.map { thread in
-            let latest = thread.latestMessage
-            return InboxItem(
-                id: thread.threadId,
-                sender: latest.sender.displayName,
-                subject: latest.previewText,
-                showsReplyBadge: false,
-                date: latest.timestamp,
-                channelLabel: latest.metadata["slack_channel_name"]?.stringValue ?? latest.channel.displayName
-            )
-        }
-        let inboxItems = showMessagesInHomeInbox
-            ? Array((mailInboxItems + messageInboxItems).sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }.prefix(5))
-            : Array(mailInboxItems.prefix(5))
+        }.prefix(5))
 
         let mailItems = inboxUnreadThreads
             .compactMap { thread -> DatedLine? in
@@ -374,19 +342,6 @@ extension HomeViewModel {
                     date: date,
                     line: ActivityLine(
                         text: "\(sender): \(thread.subject)",
-                        isAgentActivity: false
-                    )
-                )
-            }
-
-        let messageItems = unreadMessageThreads
-            .compactMap { thread -> DatedLine? in
-                let latest = thread.latestMessage
-                guard latest.timestamp >= lastSeenDate else { return nil }
-                return DatedLine(
-                    date: latest.timestamp,
-                    line: ActivityLine(
-                        text: "\(latest.sender.displayName): \(latest.previewText)",
                         isAgentActivity: false
                     )
                 )
@@ -411,7 +366,7 @@ extension HomeViewModel {
             )
         }
 
-        let combinedActivity = (mailItems + messageItems + runItems + blockedItems)
+        let combinedActivity = (mailItems + runItems + blockedItems)
             .sorted { $0.date > $1.date }
         let visibleActivity = Array(combinedActivity.prefix(4)).map(\.line)
 
@@ -422,17 +377,7 @@ extension HomeViewModel {
                 let sender = thread.participants.first ?? "Unknown sender"
                 return "\(sender) waiting on \(thread.subject)"
             }
-        let staleMessageItems = unreadMessageThreads
-            .filter { $0.latestMessage.timestamp < staleCutoff }
-            .prefix(2)
-            .map { thread in
-                let latest = thread.latestMessage
-                let channel = latest.metadata["slack_channel_name"]?.stringValue ?? latest.channel.displayName
-                return "\(latest.sender.displayName) waiting in \(channel)"
-            }
-
         let unreadInboxCount = inboxUnreadThreads.count
-        let unreadMessagesCount = unreadMessageThreads.count
         let needsReplyCount = inboxUnreadThreads.filter {
             $0.annotation?.statusFlags.contains(.needsReply) == true
         }.count
@@ -457,7 +402,6 @@ extension HomeViewModel {
             activeAgentCount: activeAgentCount,
             needsReplyCount: needsReplyCount,
             unreadInboxCount: unreadInboxCount,
-            unreadMessagesCount: unreadMessagesCount,
             freedUpCount: freedUpCount,
             totalClosed: databaseSnapshot.humanCompletedToday + agentCompletedToday,
             carryOverCount: databaseSnapshot.carryOverItems.count,
@@ -486,12 +430,11 @@ extension HomeViewModel {
             overnightCount: combinedActivity.count,
             deltaItems: visibleActivity,
             deltaCount: combinedActivity.count,
-            staleItems: Array((databaseSnapshot.staleItems + staleMailItems + staleMessageItems).prefix(4)),
+            staleItems: Array((databaseSnapshot.staleItems + staleMailItems).prefix(4)),
             todayEvents: calendarSummary.items,
             todayTimeline: calendarSummary.timeline,
             inboxThreads: inboxItems,
             unreadInboxCount: unreadInboxCount,
-            unreadMessagesCount: unreadMessagesCount,
             needsReplyCount: needsReplyCount,
             firstFreeGapLabel: calendarSummary.firstFreeGapLabel,
             freeUntilLabel: calendarSummary.freeUntilLabel,
@@ -801,7 +744,6 @@ extension HomeViewModel {
         activeAgentCount: Int,
         needsReplyCount: Int,
         unreadInboxCount: Int,
-        unreadMessagesCount: Int,
         freedUpCount: Int,
         totalClosed: Int,
         carryOverCount: Int,
@@ -815,7 +757,6 @@ extension HomeViewModel {
                 blockedAgentCount > 0 ? PillData(label: "\(blockedAgentCount) agent\(blockedAgentCount == 1 ? "" : "s") waiting on you", isUrgent: true) : nil,
                 activeAgentCount > 0 ? PillData(label: "\(activeAgentCount) agent\(activeAgentCount == 1 ? "" : "s") running", isUrgent: false) : nil,
                 needsReplyCount > 0 ? PillData(label: "\(needsReplyCount) email\(needsReplyCount == 1 ? "" : "s") need reply", isUrgent: true) : nil,
-                unreadMessagesCount > 0 ? PillData(label: "\(unreadMessagesCount) unread message\(unreadMessagesCount == 1 ? "" : "s")", isUrgent: false) : nil,
                 meetingCount > 0 ? PillData(label: "\(meetingCount) meeting\(meetingCount == 1 ? "" : "s") today", isUrgent: false) : nil,
                 freeUntilLabel.map { PillData(label: $0, isUrgent: false) },
                 eventCount > 0 && meetingCount == 0 ? PillData(label: "\(eventCount) events on calendar", isUrgent: false) : nil,
@@ -826,7 +767,6 @@ extension HomeViewModel {
                 freedUpCount > 0 ? PillData(label: "\(freedUpCount) agent task\(freedUpCount == 1 ? "" : "s") completed", isUrgent: true) : nil,
                 needsReplyCount > 0 ? PillData(label: "\(needsReplyCount) email\(needsReplyCount == 1 ? "" : "s") need reply", isUrgent: false) : nil,
                 unreadInboxCount > 0 ? PillData(label: "\(unreadInboxCount) unread email\(unreadInboxCount == 1 ? "" : "s")", isUrgent: false) : nil,
-                unreadMessagesCount > 0 ? PillData(label: "\(unreadMessagesCount) unread message\(unreadMessagesCount == 1 ? "" : "s")", isUrgent: false) : nil,
                 freeUntilLabel.map { PillData(label: $0, isUrgent: false) },
             ].compactMap { $0 }
         case .evening:
@@ -835,22 +775,8 @@ extension HomeViewModel {
                 meetingCount > 0 ? PillData(label: "\(meetingCount) meeting\(meetingCount == 1 ? "" : "s") today", isUrgent: false) : nil,
                 carryOverCount > 0 ? PillData(label: "\(carryOverCount) task\(carryOverCount == 1 ? "" : "s") carrying to tomorrow", isUrgent: false) : nil,
                 unreadInboxCount == 0 ? PillData(label: "Inbox at zero", isUrgent: false) : PillData(label: "\(unreadInboxCount) email\(unreadInboxCount == 1 ? "" : "s") in inbox", isUrgent: false),
-                unreadMessagesCount > 0 ? PillData(label: "\(unreadMessagesCount) unread message\(unreadMessagesCount == 1 ? "" : "s")", isUrgent: false) : nil,
             ].compactMap { $0 }
         }
-    }
-
-    nonisolated static func messageThreadSummaries(from messages: [UnifiedMessage]) -> [MessageThreadSummary] {
-        Dictionary(grouping: messages, by: \.effectiveThreadId)
-            .compactMap { threadId, threadMessages in
-                guard let latest = threadMessages.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
-                return MessageThreadSummary(
-                    threadId: threadId,
-                    latestMessage: latest,
-                    unreadCount: threadMessages.filter { !$0.isRead }.count
-                )
-            }
-            .sorted { $0.latestMessage.timestamp > $1.latestMessage.timestamp }
     }
 
     enum StatusBucket {
