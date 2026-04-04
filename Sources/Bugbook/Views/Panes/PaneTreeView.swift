@@ -11,9 +11,12 @@ struct PaneTreeView: View {
     let node: PaneNode
     let workspaceManager: WorkspaceManager
     let hasMultiplePanes: Bool
+    var fileTree: [FileEntry] = []
 
     let documentContentBuilder: (PaneNode.Leaf, OpenFile) -> AnyView
     let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
+    var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
+    var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
 
     var body: some View {
         switch node {
@@ -22,8 +25,11 @@ struct PaneTreeView: View {
                 leaf: leaf,
                 workspaceManager: workspaceManager,
                 showFocusBorder: hasMultiplePanes,
+                fileTree: fileTree,
                 documentContentBuilder: documentContentBuilder,
-                terminalContentBuilder: terminalContentBuilder
+                terminalContentBuilder: terminalContentBuilder,
+                breadcrumbProvider: breadcrumbProvider,
+                onBreadcrumbNavigate: onBreadcrumbNavigate
             )
         case .split(let split):
             splitView(split)
@@ -46,8 +52,11 @@ struct PaneTreeView: View {
                         node: split.first,
                         workspaceManager: workspaceManager,
                         hasMultiplePanes: hasMultiplePanes,
+                        fileTree: fileTree,
                         documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder
+                        terminalContentBuilder: terminalContentBuilder,
+                        breadcrumbProvider: breadcrumbProvider,
+                        onBreadcrumbNavigate: onBreadcrumbNavigate
                     )
                     .frame(width: firstSize(total: totalSize, ratio: split.ratio))
 
@@ -57,8 +66,11 @@ struct PaneTreeView: View {
                         node: split.second,
                         workspaceManager: workspaceManager,
                         hasMultiplePanes: hasMultiplePanes,
+                        fileTree: fileTree,
                         documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder
+                        terminalContentBuilder: terminalContentBuilder,
+                        breadcrumbProvider: breadcrumbProvider,
+                        onBreadcrumbNavigate: onBreadcrumbNavigate
                     )
                 }
             } else {
@@ -67,8 +79,11 @@ struct PaneTreeView: View {
                         node: split.first,
                         workspaceManager: workspaceManager,
                         hasMultiplePanes: hasMultiplePanes,
+                        fileTree: fileTree,
                         documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder
+                        terminalContentBuilder: terminalContentBuilder,
+                        breadcrumbProvider: breadcrumbProvider,
+                        onBreadcrumbNavigate: onBreadcrumbNavigate
                     )
                     .frame(height: firstSize(total: totalSize, ratio: split.ratio))
 
@@ -78,8 +93,11 @@ struct PaneTreeView: View {
                         node: split.second,
                         workspaceManager: workspaceManager,
                         hasMultiplePanes: hasMultiplePanes,
+                        fileTree: fileTree,
                         documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder
+                        terminalContentBuilder: terminalContentBuilder,
+                        breadcrumbProvider: breadcrumbProvider,
+                        onBreadcrumbNavigate: onBreadcrumbNavigate
                     )
                 }
             }

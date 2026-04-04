@@ -358,6 +358,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.post(name: .switchWorkspace, object: index)
             return nil
         }
+
+        // Cmd+Option+1-9 for pane focus switching (by visual order)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == [.command, .option] else { return event }
+
+            let digitKeyCodes: [UInt16: Int] = [
+                18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8
+            ]
+            guard let index = digitKeyCodes[event.keyCode] else { return event }
+            NotificationCenter.default.post(name: .focusPaneByIndex, object: index)
+            return nil
+        }
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -423,4 +436,5 @@ extension Notification.Name {
     static let movePaneFocusUp = Notification.Name("movePaneFocusUp")
     static let movePaneFocusDown = Notification.Name("movePaneFocusDown")
     static let switchWorkspace = Notification.Name("switchWorkspace")
+    static let focusPaneByIndex = Notification.Name("focusPaneByIndex")
 }

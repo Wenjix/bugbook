@@ -6,6 +6,7 @@ enum CommandPaletteMode {
     case search
     case commands
     case newTab
+    case splitLauncher
 }
 
 enum ViewMode {

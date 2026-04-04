@@ -4,6 +4,7 @@ import AppKit
 import os
 import Sentry
 import BugbookCore
+import GhosttyKit
 
 // swiftlint:disable:next type_body_length
 struct ContentView: View {
@@ -58,6 +59,10 @@ struct ContentView: View {
     // Cmd+K deferred navigation: set by palette closure, consumed by .onChange in ContentView's own cycle
     @State private var pendingCmdKNavigation: CmdKNavRequest?
 
+    // Pane replacement guard: amber warning for active terminal panes
+    @State private var paneReplaceWarningId: UUID?
+    @State private var paneReplaceWarningTask: Task<Void, Never>?
+
     private struct CmdKNavRequest: Equatable {
         let entry: FileEntry
         let inNewTab: Bool
@@ -109,12 +114,14 @@ struct ContentView: View {
                 loadAppSettings()
                 initializeWorkspace()
                 applyTheme(appState.settings.theme)
+                applyTerminalColorScheme(appState.settings.terminalColorScheme)
                 editorZoomScale = clampedEditorZoomScale(editorZoomScale)
                 editorUI.focusModeEnabled = appState.settings.focusModeOnType
                 warmUpTranscriptionModel()
             }
             .onChange(of: appState.settings) { _, newSettings in
                 appSettingsStore.save(newSettings)
+                applyTerminalColorScheme(newSettings.terminalColorScheme)
             }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
@@ -183,6 +190,7 @@ struct ContentView: View {
                 flushDirtyTabs()
                 appSettingsStore.save(appState.settings)
                 terminalManager.shutdown()
+                paneReplaceWarningTask?.cancel()
                 aiInitTask?.cancel()
                 aiInitTask = nil
                 editorUI.cleanUp()
@@ -296,6 +304,15 @@ struct ContentView: View {
                     workspaceManager.switchWorkspace(to: index)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .focusPaneByIndex)) { notification in
+                if let index = notification.object as? Int,
+                   let ws = workspaceManager.activeWorkspace {
+                    let leaves = ws.root.allLeaves
+                    if index < leaves.count {
+                        workspaceManager.setFocusedPane(id: leaves[index].id)
+                    }
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .movePaneFocusLeft)) { _ in
                 moveFocusToAdjacentPane(direction: .left)
             }
@@ -352,7 +369,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
                 flushDirtyTabContent()
-                appState.commandPaletteMode = .search
+                appState.commandPaletteMode = .splitLauncher
                 appState.commandPaletteOpen.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpenNewTab)) { _ in
@@ -585,53 +602,94 @@ struct ContentView: View {
             Color.black.opacity(0.3)
                 .onTapGesture { appState.commandPaletteOpen = false }
 
-            VStack {
-                Spacer()
-                HStack {
+            if appState.commandPaletteMode == .splitLauncher {
+                VStack {
                     Spacer()
-                    CommandPaletteView(
-                        appState: appState,
-                        isPresented: $appState.commandPaletteOpen,
-                        onSelectFile: { entry in
-                            DispatchQueue.main.async {
-                                navigateToEntryInPane(entry)
-                            }
-                        },
-                        onSelectFileNewTab: { entry in
-                            DispatchQueue.main.async {
-                                openEntryInNewWorkspaceTab(entry)
-                            }
-                        },
-                        onCreateFile: { name in
-                            createNewFileWithName(name)
-                        },
-                        onSelectContentMatch: { entry, query in
-                            let newTab = appState.commandPaletteMode == .newTab
-                            DispatchQueue.main.async {
-                                if newTab {
-                                    openEntryInNewWorkspaceTab(entry)
+                    HStack {
+                        Spacer()
+                        PaneLauncher(
+                            variant: .wide,
+                            fileTree: appState.fileTree,
+                            onSelect: { content, direction in
+                                appState.commandPaletteOpen = false
+                                switch direction {
+                                case .right:
+                                    _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content)
+                                case .down:
+                                    _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: content)
+                                case .newTab:
+                                    workspaceManager.addWorkspaceWith(content: content)
+                                }
+                            },
+                            onDismiss: { appState.commandPaletteOpen = false },
+                            onNavigateInPlace: { content in
+                                appState.commandPaletteOpen = false
+                                // For workspace pages, use proper file navigation (loads content from disk).
+                                // For built-in panes (terminal, mail, etc.), use direct content replacement.
+                                if case .document(let file) = content,
+                                   !file.path.hasPrefix("bugbook://"),
+                                   !file.path.isEmpty,
+                                   !file.isEmptyTab {
+                                    navigateToFilePath(file.path)
                                 } else {
+                                    openContentInFocusedPane(content)
+                                }
+                            }
+                        )
+                        .popoverSurface(cornerRadius: Radius.xl)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            } else {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        CommandPaletteView(
+                            appState: appState,
+                            isPresented: $appState.commandPaletteOpen,
+                            onSelectFile: { entry in
+                                DispatchQueue.main.async {
                                     navigateToEntryInPane(entry)
                                 }
-                                if let query = query as String? {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        guard let ws = workspaceManager.activeWorkspace,
-                                              let doc = blockDocuments[ws.focusedPaneId] else { return }
-                                        let lowerQuery = query.lowercased()
-                                        if let block = doc.blocks.first(where: {
-                                            $0.text.lowercased().contains(lowerQuery)
-                                        }) {
-                                            doc.focusedBlockId = block.id
-                                            doc.cursorPosition = 0
+                            },
+                            onSelectFileNewTab: { entry in
+                                DispatchQueue.main.async {
+                                    openEntryInNewWorkspaceTab(entry)
+                                }
+                            },
+                            onCreateFile: { name in
+                                createNewFileWithName(name)
+                            },
+                            onSelectContentMatch: { entry, query in
+                                let newTab = appState.commandPaletteMode == .newTab
+                                DispatchQueue.main.async {
+                                    if newTab {
+                                        openEntryInNewWorkspaceTab(entry)
+                                    } else {
+                                        navigateToEntryInPane(entry)
+                                    }
+                                    if let query = query as String? {
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            guard let ws = workspaceManager.activeWorkspace,
+                                                  let doc = blockDocuments[ws.focusedPaneId] else { return }
+                                            let lowerQuery = query.lowercased()
+                                            if let block = doc.blocks.first(where: {
+                                                $0.text.lowercased().contains(lowerQuery)
+                                            }) {
+                                                doc.focusedBlockId = block.id
+                                                doc.cursorPosition = 0
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                    )
+                        )
+                        Spacer()
+                    }
                     Spacer()
                 }
-                Spacer()
             }
         }
     }
@@ -927,13 +985,21 @@ struct ContentView: View {
                     node: ws.root,
                     workspaceManager: workspaceManager,
                     hasMultiplePanes: ws.hasMultiplePanes,
+                    fileTree: appState.fileTree,
                     documentContentBuilder: { leaf, file in
                         AnyView(self.paneDocumentContent(leaf: leaf, file: file))
                     },
                     terminalContentBuilder: { leaf, _ in
                         AnyView(self.paneTerminalContent(leaf: leaf))
+                    },
+                    breadcrumbProvider: { file in
+                        self.breadcrumbs(for: file)
+                    },
+                    onBreadcrumbNavigate: { item in
+                        self.navigateToBreadcrumb(item)
                     }
                 )
+                .environment(\.paneReplaceWarningId, paneReplaceWarningId)
             }
         }
         .environment(\.workspacePath, appState.workspacePath)
@@ -1021,34 +1087,27 @@ struct ContentView: View {
     @ViewBuilder
     private func paneDocumentContent(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
         VStack(spacing: 0) {
-            if !file.isEmptyTab && !file.isMail && !file.isCalendar && !file.isMeetings && !file.isGateway {
+            // Breadcrumb moved to chrome bar. Options menu stays in content area.
+            if !file.isEmptyTab && !file.isDatabase && !file.isSkill
+                && !file.isMail && !file.isCalendar && !file.isMeetings && !file.isGateway {
                 HStack {
-                    BreadcrumbView(
-                        items: breadcrumbs(for: file),
-                        onNavigate: { item in navigateToBreadcrumb(item) },
-                        sidebarOpen: appState.sidebarOpen
-                    )
-
                     Spacer()
-
-                    if !file.isEmptyTab && !file.isDatabase && !file.isSkill {
-                        Button {
-                            showPageOptionsMenu.toggle()
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(ShellZoomMetrics.font(Typography.bodySmall))
-                                .foregroundStyle(.primary)
-                                .frame(width: ShellZoomMetrics.size(32), height: ShellZoomMetrics.size(32))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, ShellZoomMetrics.size(4))
-                        .floatingPopover(isPresented: $showPageOptionsMenu) {
-                            if file.isDatabaseRow {
-                                databaseRowOptionsMenu(for: file)
-                            } else if let doc = blockDocuments[leaf.id] {
-                                pageOptionsMenu(for: file, document: doc)
-                            }
+                    Button {
+                        showPageOptionsMenu.toggle()
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(ShellZoomMetrics.font(Typography.bodySmall))
+                            .foregroundStyle(.primary)
+                            .frame(width: ShellZoomMetrics.size(32), height: ShellZoomMetrics.size(32))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, ShellZoomMetrics.size(4))
+                    .floatingPopover(isPresented: $showPageOptionsMenu) {
+                        if file.isDatabaseRow {
+                            databaseRowOptionsMenu(for: file)
+                        } else if let doc = blockDocuments[leaf.id] {
+                            pageOptionsMenu(for: file, document: doc)
                         }
                     }
                 }
@@ -1085,9 +1144,20 @@ struct ContentView: View {
     }
 
     /// Replace the focused pane's content with the given PaneContent.
+    /// Guards against replacing a live terminal — requires double-action confirmation.
     private func openContentInFocusedPane(_ content: PaneContent) {
         guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId else { return }
-        // Clean up old terminal session if replacing a terminal pane
+
+        // Guard: if focused pane is a live terminal, require double-action
+        if isTerminalAlive(paneId: paneId) {
+            if paneReplaceWarningId == paneId {
+                clearPaneReplaceWarning()
+            } else {
+                setPaneReplaceWarning(paneId: paneId)
+                return
+            }
+        }
+
         terminalManager.closeSession(paneId)
         workspaceManager.updatePaneContent(paneId: paneId, content: content)
     }
@@ -1154,6 +1224,8 @@ struct ContentView: View {
                 filePath: file.path,
                 displayName: file.displayName ?? (file.path as NSString).lastPathComponent
             )
+        } else if file.isChat {
+            NotesChatView(appState: appState, aiService: aiService)
         } else if file.isGateway {
             GatewayView(
                 appState: appState,
@@ -1613,6 +1685,27 @@ struct ContentView: View {
         }
     }
 
+    private func applyTerminalColorScheme(_ mode: TerminalColorSchemeMode) {
+        let light = appState.settings.terminalLightTheme
+        let dark = appState.settings.terminalDarkTheme
+        if !light.isEmpty || !dark.isEmpty {
+            // Custom themes selected — rebuild config with theme overlay
+            terminalManager.applyTheme(lightTheme: light, darkTheme: dark, colorScheme: mode)
+        } else {
+            // No custom themes — just set color scheme hint
+            // (uses whatever theme is in ~/.config/ghostty/config)
+            let scheme: ghostty_color_scheme_e
+            switch mode {
+            case .light: scheme = GHOSTTY_COLOR_SCHEME_LIGHT
+            case .dark: scheme = GHOSTTY_COLOR_SCHEME_DARK
+            case .system:
+                let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                scheme = isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+            }
+            terminalManager.applyColorScheme(scheme)
+        }
+    }
+
     // MARK: - Formatting Toolbar
 
     private func updateFormattingPanel(rect: CGRect?) {
@@ -1755,7 +1848,26 @@ struct ContentView: View {
             performSave(tabId: focusedPaneId)
         }
 
-        // Determine target pane
+        // Guard: if focused pane is a live terminal, warn before replacing it
+        if isTerminalAlive(paneId: focusedPaneId) {
+            if paneReplaceWarningId == focusedPaneId {
+                // Second press within timeout — proceed: close terminal, replace in place
+                clearPaneReplaceWarning()
+                terminalManager.closeSession(focusedPaneId)
+                // Fall through to replace the focused terminal pane directly
+                let file = makeOpenFile(for: entry, id: focusedPaneId)
+                workspaceManager.updatePaneContent(paneId: focusedPaneId, content: .document(openFile: file))
+                workspaceManager.setFocusedPane(id: focusedPaneId)
+                loadFileContentForPane(entry: entry, paneId: focusedPaneId)
+                return
+            } else {
+                // First press — show amber warning on the terminal pane
+                setPaneReplaceWarning(paneId: focusedPaneId)
+                return
+            }
+        }
+
+        // Determine target pane (non-terminal path)
         let targetPaneId: UUID
         if let focusedLeaf = workspaceManager.focusedPane, case .document = focusedLeaf.content {
             targetPaneId = focusedLeaf.id
@@ -1770,6 +1882,29 @@ struct ContentView: View {
         workspaceManager.updatePaneContent(paneId: targetPaneId, content: .document(openFile: file))
         workspaceManager.setFocusedPane(id: targetPaneId)
         loadFileContentForPane(entry: entry, paneId: targetPaneId)
+    }
+
+    /// Check if a pane has an active terminal session.
+    private func isTerminalAlive(paneId: UUID) -> Bool {
+        guard let session = terminalManager.session(for: paneId) else { return false }
+        return session.isAlive
+    }
+
+    /// Set the amber warning on a pane's chrome bar. Auto-clears after 2 seconds.
+    private func setPaneReplaceWarning(paneId: UUID) {
+        paneReplaceWarningTask?.cancel()
+        paneReplaceWarningId = paneId
+        paneReplaceWarningTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { clearPaneReplaceWarning() }
+        }
+    }
+
+    private func clearPaneReplaceWarning() {
+        paneReplaceWarningId = nil
+        paneReplaceWarningTask?.cancel()
+        paneReplaceWarningTask = nil
     }
 
     /// Open a file entry in a new workspace tab (used by Cmd+K new-tab mode).
@@ -2952,6 +3087,25 @@ struct ContentView: View {
                     Image(systemName: "doc.on.doc")
                         .frame(width: 16)
                     Text("Copy file path")
+                    Spacer()
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(document.markdown, forType: .string)
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.plaintext")
+                        .frame(width: 16)
+                    Text("Copy page content")
                     Spacer()
                 }
                 .font(.system(size: Typography.bodySmall))

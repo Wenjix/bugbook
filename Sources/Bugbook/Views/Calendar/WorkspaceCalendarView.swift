@@ -23,6 +23,7 @@ struct WorkspaceCalendarView: View {
     )
     @State private var isCreatingEvent = false
     @State private var createEventError: String?
+    @State private var showEventSidebar = false
 
     var body: some View {
         GeometryReader { geo in
@@ -31,8 +32,16 @@ struct WorkspaceCalendarView: View {
                 if let error = calendarService.error, !error.isEmpty {
                     calendarErrorBanner(error)
                 }
-                calendarContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                HStack(spacing: 0) {
+                    calendarContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                    if showEventSidebar {
+                        Divider()
+                        calendarEventSidebar
+                            .frame(width: 280)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: geo.size.width) { _, newWidth in
@@ -119,10 +128,31 @@ struct WorkspaceCalendarView: View {
 
     private var calendarHeader: some View {
         HStack(spacing: 8) {
-            // Title
-            Text(calendarVM.headerTitle)
-                .font(.system(size: 16, weight: .semibold))
-                .lineLimit(1)
+            // Account avatar
+            if !appState.settings.googleConnectedEmail.isEmpty {
+                Circle()
+                    .fill(Color.purple)
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Text(String(appState.settings.googleConnectedEmail.prefix(1)).uppercased())
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                    )
+                    .help(appState.settings.googleConnectedEmail)
+            }
+
+            // Inline date info
+            Text("\(Calendar.current.component(.day, from: calendarVM.selectedDate))")
+                .font(.system(size: 20, design: .monospaced).weight(.bold))
+                .foregroundStyle(Calendar.current.isDateInToday(calendarVM.selectedDate) ? Color.red.opacity(0.8) : .primary)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(calendarVM.selectedDate.formatted(.dateTime.weekday(.wide)))
+                    .font(.system(size: 12, weight: .medium))
+                Text(calendarVM.selectedDate.formatted(.dateTime.month(.wide).year()))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
@@ -168,72 +198,56 @@ struct WorkspaceCalendarView: View {
                 .buttonStyle(.plain)
             }
 
-            // Sources toggle
-            Button(action: { calendarVM.showSourcePicker.toggle() }) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
+            // Sidebar toggle
+            Button(action: { showEventSidebar.toggle() }) {
+                Image(systemName: "sidebar.right")
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(showEventSidebar ? Color.accentColor : .secondary)
             }
             .buttonStyle(.plain)
-            .popover(isPresented: $calendarVM.showSourcePicker) {
-                CalendarSourcePicker(
-                    sources: calendarService.sources,
-                    overlays: calendarService.overlays,
-                    onToggleSource: { id in
-                        if let workspace = appState.workspacePath {
-                            calendarService.toggleSourceVisibility(id: id, workspace: workspace)
-                        }
-                    },
-                    onToggleOverlay: { id in
-                        if let workspace = appState.workspacePath {
-                            calendarService.toggleOverlayVisibility(id: id, workspace: workspace)
-                        }
-                    }
-                )
-            }
-
-            // Create event button
-            Button(action: handleCreateEventButton) {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(appState.settings.googleConnected ? "Create Google Calendar event" : "Connect Google Calendar to create events")
-
-            // Import recording button
-            Button(action: { showImportRecording = true }) {
-                Image(systemName: "waveform.badge.plus")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Import audio recording")
-            .disabled(transcriptionService.isTranscribing)
-            .fileImporter(
-                isPresented: $showImportRecording,
-                allowedContentTypes: [
-                    UTType.audio,
-                    UTType(filenameExtension: "m4a") ?? .audio,
-                    UTType(filenameExtension: "mp3") ?? .audio,
-                    UTType.wav,
-                ],
-                allowsMultipleSelection: false
-            ) { result in
-                handleImportedRecording(result)
-            }
-
-            // Sync button
-            Button(action: syncCalendar) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(calendarService.isSyncing)
+            .help("Toggle event details")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
+        .fileImporter(
+            isPresented: $showImportRecording,
+            allowedContentTypes: [
+                UTType.audio,
+                UTType(filenameExtension: "m4a") ?? .audio,
+                UTType(filenameExtension: "mp3") ?? .audio,
+                UTType.wav,
+            ],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportedRecording(result)
+        }
+    }
+
+    // MARK: - Event Detail Sidebar
+
+    private var calendarEventSidebar: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Event Details")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Button(action: { showEventSidebar = false }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            ContentUnavailableView(
+                "Select an event",
+                systemImage: "calendar",
+                description: Text("Click an event to see its details here.")
+            )
+            .frame(maxHeight: .infinity)
+        }
+        .padding(16)
+        .background(Color.fallbackEditorBg)
     }
 
     private func calendarErrorBanner(_ message: String) -> some View {

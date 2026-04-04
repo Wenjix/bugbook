@@ -12,36 +12,9 @@ struct TerminalPaneView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Compact toolbar
-            HStack(spacing: ShellZoomMetrics.size(6)) {
-                Image(systemName: "terminal")
-                    .font(ShellZoomMetrics.font(Typography.caption))
-                    .foregroundStyle(.secondary)
-
-                Text(session.title)
-                    .font(ShellZoomMetrics.font(Typography.caption))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Spacer()
-
-                if !session.isAlive {
-                    Text("exited")
-                        .font(ShellZoomMetrics.font(Typography.caption2))
-                        .foregroundStyle(StatusColor.cancelled)
-                }
-            }
-            .padding(.horizontal, ShellZoomMetrics.size(10))
-            .padding(.vertical, ShellZoomMetrics.size(4))
-            .background(Color.fallbackBgSecondary)
-
-            Divider()
-
-            // Terminal surface
-            GhosttyTerminalView(session: session, isFocused: isFocused)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        // Terminal surface — chrome bar handles the title/icon
+        GhosttyTerminalView(session: session, isFocused: isFocused)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

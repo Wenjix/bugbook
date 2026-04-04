@@ -84,6 +84,7 @@ class BlockDocument {
     var meetingVolatileText: String = ""
     @ObservationIgnored var onStartMeeting: ((UUID) -> Void)?
     @ObservationIgnored var onStopMeeting: ((UUID) -> Void)?
+    @ObservationIgnored var onSplitPane: (() -> Void)?
     @ObservationIgnored var transcriptionService: TranscriptionService?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
@@ -927,6 +928,7 @@ class BlockDocument {
         case askAI
         case meetingNotes
         case meeting
+        case splitPane
     }
 
     struct SlashCommand {
@@ -966,6 +968,8 @@ class BlockDocument {
         SlashCommand(name: "Toggle Heading 3", icon: "chevron.right", action: .blockType(.headingToggle, headingLevel: 3), section: "Basic blocks", keywords: ["toggle h3", "collapsible heading"]),
         SlashCommand(name: "Table of Contents", icon: "list.bullet.indent", action: .blockType(.outline, headingLevel: 0), section: "Basic blocks", keywords: ["toc", "outline", "contents", "navigation", "headings"]),
         SlashCommand(name: "Callout", icon: "exclamationmark.circle", action: .blockType(.callout, headingLevel: 0), section: "Basic blocks", keywords: ["note", "alert", "warning", "info", "tip", "callout"]),
+        // Layout
+        SlashCommand(name: "Split Pane", icon: "rectangle.split.2x1", action: .splitPane, section: "Layout", keywords: ["split", "pane", "tile", "open", "side"]),
         // Inline
         SlashCommand(name: "Page", icon: "doc.text", action: .createPage, section: "Inline", keywords: ["subpage", "new page", "child"]),
         SlashCommand(name: "Link to Page", icon: "link", action: .linkToPage, section: "Inline", keywords: ["wiki", "reference", "mention"]),
@@ -1035,6 +1039,11 @@ class BlockDocument {
                 }
             }
             dismissSlashMenu()
+            return
+
+        case .splitPane:
+            dismissSlashMenu()
+            onSplitPane?()
             return
 
         case .meeting:

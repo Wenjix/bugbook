@@ -20,15 +20,15 @@ struct NotesChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-
-            Divider()
-
-            messageArea
-
-            Divider()
-
-            composer
+            if messages.isEmpty && !aiService.isRunning {
+                landingView
+            } else {
+                header
+                Divider()
+                messageArea
+                Divider()
+                composer
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.fallbackEditorBg)
@@ -65,8 +65,6 @@ struct NotesChatView: View {
             }
 
             Spacer()
-
-            enginePicker
 
             Button(action: { threadStore.createThread() }) {
                 Label("New Thread", systemImage: "plus.message")
@@ -151,59 +149,99 @@ struct NotesChatView: View {
         )
     }
 
-    @ViewBuilder
-    private var messageArea: some View {
-        if messages.isEmpty && !aiService.isRunning {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Ask anything about your workspace")
-                    .font(.system(size: 14))
+    private var landingView: some View {
+        VStack(spacing: 0) {
+            // Subtle thread history button, top-right
+            HStack {
+                Spacer()
+                Button {
+                    showThreadPicker.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 12))
+                        Text("Threads")
+                            .font(.system(size: 12, weight: .medium))
+                    }
                     .foregroundStyle(.secondary)
-
-                WrappingHStack(spacing: 6) {
-                    suggestionChip("Summarize today's meetings")
-                    suggestionChip("What changed this week?")
-                    suggestionChip("Draft a follow-up email")
-                    suggestionChip("Open tickets overview")
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.primary.opacity(Opacity.subtle))
+                    .clipShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .floatingPopover(isPresented: $showThreadPicker, arrowEdge: .bottom) {
+                    threadPickerContent
+                        .popoverSurface()
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        ForEach(messages) { message in
-                            messageRow(message)
-                                .id(message.id)
-                        }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
 
-                        if aiService.isRunning {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Thinking...")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 24)
-                            .id("loading")
+            Spacer()
+
+            VStack(spacing: 16) {
+                Text("Welcome, Max")
+                    .font(.system(size: Typography.title, weight: .semibold))
+                    .foregroundStyle(Color.fallbackTextPrimary)
+                    .frame(maxWidth: 640, alignment: .center)
+
+                composer
+                    .frame(maxWidth: 640)
+
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        suggestionChip("Summarize today's meetings", icon: "calendar")
+                        suggestionChip("Open tickets overview", icon: "doc.text")
+                    }
+                    HStack(spacing: 6) {
+                        suggestionChip("Draft a follow-up email", icon: "envelope")
+                        suggestionChip("What changed this week?", icon: "pencil")
+                    }
+                }
+                .frame(maxWidth: 640)
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var messageArea: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(messages) { message in
+                        messageRow(message)
+                            .id(message.id)
+                    }
+
+                    if aiService.isRunning {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Thinking...")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
                         }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: 980)
-                    .frame(maxWidth: .infinity)
-                }
-                .onChange(of: messages.count) { _, _ in
-                    if let last = messages.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
+                        .padding(.horizontal, 24)
+                        .id("loading")
                     }
                 }
-                .onChange(of: aiService.isRunning) { _, running in
-                    if running {
-                        proxy.scrollTo("loading", anchor: .bottom)
-                    }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
+                .frame(maxWidth: 980)
+                .frame(maxWidth: .infinity)
+            }
+            .onChange(of: messages.count) { _, _ in
+                if let last = messages.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+            }
+            .onChange(of: aiService.isRunning) { _, running in
+                if running {
+                    proxy.scrollTo("loading", anchor: .bottom)
                 }
             }
         }
@@ -239,14 +277,31 @@ struct NotesChatView: View {
                 .scrollIndicators(.hidden)
             }
 
-            HStack(alignment: .bottom, spacing: 12) {
+            TextField("Ask about your notes...", text: $inputText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 16))
+                .lineLimit(1...8)
+                .focused($inputFocused)
+                .onChange(of: inputText) { _, value in
+                    if value.last == "@" {
+                        showFileReferencePicker = true
+                    }
+                }
+                .onSubmit {
+                    sendMessage()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+
+            HStack(spacing: 8) {
                 Button {
                     showFileReferencePicker.toggle()
                 } label: {
                     Image(systemName: "at")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 26, height: 26)
                         .background(Color.fallbackBadgeBg)
                         .clipShape(Circle())
                 }
@@ -256,40 +311,30 @@ struct NotesChatView: View {
                     fileReferencePicker
                 }
 
-                TextField("Ask about your notes...", text: $inputText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 16))
-                    .lineLimit(1...8)
-                    .focused($inputFocused)
-                    .onChange(of: inputText) { _, value in
-                        if value.last == "@" {
-                            showFileReferencePicker = true
-                        }
-                    }
-                    .onSubmit {
-                        sendMessage()
-                    }
+                Spacer()
+
+                inlineEnginePicker
 
                 Button(action: sendMessage) {
                     Label("Send", systemImage: "arrow.up.circle.fill")
                         .labelStyle(.iconOnly)
-                        .font(.system(size: 28))
+                        .font(.system(size: 26))
                         .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!canSend)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.fallbackSurfaceSubtle)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.fallbackBorderColor, lineWidth: 1)
-            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
         }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.fallbackSurfaceSubtle)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.fallbackBorderColor, lineWidth: 1)
+        )
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
     }
@@ -347,22 +392,36 @@ struct NotesChatView: View {
 
     // MARK: - Engine Picker
 
-    private var enginePicker: some View {
-        HStack(spacing: 6) {
-            Picker("", selection: $selectedEngine) {
-                ForEach(PreferredAIEngine.allCases, id: \.self) { engine in
+    private var inlineEnginePicker: some View {
+        Menu {
+            ForEach(PreferredAIEngine.allCases, id: \.self) { engine in
+                Button {
+                    selectedEngine = engine
+                } label: {
                     HStack(spacing: 4) {
                         Circle()
                             .fill(engineAvailable(engine) ? Color.green : Color.red)
                             .frame(width: 6, height: 6)
                         Text(engine.rawValue)
                     }
-                    .tag(engine)
                 }
             }
-            .pickerStyle(.menu)
-            .frame(width: 110)
+        } label: {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(engineAvailable(selectedEngine) ? Color.green : Color.red)
+                    .frame(width: 6, height: 6)
+                Text(selectedEngine.rawValue)
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
         }
+        .buttonStyle(.plain)
     }
 
     private func engineAvailable(_ engine: PreferredAIEngine) -> Bool {
@@ -625,22 +684,29 @@ struct NotesChatView: View {
 
     // MARK: - Suggestion Chips
 
-    private func suggestionChip(_ text: String) -> some View {
+    private func suggestionChip(_ text: String, icon: String? = nil) -> some View {
         Button {
             inputText = text
             sendMessage()
         } label: {
-            Text(text)
-                .font(.system(size: Typography.caption))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.primary.opacity(Opacity.subtle))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.primary.opacity(Opacity.light), lineWidth: 1)
-                )
+            HStack(spacing: 5) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Text(text)
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(Opacity.subtle))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.primary.opacity(Opacity.light), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
