@@ -36,6 +36,33 @@ final class BlockDocumentTests: XCTestCase {
         XCTAssertTrue(output.contains("List item 1"))
     }
 
+    func testReloadFromDiskRestoresMetadata() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("Note.md")
+        let markdown = """
+        <!-- icon:bolt.fill -->
+        <!-- cover:/tmp/cover.png@42 -->
+        <!-- full-width -->
+        # Title
+        Body
+        """
+        try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let doc = BlockDocument(markdown: "# Title\nBody\n")
+        doc.filePath = fileURL.path
+        doc.reloadFromDisk()
+
+        XCTAssertEqual(doc.icon, "bolt.fill")
+        XCTAssertEqual(doc.coverUrl, "/tmp/cover.png")
+        XCTAssertEqual(doc.coverPosition, 42)
+        XCTAssertTrue(doc.fullWidth)
+        XCTAssertEqual(doc.titleBlock?.text, "Title")
+        XCTAssertTrue(doc.blocks.contains(where: { $0.text == "Body" }))
+    }
+
     func testDeleteBlock() {
         let doc = BlockDocument(markdown: "# Title\nParagraph 1\nParagraph 2\n")
         let initialCount = doc.blocks.count

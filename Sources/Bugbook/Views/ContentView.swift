@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var aiInitTask: Task<Void, Never>?
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
+    @State private var restoredWorkspaceDocuments = false
     @State private var lastTrashPurgeWorkspace: String?
     @State private var recordingPillController = FloatingRecordingPillController()
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
@@ -1470,7 +1471,7 @@ struct ContentView: View {
                 doc.blockMenuBlockId = nil
                 if let targetTab = appState.openTabs.first(where: { $0.path == targetPagePath }),
                    let targetDoc = blockDocuments[targetTab.id] {
-                    targetDoc.blocks = MarkdownBlockParser.parse(content)
+                    targetDoc.replaceMarkdown(content)
                 }
             } catch {
                 Log.fileSystem.error("Move block failed: \(error.localizedDescription)")
@@ -1951,39 +1952,25 @@ struct ContentView: View {
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
         editorUI.focusModeSuppress = true
-        do {
-            let diskContent = try fileSystem.loadFile(at: entry.path)
-            let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: entry.path)
-            let content = restoredDraft ?? diskContent
+        if let loadedPage = loadPageContent(at: entry.path) {
+            let content = loadedPage.content
 
             let doc = BlockDocument(markdown: content)
             doc.filePath = entry.path
             wireUpDocumentCallbacks(doc)
-
-            // Inject pageLink blocks for child pages
-            if let children = entry.children, !children.isEmpty {
-                let existingLinks = Set(doc.blocks.filter { $0.type == .pageLink }.map { $0.pageLinkName })
-                for child in children where child.name.hasSuffix(".md") && !child.isDatabase {
-                    let pageName = String(child.name.dropLast(3))
-                    if !existingLinks.contains(pageName) {
-                        doc.blocks.append(Block(type: .pageLink, pageLinkName: pageName))
-                    }
-                }
-            }
+            injectChildPageLinks(into: doc, from: entry)
 
             blockDocuments[paneId] = doc
 
             // Sync icon and display name from parsed document
             workspaceManager.updatePaneOpenFile(paneId: paneId) { file in
                 file.content = content
-                file.isDirty = restoredDraft != nil
+                file.isDirty = loadedPage.isRestoredDraft
                 file.icon = doc.icon
                 if let rawTitle = doc.titleBlock?.text, !rawTitle.isEmpty {
                     file.displayName = AttributedStringConverter.plainText(from: rawTitle)
                 }
             }
-        } catch {
-            Log.editor.error("Failed to load file: \(error.localizedDescription)")
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -2155,7 +2142,9 @@ struct ContentView: View {
         }
 
         // Initialize workspace manager (restore saved layout or migrate from tabs)
+        restoredWorkspaceDocuments = false
         workspaceManager.restoreOrCreateDefault()
+        restoreWorkspaceDocumentsIfNeeded()
 
         startWorkspaceWatcher(path: workspacePath)
 
@@ -2165,6 +2154,96 @@ struct ContentView: View {
             let servers = fs.parseMCPServers()
             await MainActor.run {
                 self.appState.mcpServers = servers
+            }
+        }
+    }
+
+    private func restoreWorkspaceDocumentsIfNeeded() {
+        guard !restoredWorkspaceDocuments else { return }
+
+        var didRestoreAny = false
+
+        for (workspaceIndex, leaf, file) in workspaceManager.allDocumentLeaves() {
+            guard file.kind == .page, !file.path.isEmpty else { continue }
+            guard let entry = restoredEntry(for: file),
+                  let loadedPage = loadPageContent(at: entry.path) else {
+                continue
+            }
+
+            let doc = BlockDocument(markdown: loadedPage.content)
+            doc.filePath = entry.path
+            wireUpDocumentCallbacks(doc)
+            injectChildPageLinks(into: doc, from: entry)
+            blockDocuments[leaf.id] = doc
+
+            var workspace = workspaceManager.workspaces[workspaceIndex]
+            guard case .document(var openFile) = leaf.content else { continue }
+            openFile.content = loadedPage.content
+            openFile.isDirty = loadedPage.isRestoredDraft
+            openFile.icon = doc.icon
+            if let rawTitle = doc.titleBlock?.text, !rawTitle.isEmpty {
+                openFile.displayName = AttributedStringConverter.plainText(from: rawTitle)
+            }
+            workspace.root = workspace.root.updatingLeafContent(
+                leafId: leaf.id,
+                content: .document(openFile: openFile)
+            )
+            workspaceManager.workspaces[workspaceIndex] = workspace
+            didRestoreAny = true
+        }
+
+        guard didRestoreAny else { return }
+        restoredWorkspaceDocuments = true
+        workspaceManager.schedulePersist()
+    }
+
+    private func restoredEntry(for file: OpenFile) -> FileEntry? {
+        if let entry = fileSystem.findEntry(path: file.path, in: appState.fileTree) {
+            return entry
+        }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            return nil
+        }
+
+        let companionPath = file.path.hasSuffix(".md") ? String(file.path.dropLast(3)) : file.path
+        var children: [FileEntry]?
+        if FileManager.default.fileExists(atPath: companionPath, isDirectory: &isDirectory),
+           isDirectory.boolValue {
+            children = fileSystem.buildFileTree(at: companionPath)
+        }
+
+        return FileEntry(
+            id: file.path,
+            name: (file.path as NSString).lastPathComponent,
+            path: file.path,
+            isDirectory: false,
+            kind: file.kind,
+            icon: file.icon,
+            children: children
+        )
+    }
+
+    private func loadPageContent(at path: String) -> (content: String, isRestoredDraft: Bool)? {
+        do {
+            let diskContent = try fileSystem.loadFile(at: path)
+            let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: path)
+            return (restoredDraft ?? diskContent, restoredDraft != nil)
+        } catch {
+            Log.editor.error("Failed to load file: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func injectChildPageLinks(into doc: BlockDocument, from entry: FileEntry) {
+        guard let children = entry.children, !children.isEmpty else { return }
+        let existingLinks = Set(doc.blocks.filter { $0.type == .pageLink }.map { $0.pageLinkName })
+        for child in children where child.name.hasSuffix(".md") && !child.isDatabase {
+            let pageName = String(child.name.dropLast(3))
+            if !existingLinks.contains(pageName) {
+                doc.blocks.append(Block(type: .pageLink, pageLinkName: pageName))
             }
         }
     }
@@ -2335,29 +2414,15 @@ struct ContentView: View {
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
         editorUI.focusModeSuppress = true
-        do {
-            let diskContent = try fileSystem.loadFile(at: entry.path)
-            let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: entry.path)
-            let content = restoredDraft ?? diskContent
+        if let loadedPage = loadPageContent(at: entry.path) {
+            let content = loadedPage.content
             if let index = appState.openTabs.firstIndex(where: { $0.path == entry.path }) {
                 appState.openTabs[index].content = content
-                appState.openTabs[index].isDirty = restoredDraft != nil
+                appState.openTabs[index].isDirty = loadedPage.isRestoredDraft
                 let doc = BlockDocument(markdown: content)
                 doc.filePath = entry.path
                 wireUpDocumentCallbacks(doc)
-
-                // Inject pageLink blocks for child pages (from file tree, no extra disk I/O)
-                if let children = entry.children, !children.isEmpty {
-                    let existingLinks = Set(doc.blocks
-                        .filter { $0.type == .pageLink }
-                        .map { $0.pageLinkName })
-                    for child in children where child.name.hasSuffix(".md") && !child.isDatabase {
-                        let pageName = String(child.name.dropLast(3))
-                        if !existingLinks.contains(pageName) {
-                            doc.blocks.append(Block(type: .pageLink, pageLinkName: pageName))
-                        }
-                    }
-                }
+                injectChildPageLinks(into: doc, from: entry)
 
                 blockDocuments[appState.openTabs[index].id] = doc
                 // Sync icon from parsed document
@@ -2366,8 +2431,6 @@ struct ContentView: View {
                     appState.openTabs[index].displayName = AttributedStringConverter.plainText(from: rawTitle)
                 }
             }
-        } catch {
-            Log.editor.error("Failed to load file: \(error.localizedDescription)")
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
