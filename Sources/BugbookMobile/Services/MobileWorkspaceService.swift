@@ -66,9 +66,10 @@ import BugbookCore
         var noteFiles: [MobileNoteFile] = []
 
         for name in contents {
-            if name.hasPrefix(".") { continue }
-            if name == "_schema.json" || name == "_index.json" { continue }
+            if name.hasPrefix(".") || name.hasPrefix("_") { continue }
             if name == "Daily Notes" || name == "Templates" { continue }
+            // Filter internal/legacy folders that shouldn't appear in the file tree
+            if ["assets", "logseq", "journals", "pages", "whiteboards"].contains(name) { continue }
 
             let fullPath = (path as NSString).appendingPathComponent(name)
             if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }

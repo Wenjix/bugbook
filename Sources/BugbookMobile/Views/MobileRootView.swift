@@ -54,6 +54,10 @@ struct MobileRootView: View {
                 .padding(.bottom, 24)
             }
             .background(Color.mobileBgPrimary)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                captureFieldFocused = false
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(greeting)
@@ -118,6 +122,7 @@ struct MobileRootView: View {
                 }
             }
         }
+        .background(Color.mobileBgPrimary.ignoresSafeArea())
     }
 
     // MARK: - 1. Capture Zone (Priority #1)

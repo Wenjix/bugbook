@@ -22,6 +22,7 @@ targets:
         product: BugbookCore
     settings:
       base:
+        DEVELOPMENT_TEAM: H9N9P29TX5
         CODE_SIGN_ENTITLEMENTS: App/BugbookMobile.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.BugbookMobile
         PRODUCT_NAME: Bugbook
