@@ -9,6 +9,9 @@ enum AttributedStringConverter {
     /// Stores the original markdown source for round-trip fidelity.
     static let markdownSourceKey = NSAttributedString.Key("BugbookMarkdownSource")
 
+    /// Stores the page name for @[[mention]] spans so clicks can navigate.
+    static let mentionPageNameKey = NSAttributedString.Key("BugbookMentionPageName")
+
     // MARK: - Markdown -> NSAttributedString
 
     /// Parses inline markdown formatting into an attributed string.
@@ -104,12 +107,13 @@ enum AttributedStringConverter {
                 continue
             }
 
-            // Mention: @[[Page Name]] → styled inline link
+            // Mention: @[[Page Name]] → styled inline link with page icon
             if let (name, end) = parseMention(markdown, from: i) {
                 var attrs = baseAttributes
                 attrs[.foregroundColor] = NSColor.controlAccentColor
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 attrs[Self.markdownSourceKey] = "@[[\(name)]]"
+                attrs[Self.mentionPageNameKey] = name
                 result.append(NSAttributedString(string: name, attributes: attrs))
                 i = end
                 continue

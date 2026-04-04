@@ -180,6 +180,9 @@ struct BlockTextView: NSViewRepresentable {
         textView.onFrameWidthChanged = {
             DispatchQueue.main.async { heightRecalc() }
         }
+        textView.onMentionClick = { [weak coordinator] pageName in
+            coordinator?.parent.document.onNavigateToPage?(pageName)
+        }
         context.coordinator.textView = textView
 
         DispatchQueue.main.async {
@@ -312,9 +315,9 @@ struct BlockTextView: NSViewRepresentable {
            context.coordinator.lastFocusedSelf != true {
             context.coordinator.lastFocusedSelf = true
             let cursorPos = self.document.cursorPosition
-            // Retry with short delay — view may not have a window yet on first render
             let focusBlockId = blockId
             let focusDocument = document
+            // Retry with short delay — view may not have a window yet on first render
             func attemptFocus(retries: Int = 3) {
                 guard retries > 0,
                       focusDocument.focusedBlockId == focusBlockId else { return }
@@ -1312,6 +1315,7 @@ class BlockNSTextView: NSTextView {
     var cutSelectionAction: (() -> Bool)?
     var toggleBlockExpandAction: (() -> Void)?
     var onFrameWidthChanged: (() -> Void)?
+    var onMentionClick: ((String) -> Void)?
     var isInBlockSelection = false
     private var lastKnownWidth: CGFloat = 0
     private var dragSelectionAnchorOffset = 0
@@ -1429,6 +1433,23 @@ class BlockNSTextView: NSTextView {
             return
         }
         let localPoint = convert(event.locationInWindow, from: nil)
+
+        // Check if click landed on a mention span — navigate instead of editing
+        if let handler = onMentionClick, let storage = textStorage {
+            let charIndex = characterIndexForInsertion(at: localPoint)
+            if charIndex >= 0, charIndex < storage.length {
+                let pageName = storage.attribute(
+                    AttributedStringConverter.mentionPageNameKey,
+                    at: charIndex,
+                    effectiveRange: nil
+                ) as? String
+                if let pageName {
+                    handler(pageName)
+                    return
+                }
+            }
+        }
+
         dragSelectionAnchorOffset = textOffset(for: localPoint)
         dragStartWindowPoint = event.locationInWindow
         beginSelectionDragMonitoring()
