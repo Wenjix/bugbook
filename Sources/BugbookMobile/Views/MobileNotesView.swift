@@ -41,6 +41,7 @@ struct MobileNotesView: View {
                     } label: {
                         Label("Search", systemImage: "magnifyingglass")
                     }
+                    .help("Search notes")
                 }
                 ToolbarItem(placement: .automatic) {
                     Button {
@@ -49,6 +50,7 @@ struct MobileNotesView: View {
                     } label: {
                         Label("New Note", systemImage: "plus")
                     }
+                    .help("Create new note")
                 }
             }
             .refreshable {

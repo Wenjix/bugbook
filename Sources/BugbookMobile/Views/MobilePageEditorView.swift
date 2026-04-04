@@ -70,6 +70,7 @@ struct MobilePageEditorView: View {
                 } label: {
                     Label(isEditing ? "Done" : "Edit", systemImage: isEditing ? "checkmark" : "pencil")
                 }
+                .help(isEditing ? "Finish editing" : "Edit page")
             }
         }
         .onAppear {

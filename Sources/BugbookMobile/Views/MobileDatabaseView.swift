@@ -38,12 +38,15 @@ struct MobileDatabaseView: View {
                 Button { showFilterSort = true } label: {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                 }
+                .help("Filter & Sort")
                 Button { showSchemaEditor = true } label: {
                     Image(systemName: "slider.horizontal.3")
                 }
+                .help("Edit Schema")
                 Button { viewState.createRow() } label: {
                     Image(systemName: "plus")
                 }
+                .help("New Row")
             }
         }
         .refreshable { viewState.loadData() }
