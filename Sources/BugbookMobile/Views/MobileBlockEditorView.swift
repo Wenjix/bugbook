@@ -507,7 +507,7 @@ private struct BlockRowView: View {
         default:
             // Paragraph, bullet text, numbered text, task text, blockquote text
             TextField(placeholder, text: $block.text, axis: .vertical)
-                .font(textFont)
+                .font(.body)
                 .foregroundStyle(textStyle)
                 .strikethrough(block.type == .task && block.isChecked)
                 .italic(block.type == .blockquote)
@@ -523,13 +523,6 @@ private struct BlockRowView: View {
         case .task: return "Task"
         case .blockquote: return "Quote"
         default: return "Type something..."
-        }
-    }
-
-    private var textFont: Font {
-        switch block.type {
-        case .blockquote: return .body
-        default: return .body
         }
     }
 

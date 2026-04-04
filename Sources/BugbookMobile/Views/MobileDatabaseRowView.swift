@@ -11,7 +11,7 @@ struct MobileDatabaseRowView: View {
     @State private var properties: [String: PropertyValue] = [:]
     @State private var bodyText: String = ""
     @State private var saveError: String?
-    @State private var showRelationPicker: String?
+    @State private var showRelationPicker: IdentifiableString?
 
     private var isCreate: Bool { existingRow == nil }
     private let rowStore = RowStore()
@@ -75,14 +75,14 @@ struct MobileDatabaseRowView: View {
                 }
             }
         }
-        .sheet(item: $showRelationPicker) { propId in
+        .sheet(item: $showRelationPicker) { wrapper in
             MobileRelationPickerView(
-                propertyId: propId,
-                property: schema.properties.first(where: { $0.id == propId })!,
-                currentValue: properties[propId] ?? .empty,
+                propertyId: wrapper.id,
+                property: schema.properties.first(where: { $0.id == wrapper.id })!,
+                currentValue: properties[wrapper.id] ?? .empty,
                 dbPath: dbPath,
                 onSelect: { newValue in
-                    properties[propId] = newValue
+                    properties[wrapper.id] = newValue
                 }
             )
         }
@@ -183,7 +183,7 @@ struct MobileDatabaseRowView: View {
             }
         case .relation:
             Button {
-                showRelationPicker = prop.id
+                showRelationPicker = IdentifiableString(prop.id)
             } label: {
                 HStack {
                     Text(prop.name)
@@ -379,7 +379,7 @@ struct MobileDatabaseRowView: View {
     }
 
     private func scheduleSave() {
-        // Body edited, mark for save on dismiss
+        // Body changes are persisted when the user taps Save
     }
 
     private func defaultValue(for type: PropertyType) -> PropertyValue {
@@ -542,7 +542,7 @@ struct MobileRelationPickerView: View {
                         }
                     } label: {
                         HStack {
-                            Text(row.title(schema: targetSchema!))
+                            Text(targetSchema.map { row.title(schema: $0) } ?? row.id)
                             Spacer()
                             if selectedIds.contains(row.id) {
                                 Image(systemName: "checkmark")
@@ -616,7 +616,8 @@ struct MobileRelationPickerView: View {
     }
 }
 
-// Make String conform to Identifiable for sheet(item:)
-extension String: @retroactive Identifiable {
-    public var id: String { self }
+// Wrapper for sheet(item:) with String values
+struct IdentifiableString: Identifiable {
+    let id: String
+    init(_ value: String) { self.id = value }
 }

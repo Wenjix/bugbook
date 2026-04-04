@@ -3,49 +3,12 @@ import SwiftUI
 import UIKit
 #endif
 
-// MARK: - Typography Scale
-
-enum MobileTypography {
-    static let title: Font = .system(size: 28, weight: .bold)
-    static let title2: Font = .system(size: 22, weight: .bold)
-    static let title3: Font = .system(size: 18, weight: .semibold)
-    static let body: Font = .system(size: 14, weight: .regular)
-    static let bodyMedium: Font = .system(size: 14, weight: .medium)
-    static let content: Font = .system(size: 17, weight: .regular)
-    static let caption: Font = .system(size: 12, weight: .regular)
-    static let captionMedium: Font = .system(size: 12, weight: .medium)
-    static let caption2: Font = .system(size: 11, weight: .regular)
-    static let label: Font = .system(size: 9.5, weight: .semibold)
-}
-
-// MARK: - Spacing Scale
-
-enum MobileSpacing {
-    static let xs: CGFloat = 4
-    static let sm: CGFloat = 6
-    static let md: CGFloat = 8
-    static let lg: CGFloat = 12
-    static let xl: CGFloat = 16
-    static let xxl: CGFloat = 20
-}
-
 // MARK: - Corner Radius
 
 enum MobileRadius {
-    static let xs: CGFloat = 4
     static let sm: CGFloat = 6
     static let md: CGFloat = 8
     static let lg: CGFloat = 10
-    static let xl: CGFloat = 16
-}
-
-// MARK: - Opacity Scale
-
-enum MobileOpacity {
-    static let subtle: Double = 0.04
-    static let light: Double = 0.08
-    static let medium: Double = 0.15
-    static let strong: Double = 0.3
 }
 
 // MARK: - Theme Colors

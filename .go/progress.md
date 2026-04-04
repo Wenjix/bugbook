@@ -1,44 +1,41 @@
 # Go Run — 2026-04-03
 
-Started: 05:47 PM
-Finished: 07:50 PM
-Duration: 2h 3m
-Time utilization: 2h 3m/8h (26%)
+Started: 11:00 PM
+Focus: Bugbook iOS app — full parity with desktop
 
-## Completed (11 tickets, all verified via build)
-- [x] Page icon resets on restart (row_n13tku) — Codex — PASS
-- [x] CLI settings command (row_ydjt1p) — Claude agent — PASS
-- [x] Change sidebar shortcut Cmd+B → Cmd+. (row_skpdei) — Codex — PASS
-- [x] Marquee block selection delete (row_ia0noz) — Claude agent — PASS
-- [x] Database full-page blank space (row_2gzss5) — Claude agent — PASS
-- [x] Cmd+F find-in-page (row_a18ynu) — Claude agent — PASS
-- [x] AND/OR filter groups UI + CLI (row_1i5rmc) — Claude agent — PASS
-- [x] Mention picker click-to-navigate (row_dimm5g) — Claude agent — PASS (attempt 4)
-- [x] Formula field type (row_56oj2p) — Claude agent — PASS
-- [x] Lookup field type (row_emmhng) — Claude agent — PASS
-- [x] Rollup field type (row_hrxtuh) — Claude agent — PASS
+## Completed (9 tasks, all verified via build)
 
-## Review Queue (11 tickets)
-All moved to Review status in Bugbook.
+- [x] Rich block editor — headings, lists, tasks, code, blockquotes, images, formatting toolbar
+- [x] Database table view — all field types rendered, swipe to delete, row navigation
+- [x] Database kanban view — horizontal scroll columns by select property, cards with badges
+- [x] Database calendar view — month grid, day detail, date property rows
+- [x] View management — view tabs, sort/filter UI, column visibility, grouping, new view creation
+- [x] Full property editor — relation picker, rich dates, formula/lookup/rollup, URL/email actions
+- [x] Schema management — add/rename/delete properties, select options with colors
+- [x] Quick capture — text, photo library, camera, quick action pills for tasks/lists
+- [x] Navigation polish — 5-tab layout (Today/Notes/Databases/Agents/Settings), settings view
 
-## Also completed
-- PR #12 created to fix CI on main (terminal settings)
-- /simplify pass: extracted evaluateFormula, cached findMatches, consolidated delete handlers
-- /review pass: fixed clipboard thread safety, integer coercion in settings CLI
-- CLI settings ticket created and implemented in same run
+## Files Created
+- `Sources/BugbookMobile/Views/MobileBlockEditorView.swift` — Block editor + toolbar
+- `Sources/BugbookMobile/ViewModels/MobileDatabaseViewState.swift` — Shared database state
+- `Sources/BugbookMobile/Views/MobileFilterSortView.swift` — Filter/sort/view options
+- `Sources/BugbookMobile/Views/MobileSchemaEditorView.swift` — Schema + property editor
+- `Sources/BugbookMobile/Views/MobileSettingsView.swift` — Settings view
 
-## Skipped (valid reasons)
-- Canopy tickets (4) — different repo
-- Google OAuth verification — external blocker (domain, Google Console)
-- Live knowledge retrieval — research/Low priority
-- Mobile capture UX research — research note, no implementation
-- Cmd+F duplicate (row_ncrdg3) — duplicate of row_a18ynu
+## Files Modified
+- `MobileDatabaseView.swift` — Complete rewrite with table/kanban/calendar views
+- `MobileDatabaseRowView.swift` — Full property editor, relation picker, body editor
+- `MobilePageEditorView.swift` — Block editor integration
+- `MobileRootView.swift` — 5-tab navigation with settings
+- `MobileTodayView.swift` — Quick capture with photo/camera, action pills
+- `ios/project.yml` — Camera/photo library permissions
+- `ios/BugbookMobile.xcodeproj/` — Regenerated
 
-## Discoveries
-- Debug binary includes Sentry which hangs CLI commands; installed bugbook at ~/.local/bin works fine
-- Worktree cherry-picks into dev with many shared files (formula→lookup→rollup) cause extensive conflicts; surgical agent application is more reliable
-- blockDocumentLookup closure pattern works well for threading live document references through the pane tree
+## Build Status
+BugbookMobile target: PASSING (0 errors, 0 warnings)
 
-## How to Review
-git checkout dev
-swift build && .build/arm64-apple-macosx/debug/Bugbook
+## How to Test
+1. Open `ios/BugbookMobile.xcodeproj` in Xcode
+2. Select an iPhone simulator or physical device
+3. Build and run
+4. Verify iCloud sync by checking if workspace matches desktop app

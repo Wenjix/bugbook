@@ -457,7 +457,7 @@ struct MobileCalendarContentView: View {
         return VStack(spacing: 2) {
             // Day headers
             HStack(spacing: 0) {
-                ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { day in
+                ForEach(Array(["S", "M", "T", "W", "T", "F", "S"].enumerated()), id: \.offset) { _, day in
                     Text(day)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -537,10 +537,20 @@ struct MobileCalendarContentView: View {
 
     // MARK: - Calendar Helpers
 
+    private static let monthYearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+
+    private static let dayStringFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
     private var monthYearString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: selectedMonth)
+        Self.monthYearFormatter.string(from: selectedMonth)
     }
 
     private func changeMonth(_ delta: Int) {
@@ -567,9 +577,7 @@ struct MobileCalendarContentView: View {
     }
 
     private func canonicalDayString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        Self.dayStringFormatter.string(from: date)
     }
 
     private func isToday(_ date: Date) -> Bool {

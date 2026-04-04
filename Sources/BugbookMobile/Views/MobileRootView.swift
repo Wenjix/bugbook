@@ -231,7 +231,6 @@ struct MobileRootView: View {
     }
 
     private func refresh() {
-        workspace.refreshFiles()
         fileTree = workspace.buildHierarchicalFileTree()
         recentFiles = workspace.recentFiles(limit: 6)
     }
