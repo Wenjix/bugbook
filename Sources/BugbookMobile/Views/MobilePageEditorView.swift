@@ -8,6 +8,7 @@ struct MobilePageEditorView: View {
 
     @State private var content: String = ""
     @State private var blocks: [EditableBlock] = []
+    @State private var frontmatter: String = ""  // preserved on edit, prepended on save
     @State private var isLoaded = false
     @State private var isEditing = false
     @State private var hasUnsavedChanges = false
@@ -75,6 +76,7 @@ struct MobilePageEditorView: View {
         }
         .onAppear {
             content = workspace.loadFile(at: note.path)
+            frontmatter = extractFrontmatter(from: content)
             blocks = BlockMarkdownConverter.parse(content)
             isLoaded = true
         }
@@ -112,8 +114,35 @@ struct MobilePageEditorView: View {
         debounceTimer = nil
         guard hasUnsavedChanges else { return }
         hasUnsavedChanges = false
-        let serialized = BlockMarkdownConverter.serialize(blocks)
+        let body = BlockMarkdownConverter.serialize(blocks)
+        let serialized = frontmatter.isEmpty ? body : frontmatter + "\n" + body
         content = serialized
         workspace.saveFile(at: note.path, content: serialized)
+    }
+
+    /// Extract YAML frontmatter + HTML comments from the start of a file
+    private func extractFrontmatter(from text: String) -> String {
+        var lines: [String] = []
+        let allLines = text.components(separatedBy: .newlines)
+        var i = 0
+
+        // YAML frontmatter
+        if i < allLines.count && allLines[i].trimmingCharacters(in: .whitespaces) == "---" {
+            lines.append(allLines[i])
+            i += 1
+            while i < allLines.count {
+                lines.append(allLines[i])
+                if allLines[i].trimmingCharacters(in: .whitespaces) == "---" { i += 1; break }
+                i += 1
+            }
+        }
+
+        // HTML comments
+        while i < allLines.count && allLines[i].trimmingCharacters(in: .whitespaces).hasPrefix("<!--") {
+            lines.append(allLines[i])
+            i += 1
+        }
+
+        return lines.isEmpty ? "" : lines.joined(separator: "\n")
     }
 }

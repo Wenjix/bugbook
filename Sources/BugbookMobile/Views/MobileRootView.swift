@@ -512,8 +512,44 @@ private struct UnifiedFileRow: View {
         (node.isDirectory && !node.isDatabase) || (node.children != nil && !node.children!.isEmpty && !node.isDatabase)
     }
 
+    /// True if this is a .md file that also has children (companion folder pattern)
+    private var isPageWithChildren: Bool {
+        !node.isDirectory && !node.isDatabase && node.children != nil && !node.children!.isEmpty
+    }
+
+    /// True if this is a plain directory (not a database, not a companion folder)
+    private var isFolderWithChildren: Bool {
+        node.isDirectory && !node.isDatabase
+    }
+
     var body: some View {
-        if hasChildren {
+        if isPageWithChildren {
+            // Page with companion folder children: tappable page + expandable children
+            VStack(alignment: .leading, spacing: 0) {
+                NavigationLink {
+                    MobilePageEditorView(note: node, workspace: workspace)
+                } label: {
+                    rowLabel
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+
+                if let children = node.children, !children.isEmpty {
+                    DisclosureGroup(isExpanded: $isExpanded) {
+                        ForEach(children) { child in
+                            UnifiedFileRow(node: child, workspace: workspace)
+                        }
+                    } label: {
+                        Text("\(children.count) sub-page\(children.count == 1 ? "" : "s")")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.mobileTextMuted)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+                }
+            }
+        } else if isFolderWithChildren {
+            // Regular folder: expandable
             DisclosureGroup(isExpanded: $isExpanded) {
                 if let children = node.children {
                     ForEach(children) { child in
@@ -526,6 +562,7 @@ private struct UnifiedFileRow: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
         } else {
+            // Leaf: database or standalone page
             NavigationLink {
                 if node.isDatabase {
                     MobileDatabaseView(dbPath: node.path)
