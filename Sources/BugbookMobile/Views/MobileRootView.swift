@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct MobileRootView: View {
     @State private var workspace = MobileWorkspaceService()
@@ -9,11 +10,12 @@ struct MobileRootView: View {
     @State private var fileTree: [MobileNoteFile] = []
     @State private var recentFiles: [MobileNoteFile] = []
     @State private var favorites: [MobileNoteFile] = []
+    @State private var showPhotoPicker = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var captureFieldFocused: Bool
 
-    /// Recent files excluding today's daily note (already shown as its own card)
     private var filteredRecentFiles: [MobileNoteFile] {
         let dailyPath = workspace.dailyNotePath()
         return recentFiles.filter { $0.path != dailyPath }
@@ -30,15 +32,13 @@ struct MobileRootView: View {
     }
 
     private var todayString: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, MMMM d"
-        return f.string(from: Date())
+        Self.todayFormatter.string(from: Date())
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     captureZone
                     todayCard
                     favoritesSection
@@ -50,21 +50,24 @@ struct MobileRootView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 4)
                 .padding(.bottom, 24)
             }
+            .background(Color.mobileBgPrimary)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(greeting)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color.mobileTextPrimary)
                 }
-                ToolbarItemGroup(placement: .primaryAction) {
+                ToolbarItem(placement: .primaryAction) {
                     Button { showSearch = true } label: {
                         Image(systemName: "magnifyingglass")
+                            .font(.system(size: 14))
                     }
                     .help("Search")
-
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button { _ = workspace.createNote(); refresh() } label: {
                             Label("New Note", systemImage: "doc.badge.plus")
@@ -77,13 +80,16 @@ struct MobileRootView: View {
                             Label("Settings", systemImage: "gear")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 14))
                     }
                     .help("More")
                 }
             }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.mobileBgPrimary, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             #endif
             .onAppear { refresh() }
             .onChange(of: scenePhase) { _, newPhase in
@@ -105,6 +111,12 @@ struct MobileRootView: View {
             .sheet(isPresented: $showSearch) {
                 MobileSearchView(workspacePath: workspace.workspacePath, workspace: workspace)
             }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
+            .onChange(of: selectedPhoto) { _, newItem in
+                if let newItem {
+                    Task { await handlePhotoSelection(newItem) }
+                }
+            }
         }
     }
 
@@ -120,25 +132,49 @@ struct MobileRootView: View {
                 .onSubmit { submitCapture() }
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.bottom, captureText.trimmingCharacters(in: .whitespaces).isEmpty && !captureFieldFocused ? 14 : 8)
 
-            if !captureText.trimmingCharacters(in: .whitespaces).isEmpty {
-                HStack {
-                    Spacer()
-                    Button {
-                        submitCapture()
-                    } label: {
-                        Text("Add to today")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Color.accentColor)
-                            .clipShape(Capsule())
+            // Media icons + send button — visible when focused or has text
+            if captureFieldFocused || !captureText.trimmingCharacters(in: .whitespaces).isEmpty {
+                HStack(spacing: 16) {
+                    HStack(spacing: 14) {
+                        Button { showPhotoPicker = true } label: {
+                            Image(systemName: "camera")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.mobileTextMuted)
+                        }
+                        .help("Attach photo")
+                        Button { /* TODO: voice recording */ } label: {
+                            Image(systemName: "mic")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.mobileTextMuted)
+                        }
+                        .help("Voice note")
+                        Button { /* TODO: link paste */ } label: {
+                            Image(systemName: "link")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.mobileTextMuted)
+                        }
+                        .help("Paste link")
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
+
+                    Spacer()
+
+                    if !captureText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Button { submitCapture() } label: {
+                            Text("Add to today")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .background(Color.accentColor)
+                                .clipShape(Capsule())
+                        }
+                    }
                 }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
         .background(Color.mobileCardBg)
@@ -147,6 +183,41 @@ struct MobileRootView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(captureFieldFocused ? Color.accentColor.opacity(0.4) : Color.mobileBorder, lineWidth: captureFieldFocused ? 1.5 : 0.5)
         )
+        .animation(.easeInOut(duration: 0.15), value: captureFieldFocused)
+    }
+
+    // MARK: - Today Card
+
+    private var todayCard: some View {
+        NavigationLink {
+            let note = workspace.openOrCreateDailyNote() ?? MobileNoteFile(path: workspace.dailyNotePath(), name: todayString)
+            MobilePageEditorView(note: note, workspace: workspace)
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(todayString)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.mobileTextPrimary)
+                    let preview = dailyNotePreview()
+                    if !preview.isEmpty {
+                        Text(preview)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.mobileTextSecondary)
+                            .lineLimit(2)
+                    } else {
+                        Text("Start today's note")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.mobileTextMuted)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.mobileTextSecondary)
+            }
+            .mobileCard()
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 2. Favorites (Priority #2)
@@ -179,7 +250,7 @@ struct MobileRootView: View {
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
-                        ForEach(favorites) { file in
+                        ForEach(favorites.prefix(4)) { file in
                             NavigationLink {
                                 if file.isDatabase {
                                     MobileDatabaseView(dbPath: file.path)
@@ -215,40 +286,6 @@ struct MobileRootView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Today Card
-
-    private var todayCard: some View {
-        NavigationLink {
-            let note = workspace.openOrCreateDailyNote() ?? MobileNoteFile(path: workspace.dailyNotePath(), name: todayString)
-            MobilePageEditorView(note: note, workspace: workspace)
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(todayString)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.mobileTextPrimary)
-                    let preview = dailyNotePreview()
-                    if !preview.isEmpty {
-                        Text(preview)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.mobileTextSecondary)
-                            .lineLimit(2)
-                    } else {
-                        Text("Start today's note")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.mobileTextMuted)
-                    }
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.mobileTextSecondary)
-            }
-            .mobileCard()
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - 3. Recent (Priority #3)
@@ -361,6 +398,26 @@ struct MobileRootView: View {
         refresh()
     }
 
+    private func handlePhotoSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let filename = "capture-\(formatter.string(from: Date())).jpg"
+
+        let imagesDir = (workspace.workspacePath as NSString).appendingPathComponent("Attachments")
+        try? FileManager.default.createDirectory(atPath: imagesDir, withIntermediateDirectories: true)
+        let imagePath = (imagesDir as NSString).appendingPathComponent(filename)
+        try? data.write(to: URL(fileURLWithPath: imagePath))
+
+        guard let note = workspace.openOrCreateDailyNote() else { return }
+        var content = workspace.loadFile(at: note.path)
+        if !content.isEmpty && !content.hasSuffix("\n") { content += "\n" }
+        content += "![capture](Attachments/\(filename))\n"
+        workspace.saveFile(at: note.path, content: content)
+
+        await MainActor.run { refresh() }
+    }
+
     private func refresh() {
         fileTree = workspace.buildHierarchicalFileTree()
         recentFiles = workspace.recentFiles(limit: 8)
@@ -386,40 +443,46 @@ struct MobileRootView: View {
         let path = workspace.dailyNotePath()
         guard FileManager.default.fileExists(atPath: path) else { return "" }
         let content = workspace.loadFile(at: path)
-        let lines = content.components(separatedBy: .newlines)
+        return content.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
             .prefix(2)
-        return lines.joined(separator: " ")
+            .joined(separator: " ")
     }
 
     private func firstLinePreview(for file: MobileNoteFile) -> String? {
         guard !file.isDatabase, !file.isDirectory else { return nil }
         let content = workspace.loadFile(at: file.path)
-        let line = content.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty && !$0.hasPrefix("#") && !$0.hasPrefix("<!--") }
-        guard let line, !line.isEmpty else { return nil }
+        guard let line = content.components(separatedBy: .newlines)
+            .map({ $0.trimmingCharacters(in: .whitespaces) })
+            .first(where: { !$0.isEmpty && !$0.hasPrefix("#") && !$0.hasPrefix("<!--") }),
+              !line.isEmpty else { return nil }
         return line.count > 80 ? String(line.prefix(80)) + "..." : line
     }
 
-    /// Converts raw filenames like "2026-04-04" into friendly dates, leaves others as-is
     private func displayName(for file: MobileNoteFile) -> String {
         let name = file.name
-        // Check if this looks like a daily note filename (YYYY-MM-DD)
         if name.count == 10, name.dropFirst(4).first == "-", name.dropFirst(7).first == "-" {
-            let f = DateFormatter()
-            f.dateFormat = "yyyy-MM-dd"
-            if let date = f.date(from: name) {
-                let display = DateFormatter()
-                display.dateFormat = "EEEE, MMMM d"
-                return display.string(from: date)
+            if let date = Self.isoDateFormatter.date(from: name) {
+                return Self.todayFormatter.string(from: date)
             }
         }
         return name
     }
 
     // MARK: - Helpers
+
+    private static let todayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d"
+        return f
+    }()
+
+    private static let isoDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
