@@ -313,8 +313,11 @@ struct BlockTextView: NSViewRepresentable {
             context.coordinator.lastFocusedSelf = true
             let cursorPos = self.document.cursorPosition
             // Retry with short delay — view may not have a window yet on first render
+            let focusBlockId = blockId
+            let focusDocument = document
             func attemptFocus(retries: Int = 3) {
-                guard retries > 0 else { return }
+                guard retries > 0,
+                      focusDocument.focusedBlockId == focusBlockId else { return }
                 if textView.window != nil {
                     let pos = min(cursorPos, textView.string.count)
                     let targetSelection = NSRange(location: pos, length: 0)

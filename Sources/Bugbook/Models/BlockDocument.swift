@@ -1530,6 +1530,7 @@ class BlockDocument {
 
     func beginMarqueeBlockSelection() {
         clearMultiBlockTextSelection()
+        focusedBlockId = nil
         blockSelectionAnchor = nil
         selectedBlockIds.removeAll()
         selectionRect = nil

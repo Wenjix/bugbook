@@ -73,14 +73,12 @@ struct BlockEditorView: View {
         .focusEffectDisabled()
         .focused($isEditorFocused)
         .onKeyPress(.delete) {
-            guard !document.selectedBlockIds.isEmpty,
-                  document.focusedBlockId == nil else { return .ignored }
+            guard !document.selectedBlockIds.isEmpty else { return .ignored }
             document.deleteSelectedBlocks()
             return .handled
         }
         .onKeyPress(.init(Character(UnicodeScalar(127)))) { // backspace
-            guard !document.selectedBlockIds.isEmpty,
-                  document.focusedBlockId == nil else { return .ignored }
+            guard !document.selectedBlockIds.isEmpty else { return .ignored }
             document.deleteSelectedBlocks()
             return .handled
         }
