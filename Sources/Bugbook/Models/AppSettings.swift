@@ -27,6 +27,12 @@ enum AnthropicModel: String, Codable, CaseIterable {
     }
 }
 
+enum TerminalColorSchemeMode: String, Codable, CaseIterable {
+    case light
+    case dark
+    case system
+}
+
 enum ExecutionPolicy: String, Codable, CaseIterable {
     case ask = "Ask Before Running"
     case autoApprove = "Auto-Approve"
@@ -43,6 +49,9 @@ struct AppSettings: Codable, Equatable {
     var qmdSearchMode: QmdSearchMode
     var anthropicApiKey: String
     var anthropicModel: AnthropicModel
+    var terminalColorScheme: TerminalColorSchemeMode
+    var terminalLightTheme: String
+    var terminalDarkTheme: String
     var mailBackgroundAnalysisEnabled: Bool
     var mailBackgroundDraftGenerationEnabled: Bool
     var mailSenderLookupEnabled: Bool
@@ -69,6 +78,9 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode: .bm25,
         anthropicApiKey: "",
         anthropicModel: .sonnet,
+        terminalColorScheme: .system,
+        terminalLightTheme: "",
+        terminalDarkTheme: "",
         mailBackgroundAnalysisEnabled: true,
         mailBackgroundDraftGenerationEnabled: true,
         mailSenderLookupEnabled: true,
@@ -93,6 +105,9 @@ struct AppSettings: Codable, Equatable {
         case qmdSearchMode
         case anthropicApiKey
         case anthropicModel
+        case terminalColorScheme
+        case terminalLightTheme
+        case terminalDarkTheme
         case mailBackgroundAnalysisEnabled
         case mailBackgroundDraftGenerationEnabled
         case mailSenderLookupEnabled
@@ -125,6 +140,9 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode = try container.decodeIfPresent(QmdSearchMode.self, forKey: .qmdSearchMode) ?? .bm25
         anthropicApiKey = try container.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
         anthropicModel = try container.decodeIfPresent(AnthropicModel.self, forKey: .anthropicModel) ?? .sonnet
+        terminalColorScheme = try container.decodeIfPresent(TerminalColorSchemeMode.self, forKey: .terminalColorScheme) ?? .system
+        terminalLightTheme = try container.decodeIfPresent(String.self, forKey: .terminalLightTheme) ?? ""
+        terminalDarkTheme = try container.decodeIfPresent(String.self, forKey: .terminalDarkTheme) ?? ""
         mailBackgroundAnalysisEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundAnalysisEnabled) ?? true
         mailBackgroundDraftGenerationEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundDraftGenerationEnabled) ?? true
         mailSenderLookupEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailSenderLookupEnabled) ?? true
@@ -153,6 +171,9 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode: QmdSearchMode,
         anthropicApiKey: String,
         anthropicModel: AnthropicModel = .sonnet,
+        terminalColorScheme: TerminalColorSchemeMode = .system,
+        terminalLightTheme: String = "",
+        terminalDarkTheme: String = "",
         mailBackgroundAnalysisEnabled: Bool = true,
         mailBackgroundDraftGenerationEnabled: Bool = true,
         mailSenderLookupEnabled: Bool = true,
@@ -175,6 +196,9 @@ struct AppSettings: Codable, Equatable {
         self.qmdSearchMode = qmdSearchMode
         self.anthropicApiKey = anthropicApiKey
         self.anthropicModel = anthropicModel
+        self.terminalColorScheme = terminalColorScheme
+        self.terminalLightTheme = terminalLightTheme
+        self.terminalDarkTheme = terminalDarkTheme
         self.mailBackgroundAnalysisEnabled = mailBackgroundAnalysisEnabled
         self.mailBackgroundDraftGenerationEnabled = mailBackgroundDraftGenerationEnabled
         self.mailSenderLookupEnabled = mailSenderLookupEnabled
@@ -200,6 +224,9 @@ struct AppSettings: Codable, Equatable {
         try container.encode(qmdSearchMode, forKey: .qmdSearchMode)
         try container.encode(anthropicApiKey, forKey: .anthropicApiKey)
         try container.encode(anthropicModel, forKey: .anthropicModel)
+        try container.encode(terminalColorScheme, forKey: .terminalColorScheme)
+        try container.encode(terminalLightTheme, forKey: .terminalLightTheme)
+        try container.encode(terminalDarkTheme, forKey: .terminalDarkTheme)
         try container.encode(mailBackgroundAnalysisEnabled, forKey: .mailBackgroundAnalysisEnabled)
         try container.encode(mailBackgroundDraftGenerationEnabled, forKey: .mailBackgroundDraftGenerationEnabled)
         try container.encode(mailSenderLookupEnabled, forKey: .mailSenderLookupEnabled)

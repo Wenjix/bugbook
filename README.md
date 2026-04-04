@@ -1,267 +1,78 @@
 # Bugbook
 
-**Local-first notes for agents and humans.**
+A local-first personal workspace for notes, databases, terminal, mail, calendar, and AI — in one window.
 
-Bugbook is a local-first notes + database workspace where humans and coding agents collaborate in the same files.
+Bugbook replaces the tab sprawl of separate apps with a single pane-based workspace where everything lives together. Notes link to database rows, calendar events spawn meeting notes, terminal output sits next to the doc you're working on, and AI agents operate on the same data you do.
 
-## What This Repo Contains
+## What's in the workspace
 
-- `BugbookCore`: shared models + storage engine.
-- `BugbookCLI`: automation and agent-friendly CLI.
-- `Bugbook` (app target): desktop macOS app for humans.
-- `BugbookMobile` (SwiftPM executable): shared mobile code and local validation target.
-- `ios/BugbookMobile.xcodeproj`: real iOS app target for Simulator/device.
+**Notes and pages.** Rich markdown editor with blocks, toggles, columns, inline database embeds, backlinks, and a knowledge graph view.
 
-## How Humans and Agents Work Together
+**Databases.** Schema-based databases with table, kanban, calendar, list, and gallery views. Properties include selects, dates, numbers, checkboxes, relations, formulas, and rollups.
 
-Both interfaces read/write the same workspace data.
+**Terminal.** GPU-accelerated terminal (Ghostty Metal backend) running as a native pane — no separate app needed.
 
-Human interface (desktop/mobile):
-- Edit notes and databases.
-- Open **Agent Hub** to see active tasks, recent runs, and recent events.
-- Update task statuses visually.
+**Mail.** Gmail integration with thread view, search, compose, filters, and categories.
 
-Agent interface (CLI):
-- List/read/create/update/delete markdown pages.
-- Embed databases into notes.
-- Discover workspace skills.
-- Create kanban boards without hand-writing schema JSON.
-- Add and move cards by column name from the CLI.
-- Add, update, delete, and set default database views from the CLI.
-- Query databases and rows.
-- Traverse backlinks.
-- Create/update tasks.
-- Start/finish runs.
-- Log structured events.
-- Output dashboard JSON for automation.
+**Calendar.** Google Calendar sync with day, week, and month views plus event creation.
 
-Shared source of truth (inside your workspace):
-- `.bugbook/agents/tasks.json`
-- `.bugbook/agents/runs.jsonl`
-- `.bugbook/agents/events.jsonl`
-- `AGENTS.md` (optional workspace instructions)
+**Meetings.** Meeting notes linked to calendar events with audio transcription support.
 
-## Download and Setup
+**AI.** Claude and Codex CLI detection, in-page chat sidebar, and writing assistance with workspace context.
 
-### 1. Clone
+**Agent Hub.** Task and run tracking for coding agents — tasks, runs, events, and a dashboard view so you can see what your agents are doing.
 
-```bash
-git clone https://github.com/max4c/bugbook.git
-cd bugbook
+**Home.** A time-of-day adaptive dashboard with pinned databases, recent items, and quick access to tasks.
+
+## Pane system
+
+The workspace is built on a multi-pane layout. Any combination of notes, terminal, mail, calendar, meetings, graph, or home can be arranged side by side with horizontal/vertical splits. Panes can be dragged to swap, split, or closed. Tabs let you save and switch between layouts.
+
+A launcher (Cmd+K or the chrome bar split button) searches pages, databases, and built-in panes, then lets you open them in place, split right, split down, or in a new tab.
+
+## Targets
+
+- **Bugbook** — macOS desktop app (SwiftUI + AppKit, macOS 14+)
+- **BugbookCLI** — command-line interface for agent and automation workflows
+- **BugbookCore** — shared models, storage engine, query/mutation engines
+- **BugbookMobile** — iOS app target (iOS 17+)
+
+## CLI
+
+The CLI is designed for coding agents (Claude, Codex, etc.) to read and write the same workspace data the desktop app uses. Core commands:
+
+```
+bugbook page list / get / create / update / delete
+bugbook db list / query / row create / row update
+bugbook board create / add-card / move-card
+bugbook agent task create / update / list
+bugbook agent run start / finish
+bugbook agent event log
+bugbook agent dashboard
+bugbook skill list / get / create
+bugbook backlinks <page>
 ```
 
-### 2. Build
+Install locally:
 
 ```bash
 swift build
-```
-
-### 3. Confirm CLI
-
-```bash
-swift run BugbookCLI agent --help
-```
-
-### 4. Install `bugbook` For Local Development
-
-```bash
 swift run BugbookCLI install --force
 ```
 
-Or use the helper script:
+## Build and run
 
 ```bash
-./scripts/install-bugbook-cli.sh
-```
-
-By default this installs a symlink at `~/.local/bin/bugbook`. If that directory is not on your `PATH`, the command prints the shell snippet needed to add it.
-
-## Usage
-
-### CLI (agent workflow)
-
-Read and update notes:
-
-```bash
-swift run BugbookCLI page list --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --raw
-swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --raw --include-internal-comments
-swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --blocks
-swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --raw
-swift run BugbookCLI page headings "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI page format "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --style commonmark --dry-run --output summary --report
-swift run BugbookCLI page format "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --style commonmark --dry-run --fail-on-warnings
-swift run BugbookCLI page compact "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --output summary
-swift run BugbookCLI page ensure-block-ids "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --blocks
-swift run BugbookCLI page strip-block-ids "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI page get "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section-line 110
-cat updated-note.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --content-file -
-cat updated-note.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --content-file - --output summary
-cat roadmap.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section "Roadmap" --content-file -
-cat roadmap.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section "Roadmap" --create-section --section-level 2 --content-file -
-cat roadmap.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --section "Roadmap" --create-section --section-level 2 --content-file - --dry-run
-cat block.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --content-file -
-cat text.txt | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --text-file -
-cat sibling.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --block-id path:3 --append-file - --dry-run
-cat snippet.md | swift run BugbookCLI page update "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook" --append-file -
-swift run BugbookCLI block list "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI block get "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --raw
-cat block.md | swift run BugbookCLI block replace "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --content-file -
-cat text.txt | swift run BugbookCLI block update-text "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --text-file -
-cat sibling.md | swift run BugbookCLI block insert "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --after --content-file - --dry-run
-swift run BugbookCLI block move "Bugbook Strategy" path:3 path:7 --workspace "~/Library/Application Support/Bugbook" --before --dry-run
-swift run BugbookCLI block delete "Bugbook Strategy" path:3 --workspace "~/Library/Application Support/Bugbook" --dry-run
-swift run BugbookCLI backlinks "Bugbook Strategy" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI page embed-database "Bugbook Strategy" "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI board create "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook" --group-name "Phase" --column "Now" --column "Next" --column "Later" --view list --view calendar --embed-in "Bugbook Strategy"
-swift run BugbookCLI board create "Sprint Board" --workspace "~/Library/Application Support/Bugbook" --column "Todo" --column "Doing" --column "Done" --no-table
-swift run BugbookCLI board add-card "Bugbook Strategy Board" "Search trust" --workspace "~/Library/Application Support/Bugbook" --column "Now" --date 2026-03-07
-swift run BugbookCLI board move-card "Bugbook Strategy Board" row_abc123 "Next" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI db list --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI db view list "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI db move "Agent Tickets" --workspace "~/Library/Application Support/Bugbook" --page "Agent Tickets" --dry-run
-swift run BugbookCLI db move "Agent Tickets" --workspace "~/Library/Application Support/Bugbook" --page "Agent Tickets"
-swift run BugbookCLI db view add "Bugbook Strategy Board" --workspace "~/Library/Application Support/Bugbook" --type calendar --name "Calendar" --date-property "Date"
-swift run BugbookCLI db view set-default "Bugbook Strategy Board" "Calendar" --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI skill create "research-summarizer" --workspace "~/Library/Application Support/Bugbook" --description "Summarize linked source pages into one note."
-swift run BugbookCLI skill list --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI skill get "research-summarizer" --workspace "~/Library/Application Support/Bugbook"
-```
-
-Notes:
-- `page get --raw` prints clean markdown by default; add `--include-internal-comments` for the literal stored file.
-- `page get --blocks` returns parsed markdown blocks plus document metadata.
-- `page get --block-id <selector>` narrows reads to one markdown block by stable UUID or `path:0/1`.
-- `page headings` returns heading titles, levels, and line numbers for section targeting.
-- `page format --style bugbook|commonmark` rewrites a page using either Bugbook's dense block format or a CommonMark-style layout with structural blank lines.
-- `page format --style commonmark` now strips persisted block IDs and converts Bugbook-only block syntax into portable approximations: toggles become `<details>`, columns are flattened sequentially with thematic breaks, database embeds become labeled text, and page-link blocks become relative markdown links when they resolve uniquely in the workspace or plain text when they do not.
-- `page format --report` adds `warning_count` plus structured `warnings` to the response so agents can see which page links were downgraded during commonmark export.
-- `page format --fail-on-warnings` turns those portability warnings into a non-zero exit and skips the write, which is useful for agent and CI gating.
-- `page compact` and `page format` now report `empty_paragraphs_removed` so agents can tell when a rewrite cleaned up blank block gaps.
-- `page compact` rewrites a page through Bugbook's block serializer and removes empty paragraph gaps, which is useful when a note has accumulated extra blank lines.
-- `page compact` is the shortcut for `page format --style bugbook`.
-- `page ensure-block-ids` persists unique stable block IDs and repairs duplicate persisted IDs when needed; add `--blocks` if you want the parsed block list in the response.
-- `page strip-block-ids` removes persisted block ID comments from a page and restores clean markdown storage.
-- `page get --section "<Heading>"` or `--section-line N` narrows reads to one heading section and fails if the selector does not match.
-- `page update --section "<Heading>"` or `--section-line N` scopes replace/prepend/append operations to a heading body.
-- `page update --block-id <selector>` scopes replace/prepend/append operations to one block without polluting a clean note with persisted block IDs.
-- `page update --block-id <selector> --text-file` updates only the selected block's text and preserves its markdown type.
-- `page update --section "<Heading>" --create-section` appends the section if it is missing.
-- `page update --dry-run` previews the post-edit page plus structured line changes without writing anything.
-- `page create` and `page update` accept `--output summary` when you want a compact write result instead of the full page payload.
-- `block list`, `block get`, `block replace`, `block update-text`, `block insert`, `block move`, and `block delete` provide a dedicated block-level command surface on top of the same selectors used by `page get --block-id`.
-- `db list` now includes `relative_path` and, when applicable, `parent_page` metadata so agents can see whether a database lives under a page companion folder or a top-level directory.
-- `db move --page <Page>` reparents a database into that page's companion folder, retargets any embed markers that still point at the old path, and supports `--dry-run` for previewing the move first.
-- Row `get` now matches `query` by returning friendly property names and display values by default; add `--fields` to narrow the payload and `--raw-properties` to include schema IDs and stored option IDs.
-- `query --fields` returns friendly property names and display values by default; add `--raw-properties` when you also need schema IDs and stored option IDs.
-- Row `create`, `update`, `query --filter`, `query --sort`, and `query --fields` accept friendly property names in addition to schema IDs.
-
-Initialize workspace files:
-
-```bash
-swift run BugbookCLI agent init --workspace "~/Library/Application Support/Bugbook" --write-agents-md
-```
-
-Create task and track a run:
-
-```bash
-swift run BugbookCLI agent task create --workspace "~/Library/Application Support/Bugbook" --title "Fix editor bug" --status todo
-swift run BugbookCLI agent run start --workspace "~/Library/Application Support/Bugbook" --task <task_id> --agent codex --branch codex/fix-editor
-swift run BugbookCLI agent event log --workspace "~/Library/Application Support/Bugbook" --run-id <run_id> --level info --message "Added regression test"
-swift run BugbookCLI agent run finish <run_id> --workspace "~/Library/Application Support/Bugbook" --status succeeded --summary "Shipped fix"
-swift run BugbookCLI agent task update <task_id> --workspace "~/Library/Application Support/Bugbook" --status done
-```
-
-Open dashboard JSON:
-
-```bash
-swift run BugbookCLI agent dashboard --workspace "~/Library/Application Support/Bugbook"
-```
-
-### macOS app
-
-```bash
+# macOS app
 swift run Bugbook
-```
 
-Then open **Agent Hub** from the sidebar (or `Cmd+Shift+J`).
+# CLI
+swift build && swift run BugbookCLI --help
 
-### iPhone simulator / device
-
-Open the iOS project in Xcode:
-
-```bash
+# iOS (open in Xcode, select BugbookMobileApp scheme)
 open ios/BugbookMobile.xcodeproj
 ```
 
-The iOS project is generated from `ios/project.yml` (XcodeGen). Regenerate if needed:
+## Dependencies
 
-```bash
-cd ios && xcodegen generate
-```
-
-Then:
-
-1. Select scheme **`BugbookMobileApp`**.
-2. Select an iOS simulator/device.
-3. Run.
-
-Important:
-- **Do not** run `Bugbook` on iOS. `Bugbook` is macOS-only and uses `AppKit`.
-- If you see `No such module 'AppKit'`, you launched the wrong scheme.
-- If you see `BUNDLE_IDENTIFIER_FOR_CURRENT_PROCESS_IS_NIL`, you are launching the SwiftPM executable instead of the iOS app bundle.
-
-## Smoke Testing
-
-Run the one-command smoke test:
-
-```bash
-./scripts/smoke-cli.sh
-```
-
-This verifies:
-- workspace init
-- task create/update
-- run start/finish
-- event logging
-- dashboard output
-- on-disk agent files
-
-## Troubleshooting
-
-### iPhone simulator fails
-
-- Verify scheme is `BugbookMobileApp` in `ios/BugbookMobile.xcodeproj`.
-- In Xcode: Product -> Clean Build Folder.
-- Rebuild and run again.
-
-You can also verify simulator build from terminal:
-
-```bash
-xcodebuild -project ios/BugbookMobile.xcodeproj -scheme BugbookMobileApp -destination 'platform=iOS Simulator,name=iPhone 17' build
-```
-
-### "How do I inspect details?"
-
-Use either:
-
-```bash
-swift run BugbookCLI agent task list --workspace "~/Library/Application Support/Bugbook"
-swift run BugbookCLI agent run list --workspace "~/Library/Application Support/Bugbook" --limit 50
-swift run BugbookCLI agent event list --workspace "~/Library/Application Support/Bugbook" --limit 100
-```
-
-Or inspect raw files directly:
-- `"~/Library/Application Support/Bugbook"/.bugbook/agents/tasks.json`
-- `"~/Library/Application Support/Bugbook"/.bugbook/agents/runs.jsonl`
-- `"~/Library/Application Support/Bugbook"/.bugbook/agents/events.jsonl`
-
-## MCP Status (Xcode Model Context Protocol)
-
-This repo currently does **not** contain MCP-specific integration/config.
-
-If you want MCP-enabled workflows here, we can add:
-- an MCP capability document in `AGENTS.md`
-- task templates for Xcode actions
-- explicit agent instructions for MCP tools
+Ghostty (terminal), Sparkle (auto-update), Sentry (error tracking), FluidAudio (transcription), Yams (YAML/frontmatter), Google OAuth (mail + calendar).

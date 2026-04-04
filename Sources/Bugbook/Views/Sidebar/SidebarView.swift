@@ -31,6 +31,7 @@ struct SidebarView: View {
         ("appearance", "Appearance", "paintbrush"),
         ("ai", "AI", "cpu"),
         ("google", "Google", "person.badge.key"),
+        ("terminal", "Terminal", "terminal"),
         ("agents", "Agents", "person.2"),
         ("search", "Search", "magnifyingglass"),
         ("shortcuts", "Shortcuts", "keyboard"),
