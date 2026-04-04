@@ -1,4 +1,8 @@
 import SwiftUI
+import PhotosUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct MobileTodayView: View {
     var workspace: MobileWorkspaceService
@@ -7,6 +11,10 @@ struct MobileTodayView: View {
     @State private var captureText = ""
     @State private var dailyNotePreview: String?
     @State private var recentNotes: [MobileNoteFile] = []
+    @State private var showCaptureOptions = false
+    @State private var showCamera = false
+    @State private var showPhotosPicker = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     private var todayDateString: String {
         let formatter = DateFormatter()
@@ -18,7 +26,7 @@ struct MobileTodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    quickCaptureField
+                    quickCaptureSection
                     dailyNoteCard
                     recentFilesSection
                 }
@@ -34,35 +42,71 @@ struct MobileTodayView: View {
 
     // MARK: - Quick Capture
 
-    private var quickCaptureField: some View {
-        HStack(spacing: 10) {
-            TextField("Quick capture...", text: $captureText)
-                .textFieldStyle(.roundedBorder)
-                .submitLabel(.send)
-                .onSubmit { submitCapture() }
+    private var quickCaptureSection: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                TextField("Capture a thought...", text: $captureText, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .submitLabel(.send)
+                    .onSubmit { submitCapture() }
 
-            Button(action: submitCapture) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title2)
+                // "+" button with progressive disclosure
+                Menu {
+                    Button { submitCapture() } label: {
+                        Label("Add Note", systemImage: "note.text")
+                    }
+                    .disabled(captureText.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    Button { showPhotosPicker = true } label: {
+                        Label("Photo from Library", systemImage: "photo")
+                    }
+
+                    Button { showCamera = true } label: {
+                        Label("Take Photo", systemImage: "camera")
+                    }
+
+                    Button { captureQuickNote() } label: {
+                        Label("New Page", systemImage: "doc.badge.plus")
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(Color.accentColor)
+                }
             }
-            .disabled(captureText.trimmingCharacters(in: .whitespaces).isEmpty)
+
+            // Quick action pills
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    QuickActionPill(icon: "checklist", label: "Task") {
+                        captureText = "- [ ] "
+                    }
+                    QuickActionPill(icon: "list.bullet", label: "List") {
+                        captureText = "- "
+                    }
+                    QuickActionPill(icon: "photo", label: "Photo") {
+                        showPhotosPicker = true
+                    }
+                    QuickActionPill(icon: "doc.badge.plus", label: "New Page") {
+                        captureQuickNote()
+                    }
+                }
+            }
         }
-    }
-
-    private func submitCapture() {
-        let text = captureText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return }
-        guard let note = workspace.openOrCreateDailyNote() else { return }
-
-        var content = workspace.loadFile(at: note.path)
-        if !content.isEmpty && !content.hasSuffix("\n") {
-            content += "\n"
+        .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhoto, matching: .images)
+        .onChange(of: selectedPhoto) { _, newItem in
+            if let newItem {
+                Task { await handlePhotoSelection(newItem) }
+            }
         }
-        content += text + "\n"
-        workspace.saveFile(at: note.path, content: content)
-
-        captureText = ""
-        refresh()
+        #if os(iOS)
+        .fullScreenCover(isPresented: $showCamera) {
+            MobileCameraView { image in
+                saveImageToWorkspace(image)
+            }
+        }
+        #endif
     }
 
     // MARK: - Daily Note Card
@@ -72,9 +116,15 @@ struct MobileTodayView: View {
             MobilePageEditorView(note: dailyNoteFile(), workspace: workspace)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                Text(todayDateString)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+                HStack {
+                    Text(todayDateString)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
 
                 if let preview = dailyNotePreview, !preview.isEmpty {
                     Text(preview)
@@ -115,9 +165,19 @@ struct MobileTodayView: View {
             } else {
                 ForEach(recentNotes) { note in
                     NavigationLink {
-                        MobilePageEditorView(note: note, workspace: workspace)
+                        if note.isDatabase {
+                            MobileDatabaseView(dbPath: note.path)
+                        } else {
+                            MobilePageEditorView(note: note, workspace: workspace)
+                        }
                     } label: {
                         HStack {
+                            if let icon = note.icon, !icon.isEmpty {
+                                Text(icon)
+                            } else {
+                                Image(systemName: note.isDatabase ? "tablecells" : "doc.text")
+                                    .foregroundStyle(.secondary)
+                            }
                             Text(note.name)
                                 .font(.body).fontWeight(.medium)
                                 .foregroundStyle(.primary)
@@ -134,6 +194,64 @@ struct MobileTodayView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Actions
+
+    private func submitCapture() {
+        let text = captureText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        guard let note = workspace.openOrCreateDailyNote() else { return }
+
+        var content = workspace.loadFile(at: note.path)
+        if !content.isEmpty && !content.hasSuffix("\n") {
+            content += "\n"
+        }
+        content += text + "\n"
+        workspace.saveFile(at: note.path, content: content)
+
+        captureText = ""
+        refresh()
+    }
+
+    private func captureQuickNote() {
+        _ = workspace.createNote()
+        refresh()
+    }
+
+    private func handlePhotoSelection(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+        saveImageData(data)
+    }
+
+    #if os(iOS)
+    private func saveImageToWorkspace(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.8) else { return }
+        saveImageData(data)
+    }
+    #endif
+
+    private func saveImageData(_ data: Data) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let filename = "capture-\(formatter.string(from: Date())).jpg"
+
+        let imagesDir = (workspace.workspacePath as NSString).appendingPathComponent("Attachments")
+        try? FileManager.default.createDirectory(atPath: imagesDir, withIntermediateDirectories: true)
+
+        let imagePath = (imagesDir as NSString).appendingPathComponent(filename)
+        try? data.write(to: URL(fileURLWithPath: imagePath))
+
+        // Embed in daily note
+        guard let note = workspace.openOrCreateDailyNote() else { return }
+        var content = workspace.loadFile(at: note.path)
+        if !content.isEmpty && !content.hasSuffix("\n") {
+            content += "\n"
+        }
+        content += "![capture](Attachments/\(filename))\n"
+        workspace.saveFile(at: note.path, content: content)
+
+        refresh()
     }
 
     // MARK: - Helpers
@@ -179,3 +297,74 @@ struct MobileTodayView: View {
         Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 }
+
+// MARK: - Quick Action Pill
+
+private struct QuickActionPill: View {
+    let icon: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption)
+                Text(label)
+                    .font(.caption)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            #if os(iOS)
+            .background(Color(.tertiarySystemGroupedBackground))
+            #else
+            .background(Color(.windowBackgroundColor))
+            #endif
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Camera View
+
+#if os(iOS)
+struct MobileCameraView: UIViewControllerRepresentable {
+    let onCapture: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCapture: onCapture, dismiss: dismiss)
+    }
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onCapture: (UIImage) -> Void
+        let dismiss: DismissAction
+
+        init(onCapture: @escaping (UIImage) -> Void, dismiss: DismissAction) {
+            self.onCapture = onCapture
+            self.dismiss = dismiss
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                onCapture(image)
+            }
+            dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            dismiss()
+        }
+    }
+}
+#endif
