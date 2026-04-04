@@ -251,6 +251,8 @@ import BugbookCore
         return String(mdPath.dropLast(3))
     }
 
+    func loadFileIcon(at path: String) -> String? { parseIconFromFile(at: path) }
+
     private func parseIconFromFile(at path: String) -> String? {
         guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
         defer { fh.closeFile() }

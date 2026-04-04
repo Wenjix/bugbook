@@ -8,29 +8,55 @@ struct MobileRootView: View {
     @State private var captureText = ""
     @State private var fileTree: [MobileNoteFile] = []
     @State private var recentFiles: [MobileNoteFile] = []
-    @State private var showCaptureExpanded = false
+    @State private var favorites: [MobileNoteFile] = []
 
     @Environment(\.scenePhase) private var scenePhase
+    @FocusState private var captureFieldFocused: Bool
+
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 0..<5: return "Late night"
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        default: return "Good evening"
+        }
+    }
+
+    private var todayString: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d"
+        return f.string(from: Date())
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    captureBar
+                VStack(alignment: .leading, spacing: 20) {
+                    captureZone
+                    if !favorites.isEmpty {
+                        favoritesSection
+                    }
+                    todayCard
                     recentSection
                     allFilesSection
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
-            .navigationTitle("Bugbook")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: .constant(""), placement: .navigationBarDrawer(displayMode: .always), prompt: "Search notes...")
-            #endif
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItem(placement: .principal) {
+                    Text(greeting)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.mobileTextPrimary)
+                }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .help("Search")
+
                     Menu {
                         Button { _ = workspace.createNote(); refresh() } label: {
                             Label("New Note", systemImage: "doc.badge.plus")
@@ -45,9 +71,12 @@ struct MobileRootView: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
-                    .help("More options")
+                    .help("More")
                 }
             }
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .onAppear { refresh() }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active { refresh() }
@@ -71,105 +100,195 @@ struct MobileRootView: View {
         }
     }
 
-    // MARK: - Quick Capture
+    // MARK: - 1. Capture Zone (Priority #1)
 
-    private var captureBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus.circle.fill")
-                .font(.system(size: 20))
-                .foregroundStyle(Color.accentColor)
-
-            TextField("Capture a thought...", text: $captureText, axis: .vertical)
-                .font(.system(size: 15))
-                .lineLimit(1...3)
+    private var captureZone: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TextField("What's on your mind?", text: $captureText, axis: .vertical)
+                .font(.system(size: 17))
+                .lineLimit(2...6)
+                .focused($captureFieldFocused)
                 .submitLabel(.send)
                 .onSubmit { submitCapture() }
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
 
             if !captureText.trimmingCharacters(in: .whitespaces).isEmpty {
-                Button {
-                    submitCapture()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Color.accentColor)
+                HStack {
+                    Spacer()
+                    Button {
+                        submitCapture()
+                    } label: {
+                        Text("Add to today")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.accentColor)
+                            .clipShape(Capsule())
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
                 }
-                .help("Send to daily note")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .background(Color.mobileCardBg)
-        .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
-            RoundedRectangle(cornerRadius: MobileRadius.lg)
-                .stroke(Color.mobileBorder, lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(captureFieldFocused ? Color.accentColor.opacity(0.4) : Color.mobileBorder, lineWidth: captureFieldFocused ? 1.5 : 0.5)
         )
     }
 
-    // MARK: - Recent
+    // MARK: - 2. Favorites (Priority #2)
+
+    private var favoritesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Favorites")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.mobileTextPrimary)
+                .padding(.leading, 2)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(favorites) { file in
+                        NavigationLink {
+                            if file.isDatabase {
+                                MobileDatabaseView(dbPath: file.path)
+                            } else {
+                                MobilePageEditorView(note: file, workspace: workspace)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                if let icon = file.icon, !icon.isEmpty {
+                                    Text(icon).font(.system(size: 13))
+                                } else {
+                                    Image(systemName: file.isDatabase ? "tablecells" : "doc.text")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.mobileTextSecondary)
+                                }
+                                Text(file.name)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Color.mobileTextPrimary)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.mobileCardBg)
+                            .clipShape(RoundedRectangle(cornerRadius: MobileRadius.md))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: MobileRadius.md)
+                                    .stroke(Color.mobileBorder, lineWidth: 0.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Today Card
+
+    private var todayCard: some View {
+        NavigationLink {
+            let note = workspace.openOrCreateDailyNote() ?? MobileNoteFile(path: workspace.dailyNotePath(), name: todayString)
+            MobilePageEditorView(note: note, workspace: workspace)
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(todayString)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.mobileTextPrimary)
+                    let preview = dailyNotePreview()
+                    if !preview.isEmpty {
+                        Text(preview)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.mobileTextSecondary)
+                            .lineLimit(2)
+                    } else {
+                        Text("Start today's note")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.mobileTextMuted)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.mobileTextMuted)
+            }
+            .mobileCard()
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 3. Recent (Priority #3)
 
     private var recentSection: some View {
         Group {
             if !recentFiles.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("RECENT")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.mobileTextMuted)
-                        .tracking(0.6)
-                        .padding(.leading, 4)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Recent")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.mobileTextPrimary)
+                        .padding(.leading, 2)
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            // Daily note card
+                    VStack(spacing: 0) {
+                        ForEach(recentFiles) { file in
                             NavigationLink {
-                                let note = workspace.openOrCreateDailyNote() ?? MobileNoteFile(path: workspace.dailyNotePath(), name: todayDateString)
-                                MobilePageEditorView(note: note, workspace: workspace)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Image(systemName: "sun.max")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.orange)
-                                    Text("Today")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(Color.mobileTextPrimary)
-                                    Text(shortDateString)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.mobileTextMuted)
+                                if file.isDatabase {
+                                    MobileDatabaseView(dbPath: file.path)
+                                } else {
+                                    MobilePageEditorView(note: file, workspace: workspace)
                                 }
-                                .frame(width: 90, alignment: .leading)
-                                .mobileCard(padding: 10)
-                            }
-                            .buttonStyle(.plain)
-
-                            ForEach(recentFiles.prefix(6)) { file in
-                                NavigationLink {
-                                    if file.isDatabase {
-                                        MobileDatabaseView(dbPath: file.path)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    if let icon = file.icon, !icon.isEmpty {
+                                        Text(icon).font(.system(size: 14))
+                                            .frame(width: 22)
                                     } else {
-                                        MobilePageEditorView(note: file, workspace: workspace)
-                                    }
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
                                         Image(systemName: file.isDatabase ? "tablecells" : "doc.text")
                                             .font(.system(size: 12))
                                             .foregroundStyle(Color.mobileTextSecondary)
+                                            .frame(width: 22)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text(file.name)
-                                            .font(.system(size: 13, weight: .medium))
+                                            .font(.system(size: 14, weight: .medium))
                                             .foregroundStyle(Color.mobileTextPrimary)
                                             .lineLimit(1)
-                                        if let date = file.modifiedAt {
-                                            Text(relativeTime(from: date))
-                                                .font(.system(size: 11))
+                                        if let preview = firstLinePreview(for: file), !preview.isEmpty {
+                                            Text(preview)
+                                                .font(.system(size: 12))
                                                 .foregroundStyle(Color.mobileTextMuted)
+                                                .lineLimit(1)
                                         }
                                     }
-                                    .frame(width: 90, alignment: .leading)
-                                    .mobileCard(padding: 10)
+                                    Spacer()
+                                    if let date = file.modifiedAt {
+                                        Text(relativeTime(from: date))
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.mobileTextMuted)
+                                    }
                                 }
-                                .buttonStyle(.plain)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                            }
+                            .buttonStyle(.plain)
+
+                            if file.id != recentFiles.last?.id {
+                                Divider()
+                                    .padding(.leading, 44)
                             }
                         }
                     }
+                    .background(Color.mobileCardBg)
+                    .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: MobileRadius.lg)
+                            .stroke(Color.mobileBorder, lineWidth: 0.5)
+                    )
                 }
             }
         }
@@ -178,38 +297,44 @@ struct MobileRootView: View {
     // MARK: - All Files
 
     private var allFilesSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("ALL FILES")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.mobileTextMuted)
-                .tracking(0.6)
-                .padding(.leading, 4)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("All files")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.mobileTextPrimary)
+                .padding(.leading, 2)
 
-            if fileTree.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 24))
-                        .foregroundStyle(Color.mobileTextMuted)
-                    Text("No files yet")
+            if fileTree.isEmpty && recentFiles.isEmpty {
+                VStack(spacing: 12) {
+                    Text("Your workspace is empty")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Color.mobileTextPrimary)
+                    Text("Type something above — it'll land in today's daily note. That's it, you're started.")
                         .font(.system(size: 14))
                         .foregroundStyle(Color.mobileTextSecondary)
-                    Text("Capture a thought above to get started")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.mobileTextMuted)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 32)
+                .padding(.vertical, 40)
+                .padding(.horizontal, 20)
+            } else if fileTree.isEmpty {
+                // Has recent files but no tree (only daily notes)
+                EmptyView()
             } else {
                 VStack(spacing: 0) {
                     ForEach(fileTree) { node in
                         UnifiedFileRow(node: node, workspace: workspace)
 
                         if node.id != fileTree.last?.id {
-                            Divider().foregroundStyle(Color.mobileDivider)
+                            Divider().padding(.leading, 42)
                         }
                     }
                 }
-                .mobileCard(padding: 0)
+                .background(Color.mobileCardBg)
+                .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
+                .overlay(
+                    RoundedRectangle(cornerRadius: MobileRadius.lg)
+                        .stroke(Color.mobileBorder, lineWidth: 0.5)
+                )
             }
         }
     }
@@ -227,27 +352,53 @@ struct MobileRootView: View {
         workspace.saveFile(at: note.path, content: content)
 
         captureText = ""
+        captureFieldFocused = false
         refresh()
     }
 
     private func refresh() {
         fileTree = workspace.buildHierarchicalFileTree()
-        recentFiles = workspace.recentFiles(limit: 6)
+        recentFiles = workspace.recentFiles(limit: 8)
+        loadFavorites()
+    }
+
+    private func loadFavorites() {
+        let key = "favorites_\(workspace.workspacePath)"
+        let paths = UserDefaults.standard.stringArray(forKey: key) ?? []
+        favorites = paths.compactMap { path -> MobileNoteFile? in
+            let fm = FileManager.default
+            guard fm.fileExists(atPath: path) else { return nil }
+            let name = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: path, isDirectory: &isDir)
+            let isDb = fm.fileExists(atPath: (path as NSString).appendingPathComponent("_schema.json"))
+            let icon = isDir.boolValue ? nil : workspace.loadFileIcon(at: path)
+            return MobileNoteFile(path: path, name: name, isDirectory: isDir.boolValue, isDatabase: isDb, icon: icon)
+        }
+    }
+
+    private func dailyNotePreview() -> String {
+        let path = workspace.dailyNotePath()
+        guard FileManager.default.fileExists(atPath: path) else { return "" }
+        let content = workspace.loadFile(at: path)
+        let lines = content.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+            .prefix(2)
+        return lines.joined(separator: " ")
+    }
+
+    private func firstLinePreview(for file: MobileNoteFile) -> String? {
+        guard !file.isDatabase, !file.isDirectory else { return nil }
+        let content = workspace.loadFile(at: file.path)
+        let line = content.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && !$0.hasPrefix("#") && !$0.hasPrefix("<!--") }
+        guard let line, !line.isEmpty else { return nil }
+        return line.count > 80 ? String(line.prefix(80)) + "..." : line
     }
 
     // MARK: - Helpers
-
-    private var todayDateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, MMMM d"
-        return f.string(from: Date())
-    }
-
-    private var shortDateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return f.string(from: Date())
-    }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -305,11 +456,12 @@ private struct UnifiedFileRow: View {
             if let icon = node.icon, !icon.isEmpty,
                icon.unicodeScalars.first?.properties.isEmoji == true {
                 Text(icon).font(.system(size: 14))
+                    .frame(width: 22)
             } else {
                 Image(systemName: iconName)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.mobileTextSecondary)
-                    .frame(width: 18)
+                    .frame(width: 22)
             }
             Text(node.name)
                 .font(.system(size: 14, weight: .medium))
