@@ -84,9 +84,12 @@ final class TerminalManager {
                 let firstContent = content.pointee
                 guard let data = firstContent.data else { return }
                 let str = String(cString: data)
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(str, forType: .string)
+                let work = {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(str, forType: .string)
+                }
+                if Thread.isMainThread { work() } else { DispatchQueue.main.async { work() } }
             },
             close_surface_cb: { userdata, processAlive in
                 // Surface wants to close. We'll handle this through our session management.

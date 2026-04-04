@@ -140,6 +140,9 @@ struct Settings: ParsableCommand {
                 default: return newValue
                 }
             }
+            if existing is Int, let i = Int(newValue) {
+                return i
+            }
             if existing is Double, let d = Double(newValue) {
                 return d
             }
