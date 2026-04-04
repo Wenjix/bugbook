@@ -13,6 +13,12 @@ struct MobileRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var captureFieldFocused: Bool
 
+    /// Recent files excluding today's daily note (already shown as its own card)
+    private var filteredRecentFiles: [MobileNoteFile] {
+        let dailyPath = workspace.dailyNotePath()
+        return recentFiles.filter { $0.path != dailyPath }
+    }
+
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
@@ -34,12 +40,16 @@ struct MobileRootView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     captureZone
+                    todayCard
                     if !favorites.isEmpty {
                         favoritesSection
                     }
-                    todayCard
-                    recentSection
-                    allFilesSection
+                    if !filteredRecentFiles.isEmpty {
+                        recentSection
+                    }
+                    if !fileTree.isEmpty {
+                        allFilesSection
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -226,71 +236,66 @@ struct MobileRootView: View {
     // MARK: - 3. Recent (Priority #3)
 
     private var recentSection: some View {
-        Group {
-            if !recentFiles.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Recent")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.mobileTextPrimary)
-                        .padding(.leading, 2)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Recent")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.mobileTextPrimary)
+                .padding(.leading, 2)
 
-                    VStack(spacing: 0) {
-                        ForEach(recentFiles) { file in
-                            NavigationLink {
-                                if file.isDatabase {
-                                    MobileDatabaseView(dbPath: file.path)
-                                } else {
-                                    MobilePageEditorView(note: file, workspace: workspace)
-                                }
-                            } label: {
-                                HStack(spacing: 10) {
-                                    if let icon = file.icon, !icon.isEmpty {
-                                        Text(icon).font(.system(size: 14))
-                                            .frame(width: 22)
-                                    } else {
-                                        Image(systemName: file.isDatabase ? "tablecells" : "doc.text")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(Color.mobileTextSecondary)
-                                            .frame(width: 22)
-                                    }
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(file.name)
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundStyle(Color.mobileTextPrimary)
-                                            .lineLimit(1)
-                                        if let preview = firstLinePreview(for: file), !preview.isEmpty {
-                                            Text(preview)
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(Color.mobileTextMuted)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                    Spacer()
-                                    if let date = file.modifiedAt {
-                                        Text(relativeTime(from: date))
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(Color.mobileTextMuted)
-                                    }
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 9)
+            VStack(spacing: 0) {
+                ForEach(filteredRecentFiles) { file in
+                    NavigationLink {
+                        if file.isDatabase {
+                            MobileDatabaseView(dbPath: file.path)
+                        } else {
+                            MobilePageEditorView(note: file, workspace: workspace)
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            if let icon = file.icon, !icon.isEmpty {
+                                Text(icon).font(.system(size: 14))
+                                    .frame(width: 22)
+                            } else {
+                                Image(systemName: file.isDatabase ? "tablecells" : "doc.text")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.mobileTextSecondary)
+                                    .frame(width: 22)
                             }
-                            .buttonStyle(.plain)
-
-                            if file.id != recentFiles.last?.id {
-                                Divider()
-                                    .padding(.leading, 44)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(displayName(for: file))
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Color.mobileTextPrimary)
+                                    .lineLimit(1)
+                                if let preview = firstLinePreview(for: file), !preview.isEmpty {
+                                    Text(preview)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.mobileTextMuted)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer()
+                            if let date = file.modifiedAt {
+                                Text(relativeTime(from: date))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.mobileTextMuted)
                             }
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
                     }
-                    .background(Color.mobileCardBg)
-                    .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: MobileRadius.lg)
-                            .stroke(Color.mobileBorder, lineWidth: 0.5)
-                    )
+                    .buttonStyle(.plain)
+
+                    if file.id != filteredRecentFiles.last?.id {
+                        Divider().padding(.leading, 44)
+                    }
                 }
             }
+            .background(Color.mobileCardBg)
+            .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
+            .overlay(
+                RoundedRectangle(cornerRadius: MobileRadius.lg)
+                    .stroke(Color.mobileBorder, lineWidth: 0.5)
+            )
         }
     }
 
@@ -303,39 +308,21 @@ struct MobileRootView: View {
                 .foregroundStyle(Color.mobileTextPrimary)
                 .padding(.leading, 2)
 
-            if fileTree.isEmpty && recentFiles.isEmpty {
-                VStack(spacing: 12) {
-                    Text("Your workspace is empty")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.mobileTextPrimary)
-                    Text("Type something above — it'll land in today's daily note. That's it, you're started.")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.mobileTextSecondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
-                .padding(.horizontal, 20)
-            } else if fileTree.isEmpty {
-                // Has recent files but no tree (only daily notes)
-                EmptyView()
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(fileTree) { node in
-                        UnifiedFileRow(node: node, workspace: workspace)
+            VStack(spacing: 0) {
+                ForEach(fileTree) { node in
+                    UnifiedFileRow(node: node, workspace: workspace)
 
-                        if node.id != fileTree.last?.id {
-                            Divider().padding(.leading, 42)
-                        }
+                    if node.id != fileTree.last?.id {
+                        Divider().padding(.leading, 42)
                     }
                 }
-                .background(Color.mobileCardBg)
-                .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
-                .overlay(
-                    RoundedRectangle(cornerRadius: MobileRadius.lg)
-                        .stroke(Color.mobileBorder, lineWidth: 0.5)
-                )
             }
+            .background(Color.mobileCardBg)
+            .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
+            .overlay(
+                RoundedRectangle(cornerRadius: MobileRadius.lg)
+                    .stroke(Color.mobileBorder, lineWidth: 0.5)
+            )
         }
     }
 
@@ -396,6 +383,22 @@ struct MobileRootView: View {
             .first { !$0.isEmpty && !$0.hasPrefix("#") && !$0.hasPrefix("<!--") }
         guard let line, !line.isEmpty else { return nil }
         return line.count > 80 ? String(line.prefix(80)) + "..." : line
+    }
+
+    /// Converts raw filenames like "2026-04-04" into friendly dates, leaves others as-is
+    private func displayName(for file: MobileNoteFile) -> String {
+        let name = file.name
+        // Check if this looks like a daily note filename (YYYY-MM-DD)
+        if name.count == 10, name.dropFirst(4).first == "-", name.dropFirst(7).first == "-" {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            if let date = f.date(from: name) {
+                let display = DateFormatter()
+                display.dateFormat = "EEEE, MMMM d"
+                return display.string(from: date)
+            }
+        }
+        return name
     }
 
     // MARK: - Helpers
