@@ -12,29 +12,31 @@ import BugbookCore
     private let maxTreeDepth = 10
 
     init() {
-        let path = resolveWorkspacePath()
-        if !fileManager.fileExists(atPath: path) {
-            try? fileManager.createDirectory(atPath: path, withIntermediateDirectories: true)
+        // Start with local path immediately so the UI renders
+        let localPath = localWorkspacePath()
+        if !fileManager.fileExists(atPath: localPath) {
+            try? fileManager.createDirectory(atPath: localPath, withIntermediateDirectories: true)
         }
-        workspacePath = path
-        refreshFiles()
+        workspacePath = localPath
+
+        // Resolve iCloud in the background — url(forUbiquityContainerIdentifier:) can block
+        Task.detached { [weak self] in
+            let fm = FileManager.default
+            if let containerURL = fm.url(forUbiquityContainerIdentifier: "iCloud.com.bugbook.app") {
+                let iCloudPath = containerURL.appendingPathComponent("Documents/Bugbook").path
+                if !fm.fileExists(atPath: iCloudPath) {
+                    try? fm.createDirectory(atPath: iCloudPath, withIntermediateDirectories: true)
+                }
+                await MainActor.run {
+                    self?.workspacePath = iCloudPath
+                    self?.isICloudAvailable = true
+                    self?.refreshFiles()
+                }
+            }
+        }
     }
 
     // MARK: - Workspace Resolution
-
-    private func resolveWorkspacePath() -> String {
-        // Check the iCloud ubiquity container (iCloud.com.maxforsey.Bugbook)
-        // On Mac: ~/Library/Mobile Documents/iCloud~com~maxforsey~Bugbook/Documents/Bugbook
-        // On iOS: synced automatically by iCloud
-        if let containerURL = fileManager.url(forUbiquityContainerIdentifier: "iCloud.com.bugbook.app") {
-            let bugbookDir = containerURL.appendingPathComponent("Documents/Bugbook")
-            isICloudAvailable = true
-            return bugbookDir.path
-        }
-
-        isICloudAvailable = false
-        return localWorkspacePath()
-    }
 
     private func localWorkspacePath() -> String {
         let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
