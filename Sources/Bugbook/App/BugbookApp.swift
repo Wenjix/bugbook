@@ -66,7 +66,7 @@ struct BugbookApp: App {
                 Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
-                .keyboardShortcut("b", modifiers: .command)
+                .keyboardShortcut(".", modifiers: .command)
 
                 Divider()
 
