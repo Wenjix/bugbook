@@ -998,6 +998,9 @@ struct ContentView: View {
                     },
                     onBreadcrumbNavigate: { item in
                         self.navigateToBreadcrumb(item)
+                    },
+                    blockDocumentLookup: { paneId in
+                        self.blockDocuments[paneId]
                     }
                 )
                 .environment(\.paneReplaceWarningId, paneReplaceWarningId)
@@ -2192,9 +2195,10 @@ struct ContentView: View {
             didRestoreAny = true
         }
 
-        guard didRestoreAny else { return }
         restoredWorkspaceDocuments = true
-        workspaceManager.schedulePersist()
+        if didRestoreAny {
+            workspaceManager.schedulePersist()
+        }
     }
 
     private func restoredEntry(for file: OpenFile) -> FileEntry? {

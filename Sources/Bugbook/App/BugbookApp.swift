@@ -80,6 +80,11 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("]", modifiers: .command)
 
+                Button("Find in Page") {
+                    NotificationCenter.default.post(name: .findInPane, object: nil)
+                }
+                .keyboardShortcut("f")
+
                 Button("Quick Open") {
                     NotificationCenter.default.post(name: .quickOpen, object: nil)
                 }
@@ -426,6 +431,8 @@ extension Notification.Name {
     static let movePage = Notification.Name("movePage")
     static let movePageToDir = Notification.Name("movePageToDir")
     static let addToSidebar = Notification.Name("addToSidebar")
+
+    static let findInPane = Notification.Name("findInPane")
 
     // Pane/Workspace system
     static let splitPaneRight = Notification.Name("splitPaneRight")
