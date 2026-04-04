@@ -1,46 +1,43 @@
 # Go Run — 2026-04-03
 
-Started: 12:39 AM
-Finished: 1:18 AM
-Duration: 39m
-Time utilization: 39m/8h (8%)
+Started: 05:47 PM
+Finished: 07:50 PM
+Duration: 2h 3m
+Time utilization: 2h 3m/8h (26%)
 
-## Completed (15 tickets, all verified via build)
-- [x] Terminal paste fix (row_8h9iqr) — direct — PASS
-- [x] Terminal history wipe fix (row_23xqr5) — direct — PASS
-- [x] Ghostty config import — direct — PASS
-- [x] Meetings rename (row_wcsgow) — direct — PASS (already correct)
-- [x] Meeting block padding (row_k1pfpn) — direct — PASS
-- [x] Callout block fix (row_fnmxx9) — direct — PASS
-- [x] Outline/TOC fix (row_u9mndd) — direct — PASS
-- [x] Heading toggles (row_b7h2vl) — Claude agent — PASS (2/3 behaviors)
-- [x] TableBlockView fix (row_srmgse) — direct — PASS
-- [x] Kebab menu fix (row_0lsztg) — direct — PASS
-- [x] Chat redesign (row_qm7iyh) — direct — PASS
-- [x] Mention picker styling (row_dimm5g) — direct — PASS
-- [x] Cmd+K navigation fix (row_uqw8vz) — direct — PASS
-- [x] Mail auto-refresh (row_iibyiq) — direct — PASS
-- [x] Table grouped collapse (row_6pk1v8) — direct — PASS
+## Completed (11 tickets, all verified via build)
+- [x] Page icon resets on restart (row_n13tku) — Codex — PASS
+- [x] CLI settings command (row_ydjt1p) — Claude agent — PASS
+- [x] Change sidebar shortcut Cmd+B → Cmd+. (row_skpdei) — Codex — PASS
+- [x] Marquee block selection delete (row_ia0noz) — Claude agent — PASS
+- [x] Database full-page blank space (row_2gzss5) — Claude agent — PASS
+- [x] Cmd+F find-in-page (row_a18ynu) — Claude agent — PASS
+- [x] AND/OR filter groups UI + CLI (row_1i5rmc) — Claude agent — PASS
+- [x] Mention picker click-to-navigate (row_dimm5g) — Claude agent — PASS (attempt 4)
+- [x] Formula field type (row_56oj2p) — Claude agent — PASS
+- [x] Lookup field type (row_emmhng) — Claude agent — PASS
+- [x] Rollup field type (row_hrxtuh) — Claude agent — PASS
 
-## Review Queue (15 tickets)
+## Review Queue (11 tickets)
 All moved to Review status in Bugbook.
 
-## Partial
-- Heading toggles: Cmd+Shift+Enter and auto-nesting work. Enter-exits-toggle not yet implemented.
+## Also completed
+- PR #12 created to fix CI on main (terminal settings)
+- /simplify pass: extracted evaluateFormula, cached findMatches, consolidated delete handlers
+- /review pass: fixed clipboard thread safety, integer coercion in settings CLI
+- CLI settings ticket created and implemented in same run
 
 ## Skipped (valid reasons)
-- Google OAuth verification (row_rv254w) — external blocker, needs domain + Google Console
 - Canopy tickets (4) — different repo
-- Mobile capture UX (row_vk26pw) — research note, no implementation
-- Live knowledge retrieval (row_25nsk1) — research/future
-- Lookup/Rollup/Formula fields — medium priority, larger scope
+- Google OAuth verification — external blocker (domain, Google Console)
+- Live knowledge retrieval — research/Low priority
+- Mobile capture UX research — research note, no implementation
+- Cmd+F duplicate (row_ncrdg3) — duplicate of row_a18ynu
 
 ## Discoveries
-- ghostty_init(0, nil) prevents parent terminal TTY manipulation
-- ghostty_config_load_default_files loads ~/.config/ghostty/config
-- Cmd+K nav failed 3 times due to SwiftUI transaction swallowing @State changes; DispatchQueue.main.async fixes it
-- TableBlockView had duplicate grip dots from both BlockCellView and its own gripDotsColumn
-- Multiple Bugbook processes (release, Xcode debug, swift build) can interfere
+- Debug binary includes Sentry which hangs CLI commands; installed bugbook at ~/.local/bin works fine
+- Worktree cherry-picks into dev with many shared files (formula→lookup→rollup) cause extensive conflicts; surgical agent application is more reliable
+- blockDocumentLookup closure pattern works well for threading live document references through the pane tree
 
 ## How to Review
 git checkout dev
