@@ -88,6 +88,7 @@ struct DatabaseFullPageView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .background(Color.fallbackEditorBg)
         .accessibilityIdentifier("editor")
         .sheet(isPresented: $showPropertyManager) {
             if state.schema != nil {
