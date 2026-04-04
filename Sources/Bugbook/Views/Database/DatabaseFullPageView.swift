@@ -88,7 +88,6 @@ struct DatabaseFullPageView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color.fallbackEditorBg)
         .accessibilityIdentifier("editor")
         .sheet(isPresented: $showPropertyManager) {
             if state.schema != nil {
@@ -348,7 +347,24 @@ struct DatabaseFullPageView: View {
                 // Filter
                 popoverSectionHeader("Filter")
                 if let view = state.activeView, !view.filters.isEmpty {
-                    ForEach(view.filters) { filter in
+                    let conjunction = view.filterGroup?.conjunction ?? .and
+                    ForEach(Array(view.filters.enumerated()), id: \.element.id) { index, filter in
+                        if index > 0 {
+                            Button {
+                                state.toggleFilterConjunction()
+                            } label: {
+                                Text(conjunction == .and ? "and" : "or")
+                                    .font(DatabaseZoomMetrics.font(11))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                                    .padding(.vertical, DatabaseZoomMetrics.size(2))
+                                    .background(Color.primary.opacity(0.06))
+                                    .clipShape(.rect(cornerRadius: DatabaseZoomMetrics.size(4)))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 4)
+                        }
                         filterRow(filter, schema: schema)
                             .padding(.horizontal, 12)
                             .padding(.bottom, 4)

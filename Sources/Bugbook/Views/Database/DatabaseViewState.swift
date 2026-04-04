@@ -556,6 +556,7 @@ final class DatabaseViewState {
         let defaultValue = (prop?.type == .checkbox) ? "true" : ""
         let filter = FilterConfig(property: propertyId, op: defaultOp, value: defaultValue)
         view.filters.append(filter)
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -568,6 +569,7 @@ final class DatabaseViewState {
         if let property = property { view.filters[idx].property = property }
         if let op = op { view.filters[idx].op = op }
         if let value = value { view.filters[idx].value = value }
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -578,6 +580,7 @@ final class DatabaseViewState {
         guard var s = schema, var view = activeView else { return }
         let filter = FilterConfig(property: propertyId, op: "not_equals", value: optionId)
         view.filters.append(filter)
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -587,9 +590,35 @@ final class DatabaseViewState {
     func removeFilter(_ filterId: String) {
         guard var s = schema, var view = activeView else { return }
         view.filters.removeAll { $0.id == filterId }
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
+        }
+    }
+
+    func toggleFilterConjunction() {
+        guard var s = schema, var view = activeView else { return }
+        let currentConjunction = view.filterGroup?.conjunction ?? .and
+        let newConjunction: FilterConjunction = currentConjunction == .and ? .or : .and
+        view.filterGroup?.conjunction = newConjunction
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    /// Rebuild filterGroup from the flat filters list, preserving the current conjunction.
+    private func syncFilterGroup(_ view: inout ViewConfig) {
+        let conjunction = view.filterGroup?.conjunction ?? .and
+        if view.filters.isEmpty {
+            view.filterGroup = nil
+        } else {
+            view.filterGroup = FilterGroup(
+                id: view.filterGroup?.id ?? UUID().uuidString,
+                conjunction: conjunction,
+                conditions: view.filters.map { .filter($0) }
+            )
         }
     }
 
