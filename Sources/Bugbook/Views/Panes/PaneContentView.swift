@@ -23,16 +23,19 @@ struct PaneContentView: View {
     @State private var findQuery = ""
     @State private var findCurrentIndex = 0
     @State private var findRefocusTrigger = false
+    @State private var findMatchCache: [(blockId: UUID, range: Range<String.Index>)] = []
 
     private var isFocusedPane: Bool {
         workspaceManager.activeWorkspace?.focusedPaneId == leaf.id
     }
 
-    /// All block text matches for the current query.
-    private var findMatches: [(blockId: UUID, range: Range<String.Index>)] {
+    private func recomputeFindMatches() {
         guard !findQuery.isEmpty,
               case .document = leaf.content,
-              let doc = blockDocumentLookup?(leaf.id) else { return [] }
+              let doc = blockDocumentLookup?(leaf.id) else {
+            findMatchCache = []
+            return
+        }
         let needle = findQuery.lowercased()
         var results: [(blockId: UUID, range: Range<String.Index>)] = []
         func searchBlocks(_ blocks: [Block]) {
@@ -49,7 +52,7 @@ struct PaneContentView: View {
             }
         }
         searchBlocks(doc.blocks)
-        return results
+        findMatchCache = results
     }
 
     var body: some View {
@@ -67,8 +70,8 @@ struct PaneContentView: View {
                 if showFindBar {
                     PaneFindBar(
                         query: $findQuery,
-                        matchCount: findMatches.count,
-                        currentMatch: findMatches.isEmpty ? 0 : findCurrentIndex + 1,
+                        matchCount: findMatchCache.count,
+                        currentMatch: findMatchCache.isEmpty ? 0 : findCurrentIndex + 1,
                         onNext: { advanceFind(forward: true) },
                         onPrevious: { advanceFind(forward: false) },
                         onClose: { closeFindBar() }
@@ -118,6 +121,7 @@ struct PaneContentView: View {
         }
         .onChange(of: findQuery) { _, _ in
             findCurrentIndex = 0
+            recomputeFindMatches()
         }
         .contextMenu {
             Menu("Split Right") {
@@ -183,7 +187,7 @@ struct PaneContentView: View {
     }
 
     private func advanceFind(forward: Bool) {
-        let matches = findMatches
+        let matches = findMatchCache
         guard !matches.isEmpty else { return }
         if forward {
             findCurrentIndex = (findCurrentIndex + 1) % matches.count

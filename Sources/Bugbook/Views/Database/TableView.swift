@@ -391,7 +391,7 @@ struct TableView: View {
 
                     ForEach(visibleProperties) { prop in
                         let cellId = "\(row.wrappedValue.id)_\(prop.id)"
-                        let formulaInfo = prop.type == .formula ? evaluateFormula(prop, row: row.wrappedValue) : (nil, false)
+                        let formulaInfo = prop.type == .formula ? evaluateFormula(prop, row: row.wrappedValue, schema: schema) : (nil, false)
                         PropertyEditorView(
                             definition: prop,
                             value: propertyBinding(row: row, propertyId: prop.id),
@@ -611,27 +611,7 @@ struct TableView: View {
     }
 
     /// Evaluate a formula property against a row's values. Returns (displayText, isError).
-    private func evaluateFormula(_ prop: PropertyDefinition, row: DatabaseRow) -> (String?, Bool) {
-        guard let expression = prop.config?.formula, !expression.isEmpty else {
-            return (nil, false)
-        }
-        // Build values dict: map property IDs to their numeric values
-        var values: [String: Double] = [:]
-        for schemaProp in schema.properties where schemaProp.type == .number {
-            if case .number(let n) = row.properties[schemaProp.id] {
-                values[schemaProp.id] = n
-            }
-        }
-        do {
-            let result = try FormulaEngine.evaluate(expression: expression, values: values)
-            let display = result == result.rounded() && abs(result) < 1e15
-                ? String(Int(result))
-                : String(format: "%.2f", result)
-            return (display, false)
-        } catch {
-            return (error.localizedDescription, true)
-        }
-    }
+    // Formula evaluation is in DatabaseViewHelpers.evaluateFormula(_:row:schema:)
 
     private func titleBinding(row: Binding<DatabaseRow>) -> Binding<String> {
         let titlePropId = schema.titleProperty?.id

@@ -56,27 +56,7 @@ struct RowPageView: View {
         .system(size: EditorTypography.scaled(34), weight: .bold)
     }
 
-    /// Evaluate a formula property against the current row. Returns (displayText, isError).
-    private func evaluateFormula(_ prop: PropertyDefinition) -> (String?, Bool) {
-        guard let expression = prop.config?.formula, !expression.isEmpty else {
-            return (nil, false)
-        }
-        var values: [String: Double] = [:]
-        for schemaProp in schema.properties where schemaProp.type == .number {
-            if case .number(let n) = row.properties[schemaProp.id] {
-                values[schemaProp.id] = n
-            }
-        }
-        do {
-            let result = try FormulaEngine.evaluate(expression: expression, values: values)
-            let display = result == result.rounded() && abs(result) < 1e15
-                ? String(Int(result))
-                : String(format: "%.2f", result)
-            return (display, false)
-        } catch {
-            return (error.localizedDescription, true)
-        }
-    }
+    // Formula evaluation is in DatabaseViewHelpers.evaluateFormula(_:row:schema:)
 
     /// Whether the row is empty (no title, no non-empty properties, no body).
     private var isRowEmpty: Bool {
@@ -141,6 +121,7 @@ struct RowPageView: View {
 
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(schema.properties.filter({ $0.type != .title })) { prop in
+                                let formulaEval = prop.type == .formula ? evaluateFormula(prop, row: row, schema: schema) : (nil, false)
                                 PropertyRowView(
                                     prop: prop,
                                     row: $row,
@@ -155,8 +136,8 @@ struct RowPageView: View {
                                     onRenameProperty: onRenameProperty,
                                     onDeleteProperty: onDeleteProperty,
                                     onChangePropertyType: onChangePropertyType,
-                                    formulaResult: prop.type == .formula ? evaluateFormula(prop).0 : nil,
-                                    formulaError: prop.type == .formula ? evaluateFormula(prop).1 : false
+                                    formulaResult: formulaEval.0,
+                                    formulaError: formulaEval.1
                                 )
                             }
 
