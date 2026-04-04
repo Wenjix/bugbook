@@ -523,7 +523,7 @@ struct ContentView: View {
         if sidebarPeekEligible {
             VStack {
                 HStack {
-                    sidebarChromeButton(icon: "sidebar.left", help: "Open Sidebar") {
+                    sidebarChromeButton(icon: "sidebar.left", help: "Toggle Sidebar (⌘.)") {
                         openSidebarPinned()
                     }
                     .padding(ShellZoomMetrics.size(4))
