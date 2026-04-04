@@ -23,11 +23,15 @@ import BugbookCore
     // MARK: - Workspace Resolution
 
     private func resolveWorkspacePath() -> String {
-        if let iCloudURL = fileManager.url(forUbiquityContainerIdentifier: nil)?
-            .appendingPathComponent("Documents/Bugbook") {
+        // Check the iCloud ubiquity container (iCloud.com.maxforsey.Bugbook)
+        // On Mac: ~/Library/Mobile Documents/iCloud~com~maxforsey~Bugbook/Documents/Bugbook
+        // On iOS: synced automatically by iCloud
+        if let containerURL = fileManager.url(forUbiquityContainerIdentifier: "iCloud.com.bugbook.app") {
+            let bugbookDir = containerURL.appendingPathComponent("Documents/Bugbook")
             isICloudAvailable = true
-            return iCloudURL.path
+            return bugbookDir.path
         }
+
         isICloudAvailable = false
         return localWorkspacePath()
     }
