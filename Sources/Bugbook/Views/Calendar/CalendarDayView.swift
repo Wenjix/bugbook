@@ -34,9 +34,6 @@ struct CalendarDayView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            dateHeader
-            Divider()
-
             if !allDayEvents.isEmpty {
                 allDaySection
                 Divider()
@@ -73,29 +70,6 @@ struct CalendarDayView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Date Header
-
-    private var dateHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(Calendar.current.component(.day, from: date))")
-                .font(.system(size: Typography.title, design: .monospaced).weight(.bold))
-                .foregroundStyle(Calendar.current.isDateInToday(date) ? Color.accentColor : .primary)
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text(dayNameString)
-                    .font(.system(size: Typography.body, weight: .medium))
-                    .foregroundStyle(.primary)
-                Text(monthYearString)
-                    .font(.system(size: Typography.caption))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
     }
 
     // MARK: - All-Day Section
@@ -303,15 +277,4 @@ struct CalendarDayView: View {
         return Color.accentColor
     }
 
-    private var dayNameString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        return formatter.string(from: date)
-    }
-
-    private var monthYearString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: date)
-    }
 }

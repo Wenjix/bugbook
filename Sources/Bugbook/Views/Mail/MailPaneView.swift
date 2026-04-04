@@ -7,12 +7,12 @@ struct MailPaneView: View {
 
     @State private var searchText = ""
     @State private var activeFilter: MailFilter = .all
+    @State private var selectedThreadIDs: Set<String> = []
+    @State private var isHoveredThreadID: String?
+    @State private var selectAllToggle = false
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
-
             if !appState.settings.googleConfigured {
                 setupState(
                     title: "Configure Google access",
@@ -26,7 +26,20 @@ struct MailPaneView: View {
             } else {
                 VStack(spacing: 0) {
                     mailFilterTabs
-                    threadList
+                    batchToolbar
+                    Divider()
+
+                    if mailService.selectedThread != nil || mailService.isLoadingThread || mailService.isComposing {
+                        // Split view: thread list + detail
+                        HSplitView {
+                            threadList
+                                .frame(minWidth: 280, idealWidth: 360)
+                            detailPane
+                                .frame(minWidth: 300)
+                        }
+                    } else {
+                        threadList
+                    }
                 }
             }
         }
@@ -69,7 +82,7 @@ struct MailPaneView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
 
-                TextField("Search Gmail", text: $searchText)
+                TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
                     .onSubmit { submitSearch() }
 
@@ -101,13 +114,6 @@ struct MailPaneView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-
-            Button(action: { refreshSelectedMailbox(force: true) }) {
-                Image(systemName: "arrow.clockwise")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(!appState.settings.googleConnected || mailService.isLoadingMailbox)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -115,34 +121,126 @@ struct MailPaneView: View {
 
     private var mailFilterTabs: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                ForEach(MailFilter.allCases) { filter in
-                    Button {
-                        activeFilter = filter
-                        mailService.selectMailbox(filter.mailbox)
-                        refreshSelectedMailbox(force: false)
-                    } label: {
-                        Text(filter.label)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(activeFilter == filter ? .primary : .tertiary)
-                            .padding(.vertical, 3)
-                            .padding(.horizontal, 8)
-                            .background(
-                                activeFilter == filter
-                                    ? Color.primary.opacity(0.08)
-                                    : Color.clear
-                            )
-                            .clipShape(.rect(cornerRadius: Radius.xs))
+            HStack(spacing: 0) {
+                // Filter tabs with blue underline
+                HStack(spacing: 16) {
+                    ForEach(MailFilter.allCases) { filter in
+                        Button {
+                            activeFilter = filter
+                            mailService.selectMailbox(filter.mailbox)
+                            refreshSelectedMailbox(force: false)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Text(filter.label)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(activeFilter == filter ? Color.accentColor : Color.primary.opacity(0.3))
+
+                                Rectangle()
+                                    .fill(activeFilter == filter ? Color.accentColor : Color.clear)
+                                    .frame(height: 2)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+
                 Spacer()
+
+                // Inline search
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                    TextField("Search", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .onSubmit { submitSearch() }
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                            mailService.clearSearch()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.primary.opacity(0.04))
+                .clipShape(.rect(cornerRadius: 6))
+                .frame(maxWidth: 200)
+
+                if mailService.isSearching || mailService.isLoadingMailbox || mailService.isLoadingThread {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .padding(.leading, 6)
+                }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
 
             Divider()
         }
+    }
+
+    private var batchToolbar: some View {
+        HStack(spacing: 4) {
+            Toggle(isOn: $selectAllToggle) {
+                EmptyView()
+            }
+            .toggleStyle(.checkbox)
+            .onChange(of: selectAllToggle) { _, newValue in
+                if newValue {
+                    selectedThreadIDs = Set(mailService.visibleThreads.map(\.id))
+                } else {
+                    selectedThreadIDs.removeAll()
+                }
+            }
+
+            Menu {
+                Button("All") { selectAllToggle = true; selectedThreadIDs = Set(mailService.visibleThreads.map(\.id)) }
+                Button("None") { selectAllToggle = false; selectedThreadIDs.removeAll() }
+                Divider()
+                Button("Read") { selectedThreadIDs = Set(mailService.visibleThreads.filter { !$0.isUnread }.map(\.id)); selectAllToggle = false }
+                Button("Unread") { selectedThreadIDs = Set(mailService.visibleThreads.filter { $0.isUnread }.map(\.id)); selectAllToggle = false }
+                Button("Starred") { selectedThreadIDs = Set(mailService.visibleThreads.filter { $0.isStarred }.map(\.id)); selectAllToggle = false }
+                Button("Unstarred") { selectedThreadIDs = Set(mailService.visibleThreads.filter { !$0.isStarred }.map(\.id)); selectAllToggle = false }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { refreshSelectedMailbox(force: true) }) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!appState.settings.googleConnected || mailService.isLoadingMailbox)
+
+            Menu {
+                Button("Mark as read") { }
+                Button("Mark as unread") { }
+                Divider()
+                Button("Archive") { }
+                Button("Move to trash") { }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(height: 34)
     }
 
     private var mailboxRail: some View {
@@ -292,48 +390,101 @@ struct MailPaneView: View {
     }
 
     private func threadRow(_ thread: MailThreadSummary) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(thread.participants.first ?? "(Unknown Sender)")
-                    .font(.system(size: 12, weight: thread.isUnread ? .semibold : .regular))
-                    .lineLimit(1)
+        let isSelected = selectedThreadIDs.contains(thread.id)
+        let isHovered = isHoveredThreadID == thread.id
+        let unread = thread.isUnread
 
-                Spacer()
-
-                if thread.isStarred {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.yellow)
+        return HStack(spacing: 0) {
+            // Checkbox
+            Button {
+                if isSelected {
+                    selectedThreadIDs.remove(thread.id)
+                } else {
+                    selectedThreadIDs.insert(thread.id)
                 }
-
-                if let date = thread.date {
-                    Text(date, style: .date)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
+            } label: {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.15))
             }
+            .buttonStyle(.plain)
+            .padding(.trailing, 10)
 
-            Text(thread.subject)
-                .font(.system(size: 13, weight: thread.isUnread ? .semibold : .medium))
+            // Sender (brightest tier)
+            Text(senderDisplayName(thread.participants.first ?? "Unknown"))
+                .font(.system(size: 13, weight: unread ? .bold : .regular))
+                .foregroundStyle(unread ? .primary : .secondary)
                 .lineLimit(1)
+                .fixedSize()
+                .padding(.trailing, 6)
 
-            Text(thread.snippet)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(mailService.selectedThreadID == thread.id ? Color.primary.opacity(0.08) : Color.clear)
-        .overlay(alignment: .leading) {
-            if thread.isUnread {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 6, height: 6)
-                    .padding(.leading, 4)
+            // Subject (mid tier)
+            Text(thread.subject)
+                .font(.system(size: 13, weight: unread ? .semibold : .regular))
+                .foregroundStyle(unread ? Color.primary.opacity(0.8) : Color.primary.opacity(0.45))
+                .lineLimit(1)
+                .layoutPriority(1)
+
+            // Separator + snippet (muted tier)
+            if !thread.snippet.isEmpty {
+                Text("  ·  ")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.primary.opacity(0.2))
+
+                Text(thread.snippet)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.primary.opacity(0.25))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            // Date (mono for alignment)
+            if let date = thread.date {
+                Text(relativeDate(date))
+                    .font(.system(size: 12, weight: unread ? .medium : .regular, design: .monospaced))
+                    .foregroundStyle(unread ? Color.primary.opacity(0.6) : Color.primary.opacity(0.25))
+                    .fixedSize()
             }
         }
+        .frame(height: 44)
+        .padding(.horizontal, 16)
+        .background {
+            if mailService.selectedThreadID == thread.id {
+                Color.primary.opacity(Opacity.light)
+            } else if isHovered {
+                Color.primary.opacity(Opacity.subtle)
+            } else {
+                Color.clear
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHoveredThreadID = hovering ? thread.id : nil
+        }
+    }
+
+    /// Clean sender display name — strip email addresses, angle brackets
+    private func senderDisplayName(_ raw: String) -> String {
+        // If it's "Name <email>", extract just the name
+        if let angleBracket = raw.firstIndex(of: "<") {
+            let name = raw[raw.startIndex..<angleBracket].trimmingCharacters(in: .whitespaces)
+            return name.isEmpty ? raw : name
+        }
+        return raw
+    }
+
+    private static let todayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
+    }()
+    private static let pastFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMM d"; return f
+    }()
+
+    private func relativeDate(_ date: Date) -> String {
+        Calendar.current.isDateInToday(date)
+            ? Self.todayFormatter.string(from: date)
+            : Self.pastFormatter.string(from: date)
     }
 
     private func threadToolbar(_ thread: MailThreadDetail) -> some View {
