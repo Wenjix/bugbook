@@ -53,7 +53,8 @@ struct MobileRootView: View {
                 .padding(.top, 4)
                 .padding(.bottom, 24)
             }
-            .background(Color.mobileBgPrimary)
+            .scrollContentBackground(.hidden)
+            .background(Color.mobileBgPrimary.ignoresSafeArea())
             .contentShape(Rectangle())
             .onTapGesture {
                 captureFieldFocused = false
@@ -122,7 +123,6 @@ struct MobileRootView: View {
                 }
             }
         }
-        .background(Color.mobileBgPrimary.ignoresSafeArea())
     }
 
     // MARK: - 1. Capture Zone (Priority #1)

@@ -5,9 +5,7 @@ struct BugbookMobileApp: App {
     var body: some Scene {
         WindowGroup {
             MobileRootView()
-                #if os(iOS)
-                .preferredColorScheme(nil)
-                #endif
+                .background(Color.mobileBgPrimary.ignoresSafeArea(.all))
         }
     }
 }
