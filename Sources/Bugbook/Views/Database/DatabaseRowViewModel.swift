@@ -169,6 +169,8 @@ final class DatabaseRowViewModel {
             config = PropertyConfig(target: nil)
         case .formula:
             config = PropertyConfig(formula: "")
+        case .lookup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
         default:
             config = nil
         }
@@ -253,6 +255,38 @@ final class DatabaseRowViewModel {
             return targetRows.map { RelationRowCandidate(id: $0.id, title: $0.title(schema: targetSchema)) }
         } catch {
             return []
+        }
+    }
+
+    func resolveLookupValue(for row: DatabaseRow, property: PropertyDefinition) -> String {
+        guard property.type == .lookup,
+              let relationPropId = property.config?.relationPropertyId,
+              let targetPropId = property.config?.targetPropertyId,
+              !relationPropId.isEmpty, !targetPropId.isEmpty else { return "" }
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropId }),
+              relationProp.type == .relation,
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else { return "" }
+        let relationValue = row.properties[relationPropId] ?? .empty
+        let relatedRowIds: [String]
+        switch relationValue {
+        case .relation(let id): relatedRowIds = id.isEmpty ? [] : [id]
+        case .relationMany(let ids): relatedRowIds = ids
+        default: relatedRowIds = []
+        }
+        guard !relatedRowIds.isEmpty else { return "" }
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: targetDbPath)
+            let targetProp = targetSchema.properties.first(where: { $0.id == targetPropId })
+            let values: [String] = relatedRowIds.compactMap { rowId in
+                guard let targetRow = targetRows.first(where: { $0.id == rowId }) else { return nil }
+                if targetProp?.type == .title { return targetRow.title(schema: targetSchema) }
+                guard let val = targetRow.properties[targetPropId] else { return nil }
+                if case .empty = val { return nil }
+                return val.stringValue
+            }
+            return values.joined(separator: ", ")
+        } catch {
+            return ""
         }
     }
 
@@ -359,6 +393,7 @@ final class DatabaseRowViewModel {
                 onLoadRelationRows: { prop in self.loadRelationRows(for: prop) },
                 onListDatabases: { self.listAvailableDatabases(workspacePath: workspacePath) },
                 onSetRelationTarget: { propId, target in self.setRelationTarget(propId, target: target) },
+                onResolveLookup: { row, prop in self.resolveLookupValue(for: row, property: prop) },
                 onAddProperty: { type in self.addProperty(type: type) },
                 onRenameProperty: { propId, name in self.renameProperty(propId, to: name) },
                 onDeleteProperty: { propId in self.deleteProperty(propId) },

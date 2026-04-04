@@ -104,6 +104,10 @@ public struct SchemaValidator {
         case .formula:
             // Formula values are computed, not stored — any persisted value is acceptable.
             return nil
+
+        case .lookup:
+            // Lookup is computed; any stored value is valid.
+            return nil
         }
     }
 }

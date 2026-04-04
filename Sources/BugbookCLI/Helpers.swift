@@ -177,6 +177,9 @@ func parsePropertyValue(_ raw: String, property: String, schema: DatabaseSchema)
     case .formula:
         // Formula values are computed, not set directly.
         return .empty
+    case .lookup:
+        // Lookup is computed; treat raw input as text.
+        return .text(raw)
     }
 }
 

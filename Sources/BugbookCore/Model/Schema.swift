@@ -14,6 +14,7 @@ public enum PropertyType: String, Codable, CaseIterable, Sendable {
     case email
     case relation
     case formula
+    case lookup
 
     public var systemImageName: String {
         switch self {
@@ -28,6 +29,7 @@ public enum PropertyType: String, Codable, CaseIterable, Sendable {
         case .email: return "envelope"
         case .relation: return "arrow.triangle.branch"
         case .formula: return "function"
+        case .lookup: return "eye"
         }
     }
 }
@@ -54,13 +56,20 @@ public struct PropertyConfig: Codable, Sendable {
     public var target: String?
     public var cardinality: String?
     public var formula: String?
+    /// For lookup fields: the relation property to follow.
+    public var relationPropertyId: String?
+    /// For lookup fields: the property to mirror from the related rows.
+    public var targetPropertyId: String?
 
-    public init(options: [SelectOption]? = nil, format: String? = nil, target: String? = nil, cardinality: String? = nil, formula: String? = nil) {
+    public init(options: [SelectOption]? = nil, format: String? = nil, target: String? = nil, cardinality: String? = nil, formula: String? = nil,
+                relationPropertyId: String? = nil, targetPropertyId: String? = nil) {
         self.options = options
         self.format = format
         self.target = target
         self.cardinality = cardinality
         self.formula = formula
+        self.relationPropertyId = relationPropertyId
+        self.targetPropertyId = targetPropertyId
     }
 }
 

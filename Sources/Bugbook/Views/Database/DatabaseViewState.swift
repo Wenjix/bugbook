@@ -328,6 +328,8 @@ final class DatabaseViewState {
             config = PropertyConfig(target: nil)
         case .formula:
             config = PropertyConfig(formula: "")
+        case .lookup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
         default:
             config = nil
         }
@@ -777,6 +779,77 @@ final class DatabaseViewState {
         Task {
             try? dbService.saveSchema(s, at: dbPath)
             postChangeNotification()
+        }
+    }
+
+    // MARK: - Lookup
+
+    func setLookupConfig(_ propertyId: String, relationPropertyId: String?, targetPropertyId: String?) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig()
+        }
+        s.properties[idx].config?.relationPropertyId = relationPropertyId
+        s.properties[idx].config?.targetPropertyId = targetPropertyId
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
+    /// Resolve lookup values for a single row. Returns the computed display string.
+    func resolveLookupValue(for row: DatabaseRow, property: PropertyDefinition) -> String {
+        guard property.type == .lookup,
+              let relationPropId = property.config?.relationPropertyId,
+              let targetPropId = property.config?.targetPropertyId,
+              !relationPropId.isEmpty, !targetPropId.isEmpty else {
+            return ""
+        }
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropId }),
+              relationProp.type == .relation,
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else {
+            return ""
+        }
+        let relationValue = row.properties[relationPropId] ?? .empty
+        let relatedRowIds: [String]
+        switch relationValue {
+        case .relation(let id): relatedRowIds = id.isEmpty ? [] : [id]
+        case .relationMany(let ids): relatedRowIds = ids
+        default: relatedRowIds = []
+        }
+        guard !relatedRowIds.isEmpty else { return "" }
+
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: targetDbPath)
+            let targetProp = targetSchema.properties.first(where: { $0.id == targetPropId })
+            let values: [String] = relatedRowIds.compactMap { rowId in
+                guard let targetRow = targetRows.first(where: { $0.id == rowId }) else { return nil }
+                if targetProp?.type == .title {
+                    return targetRow.title(schema: targetSchema)
+                }
+                guard let val = targetRow.properties[targetPropId] else { return nil }
+                if case .empty = val { return nil }
+                return val.stringValue
+            }
+            return values.joined(separator: ", ")
+        } catch {
+            return ""
+        }
+    }
+
+    /// Load properties from the target database of a relation (for lookup config picker).
+    func loadTargetDatabaseProperties(for relationPropertyId: String) -> [PropertyDefinition] {
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropertyId }),
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else {
+            return []
+        }
+        do {
+            let (targetSchema, _) = try dbService.loadDatabase(at: targetDbPath)
+            return targetSchema.properties
+        } catch {
+            return []
         }
     }
 

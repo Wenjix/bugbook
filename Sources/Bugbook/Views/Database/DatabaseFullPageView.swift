@@ -698,6 +698,9 @@ struct DatabaseFullPageView: View {
             return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         case .formula:
             return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .lookup:
+            return [("equals", "is"), ("not_equals", "is not"), ("contains", "contains"),
+                    ("not_contains", "doesn't contain"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         }
     }
 
@@ -807,6 +810,7 @@ struct DatabaseFullPageView: View {
                     onLoadRelationRows: { prop in state.loadRelationRows(for: prop) },
                     onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
                     onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
+                    onResolveLookup: { row, prop in state.resolveLookupValue(for: row, property: prop) },
                     onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
                     onReorderRows: { draggedId, targetId in
                         state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
@@ -1008,6 +1012,10 @@ private struct PropertyManagerSheet: View {
                             formulaExpressionEditor(for: prop)
                         }
 
+                        if prop.type == .lookup {
+                            lookupConfigPicker(for: prop)
+                        }
+
                         if !isTitle {
                             Button {
                                 deleteProperty(prop.id)
@@ -1047,6 +1055,8 @@ private struct PropertyManagerSheet: View {
             config = PropertyConfig(options: [])
         case .relation:
             config = PropertyConfig(target: nil)
+        case .lookup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
         default:
             config = nil
         }
@@ -1110,6 +1120,88 @@ private struct PropertyManagerSheet: View {
             ))
             .textFieldStyle(.roundedBorder)
             .font(.caption.monospaced())
+        }
+    }
+
+    private func lookupConfigPicker(for prop: PropertyDefinition) -> some View {
+        let relationProps = schema.properties.filter { $0.type == .relation }
+        let selectedRelationId = prop.config?.relationPropertyId ?? ""
+        let targetProps: [PropertyDefinition] = {
+            guard !selectedRelationId.isEmpty,
+                  let relProp = schema.properties.first(where: { $0.id == selectedRelationId }),
+                  let targetPath = relProp.config?.target, !targetPath.isEmpty else { return [] }
+            return (try? dbService.loadDatabase(at: targetPath).0.properties) ?? []
+        }()
+
+        return HStack(spacing: 4) {
+            Menu {
+                ForEach(relationProps) { rp in
+                    Button {
+                        setLookupRelation(prop.id, relationPropertyId: rp.id)
+                    } label: {
+                        HStack {
+                            Text(rp.name)
+                            if selectedRelationId == rp.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                let relName = relationProps.first(where: { $0.id == selectedRelationId })?.name
+                Text(relName ?? "Relation")
+                    .font(.caption)
+                    .foregroundStyle(relName != nil ? .primary : .secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            if !targetProps.isEmpty {
+                Menu {
+                    ForEach(targetProps) { tp in
+                        Button {
+                            setLookupTarget(prop.id, targetPropertyId: tp.id)
+                        } label: {
+                            HStack {
+                                Text(tp.name)
+                                if prop.config?.targetPropertyId == tp.id {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    let targetName = targetProps.first(where: { $0.id == prop.config?.targetPropertyId })?.name
+                    Text(targetName ?? "Property")
+                        .font(.caption)
+                        .foregroundStyle(targetName != nil ? .primary : .secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+        }
+    }
+
+    private func setLookupRelation(_ propertyId: String, relationPropertyId: String) {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if schema.properties[idx].config == nil {
+            schema.properties[idx].config = PropertyConfig()
+        }
+        schema.properties[idx].config?.relationPropertyId = relationPropertyId
+        schema.properties[idx].config?.targetPropertyId = nil
+        Task {
+            try? dbService.saveSchema(schema, at: dbPath)
+        }
+    }
+
+    private func setLookupTarget(_ propertyId: String, targetPropertyId: String) {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if schema.properties[idx].config == nil {
+            schema.properties[idx].config = PropertyConfig()
+        }
+        schema.properties[idx].config?.targetPropertyId = targetPropertyId
+        Task {
+            try? dbService.saveSchema(schema, at: dbPath)
         }
     }
 

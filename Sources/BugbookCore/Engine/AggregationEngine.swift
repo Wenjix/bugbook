@@ -30,6 +30,8 @@ public struct AggregationEngine {
             return ["count", "count_values", "count_unique"]
         case .formula:
             return ["count", "count_values", "count_unique", "sum", "avg", "min", "max"]
+        case .lookup:
+            return ["count", "count_values", "count_unique"]
         }
     }
 

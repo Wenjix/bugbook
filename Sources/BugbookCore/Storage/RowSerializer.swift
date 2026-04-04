@@ -194,6 +194,9 @@ public struct RowSerializer {
         case .formula:
             // Formula values are computed at display time, never persisted.
             return .empty
+        case .lookup:
+            // Lookup is computed at render time; stored value is treated as text.
+            return .text(value)
         }
     }
 

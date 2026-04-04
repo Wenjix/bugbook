@@ -123,6 +123,15 @@ struct MobileDatabaseRowView: View {
                 Text("Computed")
                     .foregroundStyle(.secondary)
             }
+        case .lookup:
+            let value: String = {
+                if case .text(let s) = properties[prop.id] { return s }
+                return ""
+            }()
+            LabeledContent(prop.name) {
+                Text(value.isEmpty ? "\u{2014}" : value)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -262,6 +271,7 @@ struct MobileDatabaseRowView: View {
         case .checkbox: return .checkbox(false)
         case .relation: return .empty
         case .formula: return .empty
+        case .lookup: return .empty
         }
     }
 }

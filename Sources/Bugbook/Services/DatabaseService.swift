@@ -129,6 +129,12 @@ class DatabaseService {
                 schema.properties[idx].config?.formula = ""
             }
         }
+        // Set up lookup config
+        if newType == .lookup {
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
+            }
+        }
         try saveSchema(schema, at: dbPath)
         // Convert existing values where possible
         for i in rows.indices {
@@ -216,6 +222,7 @@ class DatabaseService {
         case .multiSelect: return .text(str)
         case .relation: return .relation(str)
         case .formula: return .empty
+        case .lookup: return .empty
         }
     }
 
@@ -632,6 +639,8 @@ class DatabaseService {
             return .relation(value)
         case .formula:
             return .empty
+        case .lookup:
+            return .text(value)
         }
     }
 }

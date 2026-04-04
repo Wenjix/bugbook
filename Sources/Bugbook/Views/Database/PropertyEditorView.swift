@@ -33,6 +33,8 @@ struct PropertyEditorView: View {
     var formulaResult: String? = nil
     /// Whether the formula evaluation produced an error.
     var formulaError: Bool = false
+    /// Pre-computed display string for lookup fields.
+    var lookupDisplayValue: String?
 
     /// Consistent cell font matching table text (14pt scaled).
     private var cellFont: Font { DatabaseZoomMetrics.font(14) }
@@ -95,6 +97,8 @@ struct PropertyEditorView: View {
             relationEditor
         case .formula:
             formulaDisplay
+        case .lookup:
+            lookupDisplay
         }
     }
 
@@ -738,6 +742,16 @@ struct PropertyEditorView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Read-only display for lookup fields. The actual value is computed at render time.
+    private var lookupDisplay: some View {
+        let displayText = (lookupDisplayValue ?? "").isEmpty ? "\u{2014}" : lookupDisplayValue!
+        return Text(displayText)
+            .font(cellFont)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
     }
 
     private var relationTargetPickerPopover: some View {

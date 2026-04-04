@@ -12,6 +12,7 @@ struct RowPageView: View {
     var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
     var onListDatabases: (() -> [RelationDatabaseCandidate])?
     var onSetRelationTarget: ((String, String) -> Void)?
+    var onResolveLookup: ((DatabaseRow, PropertyDefinition) -> String)?
     var onAddProperty: ((PropertyType) -> Void)?
     var onRenameProperty: ((String, String) -> Void)?
     var onDeleteProperty: ((String) -> Void)?
@@ -133,6 +134,7 @@ struct RowPageView: View {
                                     onLoadRelationRows: onLoadRelationRows,
                                     onListDatabases: onListDatabases,
                                     onSetRelationTarget: onSetRelationTarget,
+                                    onResolveLookup: onResolveLookup,
                                     onRenameProperty: onRenameProperty,
                                     onDeleteProperty: onDeleteProperty,
                                     onChangePropertyType: onChangePropertyType,
@@ -409,6 +411,7 @@ private struct PropertyRowView: View {
     var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
     var onListDatabases: (() -> [RelationDatabaseCandidate])?
     var onSetRelationTarget: ((String, String) -> Void)?
+    var onResolveLookup: ((DatabaseRow, PropertyDefinition) -> String)?
     var onRenameProperty: ((String, String) -> Void)?
     var onDeleteProperty: ((String) -> Void)?
     var onChangePropertyType: ((String, PropertyType) -> Void)?
@@ -469,7 +472,9 @@ private struct PropertyRowView: View {
                 onSetRelationTarget: prop.type == .relation
                     ? onSetRelationTarget : nil,
                 formulaResult: formulaResult,
-                formulaError: formulaError
+                formulaError: formulaError,
+                lookupDisplayValue: prop.type == .lookup
+                    ? onResolveLookup?(row, prop) : nil
             )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
