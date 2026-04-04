@@ -174,6 +174,9 @@ func parsePropertyValue(_ raw: String, property: String, schema: DatabaseSchema)
             return .relationMany(items)
         }
         return .relation(raw)
+    case .formula:
+        // Formula values are computed, not set directly.
+        return .empty
     }
 }
 

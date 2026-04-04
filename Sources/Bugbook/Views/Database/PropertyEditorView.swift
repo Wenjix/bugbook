@@ -29,6 +29,11 @@ struct PropertyEditorView: View {
     /// Callback to set the target database for a relation property.
     var onSetRelationTarget: ((String, String) -> Void)?  // (propertyId, targetDbPath)
 
+    /// Pre-computed formula display text (result or error). Provided by the caller for formula properties.
+    var formulaResult: String? = nil
+    /// Whether the formula evaluation produced an error.
+    var formulaError: Bool = false
+
     /// Consistent cell font matching table text (14pt scaled).
     private var cellFont: Font { DatabaseZoomMetrics.font(14) }
 
@@ -88,6 +93,8 @@ struct PropertyEditorView: View {
             emailEditor
         case .relation:
             relationEditor
+        case .formula:
+            formulaDisplay
         }
     }
 
@@ -712,6 +719,25 @@ struct PropertyEditorView: View {
                 relationCandidates = onLoadRelationRows?() ?? []
             }
         }
+    }
+
+    // MARK: - Formula
+
+    private var formulaDisplay: some View {
+        Group {
+            if let result = formulaResult, !result.isEmpty {
+                Text(result)
+                    .font(cellFont)
+                    .foregroundStyle(formulaError ? .red : .secondary)
+                    .lineLimit(1)
+                    .help(formulaError ? result : (definition.config?.formula ?? ""))
+            } else {
+                Text(compact ? "" : "No formula")
+                    .font(cellFont)
+                    .foregroundStyle(.quaternary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var relationTargetPickerPopover: some View {

@@ -31,6 +31,7 @@ struct TableView: View {
     var onClearSorts: (() -> Void)?
     var onNewRow: (() -> Void)?
     var onSetCalculation: ((String, String?) -> Void)?
+    var onUpdateFormula: ((String, String) -> Void)?
     var calculationResults: [String: String] = [:]
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
@@ -248,7 +249,8 @@ struct TableView: View {
                     onRename: onRenameProperty,
                     onChangeType: onChangePropertyType,
                     onToggleColumn: onToggleColumn,
-                    onDelete: onDeleteProperty
+                    onDelete: onDeleteProperty,
+                    onUpdateFormula: onUpdateFormula
                 )
                 .frame(width: columnWidth(for: prop))
                 .overlay(alignment: .trailing) {
@@ -389,6 +391,7 @@ struct TableView: View {
 
                     ForEach(visibleProperties) { prop in
                         let cellId = "\(row.wrappedValue.id)_\(prop.id)"
+                        let formulaInfo = prop.type == .formula ? evaluateFormula(prop, row: row.wrappedValue) : (nil, false)
                         PropertyEditorView(
                             definition: prop,
                             value: propertyBinding(row: row, propertyId: prop.id),
@@ -399,7 +402,9 @@ struct TableView: View {
                             onDeleteOption: onDeleteSelectOption,
                             onLoadRelationRows: prop.type == .relation ? { onLoadRelationRows?(prop) ?? [] } : nil,
                             onListDatabases: prop.type == .relation ? { onListDatabases?() ?? [] } : nil,
-                            onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil
+                            onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil,
+                            formulaResult: formulaInfo.0,
+                            formulaError: formulaInfo.1
                         )
                         .padding(.horizontal, DatabaseZoomMetrics.size(8))
                         .frame(width: columnWidth(for: prop), alignment: .leading)
@@ -603,6 +608,29 @@ struct TableView: View {
                 onSave(updatedRow)
             }
         )
+    }
+
+    /// Evaluate a formula property against a row's values. Returns (displayText, isError).
+    private func evaluateFormula(_ prop: PropertyDefinition, row: DatabaseRow) -> (String?, Bool) {
+        guard let expression = prop.config?.formula, !expression.isEmpty else {
+            return (nil, false)
+        }
+        // Build values dict: map property IDs to their numeric values
+        var values: [String: Double] = [:]
+        for schemaProp in schema.properties where schemaProp.type == .number {
+            if case .number(let n) = row.properties[schemaProp.id] {
+                values[schemaProp.id] = n
+            }
+        }
+        do {
+            let result = try FormulaEngine.evaluate(expression: expression, values: values)
+            let display = result == result.rounded() && abs(result) < 1e15
+                ? String(Int(result))
+                : String(format: "%.2f", result)
+            return (display, false)
+        } catch {
+            return (error.localizedDescription, true)
+        }
     }
 
     private func titleBinding(row: Binding<DatabaseRow>) -> Binding<String> {
@@ -1077,14 +1105,17 @@ private struct ColumnHeaderCell: View {
     var onChangeType: ((String, PropertyType) -> Void)?
     var onToggleColumn: ((String) -> Void)?
     var onDelete: ((String) -> Void)?
+    var onUpdateFormula: ((String, String) -> Void)?
 
     @State private var isHovered = false
     @State private var showPopover = false
     @State private var editingName: String = ""
+    @State private var editingFormula: String = ""
 
     var body: some View {
         Button {
             editingName = prop.name
+            editingFormula = prop.config?.formula ?? ""
             showPopover = true
         } label: {
             HStack(spacing: 6) {
@@ -1158,6 +1189,22 @@ private struct ColumnHeaderCell: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+            }
+
+            if prop.type == .formula {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Formula")
+                        .font(DatabaseZoomMetrics.font(12))
+                        .foregroundStyle(.secondary)
+                    TextField("e.g. prop_price * prop_quantity", text: $editingFormula)
+                        .textFieldStyle(.roundedBorder)
+                        .font(DatabaseZoomMetrics.font(12).monospaced())
+                        .focusEffectDisabled()
+                        .onSubmit {
+                            onUpdateFormula?(prop.id, editingFormula)
+                            showPopover = false
+                        }
+                }
             }
 
             Divider()

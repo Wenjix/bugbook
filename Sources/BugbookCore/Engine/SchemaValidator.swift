@@ -100,6 +100,10 @@ public struct SchemaValidator {
             if case .relation = value { return nil }
             if case .relationMany = value { return nil }
             return ValidationError(propertyId: definition.id, message: "Expected relation value")
+
+        case .formula:
+            // Formula values are computed, not stored — any persisted value is acceptable.
+            return nil
         }
     }
 }

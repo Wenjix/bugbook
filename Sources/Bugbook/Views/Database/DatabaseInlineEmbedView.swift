@@ -680,6 +680,8 @@ struct DatabaseInlineEmbedView: View {
             return [("is_checked", "is checked"), ("is_not_checked", "is not checked")]
         case .relation:
             return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .formula:
+            return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         }
     }
 
@@ -799,6 +801,7 @@ struct DatabaseInlineEmbedView: View {
                     onClearSorts: { state.clearSorts() },
                     onNewRow: { addNewRow() },
                     onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                    onUpdateFormula: { propId, expr in state.updateFormulaExpression(propId, expression: expr) },
                     calculationResults: state.calculationResults(for: filtered),
                     scrollToRowId: newRowScrollId,
                     usesInnerScroll: useInnerScroll,

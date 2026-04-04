@@ -191,6 +191,9 @@ public struct RowSerializer {
                 return .relationMany(items)
             }
             return .relation(value)
+        case .formula:
+            // Formula values are computed at display time, never persisted.
+            return .empty
         }
     }
 

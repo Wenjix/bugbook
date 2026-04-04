@@ -121,6 +121,14 @@ class DatabaseService {
                 schema.properties[idx].config = PropertyConfig(target: nil)
             }
         }
+        // Set up formula config with empty expression
+        if newType == .formula {
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(formula: "")
+            } else if schema.properties[idx].config?.formula == nil {
+                schema.properties[idx].config?.formula = ""
+            }
+        }
         try saveSchema(schema, at: dbPath)
         // Convert existing values where possible
         for i in rows.indices {
@@ -207,6 +215,7 @@ class DatabaseService {
         case .select: return .text(str)
         case .multiSelect: return .text(str)
         case .relation: return .relation(str)
+        case .formula: return .empty
         }
     }
 
@@ -621,6 +630,8 @@ class DatabaseService {
                 return .relationMany(items)
             }
             return .relation(value)
+        case .formula:
+            return .empty
         }
     }
 }

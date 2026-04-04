@@ -167,6 +167,8 @@ final class DatabaseRowViewModel {
             config = PropertyConfig(options: [])
         case .relation:
             config = PropertyConfig(target: nil)
+        case .formula:
+            config = PropertyConfig(formula: "")
         default:
             config = nil
         }

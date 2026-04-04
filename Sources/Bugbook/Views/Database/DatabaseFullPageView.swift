@@ -696,6 +696,8 @@ struct DatabaseFullPageView: View {
             return [("is_checked", "is checked"), ("is_not_checked", "is not checked")]
         case .relation:
             return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .formula:
+            return [("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         }
     }
 
@@ -812,6 +814,7 @@ struct DatabaseFullPageView: View {
                     onClearSorts: { state.clearSorts() },
                     onNewRow: { createNewRow() },
                     onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                    onUpdateFormula: { propId, expr in state.updateFormulaExpression(propId, expression: expr) },
                     calculationResults: state.calculationResults(for: filtered),
                     showVerticalLines: showVerticalLines,
                     usesInnerScroll: false,
@@ -1001,6 +1004,10 @@ private struct PropertyManagerSheet: View {
                             relationTargetPicker(for: prop)
                         }
 
+                        if prop.type == .formula {
+                            formulaExpressionEditor(for: prop)
+                        }
+
                         if !isTitle {
                             Button {
                                 deleteProperty(prop.id)
@@ -1078,6 +1085,32 @@ private struct PropertyManagerSheet: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .onAppear { loadAvailableDatabases() }
+    }
+
+    @ViewBuilder
+    private func formulaExpressionEditor(for prop: PropertyDefinition) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "function")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("e.g. prop_price * prop_quantity", text: Binding(
+                get: { prop.config?.formula ?? "" },
+                set: { newValue in
+                    guard let idx = schema.properties.firstIndex(where: { $0.id == prop.id }) else { return }
+                    if schema.properties[idx].config == nil {
+                        schema.properties[idx].config = PropertyConfig(formula: newValue)
+                    } else {
+                        schema.properties[idx].config?.formula = newValue
+                    }
+                    Task {
+                        try? dbService.saveSchema(schema, at: dbPath)
+                        postDatabaseChangeNotification(dbPath: dbPath, origin: notificationOrigin)
+                    }
+                }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .font(.caption.monospaced())
+        }
     }
 
     private func loadAvailableDatabases() {

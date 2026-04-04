@@ -118,6 +118,11 @@ struct MobileDatabaseRowView: View {
                 Text(value.isEmpty ? "None" : value)
                     .foregroundStyle(.secondary)
             }
+        case .formula:
+            LabeledContent(prop.name) {
+                Text("Computed")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -256,6 +261,7 @@ struct MobileDatabaseRowView: View {
         case .date: return .empty
         case .checkbox: return .checkbox(false)
         case .relation: return .empty
+        case .formula: return .empty
         }
     }
 }

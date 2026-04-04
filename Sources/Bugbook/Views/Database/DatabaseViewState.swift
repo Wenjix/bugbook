@@ -287,6 +287,21 @@ final class DatabaseViewState {
         }
     }
 
+    func updateFormulaExpression(_ propertyId: String, expression: String) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig(formula: expression)
+        } else {
+            s.properties[idx].config?.formula = expression
+        }
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
     func deleteProperty(_ propertyId: String) {
         guard var s = schema else { return }
         Task {
@@ -311,6 +326,8 @@ final class DatabaseViewState {
             config = PropertyConfig(options: [])
         case .relation:
             config = PropertyConfig(target: nil)
+        case .formula:
+            config = PropertyConfig(formula: "")
         default:
             config = nil
         }

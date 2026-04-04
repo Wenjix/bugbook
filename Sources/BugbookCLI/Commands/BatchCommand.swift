@@ -208,6 +208,8 @@ private func convertJSONToProperties(_ json: [String: Any], schema: DatabaseSche
                     result[key] = .relation(s)
                 }
             }
+        case .formula:
+            break // Formula values are computed, not stored.
         }
     }
     return result
