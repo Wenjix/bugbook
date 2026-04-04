@@ -27,6 +27,7 @@ struct TableView: View {
     var onListDatabases: (() -> [RelationDatabaseCandidate])?
     var onSetRelationTarget: ((String, String) -> Void)?
     var onResolveLookup: ((DatabaseRow, PropertyDefinition) -> String)?
+    var onResolveRollup: ((DatabaseRow, PropertyDefinition) -> String)?
     var onResizeColumn: ((String, CGFloat) -> Void)?
     var onReorderRows: ((String, String?) -> Void)?
     var onClearSorts: (() -> Void)?
@@ -406,7 +407,8 @@ struct TableView: View {
                             onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil,
                             formulaResult: formulaInfo.0,
                             formulaError: formulaInfo.1,
-                            lookupDisplayValue: prop.type == .lookup ? onResolveLookup?(row.wrappedValue, prop) : nil
+                            lookupDisplayValue: prop.type == .lookup ? onResolveLookup?(row.wrappedValue, prop) : nil,
+                            rollupDisplayValue: prop.type == .rollup ? onResolveRollup?(row.wrappedValue, prop) : nil
                         )
                         .padding(.horizontal, DatabaseZoomMetrics.size(8))
                         .frame(width: columnWidth(for: prop), alignment: .leading)

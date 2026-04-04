@@ -35,6 +35,8 @@ struct PropertyEditorView: View {
     var formulaError: Bool = false
     /// Pre-computed display string for lookup fields.
     var lookupDisplayValue: String?
+    /// Pre-computed display string for rollup fields.
+    var rollupDisplayValue: String?
 
     /// Consistent cell font matching table text (14pt scaled).
     private var cellFont: Font { DatabaseZoomMetrics.font(14) }
@@ -99,6 +101,8 @@ struct PropertyEditorView: View {
             formulaDisplay
         case .lookup:
             lookupDisplay
+        case .rollup:
+            rollupDisplay
         }
     }
 
@@ -747,6 +751,16 @@ struct PropertyEditorView: View {
     /// Read-only display for lookup fields. The actual value is computed at render time.
     private var lookupDisplay: some View {
         let displayText = (lookupDisplayValue ?? "").isEmpty ? "\u{2014}" : lookupDisplayValue!
+        return Text(displayText)
+            .font(cellFont)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
+    }
+
+    /// Read-only display for rollup fields. The aggregated value is computed at render time.
+    private var rollupDisplay: some View {
+        let displayText = (rollupDisplayValue ?? "").isEmpty ? "\u{2014}" : rollupDisplayValue!
         return Text(displayText)
             .font(cellFont)
             .foregroundStyle(.secondary)

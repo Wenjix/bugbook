@@ -108,6 +108,10 @@ public struct SchemaValidator {
         case .lookup:
             // Lookup is computed; any stored value is valid.
             return nil
+
+        case .rollup:
+            // Rollup is computed; any stored value is valid.
+            return nil
         }
     }
 }

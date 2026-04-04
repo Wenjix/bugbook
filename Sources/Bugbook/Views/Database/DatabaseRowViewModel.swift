@@ -171,6 +171,8 @@ final class DatabaseRowViewModel {
             config = PropertyConfig(formula: "")
         case .lookup:
             config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
+        case .rollup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil, aggregationFunction: "count")
         default:
             config = nil
         }
@@ -255,6 +257,37 @@ final class DatabaseRowViewModel {
             return targetRows.map { RelationRowCandidate(id: $0.id, title: $0.title(schema: targetSchema)) }
         } catch {
             return []
+        }
+    }
+
+    func resolveRollupValue(for row: DatabaseRow, property: PropertyDefinition) -> String {
+        guard property.type == .rollup,
+              let relationPropId = property.config?.relationPropertyId,
+              let targetPropId = property.config?.targetPropertyId,
+              let aggFunction = property.config?.aggregationFunction,
+              !relationPropId.isEmpty, !targetPropId.isEmpty, !aggFunction.isEmpty else { return "" }
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropId }),
+              relationProp.type == .relation,
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else { return "" }
+        let relationValue = row.properties[relationPropId] ?? .empty
+        let relatedRowIds: [String]
+        switch relationValue {
+        case .relation(let id): relatedRowIds = id.isEmpty ? [] : [id]
+        case .relationMany(let ids): relatedRowIds = ids
+        default: relatedRowIds = []
+        }
+        guard !relatedRowIds.isEmpty else { return "" }
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: targetDbPath)
+            let matchedRows = targetRows.filter { relatedRowIds.contains($0.id) }
+            return AggregationEngine.compute(
+                function: aggFunction,
+                propertyId: targetPropId,
+                rows: matchedRows,
+                schema: targetSchema
+            )
+        } catch {
+            return ""
         }
     }
 
@@ -394,6 +427,7 @@ final class DatabaseRowViewModel {
                 onListDatabases: { self.listAvailableDatabases(workspacePath: workspacePath) },
                 onSetRelationTarget: { propId, target in self.setRelationTarget(propId, target: target) },
                 onResolveLookup: { row, prop in self.resolveLookupValue(for: row, property: prop) },
+                onResolveRollup: { row, prop in self.resolveRollupValue(for: row, property: prop) },
                 onAddProperty: { type in self.addProperty(type: type) },
                 onRenameProperty: { propId, name in self.renameProperty(propId, to: name) },
                 onDeleteProperty: { propId in self.deleteProperty(propId) },

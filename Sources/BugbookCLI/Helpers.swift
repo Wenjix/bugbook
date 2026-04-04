@@ -180,6 +180,9 @@ func parsePropertyValue(_ raw: String, property: String, schema: DatabaseSchema)
     case .lookup:
         // Lookup is computed; treat raw input as text.
         return .text(raw)
+    case .rollup:
+        // Rollup is computed; treat raw input as text.
+        return .text(raw)
     }
 }
 

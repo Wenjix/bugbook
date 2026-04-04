@@ -135,6 +135,12 @@ class DatabaseService {
                 schema.properties[idx].config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
             }
         }
+        // Set up rollup config
+        if newType == .rollup {
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil, aggregationFunction: "count")
+            }
+        }
         try saveSchema(schema, at: dbPath)
         // Convert existing values where possible
         for i in rows.indices {
@@ -223,6 +229,7 @@ class DatabaseService {
         case .relation: return .relation(str)
         case .formula: return .empty
         case .lookup: return .empty
+        case .rollup: return .empty
         }
     }
 
@@ -640,6 +647,8 @@ class DatabaseService {
         case .formula:
             return .empty
         case .lookup:
+            return .text(value)
+        case .rollup:
             return .text(value)
         }
     }

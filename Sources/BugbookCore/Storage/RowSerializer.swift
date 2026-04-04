@@ -197,6 +197,9 @@ public struct RowSerializer {
         case .lookup:
             // Lookup is computed at render time; stored value is treated as text.
             return .text(value)
+        case .rollup:
+            // Rollup is computed at render time; stored value is treated as text.
+            return .text(value)
         }
     }
 

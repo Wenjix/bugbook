@@ -330,6 +330,8 @@ final class DatabaseViewState {
             config = PropertyConfig(formula: "")
         case .lookup:
             config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
+        case .rollup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil, aggregationFunction: "count")
         default:
             config = nil
         }
@@ -779,6 +781,61 @@ final class DatabaseViewState {
         Task {
             try? dbService.saveSchema(s, at: dbPath)
             postChangeNotification()
+        }
+    }
+
+    // MARK: - Rollup
+
+    func setRollupConfig(_ propertyId: String, relationPropertyId: String?, targetPropertyId: String?, aggregationFunction: String?) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig()
+        }
+        s.properties[idx].config?.relationPropertyId = relationPropertyId
+        s.properties[idx].config?.targetPropertyId = targetPropertyId
+        s.properties[idx].config?.aggregationFunction = aggregationFunction
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
+    /// Resolve rollup value for a single row: follow relation -> load related rows -> extract target property -> aggregate.
+    func resolveRollupValue(for row: DatabaseRow, property: PropertyDefinition) -> String {
+        guard property.type == .rollup,
+              let relationPropId = property.config?.relationPropertyId,
+              let targetPropId = property.config?.targetPropertyId,
+              let aggFunction = property.config?.aggregationFunction,
+              !relationPropId.isEmpty, !targetPropId.isEmpty, !aggFunction.isEmpty else {
+            return ""
+        }
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropId }),
+              relationProp.type == .relation,
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else {
+            return ""
+        }
+        let relationValue = row.properties[relationPropId] ?? .empty
+        let relatedRowIds: [String]
+        switch relationValue {
+        case .relation(let id): relatedRowIds = id.isEmpty ? [] : [id]
+        case .relationMany(let ids): relatedRowIds = ids
+        default: relatedRowIds = []
+        }
+        guard !relatedRowIds.isEmpty else { return "" }
+
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: targetDbPath)
+            let matchedRows = targetRows.filter { relatedRowIds.contains($0.id) }
+            return AggregationEngine.compute(
+                function: aggFunction,
+                propertyId: targetPropId,
+                rows: matchedRows,
+                schema: targetSchema
+            )
+        } catch {
+            return ""
         }
     }
 

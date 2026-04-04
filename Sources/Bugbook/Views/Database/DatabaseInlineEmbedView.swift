@@ -685,6 +685,8 @@ struct DatabaseInlineEmbedView: View {
         case .lookup:
             return [("equals", "is"), ("not_equals", "is not"), ("contains", "contains"),
                     ("not_contains", "doesn't contain"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .rollup:
+            return [("equals", "is"), ("not_equals", "is not"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         }
     }
 
@@ -798,6 +800,7 @@ struct DatabaseInlineEmbedView: View {
                     onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
                     onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
                     onResolveLookup: { row, prop in state.resolveLookupValue(for: row, property: prop) },
+                    onResolveRollup: { row, prop in state.resolveRollupValue(for: row, property: prop) },
                     onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
                     onReorderRows: { draggedId, targetId in
                         state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)

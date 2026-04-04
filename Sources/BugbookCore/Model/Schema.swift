@@ -15,6 +15,7 @@ public enum PropertyType: String, Codable, CaseIterable, Sendable {
     case relation
     case formula
     case lookup
+    case rollup
 
     public var systemImageName: String {
         switch self {
@@ -30,6 +31,7 @@ public enum PropertyType: String, Codable, CaseIterable, Sendable {
         case .relation: return "arrow.triangle.branch"
         case .formula: return "function"
         case .lookup: return "eye"
+        case .rollup: return "sum"
         }
     }
 }
@@ -60,9 +62,11 @@ public struct PropertyConfig: Codable, Sendable {
     public var relationPropertyId: String?
     /// For lookup fields: the property to mirror from the related rows.
     public var targetPropertyId: String?
+    /// For rollup fields: the aggregation function to apply ("sum", "count", "average", "min", "max").
+    public var aggregationFunction: String?
 
     public init(options: [SelectOption]? = nil, format: String? = nil, target: String? = nil, cardinality: String? = nil, formula: String? = nil,
-                relationPropertyId: String? = nil, targetPropertyId: String? = nil) {
+                relationPropertyId: String? = nil, targetPropertyId: String? = nil, aggregationFunction: String? = nil) {
         self.options = options
         self.format = format
         self.target = target
@@ -70,6 +74,7 @@ public struct PropertyConfig: Codable, Sendable {
         self.formula = formula
         self.relationPropertyId = relationPropertyId
         self.targetPropertyId = targetPropertyId
+        self.aggregationFunction = aggregationFunction
     }
 }
 

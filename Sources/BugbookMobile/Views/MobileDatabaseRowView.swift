@@ -132,6 +132,11 @@ struct MobileDatabaseRowView: View {
                 Text(value.isEmpty ? "\u{2014}" : value)
                     .foregroundStyle(.secondary)
             }
+        case .rollup:
+            LabeledContent(prop.name) {
+                Text("Computed")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -272,6 +277,7 @@ struct MobileDatabaseRowView: View {
         case .relation: return .empty
         case .formula: return .empty
         case .lookup: return .empty
+        case .rollup: return .empty
         }
     }
 }

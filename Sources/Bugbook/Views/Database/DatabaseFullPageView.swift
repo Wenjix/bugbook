@@ -701,6 +701,8 @@ struct DatabaseFullPageView: View {
         case .lookup:
             return [("equals", "is"), ("not_equals", "is not"), ("contains", "contains"),
                     ("not_contains", "doesn't contain"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
+        case .rollup:
+            return [("equals", "is"), ("not_equals", "is not"), ("is_empty", "is empty"), ("is_not_empty", "is not empty")]
         }
     }
 
@@ -811,6 +813,7 @@ struct DatabaseFullPageView: View {
                     onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
                     onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
                     onResolveLookup: { row, prop in state.resolveLookupValue(for: row, property: prop) },
+                    onResolveRollup: { row, prop in state.resolveRollupValue(for: row, property: prop) },
                     onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
                     onReorderRows: { draggedId, targetId in
                         state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
@@ -1016,6 +1019,10 @@ private struct PropertyManagerSheet: View {
                             lookupConfigPicker(for: prop)
                         }
 
+                        if prop.type == .rollup {
+                            rollupConfigPicker(for: prop)
+                        }
+
                         if !isTitle {
                             Button {
                                 deleteProperty(prop.id)
@@ -1057,6 +1064,8 @@ private struct PropertyManagerSheet: View {
             config = PropertyConfig(target: nil)
         case .lookup:
             config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
+        case .rollup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil, aggregationFunction: "count")
         default:
             config = nil
         }
@@ -1200,6 +1209,128 @@ private struct PropertyManagerSheet: View {
             schema.properties[idx].config = PropertyConfig()
         }
         schema.properties[idx].config?.targetPropertyId = targetPropertyId
+        Task {
+            try? dbService.saveSchema(schema, at: dbPath)
+        }
+    }
+
+    // MARK: - Rollup Config
+
+    private func rollupConfigPicker(for prop: PropertyDefinition) -> some View {
+        let relationProps = schema.properties.filter { $0.type == .relation }
+        let selectedRelationId = prop.config?.relationPropertyId ?? ""
+        let targetProps: [PropertyDefinition] = {
+            guard !selectedRelationId.isEmpty,
+                  let relProp = schema.properties.first(where: { $0.id == selectedRelationId }),
+                  let targetPath = relProp.config?.target, !targetPath.isEmpty else { return [] }
+            return (try? dbService.loadDatabase(at: targetPath).0.properties) ?? []
+        }()
+        let rollupFunctions = ["sum", "count", "average", "min", "max"]
+
+        return HStack(spacing: 4) {
+            // Relation picker
+            Menu {
+                ForEach(relationProps) { rp in
+                    Button {
+                        setRollupRelation(prop.id, relationPropertyId: rp.id)
+                    } label: {
+                        HStack {
+                            Text(rp.name)
+                            if selectedRelationId == rp.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                let relName = relationProps.first(where: { $0.id == selectedRelationId })?.name
+                Text(relName ?? "Relation")
+                    .font(.caption)
+                    .foregroundStyle(relName != nil ? .primary : .secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            // Target property picker
+            if !targetProps.isEmpty {
+                Menu {
+                    ForEach(targetProps) { tp in
+                        Button {
+                            setRollupTarget(prop.id, targetPropertyId: tp.id)
+                        } label: {
+                            HStack {
+                                Text(tp.name)
+                                if prop.config?.targetPropertyId == tp.id {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    let targetName = targetProps.first(where: { $0.id == prop.config?.targetPropertyId })?.name
+                    Text(targetName ?? "Property")
+                        .font(.caption)
+                        .foregroundStyle(targetName != nil ? .primary : .secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+
+            // Aggregation function picker
+            Menu {
+                ForEach(rollupFunctions, id: \.self) { fn in
+                    Button {
+                        setRollupFunction(prop.id, function: fn)
+                    } label: {
+                        HStack {
+                            Text(fn.capitalized)
+                            if prop.config?.aggregationFunction == fn {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                let fnName = prop.config?.aggregationFunction
+                Text(fnName?.capitalized ?? "Function")
+                    .font(.caption)
+                    .foregroundStyle(fnName != nil ? .primary : .secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    private func setRollupRelation(_ propertyId: String, relationPropertyId: String) {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if schema.properties[idx].config == nil {
+            schema.properties[idx].config = PropertyConfig()
+        }
+        schema.properties[idx].config?.relationPropertyId = relationPropertyId
+        schema.properties[idx].config?.targetPropertyId = nil
+        schema.properties[idx].config?.aggregationFunction = schema.properties[idx].config?.aggregationFunction ?? "count"
+        Task {
+            try? dbService.saveSchema(schema, at: dbPath)
+        }
+    }
+
+    private func setRollupTarget(_ propertyId: String, targetPropertyId: String) {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if schema.properties[idx].config == nil {
+            schema.properties[idx].config = PropertyConfig()
+        }
+        schema.properties[idx].config?.targetPropertyId = targetPropertyId
+        Task {
+            try? dbService.saveSchema(schema, at: dbPath)
+        }
+    }
+
+    private func setRollupFunction(_ propertyId: String, function: String) {
+        guard let idx = schema.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if schema.properties[idx].config == nil {
+            schema.properties[idx].config = PropertyConfig()
+        }
+        schema.properties[idx].config?.aggregationFunction = function
         Task {
             try? dbService.saveSchema(schema, at: dbPath)
         }
