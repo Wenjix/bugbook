@@ -41,9 +41,7 @@ struct MobileRootView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     captureZone
                     todayCard
-                    if !favorites.isEmpty {
-                        favoritesSection
-                    }
+                    favoritesSection
                     if !filteredRecentFiles.isEmpty {
                         recentSection
                     }
@@ -160,39 +158,59 @@ struct MobileRootView: View {
                 .foregroundStyle(Color.mobileTextPrimary)
                 .padding(.leading, 2)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(favorites) { file in
-                        NavigationLink {
-                            if file.isDatabase {
-                                MobileDatabaseView(dbPath: file.path)
-                            } else {
-                                MobilePageEditorView(note: file, workspace: workspace)
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                if let icon = file.icon, !icon.isEmpty {
-                                    Text(icon).font(.system(size: 13))
+            if favorites.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.mobileTextMuted)
+                    Text("Pin your most-used pages from the desktop sidebar")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.mobileTextMuted)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.mobileCardBg)
+                .clipShape(RoundedRectangle(cornerRadius: MobileRadius.lg))
+                .overlay(
+                    RoundedRectangle(cornerRadius: MobileRadius.lg)
+                        .stroke(Color.mobileBorder, lineWidth: 0.5)
+                )
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(favorites) { file in
+                            NavigationLink {
+                                if file.isDatabase {
+                                    MobileDatabaseView(dbPath: file.path)
                                 } else {
-                                    Image(systemName: file.isDatabase ? "tablecells" : "doc.text")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.mobileTextSecondary)
+                                    MobilePageEditorView(note: file, workspace: workspace)
                                 }
-                                Text(file.name)
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(Color.mobileTextPrimary)
-                                    .lineLimit(1)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if let icon = file.icon, !icon.isEmpty {
+                                        Text(icon).font(.system(size: 13))
+                                    } else {
+                                        Image(systemName: file.isDatabase ? "tablecells" : "doc.text")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Color.mobileTextSecondary)
+                                    }
+                                    Text(file.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Color.mobileTextPrimary)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color.mobileCardBg)
+                                .clipShape(RoundedRectangle(cornerRadius: MobileRadius.md))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: MobileRadius.md)
+                                        .stroke(Color.mobileBorder, lineWidth: 0.5)
+                                )
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.mobileCardBg)
-                            .clipShape(RoundedRectangle(cornerRadius: MobileRadius.md))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: MobileRadius.md)
-                                    .stroke(Color.mobileBorder, lineWidth: 0.5)
-                            )
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -225,8 +243,8 @@ struct MobileRootView: View {
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.mobileTextMuted)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.mobileTextSecondary)
             }
             .mobileCard()
         }
