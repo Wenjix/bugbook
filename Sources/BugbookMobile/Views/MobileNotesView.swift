@@ -29,6 +29,7 @@ struct MobileNotesView: View {
             }
             .navigationTitle("Notes")
             #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Filter files")
             #else
             .searchable(text: $searchText, prompt: "Filter files")

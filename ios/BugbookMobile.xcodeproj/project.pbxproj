@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		003C514FE488F6B4A7093B68 /* MobileMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */; };
 		1075E903A403FCDECE74CCAF /* MobileWorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA5D2DE7BCD25E9C9272383 /* MobileWorkspaceService.swift */; };
+		150A0BDE24C4B7C498CBE7FE /* MobileDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */; };
 		186529056A475981F54CC0EE /* MobileDatabaseRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F345F63A010D58A27E752557 /* MobileDatabaseRowView.swift */; };
 		21075E5928F454EA0CF1CE48 /* MobileAgentHubViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96C36D3DA3FE4DC21187B5C /* MobileAgentHubViewModel.swift */; };
 		2C8D2C7D75E1A7AF5AA40620 /* BugbookCore in Frameworks */ = {isa = PBXBuildFile; productRef = 392A30686598B44A8DFD7C80 /* BugbookCore */; };
@@ -38,6 +39,7 @@
 		408DD1BD4A2806883B7D13DB /* BugbookMobileApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BugbookMobileApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		48C0E8DBED92B6C420662583 /* MobileRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileRootView.swift; sourceTree = "<group>"; };
 		560F6C106786AE9CAEA8EEE6 /* MobileFilterSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFilterSortView.swift; sourceTree = "<group>"; };
+		60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDesignTokens.swift; sourceTree = "<group>"; };
 		625CAA5B82D2405AB424840C /* MobileSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSearchView.swift; sourceTree = "<group>"; };
 		676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileMarkdownView.swift; sourceTree = "<group>"; };
 		6E308C2F4405D356932C49B4 /* MobileBlockEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileBlockEditorView.swift; sourceTree = "<group>"; };
@@ -100,6 +102,14 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		ABC3AAD8F167BD34A01A3E4A /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
 		B05E150363EEA3857A7E22C2 /* Services */ = {
 			isa = PBXGroup;
 			children = (
@@ -150,6 +160,7 @@
 		FF41CECE4D45359BBCEF6638 /* BugbookMobile */ = {
 			isa = PBXGroup;
 			children = (
+				ABC3AAD8F167BD34A01A3E4A /* Extensions */,
 				60CA93045E5AFF3F2714495D /* Models */,
 				B05E150363EEA3857A7E22C2 /* Services */,
 				EF068C7703A2F618BD149117 /* ViewModels */,
@@ -225,6 +236,7 @@
 				186529056A475981F54CC0EE /* MobileDatabaseRowView.swift in Sources */,
 				BE28F102D9C1BF2D3865B10A /* MobileDatabaseView.swift in Sources */,
 				81956037EBF58167233BD78C /* MobileDatabaseViewState.swift in Sources */,
+				150A0BDE24C4B7C498CBE7FE /* MobileDesignTokens.swift in Sources */,
 				37BEC47701CC1993D6D188B6 /* MobileFilterSortView.swift in Sources */,
 				003C514FE488F6B4A7093B68 /* MobileMarkdownView.swift in Sources */,
 				97F837C37EF93A792787838F /* MobileNoteFile.swift in Sources */,

@@ -33,6 +33,9 @@ struct MobileDatabaseListView: View {
                 }
             }
             .navigationTitle("Databases")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .refreshable {
                 loadDatabases()
             }

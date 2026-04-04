@@ -25,14 +25,19 @@ struct MobileTodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
                     quickCaptureSection
                     dailyNoteCard
                     recentFilesSection
                 }
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
             }
             .navigationTitle("Today")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .onAppear { refresh() }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active { refresh() }
@@ -43,7 +48,7 @@ struct MobileTodayView: View {
     // MARK: - Quick Capture
 
     private var quickCaptureSection: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             HStack(spacing: 8) {
                 TextField("Capture a thought...", text: $captureText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -115,38 +120,32 @@ struct MobileTodayView: View {
         NavigationLink {
             MobilePageEditorView(note: dailyNoteFile(), workspace: workspace)
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(todayDateString)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.mobileTextPrimary)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.mobileTextMuted)
                 }
 
                 if let preview = dailyNotePreview, !preview.isEmpty {
                     Text(preview)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.mobileTextSecondary)
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
                 } else {
                     Text("Tap to start today's note")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.mobileTextSecondary)
                         .italic()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            #if os(iOS)
-            .background(Color(.secondarySystemGroupedBackground))
-            #else
-            .background(Color(.windowBackgroundColor))
-            #endif
-            .clipShape(.rect(cornerRadius: 12))
+            .mobileCard()
         }
         .buttonStyle(.plain)
     }
@@ -154,44 +153,56 @@ struct MobileTodayView: View {
     // MARK: - Recent Files
 
     private var recentFilesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recently Modified")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("RECENTLY MODIFIED")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.mobileTextMuted)
+                .tracking(0.6)
 
             if recentNotes.isEmpty {
                 Text("No recent notes")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.mobileTextSecondary)
             } else {
-                ForEach(recentNotes) { note in
-                    NavigationLink {
-                        if note.isDatabase {
-                            MobileDatabaseView(dbPath: note.path)
-                        } else {
-                            MobilePageEditorView(note: note, workspace: workspace)
-                        }
-                    } label: {
-                        HStack {
-                            if let icon = note.icon, !icon.isEmpty {
-                                Text(icon)
+                VStack(spacing: 0) {
+                    ForEach(recentNotes) { note in
+                        NavigationLink {
+                            if note.isDatabase {
+                                MobileDatabaseView(dbPath: note.path)
                             } else {
-                                Image(systemName: note.isDatabase ? "tablecells" : "doc.text")
-                                    .foregroundStyle(.secondary)
+                                MobilePageEditorView(note: note, workspace: workspace)
                             }
-                            Text(note.name)
-                                .font(.body).fontWeight(.medium)
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if let date = note.modifiedAt {
-                                Text(relativeTime(from: date))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        } label: {
+                            HStack(spacing: 8) {
+                                if let icon = note.icon, !icon.isEmpty {
+                                    Text(icon).font(.system(size: 14))
+                                } else {
+                                    Image(systemName: note.isDatabase ? "tablecells" : "doc.text")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.mobileTextSecondary)
+                                        .frame(width: 18)
+                                }
+                                Text(note.name)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Color.mobileTextPrimary)
+                                    .lineLimit(1)
+                                Spacer()
+                                if let date = note.modifiedAt {
+                                    Text(relativeTime(from: date))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.mobileTextMuted)
+                                }
                             }
+                            .padding(.vertical, 8)
                         }
-                        .padding(.vertical, 6)
+                        .buttonStyle(.plain)
+
+                        if note.id != recentNotes.last?.id {
+                            Divider().foregroundStyle(Color.mobileDivider)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
+                .mobileCard(padding: 12)
             }
         }
     }
@@ -309,17 +320,13 @@ private struct QuickActionPill: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.caption)
+                    .font(.system(size: 11))
                 Text(label)
-                    .font(.caption)
+                    .font(.system(size: 12, weight: .medium))
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            #if os(iOS)
-            .background(Color(.tertiarySystemGroupedBackground))
-            #else
-            .background(Color(.windowBackgroundColor))
-            #endif
+            .padding(.vertical, 5)
+            .background(Color.mobileBgTertiary)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)

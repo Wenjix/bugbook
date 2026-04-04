@@ -40,6 +40,9 @@ struct MobileSettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
     }
 

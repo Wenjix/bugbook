@@ -31,7 +31,7 @@ struct MobileDatabaseView: View {
         }
         .navigationTitle(viewState.schema?.name ?? "Database")
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
