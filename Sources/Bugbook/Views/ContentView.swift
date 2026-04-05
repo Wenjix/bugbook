@@ -2121,6 +2121,20 @@ struct ContentView: View {
         scheduleTrashPurgeIfNeeded(for: workspacePath)
         appState.workspacePath = workspacePath
 
+        // If we took the default path (no explicit user override), upgrade to the
+        // canonical iCloud workspace in the background. The initial local path
+        // renders the UI instantly; this repoints us at iCloud once resolved.
+        if restoredPath == nil {
+            Task { @MainActor in
+                if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
+                    appState.workspacePath = iCloudPath
+                    scheduleTrashPurgeIfNeeded(for: iCloudPath)
+                    refreshFileTree()
+                    startWorkspaceWatcher(path: iCloudPath)
+                }
+            }
+        }
+
         // Register workspace as a qmd collection in the background (no-op if qmd not installed)
         QmdService.registerCollectionInBackground(workspace: workspacePath)
 

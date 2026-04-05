@@ -20,27 +20,27 @@ import BugbookCore
         workspacePath = localPath
 
         // Resolve iCloud in the background — url(forUbiquityContainerIdentifier:) can block
-        Task.detached { [weak self] in
-            let fm = FileManager.default
-            if let containerURL = fm.url(forUbiquityContainerIdentifier: "iCloud.com.bugbook.app") {
-                let iCloudPath = containerURL.appendingPathComponent("Documents/Bugbook").path
-                if !fm.fileExists(atPath: iCloudPath) {
-                    try? fm.createDirectory(atPath: iCloudPath, withIntermediateDirectories: true)
-                }
-                await MainActor.run {
-                    self?.workspacePath = iCloudPath
-                    self?.isICloudAvailable = true
-                    self?.refreshFiles()
-                }
-            }
+        Task.detached(priority: .utility) { [weak self] in
+            guard let iCloudPath = Self.resolveICloudWorkspacePath() else { return }
+            guard let self else { return }
+            await self.applyResolvedICloudWorkspacePath(iCloudPath)
         }
     }
 
     // MARK: - Workspace Resolution
 
     private func localWorkspacePath() -> String {
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("Bugbook").path
+        WorkspaceResolver.localFallbackWorkspacePath()
+    }
+
+    private nonisolated static func resolveICloudWorkspacePath() -> String? {
+        WorkspaceResolver.resolveICloudWorkspacePath()
+    }
+
+    private func applyResolvedICloudWorkspacePath(_ iCloudPath: String) {
+        workspacePath = iCloudPath
+        isICloudAvailable = true
+        refreshFiles()
     }
 
     // MARK: - File Tree Building

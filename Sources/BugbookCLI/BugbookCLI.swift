@@ -12,10 +12,9 @@ struct Bugbook: ParsableCommand {
 
     struct Options: ParsableArguments {
         @Option(help: "Workspace root path")
-        var workspace: String = {
-            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            return documents.appendingPathComponent("Bugbook", isDirectory: true).path
-        }()
+        var workspace: String = WorkspaceResolver.defaultWorkspacePath(
+            allowBlockingICloudLookup: true
+        )
 
         @Option(help: "Output format")
         var format: String = "json"

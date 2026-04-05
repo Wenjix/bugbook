@@ -19,6 +19,40 @@ class FileSystemService {
 
     init() {
         loadRecentWorkspaces()
+        logLegacyWorkspaceIfPresent()
+    }
+
+    /// One-time diagnostic: if the legacy `~/Library/Application Support/bugbook/`
+    /// directory from earlier builds still holds real data AND the canonical iCloud
+    /// workspace is empty, print a warning pointing at the manual rsync command so
+    /// the user can migrate by hand. No automatic file operations — caches live in
+    /// the legacy dir that must not sync to iCloud.
+    private func logLegacyWorkspaceIfPresent() {
+        let fm = FileManager.default
+        let legacyPath = ("~/Library/Application Support/bugbook" as NSString).expandingTildeInPath
+        guard fm.fileExists(atPath: legacyPath) else { return }
+
+        let canonicalPath = WorkspaceResolver.defaultWorkspacePath(
+            allowBlockingICloudLookup: false,
+            createIfMissing: false
+        )
+        let canonicalHasContent: Bool = {
+            guard let entries = try? fm.contentsOfDirectory(atPath: canonicalPath) else {
+                return false
+            }
+            return entries.contains { !$0.hasPrefix(".") }
+        }()
+        guard !canonicalHasContent else { return }
+
+        NSLog(
+            "[Bugbook] Legacy workspace detected at %@ but canonical %@ is empty. " +
+            "Migrate manually with: rsync -av --exclude '.bugbook' --exclude 'MailCache' " +
+            "--exclude 'EditorDrafts' --exclude 'drafts' \"%@/\" \"%@/\"",
+            legacyPath,
+            canonicalPath,
+            legacyPath,
+            canonicalPath
+        )
     }
 
     // MARK: - Workspace Management
@@ -44,8 +78,24 @@ class FileSystemService {
     }
 
     func defaultWorkspacePath() -> String {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return documents.appendingPathComponent("Bugbook", isDirectory: true).path
+        // Return the local fallback immediately so the UI renders fast. Callers that
+        // want the canonical iCloud path should call upgradeDefaultToICloudIfAvailable()
+        // from a background Task after initial render.
+        WorkspaceResolver.defaultWorkspacePath(allowBlockingICloudLookup: false)
+    }
+
+    /// Resolves the iCloud Bugbook workspace path off the main thread and, if it
+    /// differs from the current `workspacePath`, re-points the workspace at it.
+    /// No-op when iCloud is unavailable or the current path already matches.
+    /// Returns the iCloud path if an upgrade was applied, otherwise `nil`.
+    func upgradeDefaultToICloudIfAvailable() async -> String? {
+        let iCloudPath = await Task.detached(priority: .utility) {
+            WorkspaceResolver.resolveICloudWorkspacePath()
+        }.value
+        guard let iCloudPath else { return nil }
+        guard iCloudPath != workspacePath else { return nil }
+        setWorkspace(iCloudPath)
+        return iCloudPath
     }
 
     // MARK: - File Tree Building
