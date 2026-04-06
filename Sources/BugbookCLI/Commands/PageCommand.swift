@@ -16,8 +16,8 @@ struct Page: ParsableCommand {
 
         @OptionGroup var options: Bugbook.Options
 
-        @Option(help: "Maximum number of pages to return")
-        var limit: Int = 200
+        @Option(help: "Maximum number of pages to return (0 for unlimited)")
+        var limit: Int = 0
 
         @Option(name: .long, help: "Filter by frontmatter type")
         var type: String?
@@ -36,7 +36,8 @@ struct Page: ParsableCommand {
                 tag: tag
             )
 
-            let output = Array(pages.prefix(limit)).map { $0.toSummaryJSON() }
+            let capped = limit > 0 ? Array(pages.prefix(limit)) : pages
+            let output = capped.map { $0.toSummaryJSON() }
             try outputJSON(output)
         }
     }
