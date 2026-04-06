@@ -20,6 +20,20 @@
                ReferencedContainer = "container:BugbookMobile.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "8CE3DB17AC81B2A1B6F31689"
+               BuildableName = "BugbookShareExtension.appex"
+               BlueprintName = "BugbookShareExtension"
+               ReferencedContainer = "container:BugbookMobile.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

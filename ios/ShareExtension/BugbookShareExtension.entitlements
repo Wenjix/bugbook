@@ -18,7 +18,5 @@
 	<array>
 		<string>CloudDocuments</string>
 	</array>
-	<key>com.apple.security.get-task-allow</key>
-	<true/>
 </dict>
 </plist>

@@ -20,6 +20,8 @@ targets:
     dependencies:
       - package: Bugbook
         product: BugbookCore
+      - target: BugbookShareExtension
+        embed: true
     settings:
       base:
         DEVELOPMENT_TEAM: H9N9P29TX5
@@ -32,14 +34,33 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_NSCameraUsageDescription: Bugbook uses the camera to capture photos for your notes.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Bugbook uses your microphone to record audio notes.
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Bugbook uses your photo library to embed images in your notes.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         TARGETED_DEVICE_FAMILY: "1,2"
+  BugbookShareExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ShareExtension
+    dependencies:
+      - package: Bugbook
+        product: BugbookCore
+    settings:
+      base:
+        DEVELOPMENT_TEAM: H9N9P29TX5
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.BugbookMobile.ShareExtension
+        PRODUCT_NAME: BugbookShareExtension
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/BugbookShareExtension.entitlements
 schemes:
   BugbookMobileApp:
     build:
       targets:
         BugbookMobileApp: all
+        BugbookShareExtension: all
     run:
       config: Debug
     archive:
