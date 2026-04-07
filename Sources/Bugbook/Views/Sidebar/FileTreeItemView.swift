@@ -213,12 +213,7 @@ struct FileTreeItemView: View {
     }
 
     private func handleTap() {
-        if entry.isDirectory && !entry.isDatabase && entry.kind == .page {
-            // Plain directory (not a .md page with children) — toggle expand
-            toggleExpanded()
-        } else {
-            onSelectFile(entry)
-        }
+        onSelectFile(entry)
     }
 
     // MARK: - Expanded State Persistence

@@ -421,7 +421,7 @@ struct MailPaneView: View {
             // Sender
             Text(senderDisplayName(thread.participants.first ?? "Unknown"))
                 .font(.system(size: 13, weight: unread ? .bold : .regular))
-                .foregroundStyle(unread ? Color.primary : Color.primary.opacity(0.45))
+                .foregroundColor(unread ? .primary : .secondary)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.trailing, 6)
@@ -429,7 +429,7 @@ struct MailPaneView: View {
             // Subject
             Text(thread.subject)
                 .font(.system(size: 13, weight: unread ? .semibold : .regular))
-                .foregroundStyle(unread ? Color.primary : Color.primary.opacity(0.35))
+                .foregroundColor(unread ? .primary : .secondary)
                 .lineLimit(1)
                 .layoutPriority(1)
 
@@ -543,6 +543,13 @@ struct MailPaneView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            Button(action: { mailService.selectedThreadID = nil }) {
+                Image(systemName: "xmark")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Close thread")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

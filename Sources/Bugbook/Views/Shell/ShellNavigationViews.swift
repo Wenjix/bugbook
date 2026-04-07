@@ -606,8 +606,57 @@ struct WorkspaceContextualSidebarView: View {
     }
 }
 
+private struct CalendarSourceRow: View {
+    let source: CalendarSource
+    let workspacePath: String?
+    let calendarService: CalendarService
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            guard let workspacePath else { return }
+            calendarService.toggleSourceVisibility(id: source.id, workspace: workspacePath)
+        } label: {
+            HStack(spacing: ShellZoomMetrics.size(8)) {
+                Circle()
+                    .fill(TagColor.color(for: source.color))
+                    .frame(width: ShellZoomMetrics.size(8), height: ShellZoomMetrics.size(8))
+                Text(source.name)
+                    .font(ShellZoomMetrics.font(Typography.bodySmall))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if isHovering || !source.isVisible {
+                    Image(systemName: source.isVisible ? "eye" : "eye.slash")
+                        .font(ShellZoomMetrics.font(Typography.bodySmall))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, ShellSidebarMetrics.rowHorizontalPadding)
+            .padding(.vertical, ShellSidebarMetrics.rowVerticalPadding)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            ForEach(CalendarSourceListView.tagColorNames, id: \.self) { colorName in
+                Button {
+                    guard let workspacePath else { return }
+                    calendarService.updateSourceColor(id: source.id, color: colorName, workspace: workspacePath)
+                } label: {
+                    Label {
+                        Text(colorName.capitalized)
+                    } icon: {
+                        Image(systemName: source.color == colorName ? "checkmark.circle.fill" : "circle.fill")
+                    }
+                }
+                .tint(TagColor.color(for: colorName))
+            }
+        }
+    }
+}
+
 private struct CalendarSourceListView: View {
-    private static let tagColorNames = ["blue", "green", "red", "yellow", "purple", "pink", "orange", "teal", "gray"]
+    static let tagColorNames = ["blue", "green", "red", "yellow", "purple", "pink", "orange", "teal", "gray"]
 
     let sources: [CalendarSource]
     let workspacePath: String?
@@ -616,46 +665,7 @@ private struct CalendarSourceListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: ShellZoomMetrics.size(6)) {
             ForEach(sources, id: \CalendarSource.id) { (source: CalendarSource) in
-                Button {
-                    guard let workspacePath else { return }
-                    calendarService.toggleSourceVisibility(id: source.id, workspace: workspacePath)
-                } label: {
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
-                        Circle()
-                            .fill(TagColor.color(for: source.color))
-                            .frame(width: ShellZoomMetrics.size(8), height: ShellZoomMetrics.size(8))
-                        Text(source.name)
-                            .font(ShellZoomMetrics.font(Typography.bodySmall))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: source.isVisible ? "checkmark.circle.fill" : "circle")
-                            .font(ShellZoomMetrics.font(Typography.bodySmall))
-                            .foregroundStyle(source.isVisible ? Color.accentColor : .secondary)
-                    }
-                    .padding(.horizontal, ShellSidebarMetrics.rowHorizontalPadding)
-                    .padding(.vertical, ShellSidebarMetrics.rowVerticalPadding)
-                    .background(
-                        RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                            .fill(Color.primary.opacity(0.03))
-                    )
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    ForEach(Self.tagColorNames, id: \.self) { colorName in
-                        Button {
-                            guard let workspacePath else { return }
-                            calendarService.updateSourceColor(id: source.id, color: colorName, workspace: workspacePath)
-                        } label: {
-                            Label {
-                                Text(colorName.capitalized)
-                            } icon: {
-                                Image(systemName: source.color == colorName ? "checkmark.circle.fill" : "circle.fill")
-                            }
-                        }
-                        .tint(TagColor.color(for: colorName))
-                    }
-                }
+                CalendarSourceRow(source: source, workspacePath: workspacePath, calendarService: calendarService)
             }
         }
     }
