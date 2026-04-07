@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import BugbookCore
 
 // MARK: - Shared block-deletion keyboard modifier
 
@@ -80,8 +81,22 @@ struct ImageBlockView: View {
     @State private var isResizing = false
     @State private var resizeStartWidth: CGFloat?
     @State private var transientWidth: CGFloat?
-    private var isLocalImage: Bool {
-        block.imageSource.hasPrefix("/") || block.imageSource.hasPrefix("file://")
+    private var resolvedLocalImagePath: String? {
+        resolveWorkspaceAttachmentPath(
+            block.imageSource,
+            pagePath: document.filePath,
+            workspacePath: document.workspacePath
+        )
+    }
+
+    private var remoteImageURL: URL? {
+        guard let url = URL(string: block.imageSource),
+              let scheme = url.scheme,
+              !scheme.isEmpty,
+              !url.isFileURL else {
+            return nil
+        }
+        return url
     }
 
     private var currentWidth: CGFloat? {
@@ -141,14 +156,21 @@ struct ImageBlockView: View {
             .appCursor(.iBeam)
         }
         .blockDeletable(document: document, blockId: block.id)
-        .task(id: block.imageSource) {
-            guard isLocalImage else { return }
-            let source = block.imageSource
-            let fileURL = source.hasPrefix("file://")
-                ? URL(string: source)!
-                : URL(fileURLWithPath: source)
-            cachedImage = NSImage(contentsOf: fileURL)
+        .task(id: imageResolutionKey) {
+            guard let resolvedLocalImagePath else {
+                cachedImage = nil
+                return
+            }
+            cachedImage = NSImage(contentsOfFile: resolvedLocalImagePath)
         }
+    }
+
+    private var imageResolutionKey: String {
+        [
+            document.filePath ?? "",
+            document.workspacePath ?? "",
+            block.imageSource,
+        ].joined(separator: "|")
     }
 
     private var showsResizeBars: Bool {
@@ -157,7 +179,7 @@ struct ImageBlockView: View {
 
     @ViewBuilder
     private var imageContent: some View {
-        if isLocalImage {
+        if resolvedLocalImagePath != nil {
             if let nsImage = cachedImage {
                 Image(nsImage: nsImage)
                     .resizable()
@@ -166,7 +188,7 @@ struct ImageBlockView: View {
             } else {
                 imagePlaceholder
             }
-        } else if let url = URL(string: block.imageSource) {
+        } else if let url = remoteImageURL {
             AsyncImage(url: url) { image in
                 image
                     .resizable()

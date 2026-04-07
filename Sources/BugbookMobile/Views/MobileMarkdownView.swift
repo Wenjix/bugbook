@@ -1,4 +1,9 @@
+import Foundation
 import SwiftUI
+import BugbookCore
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Block Model
 
@@ -13,6 +18,7 @@ private enum MdBlockType {
     case horizontalRule
     case image(alt: String, url: String)
     case wikiLink(name: String)
+    case databaseEmbed(path: String)
 }
 
 private struct MdBlock: Identifiable {
@@ -37,11 +43,6 @@ private enum MdParser {
                 if lines[i].trimmingCharacters(in: .whitespaces) == "---" { i += 1; break }
                 i += 1
             }
-        }
-
-        // Skip HTML comments at the start (e.g. <!-- icon:... -->)
-        while i < lines.count && lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("<!--") {
-            i += 1
         }
 
         while i < lines.count {
@@ -121,9 +122,22 @@ private enum MdParser {
                 continue
             }
 
+            // Database embed
+            if let path = parseDatabaseEmbed(line) {
+                blocks.append(MdBlock(type: .databaseEmbed(path: path), content: ""))
+                i += 1
+                continue
+            }
+
             // Wiki link (standalone line)
             if let name = parseWikiLink(line) {
                 blocks.append(MdBlock(type: .wikiLink(name: name), content: ""))
+                i += 1
+                continue
+            }
+
+            // Skip non-rendering HTML comments anywhere in the file.
+            if isHTMLComment(line) {
                 i += 1
                 continue
             }
@@ -215,6 +229,67 @@ private enum MdParser {
         guard trimmed.hasPrefix("[["), trimmed.hasSuffix("]]") else { return nil }
         let name = String(trimmed.dropFirst(2).dropLast(2))
         return name.isEmpty ? nil : name
+    }
+
+    private static func parseDatabaseEmbed(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.hasPrefix("<!--"),
+           trimmed.hasSuffix("-->"),
+           let marker = trimmed.range(of: "database:") {
+            let pathStart = marker.upperBound
+            let pathEnd = trimmed.index(trimmed.endIndex, offsetBy: -3)
+            guard pathStart < pathEnd else { return nil }
+            let path = String(trimmed[pathStart..<pathEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return path.isEmpty ? nil : path
+        }
+
+        if let markdownLinkPath = parseDatabaseMarkdownLink(trimmed) {
+            return markdownLinkPath
+        }
+
+        return parseDatabaseSchemePath(trimmed)
+    }
+
+    private static func parseDatabaseMarkdownLink(_ line: String) -> String? {
+        guard line.hasPrefix("["),
+              line.hasSuffix(")"),
+              let split = line.range(of: "](") else { return nil }
+        let urlPart = String(line[split.upperBound..<line.index(before: line.endIndex)])
+        return parseDatabaseSchemePath(urlPart)
+    }
+
+    private static func parseDatabaseSchemePath(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.lowercased().hasPrefix("database:") else { return nil }
+
+        var target = String(trimmed.dropFirst("database:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        if target.isEmpty { return nil }
+
+        if target.lowercased().hasPrefix("file://"), let url = URL(string: target) {
+            target = url.path
+        } else if target.hasPrefix("///") {
+            target = "/" + String(target.dropFirst(3))
+        } else if target.hasPrefix("//") {
+            target = "/" + String(target.dropFirst(2))
+        }
+
+        if target.hasPrefix("~") {
+            target = (target as NSString).expandingTildeInPath
+        }
+        if target.contains("%"), let decoded = target.removingPercentEncoding {
+            target = decoded
+        }
+        if target.hasSuffix("/_schema.json") {
+            target = (target as NSString).deletingLastPathComponent
+        }
+
+        return target
+    }
+
+    private static func isHTMLComment(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("<!--") && trimmed.hasSuffix("-->")
     }
 
     private static func computeNumber(for blocks: [MdBlock], depth: Int) -> Int {
@@ -399,9 +474,36 @@ private struct BlockquoteBlockView: View {
 private struct ImageBlockView: View {
     let alt: String
     let urlString: String
+    let pagePath: String?
+    let workspacePath: String?
+
+    private var remoteURL: URL? {
+        guard let url = URL(string: urlString),
+              let scheme = url.scheme,
+              !scheme.isEmpty,
+              !url.isFileURL else {
+            return nil
+        }
+        return url
+    }
+
+    private var localImagePath: String? {
+        resolveWorkspaceAttachmentPath(
+            urlString,
+            pagePath: pagePath,
+            workspacePath: workspacePath
+        )
+    }
 
     var body: some View {
-        if let url = URL(string: urlString), urlString.hasPrefix("http") {
+        #if canImport(UIKit)
+        if let localImagePath,
+           let image = UIImage(contentsOfFile: localImagePath) {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else if let url = remoteURL {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
@@ -422,7 +524,280 @@ private struct ImageBlockView: View {
             Label(alt, systemImage: "photo")
                 .foregroundStyle(.secondary)
         }
+        #else
+        if let url = remoteURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                case .failure:
+                    Label(alt.isEmpty ? "Image failed to load" : alt, systemImage: "photo")
+                        .foregroundStyle(.secondary)
+                case .empty:
+                    ProgressView()
+                @unknown default:
+                    EmptyView()
+                }
+            }
+        } else if !alt.isEmpty {
+            Label(alt, systemImage: "photo")
+                .foregroundStyle(.secondary)
+        }
+        #endif
     }
+}
+
+private struct DatabaseEmbedSummary {
+    let resolvedPath: String?
+    let title: String
+    let subtitle: String
+}
+
+private struct DatabaseEmbedCardView: View {
+    let storedPath: String
+    let pagePath: String?
+    let workspacePath: String?
+
+    private var summary: DatabaseEmbedSummary {
+        let resolvedPath = resolveMobileDatabaseEmbedPath(
+            storedPath,
+            pagePath: pagePath,
+            workspacePath: workspacePath
+        )
+        let title = resolvedPath.flatMap { mobileDatabaseDisplayName(at: $0) } ?? mobileDatabaseFallbackName(from: storedPath)
+        let subtitle: String
+
+        if let resolvedPath {
+            let rowCount = mobileDatabaseRowCount(at: resolvedPath)
+            subtitle = "\(rowCount) item\(rowCount == 1 ? "" : "s")"
+        } else {
+            subtitle = "Database unavailable"
+        }
+
+        return DatabaseEmbedSummary(
+            resolvedPath: resolvedPath,
+            title: title,
+            subtitle: subtitle
+        )
+    }
+
+    var body: some View {
+        Group {
+            if let resolvedPath = summary.resolvedPath {
+                NavigationLink {
+                    MobileDatabaseView(dbPath: resolvedPath)
+                } label: {
+                    cardLabel(showChevron: true)
+                }
+                .buttonStyle(.plain)
+            } else {
+                cardLabel(showChevron: false)
+            }
+        }
+    }
+
+    private func cardLabel(showChevron: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "tablecells")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.mobileTextSecondary)
+                .frame(width: 36, height: 36)
+                .background(Color.mobileCardBg)
+                .clipShape(.rect(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(summary.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.mobileTextPrimary)
+                    .lineLimit(1)
+
+                Text(summary.subtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.mobileTextMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            if showChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.mobileUtilityIcon)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.mobileBgSecondary)
+        .clipShape(.rect(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.mobileBorder, lineWidth: 0.5)
+        }
+    }
+}
+
+private func resolveMobileDatabaseEmbedPath(
+    _ storedPath: String,
+    pagePath: String?,
+    workspacePath: String?,
+    fileManager: FileManager = .default
+) -> String? {
+    let normalizedStoredPath = normalizeMobileDatabasePath(storedPath)
+    guard !normalizedStoredPath.isEmpty else { return nil }
+
+    if mobileIsDatabaseFolderPath(normalizedStoredPath, fileManager: fileManager) {
+        return normalizedStoredPath
+    }
+
+    let storedName = (normalizedStoredPath as NSString).lastPathComponent
+    var candidates: [String] = []
+
+    if let pagePath {
+        let pageContainer = pagePath.hasSuffix(".md") ? String(pagePath.dropLast(3)) : pagePath
+        if !storedName.isEmpty {
+            candidates.append((pageContainer as NSString).appendingPathComponent(storedName))
+        }
+        candidates.append(contentsOf: mobileMatchingDatabaseChildren(
+            named: storedName,
+            in: pageContainer,
+            fileManager: fileManager
+        ))
+    }
+
+    if let workspacePath, !workspacePath.isEmpty {
+        if !storedName.isEmpty {
+            candidates.append((workspacePath as NSString).appendingPathComponent(storedName))
+        }
+        if let uniqueMatch = mobileFindUniqueDatabasePath(
+            named: storedName,
+            in: workspacePath,
+            fileManager: fileManager
+        ) {
+            candidates.append(uniqueMatch)
+        }
+    }
+
+    var seen: Set<String> = []
+    for candidate in candidates.map({ ($0 as NSString).standardizingPath }) where seen.insert(candidate).inserted {
+        if mobileIsDatabaseFolderPath(candidate, fileManager: fileManager) {
+            return candidate
+        }
+    }
+
+    return nil
+}
+
+private func normalizeMobileDatabasePath(_ path: String) -> String {
+    var normalized = path.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    if normalized.hasPrefix("~") {
+        normalized = (normalized as NSString).expandingTildeInPath
+    }
+    if normalized.contains("%"), let decoded = normalized.removingPercentEncoding {
+        normalized = decoded
+    }
+    if normalized.hasSuffix("/_schema.json") {
+        normalized = (normalized as NSString).deletingLastPathComponent
+    }
+
+    return (normalized as NSString).standardizingPath
+}
+
+private func mobileMatchingDatabaseChildren(
+    named name: String,
+    in directory: String,
+    fileManager: FileManager
+) -> [String] {
+    guard !name.isEmpty,
+          fileManager.fileExists(atPath: directory),
+          let entries = try? fileManager.contentsOfDirectory(atPath: directory) else {
+        return []
+    }
+
+    return entries.compactMap { entryName in
+        let childPath = (directory as NSString).appendingPathComponent(entryName)
+        guard mobileIsDatabaseFolderPath(childPath, fileManager: fileManager) else { return nil }
+
+        let folderNameMatches = entryName.localizedCaseInsensitiveCompare(name) == .orderedSame
+        let schemaNameMatches = mobileDatabaseDisplayName(at: childPath, fileManager: fileManager)?
+            .localizedCaseInsensitiveCompare(name) == .orderedSame
+
+        return (folderNameMatches || schemaNameMatches) ? childPath : nil
+    }
+}
+
+private func mobileFindUniqueDatabasePath(
+    named name: String,
+    in workspacePath: String,
+    fileManager: FileManager
+) -> String? {
+    guard !name.isEmpty,
+          let enumerator = fileManager.enumerator(atPath: workspacePath) else {
+        return nil
+    }
+
+    var matches: [String] = []
+
+    while let relativePath = enumerator.nextObject() as? String {
+        if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) {
+            enumerator.skipDescendants()
+            continue
+        }
+
+        let fullPath = (workspacePath as NSString).appendingPathComponent(relativePath)
+        guard mobileIsDatabaseFolderPath(fullPath, fileManager: fileManager) else { continue }
+
+        let folderName = (fullPath as NSString).lastPathComponent
+        let schemaName = mobileDatabaseDisplayName(at: fullPath, fileManager: fileManager)
+        if folderName.localizedCaseInsensitiveCompare(name) == .orderedSame
+            || schemaName?.localizedCaseInsensitiveCompare(name) == .orderedSame {
+            matches.append(fullPath)
+            if matches.count > 1 {
+                return nil
+            }
+        }
+
+        enumerator.skipDescendants()
+    }
+
+    return matches.first
+}
+
+private func mobileDatabaseDisplayName(
+    at path: String,
+    fileManager: FileManager = .default
+) -> String? {
+    let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+    guard fileManager.fileExists(atPath: schemaPath),
+          let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+          let schema = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let name = schema["name"] as? String,
+          !name.isEmpty else {
+        return nil
+    }
+    return name
+}
+
+private func mobileDatabaseRowCount(at path: String, fileManager: FileManager = .default) -> Int {
+    guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else { return 0 }
+    return contents.filter { $0.hasSuffix(".md") && !$0.hasPrefix("_") }.count
+}
+
+private func mobileIsDatabaseFolderPath(_ path: String, fileManager: FileManager = .default) -> Bool {
+    let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+    return fileManager.fileExists(atPath: schemaPath)
+}
+
+private func mobileDatabaseFallbackName(from storedPath: String) -> String {
+    let rawName = ((storedPath as NSString).lastPathComponent as NSString).deletingPathExtension
+    let cleaned = rawName
+        .replacingOccurrences(of: "_", with: " ")
+        .replacingOccurrences(of: "-", with: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return cleaned.isEmpty ? "Database" : cleaned
 }
 
 // MARK: - Grouped block helpers
@@ -466,6 +841,14 @@ private func groupBlocks(_ blocks: [MdBlock]) -> [GroupedBlock] {
 
 struct MobileMarkdownView: View {
     let content: String
+    let pagePath: String?
+    let workspacePath: String?
+
+    init(content: String, pagePath: String? = nil, workspacePath: String? = nil) {
+        self.content = content
+        self.pagePath = pagePath
+        self.workspacePath = workspacePath
+    }
 
     private var parsedGroups: [GroupedBlock] {
         groupBlocks(MdParser.parse(content))
@@ -524,11 +907,23 @@ struct MobileMarkdownView: View {
                 .padding(.vertical, 4)
 
         case .image(let alt, let url):
-            ImageBlockView(alt: alt, urlString: url)
+            ImageBlockView(
+                alt: alt,
+                urlString: url,
+                pagePath: pagePath,
+                workspacePath: workspacePath
+            )
 
         case .wikiLink(let name):
             Text(name)
                 .foregroundStyle(.blue)
+
+        case .databaseEmbed(let path):
+            DatabaseEmbedCardView(
+                storedPath: path,
+                pagePath: pagePath,
+                workspacePath: workspacePath
+            )
         }
     }
 }

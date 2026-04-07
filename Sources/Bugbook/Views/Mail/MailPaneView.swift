@@ -23,15 +23,21 @@ struct MailPaneView: View {
                     title: "Connect Gmail",
                     message: "Sign in once and Bugbook will use that Google account for both Mail and Calendar."
                 )
-            } else if mailService.selectedThread != nil || mailService.isLoadingThread || (mailService.isComposing && mailService.composer.threadId == nil) {
+            } else if mailService.selectedThread != nil || mailService.isLoadingThread {
                 // Full-screen thread view — no filter tabs, just the thread
                 detailPane
             } else {
-                VStack(spacing: 0) {
-                    mailFilterTabs
-                    batchToolbar
-                    Divider()
-                    threadList
+                ZStack {
+                    VStack(spacing: 0) {
+                        mailFilterTabs
+                        batchToolbar
+                        Divider()
+                        threadList
+                    }
+
+                    if mailService.isComposing && mailService.composer.threadId == nil {
+                        floatingComposeCard
+                    }
                 }
             }
         }
@@ -326,11 +332,42 @@ struct MailPaneView: View {
         .background(Color.fallbackEditorBg)
     }
 
+    private var floatingComposeCard: some View {
+        VStack(spacing: 0) {
+            // Title bar
+            HStack {
+                Text("New Message")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    mailService.dismissComposer()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.primary.opacity(0.04))
+
+            Divider()
+
+            composeView(title: "")
+        }
+        .frame(width: 450, height: 520)
+        .background(Color.fallbackEditorBg)
+        .clipShape(.rect(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.2), radius: 16, x: 0, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.fallbackChromeBorder, lineWidth: 0.5))
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+    }
+
     @ViewBuilder
     private var detailPane: some View {
-        if mailService.isComposing && mailService.composer.threadId == nil {
-            composeView(title: "New Message")
-        } else if let thread = mailService.selectedThread {
+        if let thread = mailService.selectedThread {
             VStack(spacing: 0) {
                 threadToolbar(thread)
                 Divider()
@@ -598,14 +635,16 @@ struct MailPaneView: View {
 
     private func composeView(title: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Button("Discard") {
-                    mailService.dismissComposer()
+            if !title.isEmpty {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Button("Discard") {
+                        mailService.dismissComposer()
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
             }
 
             composeField("To", text: $mailService.composer.to)

@@ -78,4 +78,33 @@ final class FileSystemServiceTests: XCTestCase {
         XCTAssertTrue(updated.contains("<!-- database: \(newDatabasePath) -->"))
         XCTAssertFalse(updated.contains("<!-- database: \(oldDatabasePath) -->"))
     }
+
+    func testBuildFileTreeHidesCaptureStorageFolders() throws {
+        let service = FileSystemService()
+        let workspace = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: workspace) }
+
+        let inboxPath = (workspace as NSString).appendingPathComponent("Inbox")
+        let rawPath = (workspace as NSString).appendingPathComponent("raw")
+        let attachmentsPath = (workspace as NSString).appendingPathComponent("Attachments")
+
+        try FileManager.default.createDirectory(atPath: inboxPath, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: rawPath, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: attachmentsPath, withIntermediateDirectories: true)
+
+        let inboxNote = (inboxPath as NSString).appendingPathComponent("Photo 2.03 PM.md")
+        let rawNote = (rawPath as NSString).appendingPathComponent("2026-04-05-photo.md")
+        let rootPage = (workspace as NSString).appendingPathComponent("Museum Notes.md")
+
+        try "Inbox capture".write(toFile: inboxNote, atomically: true, encoding: .utf8)
+        try "Raw capture".write(toFile: rawNote, atomically: true, encoding: .utf8)
+        try "# Museum Notes\n".write(toFile: rootPage, atomically: true, encoding: .utf8)
+
+        let tree = service.buildFileTree(at: workspace)
+        let names = tree.map(\.name)
+
+        XCTAssertTrue(names.contains("Museum Notes.md"))
+        XCTAssertFalse(names.contains("Photo 2.03 PM.md"))
+        XCTAssertFalse(names.contains("2026-04-05-photo.md"))
+    }
 }

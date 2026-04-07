@@ -46,7 +46,11 @@ struct MobilePageEditorView: View {
                 }
             } else {
                 ScrollView {
-                    MobileMarkdownView(content: content)
+                    MobileMarkdownView(
+                        content: content,
+                        pagePath: note.path,
+                        workspacePath: workspace.workspacePath
+                    )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                 }

@@ -6,6 +6,7 @@ struct MobileSearchView: View {
     var workspace: MobileWorkspaceService
 
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var queryFieldFocused: Bool
 
     @State private var query = ""
     @State private var results: [SearchResult] = []
@@ -36,6 +37,7 @@ struct MobileSearchView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
             TextField("Search notes...", text: $query)
+                .focused($queryFieldFocused)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 #if os(iOS)
@@ -55,6 +57,11 @@ struct MobileSearchView: View {
         .padding(12)
         .onChange(of: query) { _, newValue in
             scheduleSearch(newValue)
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                queryFieldFocused = true
+            }
         }
     }
 
