@@ -27,6 +27,7 @@ enum RailItemID: String, CaseIterable, Identifiable {
     case calendar
     case browser
     case terminal
+    case workspace
     case settings
 
     var id: String { rawValue }
@@ -38,6 +39,7 @@ enum RailItemID: String, CaseIterable, Identifiable {
         case .calendar: return "Calendar"
         case .browser: return "Browser"
         case .terminal: return "Terminal"
+        case .workspace: return "Workspace"
         case .settings: return "Settings"
         }
     }
@@ -49,6 +51,7 @@ enum RailItemID: String, CaseIterable, Identifiable {
         case .calendar: return "calendar.badge.clock"
         case .browser: return "globe"
         case .terminal: return "terminal"
+        case .workspace: return "doc.text"
         case .settings: return "gearshape"
         }
     }
@@ -81,6 +84,7 @@ struct NavigationRailView: View {
                 railButton(.calendar)
                 railButton(.browser)
                 railButton(.terminal)
+                railButton(.workspace)
             }
 
             Spacer(minLength: ShellZoomMetrics.size(12))
