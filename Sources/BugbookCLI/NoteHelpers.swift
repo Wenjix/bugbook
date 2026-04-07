@@ -13,6 +13,8 @@ struct WorkspacePageRecord {
     let tags: [String]
     let wikilinks: [String]
     let modifiedAt: String?
+    let source: String?
+    let sourcePath: String?
 
     func toSummaryJSON() -> [String: Any] {
         var json: [String: Any] = [
@@ -28,6 +30,12 @@ struct WorkspacePageRecord {
         }
         if let modifiedAt {
             json["modified_at"] = modifiedAt
+        }
+        if let source {
+            json["source"] = source
+        }
+        if let sourcePath {
+            json["source_path"] = sourcePath
         }
         return json
     }
@@ -183,7 +191,8 @@ func listWorkspacePages(
     in workspace: String,
     pathPrefix: String? = nil,
     type: String? = nil,
-    tag: String? = nil
+    tag: String? = nil,
+    source: String? = nil
 ) throws -> [WorkspacePageRecord] {
     var pages: [WorkspacePageRecord] = []
     walkWorkspaceMarkdownFiles(in: workspace, includeStructuredContent: false) { filePath, relativePath in
@@ -206,6 +215,11 @@ func listWorkspacePages(
     if let tag, !tag.isEmpty {
         let expected = tag.lowercased()
         pages = pages.filter { $0.tags.contains(where: { $0.lowercased() == expected }) }
+    }
+
+    if let source, !source.isEmpty {
+        let expected = source.lowercased()
+        pages = pages.filter { $0.source?.lowercased() == expected }
     }
 
     return pages.sorted {
@@ -629,6 +643,7 @@ func loadWorkspacePage(
     let title = pageTitle(body: body, fallback: name, frontmatter: frontmatter)
     let tags = pageTags(frontmatter: frontmatter, body: body)
     let wikilinks = extractWikiLinks(from: body)
+    let (source, sourcePath) = parseSourceComments(from: content)
 
     let attrs = try? FileManager.default.attributesOfItem(atPath: normalizedPath)
     let modifiedAt = (attrs?[.modificationDate] as? Date).map(iso8601String(from:))
@@ -643,7 +658,9 @@ func loadWorkspacePage(
         frontmatter: frontmatter,
         tags: tags,
         wikilinks: wikilinks,
-        modifiedAt: modifiedAt
+        modifiedAt: modifiedAt,
+        source: source,
+        sourcePath: sourcePath
     )
 }
 
@@ -1014,6 +1031,7 @@ func workspacePageRecord(from existing: WorkspacePageRecord, content: String) ->
     let title = pageTitle(body: body, fallback: existing.name, frontmatter: frontmatter)
     let tags = pageTags(frontmatter: frontmatter, body: body)
     let wikilinks = extractWikiLinks(from: body)
+    let (source, sourcePath) = parseSourceComments(from: content)
 
     return WorkspacePageRecord(
         path: existing.path,
@@ -1025,7 +1043,9 @@ func workspacePageRecord(from existing: WorkspacePageRecord, content: String) ->
         frontmatter: frontmatter,
         tags: tags,
         wikilinks: wikilinks,
-        modifiedAt: existing.modifiedAt
+        modifiedAt: existing.modifiedAt,
+        source: source,
+        sourcePath: sourcePath
     )
 }
 
@@ -1264,6 +1284,29 @@ private func pageTitleAtPath(_ path: String, fallback: String) throws -> String 
     let content = try String(contentsOfFile: path, encoding: .utf8)
     let (frontmatter, body) = parsePageFrontmatter(content)
     return pageTitle(body: body, fallback: fallback, frontmatter: frontmatter)
+}
+
+// Parses `<!-- source:X -->` and `<!-- source-path:Y -->` comments from the
+// first few lines of the file. Returns (source, sourcePath) — both may be nil.
+private func parseSourceComments(from content: String) -> (String?, String?) {
+    var source: String? = nil
+    var sourcePath: String? = nil
+
+    let lines = content.components(separatedBy: .newlines)
+    for line in lines.prefix(10) {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->") else { continue }
+        let inner = trimmed.dropFirst(4).dropLast(3).trimmingCharacters(in: .whitespaces)
+        if inner.lowercased().hasPrefix("source:") {
+            let value = String(inner.dropFirst("source:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { source = value }
+        } else if inner.lowercased().hasPrefix("source-path:") {
+            let value = String(inner.dropFirst("source-path:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { sourcePath = value }
+        }
+    }
+
+    return (source, sourcePath)
 }
 
 private func jsonCompatibleObject(_ value: Any) -> Any {
