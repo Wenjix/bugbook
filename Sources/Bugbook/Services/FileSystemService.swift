@@ -114,7 +114,7 @@ class FileSystemService {
 
         for name in contents {
             if name.hasPrefix(".") { continue }
-            if name == "_schema.json" || name == "_index.json" { continue }
+            if name.hasPrefix("_") { continue }
             if name == "Daily Notes" || name == "Templates" { continue }
             if Self.hiddenSidebarFolders.contains(name.lowercased()) { continue }
 

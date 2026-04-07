@@ -17,72 +17,68 @@ struct WorkspaceTabBar: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            ScrollView(.horizontal) {
-                HStack(alignment: .bottom, spacing: -ShellZoomMetrics.size(8)) {
-                    ForEach(Array(workspaceManager.workspaces.enumerated()), id: \.element.id) { index, workspace in
-                        HStack(spacing: 0) {
-                            if dragOverIndex == index {
-                                Rectangle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 2, height: ShellZoomMetrics.size(24))
-                                    .padding(.vertical, ShellZoomMetrics.size(4))
-                            }
-
-                            TabItemView(
-                                title: tabTitle(for: workspace),
-                                icon: tabIcon(for: workspace),
-                                isActive: index == workspaceManager.activeWorkspaceIndex,
-                                onSelect: { workspaceManager.switchWorkspace(to: index) },
-                                onClose: { workspaceManager.closeWorkspace(at: index) }
-                            )
-                            .zIndex(index == workspaceManager.activeWorkspaceIndex ? 1 : 0)
-                            .opacity(draggingId == workspace.id ? 0.4 : 1.0)
-                            .onDrag {
-                                draggingId = workspace.id
-                                return NSItemProvider(object: workspace.id.uuidString as NSString)
-                            }
-                            .onDrop(of: [.text], delegate: TabDropDelegate(
-                                targetIndex: index,
-                                workspaceManager: workspaceManager,
-                                dragOverIndex: $dragOverIndex,
-                                draggingId: $draggingId
-                            ))
+            HStack(alignment: .bottom, spacing: -ShellZoomMetrics.size(8)) {
+                ForEach(Array(workspaceManager.workspaces.enumerated()), id: \.element.id) { index, workspace in
+                    HStack(spacing: 0) {
+                        if dragOverIndex == index {
+                            Rectangle()
+                                .fill(Color.accentColor)
+                                .frame(width: 2, height: ShellZoomMetrics.size(24))
+                                .padding(.vertical, ShellZoomMetrics.size(4))
                         }
-                    }
 
-                    if dragOverIndex == workspaceManager.workspaces.count {
-                        Rectangle()
-                            .fill(Color.accentColor)
-                            .frame(width: 2, height: ShellZoomMetrics.size(24))
-                            .padding(.vertical, ShellZoomMetrics.size(4))
+                        TabItemView(
+                            title: tabTitle(for: workspace),
+                            icon: tabIcon(for: workspace),
+                            isActive: index == workspaceManager.activeWorkspaceIndex,
+                            onSelect: { workspaceManager.switchWorkspace(to: index) },
+                            onClose: { workspaceManager.closeWorkspace(at: index) }
+                        )
+                        .zIndex(index == workspaceManager.activeWorkspaceIndex ? 1 : 0)
+                        .opacity(draggingId == workspace.id ? 0.4 : 1.0)
+                        .onDrag {
+                            draggingId = workspace.id
+                            return NSItemProvider(object: workspace.id.uuidString as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: TabDropDelegate(
+                            targetIndex: index,
+                            workspaceManager: workspaceManager,
+                            dragOverIndex: $dragOverIndex,
+                            draggingId: $draggingId
+                        ))
                     }
-
-                    // + button with content picker
-                    Button { showNewMenu = true } label: {
-                        Image(systemName: "plus")
-                            .font(ShellZoomMetrics.font(Typography.bodySmall))
-                            .foregroundStyle(.secondary)
-                            .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, ShellZoomMetrics.size(8))
-                    .padding(.bottom, ShellZoomMetrics.size(2))
-                    .floatingPopover(isPresented: $showNewMenu) {
-                        NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
-                            .popoverSurface()
-                    }
-                    .onDrop(of: [.text], delegate: TabDropDelegate(
-                        targetIndex: workspaceManager.workspaces.count,
-                        workspaceManager: workspaceManager,
-                        dragOverIndex: $dragOverIndex,
-                        draggingId: $draggingId
-                    ))
                 }
-                .padding(.leading, ShellZoomMetrics.size(2))
+
+                if dragOverIndex == workspaceManager.workspaces.count {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(width: 2, height: ShellZoomMetrics.size(24))
+                        .padding(.vertical, ShellZoomMetrics.size(4))
+                }
+
+                // + button with content picker
+                Button { showNewMenu = true } label: {
+                    Image(systemName: "plus")
+                        .font(ShellZoomMetrics.font(Typography.bodySmall))
+                        .foregroundStyle(.secondary)
+                        .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, ShellZoomMetrics.size(8))
+                .padding(.bottom, ShellZoomMetrics.size(2))
+                .floatingPopover(isPresented: $showNewMenu) {
+                    NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
+                        .popoverSurface()
+                }
+                .onDrop(of: [.text], delegate: TabDropDelegate(
+                    targetIndex: workspaceManager.workspaces.count,
+                    workspaceManager: workspaceManager,
+                    dragOverIndex: $dragOverIndex,
+                    draggingId: $draggingId
+                ))
             }
-            .scrollIndicators(.hidden)
-            .padding(.leading, ShellZoomMetrics.size(8))
-            Spacer()
+            .padding(.leading, ShellZoomMetrics.size(10))
+            Spacer(minLength: 0)
             layoutSavedIndicator
         }
         .padding(.top, ShellZoomMetrics.size(6))

@@ -188,22 +188,10 @@ struct FileTreeItemView: View {
 
     @ViewBuilder
     private var defaultIcon: some View {
-        if entry.isDatabase {
-            Image(systemName: "tablecells")
-                .font(ShellZoomMetrics.font(Typography.bodySmall))
-                .foregroundStyle(.secondary)
-                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-        } else if entry.isDirectory {
-            Image(systemName: "folder")
-                .font(ShellZoomMetrics.font(Typography.bodySmall))
-                .foregroundStyle(.secondary)
-                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-        } else {
-            Image(systemName: "doc.text")
-                .font(ShellZoomMetrics.font(Typography.bodySmall))
-                .foregroundStyle(.secondary)
-                .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-        }
+        Image(systemName: entry.isDatabase ? "tablecells" : "doc.text")
+            .font(ShellZoomMetrics.font(Typography.bodySmall))
+            .foregroundStyle(.secondary)
+            .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
     }
 
     private var displayName: String {

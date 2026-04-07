@@ -418,18 +418,18 @@ struct MailPaneView: View {
             .buttonStyle(.plain)
             .padding(.trailing, 10)
 
-            // Sender (brightest tier)
+            // Sender
             Text(senderDisplayName(thread.participants.first ?? "Unknown"))
                 .font(.system(size: 13, weight: unread ? .bold : .regular))
-                .foregroundStyle(unread ? Color.primary.opacity(1.0) : Color.primary.opacity(0.5))
+                .foregroundStyle(unread ? Color.primary : Color.primary.opacity(0.45))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.trailing, 6)
 
-            // Subject (mid tier)
+            // Subject
             Text(thread.subject)
                 .font(.system(size: 13, weight: unread ? .semibold : .regular))
-                .foregroundStyle(unread ? Color.primary.opacity(0.9) : Color.primary.opacity(0.35))
+                .foregroundStyle(unread ? Color.primary : Color.primary.opacity(0.35))
                 .lineLimit(1)
                 .layoutPriority(1)
 

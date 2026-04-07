@@ -562,30 +562,6 @@ struct BrowserPaneView: View {
                     submitOmnibar(newTabSearchText)
                 }
 
-            if chrome.showsNewTabQuickLaunch, !appState.settings.browserQuickLaunchItems.isEmpty {
-                FlowLayout(spacing: 10) {
-                    ForEach(appState.settings.browserQuickLaunchItems) { item in
-                        Button {
-                            guard let url = URL(string: item.url) else { return }
-                            browserManager.openURL(url, in: paneID, newTab: false)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: item.icon)
-                                Text(item.title)
-                            }
-                            .font(.system(size: 12, weight: .medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: Radius.md)
-                                    .fill(Color.primary.opacity(0.05))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .frame(maxWidth: 620)
-            }
 
             if chrome.showsNewTabRecentVisits, !session.recentVisits.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
