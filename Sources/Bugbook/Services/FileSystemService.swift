@@ -16,6 +16,7 @@ class FileSystemService {
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
     private let favoritesPrefix = "favorites_"
+    nonisolated private static let hiddenSidebarFolders: Set<String> = ["attachments", "inbox", "raw"]
 
     init() {
         loadRecentWorkspaces()
@@ -44,14 +45,8 @@ class FileSystemService {
         }()
         guard !canonicalHasContent else { return }
 
-        NSLog(
-            "[Bugbook] Legacy workspace detected at %@ but canonical %@ is empty. " +
-            "Migrate manually with: rsync -av --exclude '.bugbook' --exclude 'MailCache' " +
-            "--exclude 'EditorDrafts' --exclude 'drafts' \"%@/\" \"%@/\"",
-            legacyPath,
-            canonicalPath,
-            legacyPath,
-            canonicalPath
+        Log.fileSystem.warning(
+            "Legacy workspace detected at \(legacyPath) but canonical \(canonicalPath) is empty. Migrate manually with: rsync -av --exclude '.bugbook' --exclude 'MailCache' --exclude 'EditorDrafts' --exclude 'drafts' \"\(legacyPath)/\" \"\(canonicalPath)/\""
         )
     }
 
@@ -121,6 +116,7 @@ class FileSystemService {
             if name.hasPrefix(".") { continue }
             if name == "_schema.json" || name == "_index.json" { continue }
             if name == "Daily Notes" || name == "Templates" { continue }
+            if Self.hiddenSidebarFolders.contains(name.lowercased()) { continue }
 
             let fullPath = (path as NSString).appendingPathComponent(name)
             if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }

@@ -6,8 +6,15 @@ import Foundation
 /// surface. Produces `<workspace>/raw/YYYY-MM-DD-<slug>.md` files with an H1 title
 /// and body, matching Bugbook's page format (title derived from first H1).
 public enum RawInboxWriter {
-    public enum WriteError: Error {
+    public enum WriteError: LocalizedError {
         case writeFailed(path: String, underlying: Error)
+
+        public var errorDescription: String? {
+            switch self {
+            case .writeFailed(let path, let underlying):
+                return "Failed to write raw note at \(path): \(underlying.localizedDescription)"
+            }
+        }
     }
 
     /// Generates a unique file path under `<workspace>/raw/`.
@@ -63,9 +70,12 @@ public enum RawInboxWriter {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone.current
+        formatter.timeZone = .current
         return formatter
     }()
+    // Note: RowSerializer.sharedDateOnlyFormatter uses UTC timezone which would
+    // produce wrong dates for local-time filenames. Keeping a separate formatter
+    // with .current timezone is intentional.
 
     /// Converts a title to a filesystem-safe lowercase slug. Non-alphanumeric runs
     /// collapse to a single `-`; leading/trailing dashes are stripped; output is
