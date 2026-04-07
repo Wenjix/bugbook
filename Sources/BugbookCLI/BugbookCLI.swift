@@ -13,7 +13,7 @@ struct Bugbook: ParsableCommand {
     struct Options: ParsableArguments {
         @Option(help: "Workspace root path")
         var workspace: String = WorkspaceResolver.defaultWorkspacePath(
-            allowBlockingICloudLookup: true
+            allowBlockingICloudLookup: false
         )
 
         @Option(help: "Output format")
