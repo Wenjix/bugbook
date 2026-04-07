@@ -16,6 +16,9 @@ struct QueryCmd: ParsableCommand {
     @Option(name: .long, parsing: .singleValue, help: "Filter expression (repeatable)")
     var filter: [String] = []
 
+    @Option(name: .customLong("filter-json"), help: "FilterGroup JSON blob for AND/OR filter groups")
+    var filterJSON: String?
+
     @Option(name: .long, parsing: .singleValue, help: "Sort expression (repeatable)")
     var sort: [String] = []
 
@@ -41,6 +44,13 @@ struct QueryCmd: ParsableCommand {
         let sorts: [Sort] = try sort.map { try parseSort($0, schema: schema) }
         let fieldList = try parseFieldList(schema: schema)
 
+        let parsedFilterGroup: FilterGroup? = try filterJSON.map { json in
+            guard let data = json.data(using: .utf8) else {
+                throw CLIError.invalidInput("Invalid UTF-8 in --filter-json")
+            }
+            return try JSONDecoder().decode(FilterGroup.self, from: data)
+        }
+
         let indexData = try loadOrRebuildIndex(dbPath: dbPath, schema: schema)
 
         guard let rowsMap = indexData["rows"] as? [String: [String: Any]] else {
@@ -48,7 +58,10 @@ struct QueryCmd: ParsableCommand {
             return
         }
 
-        let matchingIds = applyFiltersAndSorts(filters: filters, sorts: sorts, rowsMap: rowsMap, schema: schema)
+        let matchingIds = applyFiltersAndSorts(
+            filters: filters, sorts: sorts, filterGroup: parsedFilterGroup,
+            rowsMap: rowsMap, schema: schema
+        )
         let paginatedResult = paginate(matchingIds)
 
         let outputRows = buildOutputRows(
@@ -87,10 +100,21 @@ struct QueryCmd: ParsableCommand {
     }
 
     private func applyFiltersAndSorts(
-        filters: [Filter], sorts: [Sort], rowsMap: [String: [String: Any]], schema: DatabaseSchema
+        filters: [Filter], sorts: [Sort], filterGroup: FilterGroup? = nil,
+        rowsMap: [String: [String: Any]], schema: DatabaseSchema
     ) -> [String] {
         var ids = Array(rowsMap.keys)
 
+        // Apply --filter-json group if provided
+        if let group = filterGroup {
+            ids = ids.filter { rowId in
+                guard let rowData = rowsMap[rowId],
+                      let props = rowData["properties"] as? [String: Any] else { return false }
+                return matchesFilterGroupRaw(group, properties: props, schema: schema)
+            }
+        }
+
+        // Apply flat --filter flags (AND-only, layered on top)
         for activeFilter in filters {
             ids = ids.filter { rowId in
                 guard let rowData = rowsMap[rowId],
@@ -306,4 +330,64 @@ private func compareInts(_ lhs: Int, _ rhs: Int) -> Int {
     if lhs < rhs { return -1 }
     if lhs > rhs { return 1 }
     return 0
+}
+
+// MARK: - FilterGroup Matching (raw index data)
+
+private func matchesFilterGroupRaw(_ group: FilterGroup, properties: [String: Any], schema: DatabaseSchema) -> Bool {
+    switch group.conjunction {
+    case .and:
+        return group.conditions.allSatisfy { matchesFilterConditionRaw($0, properties: properties, schema: schema) }
+    case .or:
+        return group.conditions.isEmpty || group.conditions.contains { matchesFilterConditionRaw($0, properties: properties, schema: schema) }
+    }
+}
+
+private func matchesFilterConditionRaw(_ condition: FilterCondition, properties: [String: Any], schema: DatabaseSchema) -> Bool {
+    switch condition {
+    case .filter(let config):
+        return matchesFilterConfigRaw(config, properties: properties)
+    case .group(let nested):
+        return matchesFilterGroupRaw(nested, properties: properties, schema: schema)
+    }
+}
+
+private func matchesFilterConfigRaw(_ config: FilterConfig, properties: [String: Any]) -> Bool {
+    let raw = properties[config.property]
+    let rawStr = (raw as? String) ?? ""
+
+    switch config.op {
+    case "equals":
+        return rawStr == config.value
+    case "not_equals":
+        return rawStr != config.value
+    case "contains":
+        return rawStr.localizedCaseInsensitiveContains(config.value)
+    case "not_contains":
+        return !rawStr.localizedCaseInsensitiveContains(config.value)
+    case "is_empty":
+        return isPropertyEmpty(raw)
+    case "is_not_empty":
+        return !isPropertyEmpty(raw)
+    case "greater_than":
+        if let lhs = Double(rawStr), let rhs = Double(config.value) { return lhs > rhs }
+        return rawStr > config.value
+    case "less_than":
+        if let lhs = Double(rawStr), let rhs = Double(config.value) { return lhs < rhs }
+        return rawStr < config.value
+    case "greater_than_or_equal":
+        if let lhs = Double(rawStr), let rhs = Double(config.value) { return lhs >= rhs }
+        return rawStr >= config.value
+    case "less_than_or_equal":
+        if let lhs = Double(rawStr), let rhs = Double(config.value) { return lhs <= rhs }
+        return rawStr <= config.value
+    case "is_checked":
+        if let b = raw as? Bool { return b }
+        return rawStr == "true" || rawStr == "1"
+    case "is_not_checked":
+        if let b = raw as? Bool { return !b }
+        return rawStr != "true" && rawStr != "1"
+    default:
+        return true
+    }
 }

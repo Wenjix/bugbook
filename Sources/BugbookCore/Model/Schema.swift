@@ -13,6 +13,9 @@ public enum PropertyType: String, Codable, CaseIterable, Sendable {
     case url
     case email
     case relation
+    case formula
+    case lookup
+    case rollup
 
     public var systemImageName: String {
         switch self {
@@ -26,6 +29,9 @@ public enum PropertyType: String, Codable, CaseIterable, Sendable {
         case .url: return "link"
         case .email: return "envelope"
         case .relation: return "arrow.triangle.branch"
+        case .formula: return "function"
+        case .lookup: return "eye"
+        case .rollup: return "sum"
         }
     }
 }
@@ -51,12 +57,24 @@ public struct PropertyConfig: Codable, Sendable {
     public var format: String?
     public var target: String?
     public var cardinality: String?
+    public var formula: String?
+    /// For lookup fields: the relation property to follow.
+    public var relationPropertyId: String?
+    /// For lookup fields: the property to mirror from the related rows.
+    public var targetPropertyId: String?
+    /// For rollup fields: the aggregation function to apply ("sum", "count", "average", "min", "max").
+    public var aggregationFunction: String?
 
-    public init(options: [SelectOption]? = nil, format: String? = nil, target: String? = nil, cardinality: String? = nil) {
+    public init(options: [SelectOption]? = nil, format: String? = nil, target: String? = nil, cardinality: String? = nil, formula: String? = nil,
+                relationPropertyId: String? = nil, targetPropertyId: String? = nil, aggregationFunction: String? = nil) {
         self.options = options
         self.format = format
         self.target = target
         self.cardinality = cardinality
+        self.formula = formula
+        self.relationPropertyId = relationPropertyId
+        self.targetPropertyId = targetPropertyId
+        self.aggregationFunction = aggregationFunction
     }
 }
 

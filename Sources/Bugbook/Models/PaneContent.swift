@@ -70,6 +70,15 @@ enum PaneContent: Codable, Equatable {
         ))
     }
 
+    /// A browser pane.
+    static func browserDocument() -> PaneContent {
+        let id = UUID()
+        return .document(openFile: OpenFile(
+            id: id, path: "bugbook://browser", content: "", isDirty: false, isEmptyTab: false,
+            kind: .browser, displayName: "Browser", icon: "globe"
+        ))
+    }
+
     private enum CodingKeys: String, CodingKey {
         case type
         case openFile

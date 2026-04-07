@@ -27,6 +27,9 @@ struct MobileAgentHubView: View {
                 recentEventsSection
             }
             .navigationTitle("Agent Hub")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .refreshable {
                 viewModel.refresh(workspacePath: workspacePath)
             }

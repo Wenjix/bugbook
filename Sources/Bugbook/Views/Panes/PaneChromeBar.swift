@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Fixed 30px chrome bar at the top of each pane.
-/// Shows pane type icon, label, and context text on the left.
-/// Action buttons (split, pop-out, close) on the right.
-/// Focus state driven by WorkspaceManager — only this view and PaneFocusOverlay re-render on focus change.
+/// Compact pane header bar shown for tiled panes and browser single-pane mode.
+/// Focus state is driven by WorkspaceManager — only this view and PaneFocusOverlay
+/// respond to focus changes rather than re-rendering the entire pane tree.
 struct PaneChromeBar: View {
     let leaf: PaneNode.Leaf
     let workspaceManager: WorkspaceManager
@@ -39,26 +38,33 @@ struct PaneChromeBar: View {
             // Right: action buttons
             actionButtons
         }
-        .frame(height: 30)
+        .frame(height: 28)
         .padding(.horizontal, 10)
         .contentShape(Rectangle())
         .onDrag {
             NSItemProvider(object: leaf.id.uuidString as NSString)
         }
         .background(isReplaceWarning ? amberWarning.opacity(0.12) : Color.fallbackEditorBg)
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .top) {
             if isReplaceWarning {
                 Rectangle()
                     .fill(amberWarning)
                     .frame(height: 2)
-            } else if isFocused && !isOnlyPane {
+            } else if isFocused {
                 Rectangle()
                     .fill(steelBlue)
-                    .frame(height: 1)
-            } else {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.04))
-                    .frame(height: 0.5)
+                    .frame(height: 2)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.04))
+                .frame(height: 0.5)
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .leading) {
+            if isReplaceWarning {
+                EmptyView()
             }
         }
         // Warning text overlay
@@ -247,6 +253,7 @@ struct PaneChromeBar: View {
             if file.isGateway { return ("house", "Home", nil) }
             if file.isMail { return ("envelope", "Mail", nil) }
             if file.isCalendar { return ("calendar.badge.clock", "Calendar", nil) }
+            if file.isBrowser { return ("globe", "Browser", nil) }
             if file.isMeetings { return ("person.2", "Meetings", nil) }
             if file.isChat { return ("bubble.left.and.bubble.right", "Chat", nil) }
             if file.isGraphView { return ("point.3.connected.trianglepath.dotted", "Graph View", nil) }

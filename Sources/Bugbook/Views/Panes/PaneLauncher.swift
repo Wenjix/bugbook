@@ -179,12 +179,12 @@ struct PaneLauncher: View {
     // MARK: - Data
 
     static let builtInPanes: [(label: String, icon: String, content: PaneContent)] = [
+        ("Browser", "globe", .browserDocument()),
         ("Terminal", "terminal", .terminal),
         ("Empty Page", "doc", .emptyDocument()),
         ("Mail", "envelope", .mailDocument()),
         ("Calendar", "calendar", .calendarDocument()),
         ("Meetings", "person.2", .meetingsDocument()),
-        ("Chat", "bubble.left.and.bubble.right", .chatDocument()),
         ("Home", "house", .gatewayDocument()),
     ]
 

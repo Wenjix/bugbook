@@ -14,20 +14,73 @@ struct PaneContentView: View {
     let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
     var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
+    var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
 
     @State private var isDropTarget = false
+
+    // Find-in-page state (per-pane)
+    @State private var showFindBar = false
+    @State private var findQuery = ""
+    @State private var findCurrentIndex = 0
+    @State private var findRefocusTrigger = false
+    @State private var findMatchCache: [(blockId: UUID, range: Range<String.Index>)] = []
+
+    private var isFocusedPane: Bool {
+        workspaceManager.activeWorkspace?.focusedPaneId == leaf.id
+    }
+
+    private func recomputeFindMatches() {
+        guard !findQuery.isEmpty,
+              case .document = leaf.content,
+              let doc = blockDocumentLookup?(leaf.id) else {
+            findMatchCache = []
+            return
+        }
+        let needle = findQuery.lowercased()
+        var results: [(blockId: UUID, range: Range<String.Index>)] = []
+        func searchBlocks(_ blocks: [Block]) {
+            for block in blocks {
+                let haystack = block.text.lowercased()
+                var searchStart = haystack.startIndex
+                while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+                    results.append((blockId: block.id, range: range))
+                    searchStart = range.upperBound
+                }
+                if !block.children.isEmpty {
+                    searchBlocks(block.children)
+                }
+            }
+        }
+        searchBlocks(doc.blocks)
+        findMatchCache = results
+    }
 
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                PaneChromeBar(
-                    leaf: leaf,
-                    workspaceManager: workspaceManager,
-                    isOnlyPane: !showFocusBorder,
-                    fileTree: fileTree,
-                    breadcrumbs: chromeBreadcrumbs,
-                    onBreadcrumbNavigate: onBreadcrumbNavigate
-                )
+                if shouldShowChromeBar {
+                    PaneChromeBar(
+                        leaf: leaf,
+                        workspaceManager: workspaceManager,
+                        isOnlyPane: !showFocusBorder,
+                        fileTree: fileTree,
+                        breadcrumbs: chromeBreadcrumbs,
+                        onBreadcrumbNavigate: onBreadcrumbNavigate
+                    )
+                }
+
+                if showFindBar {
+                    PaneFindBar(
+                        query: $findQuery,
+                        matchCount: findMatchCache.count,
+                        currentMatch: findMatchCache.isEmpty ? 0 : findCurrentIndex + 1,
+                        onNext: { advanceFind(forward: true) },
+                        onPrevious: { advanceFind(forward: false) },
+                        onClose: { closeFindBar() }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .id(findRefocusTrigger)
+                }
 
                 contentForLeaf
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -57,6 +110,20 @@ struct PaneContentView: View {
                 }
             }
             return true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
+            guard isFocusedPane, supportsInlineFindBar else { return }
+            if showFindBar {
+                findRefocusTrigger.toggle()
+            } else {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    showFindBar = true
+                }
+            }
+        }
+        .onChange(of: findQuery) { _, _ in
+            findCurrentIndex = 0
+            recomputeFindMatches()
         }
         .contextMenu {
             Menu("Split Right") {
@@ -91,6 +158,7 @@ struct PaneContentView: View {
 
     @ViewBuilder
     private func paneTypeMenu(action: @escaping (PaneContent) -> Void) -> some View {
+        Button("Browser") { action(.browserDocument()) }
         Button("Terminal") { action(.terminal) }
         Button("Empty Page") { action(.emptyDocument()) }
         Button("Mail") { action(.mailDocument()) }
@@ -104,11 +172,31 @@ struct PaneContentView: View {
         guard let provider = breadcrumbProvider else { return [] }
         switch leaf.content {
         case .document(let file):
-            if file.isEmptyTab || file.isMail || file.isCalendar || file.isMeetings || file.isGateway || file.isChat || file.isGraphView { return [] }
+            if file.isEmptyTab || file.isMail || file.isCalendar || file.isMeetings || file.isGateway || file.isChat || file.isGraphView || file.isBrowser { return [] }
             return provider(file)
         case .terminal:
             return []
         }
+    }
+
+    private var shouldShowChromeBar: Bool {
+        guard case .document(let file) = leaf.content else { return true }
+        if showFocusBorder {
+            return true
+        }
+        return !(file.isMail || file.isCalendar)
+    }
+
+    private var supportsInlineFindBar: Bool {
+        guard case .document(let file) = leaf.content else { return false }
+        return !file.isEmptyTab
+            && !file.isMail
+            && !file.isCalendar
+            && !file.isMeetings
+            && !file.isGateway
+            && !file.isBrowser
+            && !file.isChat
+            && !file.isGraphView
     }
 
     @ViewBuilder
@@ -119,6 +207,27 @@ struct PaneContentView: View {
         case .terminal:
             terminalContentBuilder(leaf, false)
         }
+    }
+
+    private func advanceFind(forward: Bool) {
+        let matches = findMatchCache
+        guard !matches.isEmpty else { return }
+        if forward {
+            findCurrentIndex = (findCurrentIndex + 1) % matches.count
+        } else {
+            findCurrentIndex = (findCurrentIndex - 1 + matches.count) % matches.count
+        }
+        if let doc = blockDocumentLookup?(leaf.id) {
+            doc.scrollToBlockId = matches[findCurrentIndex].blockId
+        }
+    }
+
+    private func closeFindBar() {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            showFindBar = false
+        }
+        findQuery = ""
+        findCurrentIndex = 0
     }
 }
 

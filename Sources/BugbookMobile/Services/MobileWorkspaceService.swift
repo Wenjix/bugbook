@@ -12,29 +12,35 @@ import BugbookCore
     private let maxTreeDepth = 10
 
     init() {
-        let path = resolveWorkspacePath()
-        if !fileManager.fileExists(atPath: path) {
-            try? fileManager.createDirectory(atPath: path, withIntermediateDirectories: true)
+        // Start with local path immediately so the UI renders
+        let localPath = localWorkspacePath()
+        if !fileManager.fileExists(atPath: localPath) {
+            try? fileManager.createDirectory(atPath: localPath, withIntermediateDirectories: true)
         }
-        workspacePath = path
-        refreshFiles()
+        workspacePath = localPath
+
+        // Resolve iCloud in the background — url(forUbiquityContainerIdentifier:) can block
+        Task.detached(priority: .utility) { [weak self] in
+            guard let iCloudPath = Self.resolveICloudWorkspacePath() else { return }
+            guard let self else { return }
+            await self.applyResolvedICloudWorkspacePath(iCloudPath)
+        }
     }
 
     // MARK: - Workspace Resolution
 
-    private func resolveWorkspacePath() -> String {
-        if let iCloudURL = fileManager.url(forUbiquityContainerIdentifier: nil)?
-            .appendingPathComponent("Documents/Bugbook") {
-            isICloudAvailable = true
-            return iCloudURL.path
-        }
-        isICloudAvailable = false
-        return localWorkspacePath()
+    private func localWorkspacePath() -> String {
+        WorkspaceResolver.localFallbackWorkspacePath()
     }
 
-    private func localWorkspacePath() -> String {
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("Bugbook").path
+    private nonisolated static func resolveICloudWorkspacePath() -> String? {
+        WorkspaceResolver.resolveICloudWorkspacePath()
+    }
+
+    private func applyResolvedICloudWorkspacePath(_ iCloudPath: String) {
+        workspacePath = iCloudPath
+        isICloudAvailable = true
+        refreshFiles()
     }
 
     // MARK: - File Tree Building
@@ -60,9 +66,10 @@ import BugbookCore
         var noteFiles: [MobileNoteFile] = []
 
         for name in contents {
-            if name.hasPrefix(".") { continue }
-            if name == "_schema.json" || name == "_index.json" { continue }
+            if name.hasPrefix(".") || name.hasPrefix("_") { continue }
             if name == "Daily Notes" || name == "Templates" { continue }
+            // Filter internal/legacy folders that shouldn't appear in the file tree
+            if ["assets", "logseq", "journals", "pages", "whiteboards"].contains(name) { continue }
 
             let fullPath = (path as NSString).appendingPathComponent(name)
             if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }
@@ -250,6 +257,8 @@ import BugbookCore
         guard mdPath.hasSuffix(".md") else { return mdPath }
         return String(mdPath.dropLast(3))
     }
+
+    func loadFileIcon(at path: String) -> String? { parseIconFromFile(at: path) }
 
     private func parseIconFromFile(at path: String) -> String? {
         guard let fh = FileHandle(forReadingAtPath: path) else { return nil }

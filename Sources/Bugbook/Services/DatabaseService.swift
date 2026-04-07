@@ -121,6 +121,26 @@ class DatabaseService {
                 schema.properties[idx].config = PropertyConfig(target: nil)
             }
         }
+        // Set up formula config with empty expression
+        if newType == .formula {
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(formula: "")
+            } else if schema.properties[idx].config?.formula == nil {
+                schema.properties[idx].config?.formula = ""
+            }
+        }
+        // Set up lookup config
+        if newType == .lookup {
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
+            }
+        }
+        // Set up rollup config
+        if newType == .rollup {
+            if schema.properties[idx].config == nil {
+                schema.properties[idx].config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil, aggregationFunction: "count")
+            }
+        }
         try saveSchema(schema, at: dbPath)
         // Convert existing values where possible
         for i in rows.indices {
@@ -207,6 +227,9 @@ class DatabaseService {
         case .select: return .text(str)
         case .multiSelect: return .text(str)
         case .relation: return .relation(str)
+        case .formula: return .empty
+        case .lookup: return .empty
+        case .rollup: return .empty
         }
     }
 
@@ -621,6 +644,12 @@ class DatabaseService {
                 return .relationMany(items)
             }
             return .relation(value)
+        case .formula:
+            return .empty
+        case .lookup:
+            return .text(value)
+        case .rollup:
+            return .text(value)
         }
     }
 }

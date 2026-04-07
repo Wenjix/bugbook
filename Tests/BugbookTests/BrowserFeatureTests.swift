@@ -1,0 +1,143 @@
+import Foundation
+import XCTest
+@testable import Bugbook
+
+@MainActor
+final class BrowserFeatureTests: XCTestCase {
+    func testBrowserDocumentFactoryProducesBrowserOpenFile() {
+        let content = PaneContent.browserDocument()
+
+        guard case .document(let openFile) = content else {
+            XCTFail("Expected a document pane.")
+            return
+        }
+
+        XCTAssertEqual(openFile.kind, .browser)
+        XCTAssertTrue(openFile.isBrowser)
+        XCTAssertEqual(openFile.path, "bugbook://browser")
+        XCTAssertEqual(openFile.displayName, "Browser")
+        XCTAssertEqual(openFile.icon, "globe")
+        XCTAssertFalse(openFile.isEmptyTab)
+    }
+
+    func testTabKindBrowserFlags() {
+        XCTAssertTrue(TabKind.browser.isBrowser)
+        XCTAssertFalse(TabKind.browser.isMail)
+        XCTAssertFalse(TabKind.browser.isCalendar)
+        XCTAssertFalse(TabKind.browser.isMeetings)
+        XCTAssertFalse(TabKind.browser.isDatabase)
+    }
+
+    func testAppSettingsBrowserFieldsRoundTrip() throws {
+        var settings = AppSettings.default
+        settings.railPinned = true
+        settings.browserSearchEngine = .kagi
+        settings.browserChrome.showsBackForwardButtons = true
+        settings.browserChrome.showsStatusBar = true
+        settings.browserQuickLaunchItems = [
+            BrowserQuickLaunchItem(title: "Docs", url: "https://example.com", icon: "doc.text")
+        ]
+        settings.browserDefaultSaveFolder = "Research/Web"
+
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+
+        XCTAssertTrue(decoded.railPinned)
+        XCTAssertEqual(decoded.browserSearchEngine, .kagi)
+        XCTAssertTrue(decoded.browserChrome.showsBackForwardButtons)
+        XCTAssertTrue(decoded.browserChrome.showsStatusBar)
+        XCTAssertEqual(decoded.browserQuickLaunchItems, settings.browserQuickLaunchItems)
+        XCTAssertEqual(decoded.browserDefaultSaveFolder, "Research/Web")
+    }
+
+    func testSavedWebPageStoreRoundTripsAndUpdatesStatus() {
+        let directoryURL = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let store = SavedWebPageStore(directoryURL: directoryURL)
+        let workspacePath = "/tmp/browser-tests"
+        let record = SavedWebPageRecord(
+            title: "Example",
+            urlString: "https://example.com",
+            savedAt: Date(timeIntervalSince1970: 1_234),
+            folderPath: "/tmp/browser-tests/Web",
+            notePath: "/tmp/browser-tests/Web/Example.md",
+            status: .unread,
+            summary: "Summary"
+        )
+
+        store.upsert(record, in: workspacePath)
+        XCTAssertEqual(store.record(forURL: "https://example.com", in: workspacePath), record)
+
+        store.markStatus(.read, for: record.id, in: workspacePath)
+        XCTAssertEqual(store.record(forURL: "https://example.com", in: workspacePath)?.status, .read)
+
+        store.remove(recordID: record.id, in: workspacePath)
+        XCTAssertNil(store.record(forURL: "https://example.com", in: workspacePath))
+    }
+
+    func testBrowserPaneSnapshotStoreRoundTripsSnapshot() {
+        let directoryURL = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let store = BrowserPaneSnapshotStore(directoryURL: directoryURL)
+        let paneID = UUID()
+        let snapshot = BrowserPaneSnapshot(
+            paneID: paneID,
+            tabs: [
+                BrowserTabSnapshot(title: "Example", urlString: "https://example.com", pageZoom: 1.25)
+            ],
+            recentVisits: [
+                BrowserRecentVisit(title: "Example", urlString: "https://example.com", visitedAt: Date(timeIntervalSince1970: 42))
+            ],
+            isReadLaterDrawerOpen: true
+        )
+
+        store.save(snapshot)
+        XCTAssertEqual(store.snapshot(for: paneID), snapshot)
+
+        store.removeSnapshot(for: paneID)
+        XCTAssertNil(store.snapshot(for: paneID))
+    }
+
+    func testBrowserCleanupProposalUsesSavedAndDuplicateSignals() {
+        let directoryURL = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let workspacePath = "/tmp/browser-cleanup"
+        let savedStore = SavedWebPageStore(directoryURL: directoryURL.appendingPathComponent("saved", isDirectory: true))
+        savedStore.upsert(
+            SavedWebPageRecord(
+                title: "Saved",
+                urlString: "https://example.com/saved",
+                folderPath: "/tmp/browser-cleanup/Web",
+                notePath: "/tmp/browser-cleanup/Web/Saved.md"
+            ),
+            in: workspacePath
+        )
+
+        let snapshotStore = BrowserPaneSnapshotStore(directoryURL: directoryURL.appendingPathComponent("snapshots", isDirectory: true))
+        let browserManager = BrowserManager(snapshotStore: snapshotStore)
+        let paneID = UUID()
+        let session = browserManager.session(for: paneID)
+        let savedTab = BrowserTabState(title: "Saved", urlString: "https://example.com/saved")
+        let duplicateTab = BrowserTabState(title: "Duplicate", urlString: "https://example.com/dup")
+        let duplicateTab2 = BrowserTabState(title: "Duplicate Copy", urlString: "https://example.com/dup")
+        let mailTab = BrowserTabState(title: "Mail", urlString: "https://mail.google.com/mail/u/0/#inbox")
+        session.tabs = [savedTab, duplicateTab, duplicateTab2, mailTab]
+        session.selectedTabID = savedTab.id
+
+        let service = BrowserAgentService(savedPageStore: savedStore)
+        let proposals = service.proposeCleanup(for: paneID, browserManager: browserManager, workspacePath: workspacePath)
+
+        XCTAssertEqual(proposals.first(where: { $0.urlString == "https://example.com/saved" })?.decision, .close)
+        XCTAssertEqual(proposals.first(where: { $0.title == "Duplicate Copy" })?.decision, .close)
+        XCTAssertEqual(proposals.first(where: { $0.urlString == "https://mail.google.com/mail/u/0/#inbox" })?.decision, .close)
+    }
+
+    private func temporaryDirectory() -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+}

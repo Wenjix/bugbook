@@ -63,10 +63,10 @@ struct BugbookApp: App {
             }
 
             CommandGroup(after: .toolbar) {
-                Button("Toggle Sidebar") {
+                Button("Toggle Rail") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
-                .keyboardShortcut("b", modifiers: .command)
+                .keyboardShortcut("\\", modifiers: .command)
 
                 Divider()
 
@@ -80,6 +80,31 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("]", modifiers: .command)
 
+                Button("Find in Page") {
+                    NotificationCenter.default.post(name: .findInPane, object: nil)
+                }
+                .keyboardShortcut("f")
+
+                Button("Focus Address Bar") {
+                    NotificationCenter.default.post(name: .browserFocusAddressBar, object: nil)
+                }
+                .keyboardShortcut("l")
+
+                Button("Print Page") {
+                    NotificationCenter.default.post(name: .browserPrint, object: nil)
+                }
+                .keyboardShortcut("p")
+
+                Button("Previous Browser Tab") {
+                    NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
+                }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+
+                Button("Next Browser Tab") {
+                    NotificationCenter.default.post(name: .browserNextTab, object: nil)
+                }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+
                 Button("Quick Open") {
                     NotificationCenter.default.post(name: .quickOpen, object: nil)
                 }
@@ -88,12 +113,12 @@ struct BugbookApp: App {
                 Button("Quick Open (P)") {
                     NotificationCenter.default.post(name: .quickOpen, object: nil)
                 }
-                .keyboardShortcut("p")
+                .keyboardShortcut("p", modifiers: [.command, .shift])
 
-                Button("Chat") {
+                Button("Toggle Chat Drawer") {
                     NotificationCenter.default.post(name: .openAIPanel, object: nil)
                 }
-                .keyboardShortcut("i")
+                .keyboardShortcut("c", modifiers: [.command, .shift])
 
                 Button("Today's Note") {
                     NotificationCenter.default.post(name: .openDailyNote, object: nil)
@@ -114,6 +139,11 @@ struct BugbookApp: App {
                     NotificationCenter.default.post(name: .openCalendar, object: nil)
                 }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
+
+                Button("Browser") {
+                    NotificationCenter.default.post(name: .openBrowser, object: nil)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
 
                 Button("Home") {
                     NotificationCenter.default.post(name: .openGateway, object: nil)
@@ -359,10 +389,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
 
-        // Cmd+Option+1-9 for pane focus switching (by visual order)
+        // Cmd+Shift+1-9 for pane focus switching (by visual order)
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard flags == [.command, .option] else { return event }
+            guard flags == [.command, .shift] else { return event }
 
             let digitKeyCodes: [UInt16: Int] = [
                 18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8
@@ -420,12 +450,15 @@ extension Notification.Name {
     static let openMeetings = Notification.Name("openMeetings")
     static let openGateway = Notification.Name("openGateway")
     static let openTerminal = Notification.Name("openTerminal")
+    static let openBrowser = Notification.Name("openBrowser")
     static let toggleShortcutOverlay = Notification.Name("toggleShortcutOverlay")
     static let fileDeleted = Notification.Name("fileDeleted")
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")
     static let movePageToDir = Notification.Name("movePageToDir")
     static let addToSidebar = Notification.Name("addToSidebar")
+
+    static let findInPane = Notification.Name("findInPane")
 
     // Pane/Workspace system
     static let splitPaneRight = Notification.Name("splitPaneRight")
@@ -437,4 +470,19 @@ extension Notification.Name {
     static let movePaneFocusDown = Notification.Name("movePaneFocusDown")
     static let switchWorkspace = Notification.Name("switchWorkspace")
     static let focusPaneByIndex = Notification.Name("focusPaneByIndex")
+
+    static let browserFocusAddressBar = Notification.Name("browserFocusAddressBar")
+    static let browserNewTab = Notification.Name("browserNewTab")
+    static let browserCloseTab = Notification.Name("browserCloseTab")
+    static let browserBack = Notification.Name("browserBack")
+    static let browserForward = Notification.Name("browserForward")
+    static let browserFind = Notification.Name("browserFind")
+    static let browserPrint = Notification.Name("browserPrint")
+    static let browserSavePage = Notification.Name("browserSavePage")
+    static let browserZoomIn = Notification.Name("browserZoomIn")
+    static let browserZoomOut = Notification.Name("browserZoomOut")
+    static let browserZoomReset = Notification.Name("browserZoomReset")
+    static let browserPreviousTab = Notification.Name("browserPreviousTab")
+    static let browserNextTab = Notification.Name("browserNextTab")
+    static let browserOpenCleanup = Notification.Name("browserOpenCleanup")
 }

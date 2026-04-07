@@ -7,10 +7,13 @@ struct MobilePageEditorView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var content: String = ""
+    @State private var blocks: [EditableBlock] = []
+    @State private var frontmatter: String = ""  // preserved on edit, prepended on save
     @State private var isLoaded = false
     @State private var isEditing = false
     @State private var hasUnsavedChanges = false
     @State private var debounceTimer: Timer?
+    @State private var focusedBlockId: UUID?
 
     private var pageTitle: String {
         let filename = (note.path as NSString).lastPathComponent
@@ -25,33 +28,56 @@ struct MobilePageEditorView: View {
             if !isLoaded {
                 ProgressView()
             } else if isEditing {
-                TextEditor(text: $content)
-                    .padding(12)
-                    .font(.body)
-                    .onChange(of: content) { _, _ in
-                        scheduleSave()
+                VStack(spacing: 0) {
+                    ScrollView {
+                        MobileBlockEditorView(
+                            blocks: $blocks,
+                            onBlocksChanged: { scheduleSave() }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
+
+                    BlockEditingToolbar(
+                        blocks: $blocks,
+                        focusedBlockId: focusedBlockId,
+                        onBlocksChanged: { scheduleSave() }
+                    )
+                }
             } else {
                 ScrollView {
                     MobileMarkdownView(content: content)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    enterEditMode()
+                }
             }
         }
         .navigationTitle(pageTitle)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
-            ToolbarItem {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
-                    if isEditing { saveNow() }
-                    isEditing.toggle()
+                    if isEditing {
+                        exitEditMode()
+                    } else {
+                        enterEditMode()
+                    }
                 } label: {
-                    Label(isEditing ? "Preview" : "Edit", systemImage: isEditing ? "pencil.slash" : "pencil")
+                    Label(isEditing ? "Done" : "Edit", systemImage: isEditing ? "checkmark" : "pencil")
                 }
+                .help(isEditing ? "Finish editing" : "Edit page")
             }
         }
         .onAppear {
             content = workspace.loadFile(at: note.path)
+            frontmatter = extractFrontmatter(from: content)
+            blocks = BlockMarkdownConverter.parse(content)
             isLoaded = true
         }
         .onDisappear {
@@ -62,6 +88,17 @@ struct MobilePageEditorView: View {
                 saveNow()
             }
         }
+    }
+
+    private func enterEditMode() {
+        blocks = BlockMarkdownConverter.parse(content)
+        isEditing = true
+    }
+
+    private func exitEditMode() {
+        saveNow()
+        content = BlockMarkdownConverter.serialize(blocks)
+        isEditing = false
     }
 
     private func scheduleSave() {
@@ -77,6 +114,35 @@ struct MobilePageEditorView: View {
         debounceTimer = nil
         guard hasUnsavedChanges else { return }
         hasUnsavedChanges = false
-        workspace.saveFile(at: note.path, content: content)
+        let body = BlockMarkdownConverter.serialize(blocks)
+        let serialized = frontmatter.isEmpty ? body : frontmatter + "\n" + body
+        content = serialized
+        workspace.saveFile(at: note.path, content: serialized)
+    }
+
+    /// Extract YAML frontmatter + HTML comments from the start of a file
+    private func extractFrontmatter(from text: String) -> String {
+        var lines: [String] = []
+        let allLines = text.components(separatedBy: .newlines)
+        var i = 0
+
+        // YAML frontmatter
+        if i < allLines.count && allLines[i].trimmingCharacters(in: .whitespaces) == "---" {
+            lines.append(allLines[i])
+            i += 1
+            while i < allLines.count {
+                lines.append(allLines[i])
+                if allLines[i].trimmingCharacters(in: .whitespaces) == "---" { i += 1; break }
+                i += 1
+            }
+        }
+
+        // HTML comments
+        while i < allLines.count && allLines[i].trimmingCharacters(in: .whitespaces).hasPrefix("<!--") {
+            lines.append(allLines[i])
+            i += 1
+        }
+
+        return lines.isEmpty ? "" : lines.joined(separator: "\n")
     }
 }

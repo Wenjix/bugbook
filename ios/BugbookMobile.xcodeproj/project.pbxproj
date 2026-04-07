@@ -9,38 +9,75 @@
 /* Begin PBXBuildFile section */
 		003C514FE488F6B4A7093B68 /* MobileMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */; };
 		1075E903A403FCDECE74CCAF /* MobileWorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA5D2DE7BCD25E9C9272383 /* MobileWorkspaceService.swift */; };
+		150A0BDE24C4B7C498CBE7FE /* MobileDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */; };
 		186529056A475981F54CC0EE /* MobileDatabaseRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F345F63A010D58A27E752557 /* MobileDatabaseRowView.swift */; };
 		21075E5928F454EA0CF1CE48 /* MobileAgentHubViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96C36D3DA3FE4DC21187B5C /* MobileAgentHubViewModel.swift */; };
 		2C8D2C7D75E1A7AF5AA40620 /* BugbookCore in Frameworks */ = {isa = PBXBuildFile; productRef = 392A30686598B44A8DFD7C80 /* BugbookCore */; };
+		37BEC47701CC1993D6D188B6 /* MobileFilterSortView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 560F6C106786AE9CAEA8EEE6 /* MobileFilterSortView.swift */; };
 		3DD56C2086D8293161F081B5 /* MobileAgentHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92349C20672F074C124ABE0 /* MobileAgentHubView.swift */; };
-		53B31E4AE4D91B4CC3F4BF0A /* MobileNotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92913BD04BDDD4708015E297 /* MobileNotesView.swift */; };
+		3F4D4D2BDC83F568265DF990 /* MobileBlockEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E308C2F4405D356932C49B4 /* MobileBlockEditorView.swift */; };
+		59DFAFCE96F36A196CD05173 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 972E5B3AC1E550000B745F7C /* ShareViewController.swift */; };
 		6A3326F45A960AD3B3BB7AEE /* MobileSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625CAA5B82D2405AB424840C /* MobileSearchView.swift */; };
+		81956037EBF58167233BD78C /* MobileDatabaseViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261CC3AF3139C7517BBB0A2F /* MobileDatabaseViewState.swift */; };
 		97F837C37EF93A792787838F /* MobileNoteFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 847215B2427AF5A5283AFD4C /* MobileNoteFile.swift */; };
 		9ABBFAFAB1A5D5752E6B93B5 /* MobilePageEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36A47C90345B4FBA93572E35 /* MobilePageEditorView.swift */; };
 		BE28F102D9C1BF2D3865B10A /* MobileDatabaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7666F01CC3B53CEF298D74E4 /* MobileDatabaseView.swift */; };
-		CDBC085226E77E3ACE8352F2 /* MobileTodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0609EEEE3F32DD2104365025 /* MobileTodayView.swift */; };
+		C53AFBF30B3888B16596845B /* BugbookCore in Frameworks */ = {isa = PBXBuildFile; productRef = B33EBBD7517867BFB3BCC806 /* BugbookCore */; };
 		DA61509FF8863E8E9097ECDB /* BugbookMobileiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9342DFF6EB743BE4C4E5FA /* BugbookMobileiOSApp.swift */; };
-		E30C7F6B2E2FE79175FC4E5B /* MobileDatabaseListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C075E7684F7BC2304FC95157 /* MobileDatabaseListView.swift */; };
+		DB67FE57DD5749998AA2AB72 /* MobileSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23045C63ED533D7B65DCC916 /* MobileSettingsView.swift */; };
+		E3924009B7AE1F805D1DAFB7 /* MobileSchemaEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119217E3806ACE9F82D0B729 /* MobileSchemaEditorView.swift */; };
+		F3FE4EBA1DCA4421E88CD30B /* BugbookShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4F27094F3E8314F7FE3FC0E1 /* BugbookShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F7EE6D302B3760D219B5EAB5 /* MobileRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48C0E8DBED92B6C420662583 /* MobileRootView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		9F3BCF93D655E2E7B007BEF0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9C4C260448AFA8355793AEC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8CE3DB17AC81B2A1B6F31689;
+			remoteInfo = BugbookShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		292CF8B535927DFDCAF75735 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F3FE4EBA1DCA4421E88CD30B /* BugbookShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		0609EEEE3F32DD2104365025 /* MobileTodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTodayView.swift; sourceTree = "<group>"; };
+		119217E3806ACE9F82D0B729 /* MobileSchemaEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSchemaEditorView.swift; sourceTree = "<group>"; };
+		23045C63ED533D7B65DCC916 /* MobileSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSettingsView.swift; sourceTree = "<group>"; };
+		261CC3AF3139C7517BBB0A2F /* MobileDatabaseViewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDatabaseViewState.swift; sourceTree = "<group>"; };
 		36A47C90345B4FBA93572E35 /* MobilePageEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePageEditorView.swift; sourceTree = "<group>"; };
 		408DD1BD4A2806883B7D13DB /* BugbookMobileApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BugbookMobileApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		48C0E8DBED92B6C420662583 /* MobileRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileRootView.swift; sourceTree = "<group>"; };
+		4F27094F3E8314F7FE3FC0E1 /* BugbookShareExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = BugbookShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		560F6C106786AE9CAEA8EEE6 /* MobileFilterSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFilterSortView.swift; sourceTree = "<group>"; };
+		60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDesignTokens.swift; sourceTree = "<group>"; };
 		625CAA5B82D2405AB424840C /* MobileSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSearchView.swift; sourceTree = "<group>"; };
 		676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileMarkdownView.swift; sourceTree = "<group>"; };
+		6E308C2F4405D356932C49B4 /* MobileBlockEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileBlockEditorView.swift; sourceTree = "<group>"; };
 		7666F01CC3B53CEF298D74E4 /* MobileDatabaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDatabaseView.swift; sourceTree = "<group>"; };
 		847215B2427AF5A5283AFD4C /* MobileNoteFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileNoteFile.swift; sourceTree = "<group>"; };
 		88FF68C92DC0F881930BAB51 /* BugbookMobile.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BugbookMobile.entitlements; sourceTree = "<group>"; };
 		8FA4EC15AFF726A278291B6D /* bugbook */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bugbook; path = ..; sourceTree = SOURCE_ROOT; };
-		92913BD04BDDD4708015E297 /* MobileNotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileNotesView.swift; sourceTree = "<group>"; };
-		C075E7684F7BC2304FC95157 /* MobileDatabaseListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDatabaseListView.swift; sourceTree = "<group>"; };
+		972E5B3AC1E550000B745F7C /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		CD9342DFF6EB743BE4C4E5FA /* BugbookMobileiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BugbookMobileiOSApp.swift; sourceTree = "<group>"; };
 		D92349C20672F074C124ABE0 /* MobileAgentHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAgentHubView.swift; sourceTree = "<group>"; };
+		DB8BED037C57550FA331556A /* BugbookShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BugbookShareExtension.entitlements; sourceTree = "<group>"; };
 		E96C36D3DA3FE4DC21187B5C /* MobileAgentHubViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAgentHubViewModel.swift; sourceTree = "<group>"; };
 		EBA5D2DE7BCD25E9C9272383 /* MobileWorkspaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceService.swift; sourceTree = "<group>"; };
+		EFC7202F80EDA42E495FD49E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		F345F63A010D58A27E752557 /* MobileDatabaseRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDatabaseRowView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -53,6 +90,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		69B51E9A792BEC4EE7BE4320 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C53AFBF30B3888B16596845B /* BugbookCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -62,6 +107,7 @@
 				D27BC83EAFF663B46C407A45 /* App */,
 				FF41CECE4D45359BBCEF6638 /* BugbookMobile */,
 				7355C073AEC18806C5DD024F /* Packages */,
+				AF1A04A7060A21EFAFB37B3B /* ShareExtension */,
 				2CD5A03DC5535A121B113AAC /* Products */,
 			);
 			sourceTree = "<group>";
@@ -70,6 +116,7 @@
 			isa = PBXGroup;
 			children = (
 				408DD1BD4A2806883B7D13DB /* BugbookMobileApp.app */,
+				4F27094F3E8314F7FE3FC0E1 /* BugbookShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -90,6 +137,24 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		ABC3AAD8F167BD34A01A3E4A /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		AF1A04A7060A21EFAFB37B3B /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				DB8BED037C57550FA331556A /* BugbookShareExtension.entitlements */,
+				EFC7202F80EDA42E495FD49E /* Info.plist */,
+				972E5B3AC1E550000B745F7C /* ShareViewController.swift */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
 		B05E150363EEA3857A7E22C2 /* Services */ = {
 			isa = PBXGroup;
 			children = (
@@ -102,15 +167,16 @@
 			isa = PBXGroup;
 			children = (
 				D92349C20672F074C124ABE0 /* MobileAgentHubView.swift */,
-				C075E7684F7BC2304FC95157 /* MobileDatabaseListView.swift */,
+				6E308C2F4405D356932C49B4 /* MobileBlockEditorView.swift */,
 				F345F63A010D58A27E752557 /* MobileDatabaseRowView.swift */,
 				7666F01CC3B53CEF298D74E4 /* MobileDatabaseView.swift */,
+				560F6C106786AE9CAEA8EEE6 /* MobileFilterSortView.swift */,
 				676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */,
-				92913BD04BDDD4708015E297 /* MobileNotesView.swift */,
 				36A47C90345B4FBA93572E35 /* MobilePageEditorView.swift */,
 				48C0E8DBED92B6C420662583 /* MobileRootView.swift */,
+				119217E3806ACE9F82D0B729 /* MobileSchemaEditorView.swift */,
 				625CAA5B82D2405AB424840C /* MobileSearchView.swift */,
-				0609EEEE3F32DD2104365025 /* MobileTodayView.swift */,
+				23045C63ED533D7B65DCC916 /* MobileSettingsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -128,6 +194,7 @@
 			isa = PBXGroup;
 			children = (
 				E96C36D3DA3FE4DC21187B5C /* MobileAgentHubViewModel.swift */,
+				261CC3AF3139C7517BBB0A2F /* MobileDatabaseViewState.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -135,6 +202,7 @@
 		FF41CECE4D45359BBCEF6638 /* BugbookMobile */ = {
 			isa = PBXGroup;
 			children = (
+				ABC3AAD8F167BD34A01A3E4A /* Extensions */,
 				60CA93045E5AFF3F2714495D /* Models */,
 				B05E150363EEA3857A7E22C2 /* Services */,
 				EF068C7703A2F618BD149117 /* ViewModels */,
@@ -153,10 +221,12 @@
 			buildPhases = (
 				529E12DB124847A1A74F89B3 /* Sources */,
 				48674D56E8D5D546CF02A597 /* Frameworks */,
+				292CF8B535927DFDCAF75735 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				2FD3CDAE5554FB8C2529FBE1 /* PBXTargetDependency */,
 			);
 			name = BugbookMobileApp;
 			packageProductDependencies = (
@@ -166,6 +236,25 @@
 			productReference = 408DD1BD4A2806883B7D13DB /* BugbookMobileApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		8CE3DB17AC81B2A1B6F31689 /* BugbookShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD3B2345D04BB1BE2C1EE2EC /* Build configuration list for PBXNativeTarget "BugbookShareExtension" */;
+			buildPhases = (
+				DD6E40E539490E6B1A09D64F /* Sources */,
+				69B51E9A792BEC4EE7BE4320 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BugbookShareExtension;
+			packageProductDependencies = (
+				B33EBBD7517867BFB3BCC806 /* BugbookCore */,
+			);
+			productName = BugbookShareExtension;
+			productReference = 4F27094F3E8314F7FE3FC0E1 /* BugbookShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -174,6 +263,14 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					411175EE1E9CC8339F26E33D = {
+						DevelopmentTeam = H9N9P29TX5;
+					};
+					8CE3DB17AC81B2A1B6F31689 = {
+						DevelopmentTeam = H9N9P29TX5;
+					};
+				};
 			};
 			buildConfigurationList = 0BDEF796E8DFF9F95F9E5784 /* Build configuration list for PBXProject "BugbookMobile" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -193,6 +290,7 @@
 			projectRoot = "";
 			targets = (
 				411175EE1E9CC8339F26E33D /* BugbookMobileApp */,
+				8CE3DB17AC81B2A1B6F31689 /* BugbookShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -205,21 +303,40 @@
 				DA61509FF8863E8E9097ECDB /* BugbookMobileiOSApp.swift in Sources */,
 				3DD56C2086D8293161F081B5 /* MobileAgentHubView.swift in Sources */,
 				21075E5928F454EA0CF1CE48 /* MobileAgentHubViewModel.swift in Sources */,
-				E30C7F6B2E2FE79175FC4E5B /* MobileDatabaseListView.swift in Sources */,
+				3F4D4D2BDC83F568265DF990 /* MobileBlockEditorView.swift in Sources */,
 				186529056A475981F54CC0EE /* MobileDatabaseRowView.swift in Sources */,
 				BE28F102D9C1BF2D3865B10A /* MobileDatabaseView.swift in Sources */,
+				81956037EBF58167233BD78C /* MobileDatabaseViewState.swift in Sources */,
+				150A0BDE24C4B7C498CBE7FE /* MobileDesignTokens.swift in Sources */,
+				37BEC47701CC1993D6D188B6 /* MobileFilterSortView.swift in Sources */,
 				003C514FE488F6B4A7093B68 /* MobileMarkdownView.swift in Sources */,
 				97F837C37EF93A792787838F /* MobileNoteFile.swift in Sources */,
-				53B31E4AE4D91B4CC3F4BF0A /* MobileNotesView.swift in Sources */,
 				9ABBFAFAB1A5D5752E6B93B5 /* MobilePageEditorView.swift in Sources */,
 				F7EE6D302B3760D219B5EAB5 /* MobileRootView.swift in Sources */,
+				E3924009B7AE1F805D1DAFB7 /* MobileSchemaEditorView.swift in Sources */,
 				6A3326F45A960AD3B3BB7AEE /* MobileSearchView.swift in Sources */,
-				CDBC085226E77E3ACE8352F2 /* MobileTodayView.swift in Sources */,
+				DB67FE57DD5749998AA2AB72 /* MobileSettingsView.swift in Sources */,
 				1075E903A403FCDECE74CCAF /* MobileWorkspaceService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DD6E40E539490E6B1A09D64F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				59DFAFCE96F36A196CD05173 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2FD3CDAE5554FB8C2529FBE1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8CE3DB17AC81B2A1B6F31689 /* BugbookShareExtension */;
+			targetProxy = 9F3BCF93D655E2E7B007BEF0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		3D827F42F4DA584514774FD3 /* Debug */ = {
@@ -284,6 +401,46 @@
 			};
 			name = Debug;
 		};
+		66EB18DC62E3BD1716A6E5CE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/BugbookShareExtension.entitlements;
+				DEVELOPMENT_TEAM = H9N9P29TX5;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.BugbookMobile.ShareExtension;
+				PRODUCT_NAME = BugbookShareExtension;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		74E88E2A5394FE65FF6AB64A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/BugbookShareExtension.entitlements;
+				DEVELOPMENT_TEAM = H9N9P29TX5;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.BugbookMobile.ShareExtension;
+				PRODUCT_NAME = BugbookShareExtension;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		787D2BBE8A494373532BC0DF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -345,9 +502,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/BugbookMobile.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = H9N9P29TX5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Bugbook;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Bugbook uses the camera to capture photos for your notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Bugbook uses your microphone to record audio notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Bugbook uses your photo library to embed images in your notes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -368,9 +530,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/BugbookMobile.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = H9N9P29TX5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Bugbook;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Bugbook uses the camera to capture photos for your notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Bugbook uses your microphone to record audio notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Bugbook uses your photo library to embed images in your notes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -406,6 +573,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		BD3B2345D04BB1BE2C1EE2EC /* Build configuration list for PBXNativeTarget "BugbookShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				74E88E2A5394FE65FF6AB64A /* Debug */,
+				66EB18DC62E3BD1716A6E5CE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -417,6 +593,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		392A30686598B44A8DFD7C80 /* BugbookCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BugbookCore;
+		};
+		B33EBBD7517867BFB3BCC806 /* BugbookCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BugbookCore;
 		};

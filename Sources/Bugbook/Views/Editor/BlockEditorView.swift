@@ -35,6 +35,10 @@ struct BlockEditorView: View {
     @State private var blockMoveDragState: BlockMoveDragState?
     @State private var autoScrollTimer: Timer?
     @State private var autoScrollSpeed: CGFloat = 0
+    private static let deleteKeys: Set<KeyEquivalent> = [
+        .delete,
+        .init(Character(UnicodeScalar(127))), // backspace
+    ]
     @FocusState private var isEditorFocused: Bool
 
     var body: some View {
@@ -72,15 +76,8 @@ struct BlockEditorView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($isEditorFocused)
-        .onKeyPress(.delete) {
-            guard !document.selectedBlockIds.isEmpty,
-                  document.focusedBlockId == nil else { return .ignored }
-            document.deleteSelectedBlocks()
-            return .handled
-        }
-        .onKeyPress(.init(Character(UnicodeScalar(127)))) { // backspace
-            guard !document.selectedBlockIds.isEmpty,
-                  document.focusedBlockId == nil else { return .ignored }
+        .onKeyPress(keys: Self.deleteKeys) { _ in
+            guard !document.selectedBlockIds.isEmpty else { return .ignored }
             document.deleteSelectedBlocks()
             return .handled
         }

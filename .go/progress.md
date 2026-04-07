@@ -1,47 +1,41 @@
 # Go Run — 2026-04-03
 
-Started: 12:39 AM
-Finished: 1:18 AM
-Duration: 39m
-Time utilization: 39m/8h (8%)
+Started: 11:00 PM
+Focus: Bugbook iOS app — full parity with desktop
 
-## Completed (15 tickets, all verified via build)
-- [x] Terminal paste fix (row_8h9iqr) — direct — PASS
-- [x] Terminal history wipe fix (row_23xqr5) — direct — PASS
-- [x] Ghostty config import — direct — PASS
-- [x] Meetings rename (row_wcsgow) — direct — PASS (already correct)
-- [x] Meeting block padding (row_k1pfpn) — direct — PASS
-- [x] Callout block fix (row_fnmxx9) — direct — PASS
-- [x] Outline/TOC fix (row_u9mndd) — direct — PASS
-- [x] Heading toggles (row_b7h2vl) — Claude agent — PASS (2/3 behaviors)
-- [x] TableBlockView fix (row_srmgse) — direct — PASS
-- [x] Kebab menu fix (row_0lsztg) — direct — PASS
-- [x] Chat redesign (row_qm7iyh) — direct — PASS
-- [x] Mention picker styling (row_dimm5g) — direct — PASS
-- [x] Cmd+K navigation fix (row_uqw8vz) — direct — PASS
-- [x] Mail auto-refresh (row_iibyiq) — direct — PASS
-- [x] Table grouped collapse (row_6pk1v8) — direct — PASS
+## Completed (9 tasks, all verified via build)
 
-## Review Queue (15 tickets)
-All moved to Review status in Bugbook.
+- [x] Rich block editor — headings, lists, tasks, code, blockquotes, images, formatting toolbar
+- [x] Database table view — all field types rendered, swipe to delete, row navigation
+- [x] Database kanban view — horizontal scroll columns by select property, cards with badges
+- [x] Database calendar view — month grid, day detail, date property rows
+- [x] View management — view tabs, sort/filter UI, column visibility, grouping, new view creation
+- [x] Full property editor — relation picker, rich dates, formula/lookup/rollup, URL/email actions
+- [x] Schema management — add/rename/delete properties, select options with colors
+- [x] Quick capture — text, photo library, camera, quick action pills for tasks/lists
+- [x] Navigation polish — 5-tab layout (Today/Notes/Databases/Agents/Settings), settings view
 
-## Partial
-- Heading toggles: Cmd+Shift+Enter and auto-nesting work. Enter-exits-toggle not yet implemented.
+## Files Created
+- `Sources/BugbookMobile/Views/MobileBlockEditorView.swift` — Block editor + toolbar
+- `Sources/BugbookMobile/ViewModels/MobileDatabaseViewState.swift` — Shared database state
+- `Sources/BugbookMobile/Views/MobileFilterSortView.swift` — Filter/sort/view options
+- `Sources/BugbookMobile/Views/MobileSchemaEditorView.swift` — Schema + property editor
+- `Sources/BugbookMobile/Views/MobileSettingsView.swift` — Settings view
 
-## Skipped (valid reasons)
-- Google OAuth verification (row_rv254w) — external blocker, needs domain + Google Console
-- Canopy tickets (4) — different repo
-- Mobile capture UX (row_vk26pw) — research note, no implementation
-- Live knowledge retrieval (row_25nsk1) — research/future
-- Lookup/Rollup/Formula fields — medium priority, larger scope
+## Files Modified
+- `MobileDatabaseView.swift` — Complete rewrite with table/kanban/calendar views
+- `MobileDatabaseRowView.swift` — Full property editor, relation picker, body editor
+- `MobilePageEditorView.swift` — Block editor integration
+- `MobileRootView.swift` — 5-tab navigation with settings
+- `MobileTodayView.swift` — Quick capture with photo/camera, action pills
+- `ios/project.yml` — Camera/photo library permissions
+- `ios/BugbookMobile.xcodeproj/` — Regenerated
 
-## Discoveries
-- ghostty_init(0, nil) prevents parent terminal TTY manipulation
-- ghostty_config_load_default_files loads ~/.config/ghostty/config
-- Cmd+K nav failed 3 times due to SwiftUI transaction swallowing @State changes; DispatchQueue.main.async fixes it
-- TableBlockView had duplicate grip dots from both BlockCellView and its own gripDotsColumn
-- Multiple Bugbook processes (release, Xcode debug, swift build) can interfere
+## Build Status
+BugbookMobile target: PASSING (0 errors, 0 warnings)
 
-## How to Review
-git checkout dev
-swift build && .build/arm64-apple-macosx/debug/Bugbook
+## How to Test
+1. Open `ios/BugbookMobile.xcodeproj` in Xcode
+2. Select an iPhone simulator or physical device
+3. Build and run
+4. Verify iCloud sync by checking if workspace matches desktop app

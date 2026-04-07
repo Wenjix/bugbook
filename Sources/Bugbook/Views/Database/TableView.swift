@@ -26,11 +26,14 @@ struct TableView: View {
     var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
     var onListDatabases: (() -> [RelationDatabaseCandidate])?
     var onSetRelationTarget: ((String, String) -> Void)?
+    var onResolveLookup: ((DatabaseRow, PropertyDefinition) -> String)?
+    var onResolveRollup: ((DatabaseRow, PropertyDefinition) -> String)?
     var onResizeColumn: ((String, CGFloat) -> Void)?
     var onReorderRows: ((String, String?) -> Void)?
     var onClearSorts: (() -> Void)?
     var onNewRow: (() -> Void)?
     var onSetCalculation: ((String, String?) -> Void)?
+    var onUpdateFormula: ((String, String) -> Void)?
     var calculationResults: [String: String] = [:]
     var scrollToRowId: String? = nil
     var showVerticalLines: Bool = true
@@ -248,7 +251,8 @@ struct TableView: View {
                     onRename: onRenameProperty,
                     onChangeType: onChangePropertyType,
                     onToggleColumn: onToggleColumn,
-                    onDelete: onDeleteProperty
+                    onDelete: onDeleteProperty,
+                    onUpdateFormula: onUpdateFormula
                 )
                 .frame(width: columnWidth(for: prop))
                 .overlay(alignment: .trailing) {
@@ -389,6 +393,7 @@ struct TableView: View {
 
                     ForEach(visibleProperties) { prop in
                         let cellId = "\(row.wrappedValue.id)_\(prop.id)"
+                        let formulaInfo = prop.type == .formula ? evaluateFormula(prop, row: row.wrappedValue, schema: schema) : (nil, false)
                         PropertyEditorView(
                             definition: prop,
                             value: propertyBinding(row: row, propertyId: prop.id),
@@ -399,7 +404,11 @@ struct TableView: View {
                             onDeleteOption: onDeleteSelectOption,
                             onLoadRelationRows: prop.type == .relation ? { onLoadRelationRows?(prop) ?? [] } : nil,
                             onListDatabases: prop.type == .relation ? { onListDatabases?() ?? [] } : nil,
-                            onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil
+                            onSetRelationTarget: prop.type == .relation ? onSetRelationTarget : nil,
+                            formulaResult: formulaInfo.0,
+                            formulaError: formulaInfo.1,
+                            lookupDisplayValue: prop.type == .lookup ? onResolveLookup?(row.wrappedValue, prop) : nil,
+                            rollupDisplayValue: prop.type == .rollup ? onResolveRollup?(row.wrappedValue, prop) : nil
                         )
                         .padding(.horizontal, DatabaseZoomMetrics.size(8))
                         .frame(width: columnWidth(for: prop), alignment: .leading)
@@ -604,6 +613,9 @@ struct TableView: View {
             }
         )
     }
+
+    /// Evaluate a formula property against a row's values. Returns (displayText, isError).
+    // Formula evaluation is in DatabaseViewHelpers.evaluateFormula(_:row:schema:)
 
     private func titleBinding(row: Binding<DatabaseRow>) -> Binding<String> {
         let titlePropId = schema.titleProperty?.id
@@ -1077,14 +1089,17 @@ private struct ColumnHeaderCell: View {
     var onChangeType: ((String, PropertyType) -> Void)?
     var onToggleColumn: ((String) -> Void)?
     var onDelete: ((String) -> Void)?
+    var onUpdateFormula: ((String, String) -> Void)?
 
     @State private var isHovered = false
     @State private var showPopover = false
     @State private var editingName: String = ""
+    @State private var editingFormula: String = ""
 
     var body: some View {
         Button {
             editingName = prop.name
+            editingFormula = prop.config?.formula ?? ""
             showPopover = true
         } label: {
             HStack(spacing: 6) {
@@ -1158,6 +1173,22 @@ private struct ColumnHeaderCell: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+            }
+
+            if prop.type == .formula {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Formula")
+                        .font(DatabaseZoomMetrics.font(12))
+                        .foregroundStyle(.secondary)
+                    TextField("e.g. prop_price * prop_quantity", text: $editingFormula)
+                        .textFieldStyle(.roundedBorder)
+                        .font(DatabaseZoomMetrics.font(12).monospaced())
+                        .focusEffectDisabled()
+                        .onSubmit {
+                            onUpdateFormula?(prop.id, editingFormula)
+                            showPopover = false
+                        }
+                }
             }
 
             Divider()

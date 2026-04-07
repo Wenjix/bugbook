@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AppearanceSettingsView: View {
-    var appState: AppState
+    @Bindable var appState: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -37,6 +37,13 @@ struct AppearanceSettingsView: View {
                         appState.settings.theme = .system
                     }
                 }
+            }
+
+            SettingsSection("Navigation Rail") {
+                Toggle("Pin rail open", isOn: $appState.settings.railPinned)
+                Text("When off, the rail stays hidden until you hover the left edge or press Cmd+\\.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
         }
     }

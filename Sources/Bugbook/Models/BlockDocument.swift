@@ -110,13 +110,23 @@ class BlockDocument {
     }
 
     init(markdown: String) {
-        let (metadata, content) = MarkdownBlockParser.parseMetadata(markdown)
-        self.persistsBlockIDs = content.contains("<!-- block-id:")
-        self.icon = metadata.icon
-        self.coverUrl = metadata.coverUrl
-        self.coverPosition = metadata.coverPosition
-        self.fullWidth = metadata.fullWidth
-        self.blocks = MarkdownBlockParser.parse(content)
+        let parsed = Self.parseDocument(markdown)
+        self.persistsBlockIDs = parsed.persistsBlockIDs
+        self.icon = parsed.metadata.icon
+        self.coverUrl = parsed.metadata.coverUrl
+        self.coverPosition = parsed.metadata.coverPosition
+        self.fullWidth = parsed.metadata.fullWidth
+        self.blocks = parsed.blocks
+    }
+
+    func replaceMarkdown(_ markdown: String) {
+        let parsed = Self.parseDocument(markdown)
+        persistsBlockIDs = parsed.persistsBlockIDs
+        icon = parsed.metadata.icon
+        coverUrl = parsed.metadata.coverUrl
+        coverPosition = parsed.metadata.coverPosition
+        fullWidth = parsed.metadata.fullWidth
+        blocks = parsed.blocks
     }
 
     func block(for id: UUID) -> Block? {
@@ -1376,8 +1386,7 @@ class BlockDocument {
         guard let path = filePath,
               let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
         saveUndo()
-        let (_, body) = MarkdownBlockParser.parseMetadata(content)
-        blocks = MarkdownBlockParser.parse(body)
+        replaceMarkdown(content)
         ensureTrailingParagraph()
         clearBlockSelection()
         clearMultiBlockTextSelection()
@@ -1521,6 +1530,7 @@ class BlockDocument {
 
     func beginMarqueeBlockSelection() {
         clearMultiBlockTextSelection()
+        focusedBlockId = nil
         blockSelectionAnchor = nil
         selectedBlockIds.removeAll()
         selectionRect = nil
@@ -1841,6 +1851,19 @@ class BlockDocument {
     private func writeTextToPasteboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private static func parseDocument(_ markdown: String) -> (
+        metadata: MarkdownBlockParser.Metadata,
+        blocks: [Block],
+        persistsBlockIDs: Bool
+    ) {
+        let (metadata, content) = MarkdownBlockParser.parseMetadata(markdown)
+        return (
+            metadata: metadata,
+            blocks: MarkdownBlockParser.parse(content),
+            persistsBlockIDs: content.contains("<!-- block-id:")
+        )
     }
 
 }

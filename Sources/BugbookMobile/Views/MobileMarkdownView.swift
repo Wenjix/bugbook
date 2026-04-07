@@ -30,6 +30,20 @@ private enum MdParser {
         var blocks: [MdBlock] = []
         var i = 0
 
+        // Skip YAML frontmatter
+        if i < lines.count && lines[i].trimmingCharacters(in: .whitespaces) == "---" {
+            i += 1
+            while i < lines.count {
+                if lines[i].trimmingCharacters(in: .whitespaces) == "---" { i += 1; break }
+                i += 1
+            }
+        }
+
+        // Skip HTML comments at the start (e.g. <!-- icon:... -->)
+        while i < lines.count && lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("<!--") {
+            i += 1
+        }
+
         while i < lines.count {
             let line = lines[i]
 

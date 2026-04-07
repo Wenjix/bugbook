@@ -269,3 +269,25 @@ func uniqueDatePropertyName(in schema: DatabaseSchema) -> String {
     }
     return "Date \(suffix)"
 }
+
+/// Evaluate a formula property against a row. Returns (displayText, isError).
+func evaluateFormula(_ prop: PropertyDefinition, row: DatabaseRow, schema: DatabaseSchema) -> (String?, Bool) {
+    guard let expression = prop.config?.formula, !expression.isEmpty else {
+        return (nil, false)
+    }
+    var values: [String: Double] = [:]
+    for schemaProp in schema.properties where schemaProp.type == .number {
+        if case .number(let n) = row.properties[schemaProp.id] {
+            values[schemaProp.id] = n
+        }
+    }
+    do {
+        let result = try FormulaEngine.evaluate(expression: expression, values: values)
+        let display = result == result.rounded() && abs(result) < 1e15
+            ? String(Int(result))
+            : String(format: "%.2f", result)
+        return (display, false)
+    } catch {
+        return (error.localizedDescription, true)
+    }
+}

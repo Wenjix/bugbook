@@ -17,6 +17,7 @@ struct PaneTreeView: View {
     let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
     var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
+    var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
 
     var body: some View {
         switch node {
@@ -29,7 +30,8 @@ struct PaneTreeView: View {
                 documentContentBuilder: documentContentBuilder,
                 terminalContentBuilder: terminalContentBuilder,
                 breadcrumbProvider: breadcrumbProvider,
-                onBreadcrumbNavigate: onBreadcrumbNavigate
+                onBreadcrumbNavigate: onBreadcrumbNavigate,
+                blockDocumentLookup: blockDocumentLookup
             )
         case .split(let split):
             splitView(split)
@@ -56,7 +58,8 @@ struct PaneTreeView: View {
                         documentContentBuilder: documentContentBuilder,
                         terminalContentBuilder: terminalContentBuilder,
                         breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate
+                        onBreadcrumbNavigate: onBreadcrumbNavigate,
+                        blockDocumentLookup: blockDocumentLookup
                     )
                     .frame(width: firstSize(total: totalSize, ratio: split.ratio))
 
@@ -70,7 +73,8 @@ struct PaneTreeView: View {
                         documentContentBuilder: documentContentBuilder,
                         terminalContentBuilder: terminalContentBuilder,
                         breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate
+                        onBreadcrumbNavigate: onBreadcrumbNavigate,
+                        blockDocumentLookup: blockDocumentLookup
                     )
                 }
             } else {
@@ -83,7 +87,8 @@ struct PaneTreeView: View {
                         documentContentBuilder: documentContentBuilder,
                         terminalContentBuilder: terminalContentBuilder,
                         breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate
+                        onBreadcrumbNavigate: onBreadcrumbNavigate,
+                        blockDocumentLookup: blockDocumentLookup
                     )
                     .frame(height: firstSize(total: totalSize, ratio: split.ratio))
 
@@ -97,7 +102,8 @@ struct PaneTreeView: View {
                         documentContentBuilder: documentContentBuilder,
                         terminalContentBuilder: terminalContentBuilder,
                         breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate
+                        onBreadcrumbNavigate: onBreadcrumbNavigate,
+                        blockDocumentLookup: blockDocumentLookup
                     )
                 }
             }

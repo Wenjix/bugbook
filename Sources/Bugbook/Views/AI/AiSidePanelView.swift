@@ -1,9 +1,17 @@
 import SwiftUI
 
+struct AiDrawerContext {
+    var placeholder: String
+    var title: String? = nil
+    var subtitle: String? = nil
+    var contextProvider: (() async -> String)? = nil
+}
+
 struct AiSidePanelView: View {
     var appState: AppState
     var aiService: AiService
     var activeDocument: BlockDocument?
+    var drawerContext: AiDrawerContext = AiDrawerContext(placeholder: "Ask anything…")
     @State private var inputText: String = ""
     @State private var activeTask: Task<Void, Never>?
     @State private var showThreadPicker = false
@@ -67,7 +75,7 @@ struct AiSidePanelView: View {
 
             // Input area
             HStack(alignment: .bottom, spacing: 10) {
-                TextField("Ask about your notes...", text: $inputText, axis: .vertical)
+                TextField(drawerContext.placeholder, text: $inputText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .lineLimit(1...20)
@@ -93,7 +101,7 @@ struct AiSidePanelView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .frame(width: 380)
+        .frame(width: 320)
         .background(Color.fallbackEditorBg)
         .task {
             inputFocused = true
@@ -107,48 +115,62 @@ struct AiSidePanelView: View {
                 }
             }
         }
+        .onExitCommand {
+            closePanel()
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image("BugbookAI")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 22, height: 22)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image("BugbookAI")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
 
-            threadTitleButton
+                threadTitleButton
 
-            Spacer()
+                Spacer()
 
-            Button(action: { threadStore.createThread() }) {
-                Label("New Thread", systemImage: "plus")
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                Button(action: { threadStore.createThread() }) {
+                    Label("New Thread", systemImage: "plus")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("New thread")
+
+                Button(action: closePanel) {
+                    Label("Close", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Close")
             }
-            .buttonStyle(.borderless)
-            .help("New thread")
 
-            Button(action: openFullChat) {
-                Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+            if drawerContext.title != nil || drawerContext.subtitle != nil {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let title = drawerContext.title, !title.isEmpty {
+                        Text(title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.fallbackTextPrimary)
+                            .lineLimit(1)
+                    }
+                    if let subtitle = drawerContext.subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.fallbackTextSecondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                }
             }
-            .buttonStyle(.borderless)
-            .help("Expand to full chat")
-
-            Button(action: closePanel) {
-                Label("Close", systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .help("Close")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -334,20 +356,20 @@ struct AiSidePanelView: View {
         let pagePath = activeDocument?.filePath
 
         // Build context
-        let pageContext: String
-        if let selectionContext {
-            pageContext = selectionContext
-        } else if let doc = activeDocument {
-            pageContext = MarkdownBlockParser.serialize(doc.blocks)
-        } else {
-            pageContext = ""
-        }
-
         let task = Task {
             do {
                 let workspacePath = appState.workspacePath ?? ""
+                let supplementalContext = await drawerContext.contextProvider?() ?? ""
+                let pageContext: String
+                if let selectionContext {
+                    pageContext = selectionContext
+                } else if let doc = activeDocument {
+                    pageContext = MarkdownBlockParser.serialize(doc.blocks)
+                } else {
+                    pageContext = supplementalContext
+                }
                 let response: String
-                if activeDocument != nil {
+                if activeDocument != nil || !pageContext.isEmpty {
                     response = try await aiService.generateContent(
                         engine: appState.settings.preferredAIEngine,
                         workspacePath: workspacePath,
@@ -463,10 +485,6 @@ struct AiSidePanelView: View {
 
     private func closePanel() {
         appState.aiSidePanelOpen = false
-    }
-
-    private func openFullChat() {
-        appState.openNotesChat()
     }
 
     // MARK: - Helpers

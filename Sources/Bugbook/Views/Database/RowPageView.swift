@@ -12,6 +12,8 @@ struct RowPageView: View {
     var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
     var onListDatabases: (() -> [RelationDatabaseCandidate])?
     var onSetRelationTarget: ((String, String) -> Void)?
+    var onResolveLookup: ((DatabaseRow, PropertyDefinition) -> String)?
+    var onResolveRollup: ((DatabaseRow, PropertyDefinition) -> String)?
     var onAddProperty: ((PropertyType) -> Void)?
     var onRenameProperty: ((String, String) -> Void)?
     var onDeleteProperty: ((String) -> Void)?
@@ -55,6 +57,8 @@ struct RowPageView: View {
     private var titleFont: Font {
         .system(size: EditorTypography.scaled(34), weight: .bold)
     }
+
+    // Formula evaluation is in DatabaseViewHelpers.evaluateFormula(_:row:schema:)
 
     /// Whether the row is empty (no title, no non-empty properties, no body).
     private var isRowEmpty: Bool {
@@ -119,6 +123,7 @@ struct RowPageView: View {
 
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(schema.properties.filter({ $0.type != .title })) { prop in
+                                let formulaEval = prop.type == .formula ? evaluateFormula(prop, row: row, schema: schema) : (nil, false)
                                 PropertyRowView(
                                     prop: prop,
                                     row: $row,
@@ -130,9 +135,13 @@ struct RowPageView: View {
                                     onLoadRelationRows: onLoadRelationRows,
                                     onListDatabases: onListDatabases,
                                     onSetRelationTarget: onSetRelationTarget,
+                                    onResolveLookup: onResolveLookup,
+                                    onResolveRollup: onResolveRollup,
                                     onRenameProperty: onRenameProperty,
                                     onDeleteProperty: onDeleteProperty,
-                                    onChangePropertyType: onChangePropertyType
+                                    onChangePropertyType: onChangePropertyType,
+                                    formulaResult: formulaEval.0,
+                                    formulaError: formulaEval.1
                                 )
                             }
 
@@ -404,9 +413,13 @@ private struct PropertyRowView: View {
     var onLoadRelationRows: ((PropertyDefinition) -> [RelationRowCandidate])?
     var onListDatabases: (() -> [RelationDatabaseCandidate])?
     var onSetRelationTarget: ((String, String) -> Void)?
+    var onResolveLookup: ((DatabaseRow, PropertyDefinition) -> String)?
+    var onResolveRollup: ((DatabaseRow, PropertyDefinition) -> String)?
     var onRenameProperty: ((String, String) -> Void)?
     var onDeleteProperty: ((String) -> Void)?
     var onChangePropertyType: ((String, PropertyType) -> Void)?
+    var formulaResult: String? = nil
+    var formulaError: Bool = false
 
     @State private var labelHovered = false
     @State private var valueHovered = false
@@ -460,7 +473,13 @@ private struct PropertyRowView: View {
                 onListDatabases: prop.type == .relation
                     ? { onListDatabases?() ?? [] } : nil,
                 onSetRelationTarget: prop.type == .relation
-                    ? onSetRelationTarget : nil
+                    ? onSetRelationTarget : nil,
+                formulaResult: formulaResult,
+                formulaError: formulaError,
+                lookupDisplayValue: prop.type == .lookup
+                    ? onResolveLookup?(row, prop) : nil,
+                rollupDisplayValue: prop.type == .rollup
+                    ? onResolveRollup?(row, prop) : nil
             )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)

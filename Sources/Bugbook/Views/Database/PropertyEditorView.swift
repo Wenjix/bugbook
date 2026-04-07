@@ -29,6 +29,15 @@ struct PropertyEditorView: View {
     /// Callback to set the target database for a relation property.
     var onSetRelationTarget: ((String, String) -> Void)?  // (propertyId, targetDbPath)
 
+    /// Pre-computed formula display text (result or error). Provided by the caller for formula properties.
+    var formulaResult: String? = nil
+    /// Whether the formula evaluation produced an error.
+    var formulaError: Bool = false
+    /// Pre-computed display string for lookup fields.
+    var lookupDisplayValue: String?
+    /// Pre-computed display string for rollup fields.
+    var rollupDisplayValue: String?
+
     /// Consistent cell font matching table text (14pt scaled).
     private var cellFont: Font { DatabaseZoomMetrics.font(14) }
 
@@ -88,6 +97,12 @@ struct PropertyEditorView: View {
             emailEditor
         case .relation:
             relationEditor
+        case .formula:
+            formulaDisplay
+        case .lookup:
+            lookupDisplay
+        case .rollup:
+            rollupDisplay
         }
     }
 
@@ -712,6 +727,45 @@ struct PropertyEditorView: View {
                 relationCandidates = onLoadRelationRows?() ?? []
             }
         }
+    }
+
+    // MARK: - Formula
+
+    private var formulaDisplay: some View {
+        Group {
+            if let result = formulaResult, !result.isEmpty {
+                Text(result)
+                    .font(cellFont)
+                    .foregroundStyle(formulaError ? .red : .secondary)
+                    .lineLimit(1)
+                    .help(formulaError ? result : (definition.config?.formula ?? ""))
+            } else {
+                Text(compact ? "" : "No formula")
+                    .font(cellFont)
+                    .foregroundStyle(.quaternary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Read-only display for lookup fields. The actual value is computed at render time.
+    private var lookupDisplay: some View {
+        let displayText = (lookupDisplayValue ?? "").isEmpty ? "\u{2014}" : lookupDisplayValue!
+        return Text(displayText)
+            .font(cellFont)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
+    }
+
+    /// Read-only display for rollup fields. The aggregated value is computed at render time.
+    private var rollupDisplay: some View {
+        let displayText = (rollupDisplayValue ?? "").isEmpty ? "\u{2014}" : rollupDisplayValue!
+        return Text(displayText)
+            .font(cellFont)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
     }
 
     private var relationTargetPickerPopover: some View {

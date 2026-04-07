@@ -16,6 +16,11 @@ final class TerminalManager {
     private var ghosttyApp: ghostty_app_t?
     private var ghosttyConfig: ghostty_config_t?
 
+    /// Pending color scheme to apply once ghostty is initialized.
+    private var pendingColorScheme: ghostty_color_scheme_e?
+    /// Pending theme to apply once ghostty is initialized.
+    private var pendingTheme: (light: String, dark: String, scheme: TerminalColorSchemeMode)?
+
     /// Initialize the ghostty runtime. Must be called before creating sessions.
     func ensureInitialized() {
         guard ghosttyApp == nil else { return }
@@ -79,9 +84,12 @@ final class TerminalManager {
                 let firstContent = content.pointee
                 guard let data = firstContent.data else { return }
                 let str = String(cString: data)
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(str, forType: .string)
+                let work = {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(str, forType: .string)
+                }
+                if Thread.isMainThread { work() } else { DispatchQueue.main.async { work() } }
             },
             close_surface_cb: { userdata, processAlive in
                 // Surface wants to close. We'll handle this through our session management.
@@ -97,6 +105,17 @@ final class TerminalManager {
         }
         self.ghosttyApp = app
         log.info("Ghostty runtime initialized")
+
+        // Apply any theme/color scheme that was set before initialization
+        if let pending = pendingTheme {
+            pendingTheme = nil
+            pendingColorScheme = nil
+            // applyTheme now has a valid ghosttyApp, so it will execute fully
+            applyTheme(lightTheme: pending.light, darkTheme: pending.dark, colorScheme: pending.scheme)
+        } else if let scheme = pendingColorScheme {
+            ghostty_app_set_color_scheme(app, scheme)
+            pendingColorScheme = nil
+        }
 
         // Start a display link / timer to tick the app periodically
         startTickTimer()
@@ -136,6 +155,134 @@ final class TerminalManager {
     /// Get a session by ID, or nil.
     func session(for id: UUID) -> TerminalSession? {
         sessions[id]
+    }
+
+    /// Set the color scheme on the ghostty app and all surfaces.
+    /// If ghostty isn't initialized yet, stores the value for later.
+    func applyColorScheme(_ scheme: ghostty_color_scheme_e) {
+        guard let app = ghosttyApp else {
+            // A plain color-scheme selection should override any deferred custom theme.
+            pendingTheme = nil
+            pendingColorScheme = scheme
+            return
+        }
+        ghostty_app_set_color_scheme(app, scheme)
+        // Also set directly on each surface for reliability
+        for session in sessions.values {
+            if let surface = session.surfaceView?.surface {
+                ghostty_surface_set_color_scheme(surface, scheme)
+            }
+        }
+    }
+
+    /// Rebuild the ghostty config with a specific theme and apply it.
+    /// Loads user defaults first, then overlays the chosen theme file.
+    func applyTheme(lightTheme: String, darkTheme: String, colorScheme: TerminalColorSchemeMode) {
+        guard let app = ghosttyApp else {
+            pendingTheme = (lightTheme, darkTheme, colorScheme)
+            return
+        }
+
+        let isDark: Bool
+        switch colorScheme {
+        case .light: isDark = false
+        case .dark: isDark = true
+        case .system:
+            isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        }
+        let themeName = isDark ? darkTheme : lightTheme
+
+        guard let cfg = ghostty_config_new() else { return }
+
+        // Load user config (preserves font, keybinds, etc.)
+        ghostty_config_load_default_files(cfg)
+
+        // Overlay the chosen theme file on top
+        if !themeName.isEmpty {
+            let themePath = Self.themePath(for: themeName)
+            if FileManager.default.fileExists(atPath: themePath) {
+                themePath.withCString { cStr in
+                    ghostty_config_load_file(cfg, cStr)
+                }
+            }
+        }
+
+        ghostty_config_finalize(cfg)
+        ghostty_app_update_config(app, cfg)
+
+        // Push config update to each surface directly (our action_cb
+        // doesn't handle CONFIG_CHANGE, so surfaces won't auto-update)
+        let scheme: ghostty_color_scheme_e = isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+        for session in sessions.values {
+            if let surface = session.surfaceView?.surface {
+                ghostty_surface_update_config(surface, cfg)
+                ghostty_surface_set_color_scheme(surface, scheme)
+            }
+        }
+
+        // Store new config, free old
+        if let old = ghosttyConfig {
+            ghostty_config_free(old)
+        }
+        ghosttyConfig = cfg
+    }
+
+    // MARK: - Theme Discovery
+
+    static let ghosttyThemesDir = "/Applications/Ghostty.app/Contents/Resources/ghostty/themes"
+
+    static func themePath(for name: String) -> String {
+        "\(ghosttyThemesDir)/\(name)"
+    }
+
+    /// Returns sorted list of available Ghostty theme names.
+    static func availableThemes() -> [String] {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(atPath: ghosttyThemesDir) else { return [] }
+        return entries.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    /// Parsed colors from a Ghostty theme file.
+    struct ThemeColors {
+        let background: String
+        let foreground: String
+        let cursorColor: String?
+        /// ANSI palette: index 0-15. May be sparse.
+        let palette: [Int: String]
+
+        /// Palette color 1 (red), 2 (green), 3 (yellow), 4 (blue), 5 (magenta), 6 (cyan)
+        func ansi(_ index: Int) -> String? { palette[index] }
+    }
+
+    /// Parse colors from a Ghostty theme file.
+    static func themeColors(for name: String) -> ThemeColors? {
+        let path = themePath(for: name)
+        guard let data = FileManager.default.contents(atPath: path),
+              let content = String(data: data, encoding: .utf8) else { return nil }
+        var bg: String?
+        var fg: String?
+        var cursor: String?
+        var palette: [Int: String] = [:]
+        for line in content.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("background") && !trimmed.hasPrefix("background-") {
+                bg = trimmed.split(separator: "=").last?.trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("foreground") && !trimmed.hasPrefix("foreground-") {
+                fg = trimmed.split(separator: "=").last?.trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("cursor-color") {
+                cursor = trimmed.split(separator: "=").last?.trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("palette") {
+                // "palette = 2=#a9dc76"
+                if let value = trimmed.split(separator: "=", maxSplits: 1).last?.trimmingCharacters(in: .whitespaces) {
+                    let parts = value.split(separator: "=", maxSplits: 1)
+                    if parts.count == 2, let idx = Int(parts[0]) {
+                        palette[idx] = String(parts[1])
+                    }
+                }
+            }
+        }
+        guard let bg, let fg else { return nil }
+        return ThemeColors(background: bg, foreground: fg, cursorColor: cursor, palette: palette)
     }
 
     /// Shut down all sessions and free the ghostty app.

@@ -17,7 +17,7 @@ struct KeyboardShortcutOverlay: View {
             ("\u{2318}1\u{2013}9", "Switch workspace"),
             ("\u{2318}T", "New tab"),
             ("\u{2318}W", "Close tab"),
-            ("\u{2318}B", "Toggle sidebar"),
+            ("\u{2318}\\\\", "Toggle rail"),
             ("\u{2318}[  \u{2318}]", "Back / Forward"),
         ]),
     ]
@@ -27,13 +27,16 @@ struct KeyboardShortcutOverlay: View {
             ("\u{2318}\u{21E7}0", "Home"),
             ("\u{2318}\u{21E7}M", "Mail"),
             ("\u{2318}\u{21E7}Y", "Calendar"),
-            ("\u{2318}I", "Chat"),
+            ("\u{2318}\u{21E7}C", "Chat drawer"),
             ("\u{2318}\u{21E7}D", "Today's note"),
         ]),
         ("Editor", [
             ("\u{2318}N", "New note"),
+            ("\u{2318}S", "Save page in browser"),
             ("\u{2318}\u{21E7}L", "Toggle theme"),
-            ("\u{2318}+/\u{2318}-", "Zoom in/out"),
+            ("\u{2318}L", "Focus browser URL bar"),
+            ("\u{2318}F", "Find in page"),
+            ("\u{2318}P", "Print"),
         ]),
     ]
 

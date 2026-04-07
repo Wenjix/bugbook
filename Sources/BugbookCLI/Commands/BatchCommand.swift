@@ -208,6 +208,14 @@ private func convertJSONToProperties(_ json: [String: Any], schema: DatabaseSche
                     result[key] = .relation(s)
                 }
             }
+        case .formula:
+            break // Formula values are computed, not stored.
+        case .lookup:
+            // Lookup is computed; treat stored value as text.
+            if let s = val as? String { result[key] = .text(s) }
+        case .rollup:
+            // Rollup is computed; treat stored value as text.
+            if let s = val as? String { result[key] = .text(s) }
         }
     }
     return result

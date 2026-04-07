@@ -287,6 +287,21 @@ final class DatabaseViewState {
         }
     }
 
+    func updateFormulaExpression(_ propertyId: String, expression: String) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig(formula: expression)
+        } else {
+            s.properties[idx].config?.formula = expression
+        }
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
     func deleteProperty(_ propertyId: String) {
         guard var s = schema else { return }
         Task {
@@ -311,6 +326,12 @@ final class DatabaseViewState {
             config = PropertyConfig(options: [])
         case .relation:
             config = PropertyConfig(target: nil)
+        case .formula:
+            config = PropertyConfig(formula: "")
+        case .lookup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil)
+        case .rollup:
+            config = PropertyConfig(relationPropertyId: nil, targetPropertyId: nil, aggregationFunction: "count")
         default:
             config = nil
         }
@@ -556,6 +577,7 @@ final class DatabaseViewState {
         let defaultValue = (prop?.type == .checkbox) ? "true" : ""
         let filter = FilterConfig(property: propertyId, op: defaultOp, value: defaultValue)
         view.filters.append(filter)
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -568,6 +590,7 @@ final class DatabaseViewState {
         if let property = property { view.filters[idx].property = property }
         if let op = op { view.filters[idx].op = op }
         if let value = value { view.filters[idx].value = value }
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -578,6 +601,7 @@ final class DatabaseViewState {
         guard var s = schema, var view = activeView else { return }
         let filter = FilterConfig(property: propertyId, op: "not_equals", value: optionId)
         view.filters.append(filter)
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
@@ -587,9 +611,35 @@ final class DatabaseViewState {
     func removeFilter(_ filterId: String) {
         guard var s = schema, var view = activeView else { return }
         view.filters.removeAll { $0.id == filterId }
+        syncFilterGroup(&view)
         Task {
             try? dbService.updateView(view, in: &s, at: dbPath)
             schema = s
+        }
+    }
+
+    func toggleFilterConjunction() {
+        guard var s = schema, var view = activeView else { return }
+        let currentConjunction = view.filterGroup?.conjunction ?? .and
+        let newConjunction: FilterConjunction = currentConjunction == .and ? .or : .and
+        view.filterGroup?.conjunction = newConjunction
+        Task {
+            try? dbService.updateView(view, in: &s, at: dbPath)
+            schema = s
+        }
+    }
+
+    /// Rebuild filterGroup from the flat filters list, preserving the current conjunction.
+    private func syncFilterGroup(_ view: inout ViewConfig) {
+        let conjunction = view.filterGroup?.conjunction ?? .and
+        if view.filters.isEmpty {
+            view.filterGroup = nil
+        } else {
+            view.filterGroup = FilterGroup(
+                id: view.filterGroup?.id ?? UUID().uuidString,
+                conjunction: conjunction,
+                conditions: view.filters.map { .filter($0) }
+            )
         }
     }
 
@@ -731,6 +781,132 @@ final class DatabaseViewState {
         Task {
             try? dbService.saveSchema(s, at: dbPath)
             postChangeNotification()
+        }
+    }
+
+    // MARK: - Rollup
+
+    func setRollupConfig(_ propertyId: String, relationPropertyId: String?, targetPropertyId: String?, aggregationFunction: String?) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig()
+        }
+        s.properties[idx].config?.relationPropertyId = relationPropertyId
+        s.properties[idx].config?.targetPropertyId = targetPropertyId
+        s.properties[idx].config?.aggregationFunction = aggregationFunction
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
+    /// Resolve rollup value for a single row: follow relation -> load related rows -> extract target property -> aggregate.
+    func resolveRollupValue(for row: DatabaseRow, property: PropertyDefinition) -> String {
+        guard property.type == .rollup,
+              let relationPropId = property.config?.relationPropertyId,
+              let targetPropId = property.config?.targetPropertyId,
+              let aggFunction = property.config?.aggregationFunction,
+              !relationPropId.isEmpty, !targetPropId.isEmpty, !aggFunction.isEmpty else {
+            return ""
+        }
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropId }),
+              relationProp.type == .relation,
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else {
+            return ""
+        }
+        let relationValue = row.properties[relationPropId] ?? .empty
+        let relatedRowIds: [String]
+        switch relationValue {
+        case .relation(let id): relatedRowIds = id.isEmpty ? [] : [id]
+        case .relationMany(let ids): relatedRowIds = ids
+        default: relatedRowIds = []
+        }
+        guard !relatedRowIds.isEmpty else { return "" }
+
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: targetDbPath)
+            let matchedRows = targetRows.filter { relatedRowIds.contains($0.id) }
+            return AggregationEngine.compute(
+                function: aggFunction,
+                propertyId: targetPropId,
+                rows: matchedRows,
+                schema: targetSchema
+            )
+        } catch {
+            return ""
+        }
+    }
+
+    // MARK: - Lookup
+
+    func setLookupConfig(_ propertyId: String, relationPropertyId: String?, targetPropertyId: String?) {
+        guard var s = schema,
+              let idx = s.properties.firstIndex(where: { $0.id == propertyId }) else { return }
+        if s.properties[idx].config == nil {
+            s.properties[idx].config = PropertyConfig()
+        }
+        s.properties[idx].config?.relationPropertyId = relationPropertyId
+        s.properties[idx].config?.targetPropertyId = targetPropertyId
+        schema = s
+        Task {
+            try? dbService.saveSchema(s, at: dbPath)
+            postChangeNotification()
+        }
+    }
+
+    /// Resolve lookup values for a single row. Returns the computed display string.
+    func resolveLookupValue(for row: DatabaseRow, property: PropertyDefinition) -> String {
+        guard property.type == .lookup,
+              let relationPropId = property.config?.relationPropertyId,
+              let targetPropId = property.config?.targetPropertyId,
+              !relationPropId.isEmpty, !targetPropId.isEmpty else {
+            return ""
+        }
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropId }),
+              relationProp.type == .relation,
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else {
+            return ""
+        }
+        let relationValue = row.properties[relationPropId] ?? .empty
+        let relatedRowIds: [String]
+        switch relationValue {
+        case .relation(let id): relatedRowIds = id.isEmpty ? [] : [id]
+        case .relationMany(let ids): relatedRowIds = ids
+        default: relatedRowIds = []
+        }
+        guard !relatedRowIds.isEmpty else { return "" }
+
+        do {
+            let (targetSchema, targetRows) = try dbService.loadDatabase(at: targetDbPath)
+            let targetProp = targetSchema.properties.first(where: { $0.id == targetPropId })
+            let values: [String] = relatedRowIds.compactMap { rowId in
+                guard let targetRow = targetRows.first(where: { $0.id == rowId }) else { return nil }
+                if targetProp?.type == .title {
+                    return targetRow.title(schema: targetSchema)
+                }
+                guard let val = targetRow.properties[targetPropId] else { return nil }
+                if case .empty = val { return nil }
+                return val.stringValue
+            }
+            return values.joined(separator: ", ")
+        } catch {
+            return ""
+        }
+    }
+
+    /// Load properties from the target database of a relation (for lookup config picker).
+    func loadTargetDatabaseProperties(for relationPropertyId: String) -> [PropertyDefinition] {
+        guard let relationProp = schema?.properties.first(where: { $0.id == relationPropertyId }),
+              let targetDbPath = relationProp.config?.target, !targetDbPath.isEmpty else {
+            return []
+        }
+        do {
+            let (targetSchema, _) = try dbService.loadDatabase(at: targetDbPath)
+            return targetSchema.properties
+        } catch {
+            return []
         }
     }
 

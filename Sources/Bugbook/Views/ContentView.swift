@@ -26,6 +26,10 @@ struct ContentView: View {
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var workspaceManager = WorkspaceManager()
     @State private var terminalManager = TerminalManager()
+    @State private var browserManager = BrowserManager()
+    @State private var railEdgeHovering = false
+    @State private var railHovering = false
+    @State private var railPinnedOpen = false
 
     @State private var saveTask: Task<Void, Never>?
     @State private var sidebarPeek = SidebarPeekState()
@@ -36,6 +40,7 @@ struct ContentView: View {
     @State private var aiInitTask: Task<Void, Never>?
     @State private var aiInitCompleted = false
     @State private var workspaceWatcher: WorkspaceWatcher?
+    @State private var restoredWorkspaceDocuments = false
     @State private var lastTrashPurgeWorkspace: String?
     @State private var recordingPillController = FloatingRecordingPillController()
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
@@ -76,17 +81,18 @@ struct ContentView: View {
 
     private var baseLayout: some View {
         ZStack(alignment: .leading) {
-            // Solid backdrop so the content area's rounded corner reveals sidebar color
+            // Solid backdrop so the content area's rounded corner reveals rail/sidebar color.
             Color.fallbackSidebarBg
 
             HStack(spacing: 0) {
-                sidebarSection
+                contextualSidebarSection
                 mainContentWithAiPanel
             }
+            .animation(.easeInOut(duration: 0.15), value: appState.showSettings)
+            .animation(.easeInOut(duration: 0.15), value: contextualSidebarLeaf?.id)
 
-            sidebarPeekEdgeHotspot
-            sidebarToggleOverlay
-            sidebarPeekOverlay
+            railEdgeHotZone
+            navigationRailOverlay
             commandPaletteOverlay
 
             movePageOverlay
@@ -177,6 +183,10 @@ struct ContentView: View {
             .onChange(of: appState.currentView) { _, newView in
                 handleCurrentViewChange(newView)
             }
+            .onChange(of: workspaceManager.workspaces) { _, workspaces in
+                let paneIDs = Set(workspaces.flatMap { $0.allLeaves.map(\.id) })
+                browserManager.cleanup(validPaneIDs: paneIDs)
+            }
             .onChange(of: appState.isRecording) { _, recording in
                 handleRecordingChange(recording)
             }
@@ -187,16 +197,7 @@ struct ContentView: View {
                 flushDirtyTabs()
             }
             .onDisappear {
-                flushDirtyTabs()
-                appSettingsStore.save(appState.settings)
-                terminalManager.shutdown()
-                paneReplaceWarningTask?.cancel()
-                aiInitTask?.cancel()
-                aiInitTask = nil
-                editorUI.cleanUp()
-                sidebarPeek.cleanUp()
-                workspaceWatcher?.stop()
-                recordingPillController.cleanup()
+                handleViewDisappear()
             }
     }
 
@@ -301,7 +302,13 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
                 if let index = notification.object as? Int {
-                    workspaceManager.switchWorkspace(to: index)
+                    if let browserPaneID = focusedBrowserPaneID {
+                        let session = browserManager.session(for: browserPaneID)
+                        guard index < session.tabs.count else { return }
+                        session.selectTab(session.tabs[index].id)
+                    } else {
+                        workspaceManager.switchWorkspace(to: index)
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .focusPaneByIndex)) { notification in
@@ -356,13 +363,19 @@ struct ContentView: View {
                 appState.newEmptyTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
+                if postBrowserCommandIfFocused(.browserCloseTab, object: focusedBrowserPaneID) {
+                    return
+                }
                 guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId else { return }
                 cleanupTabDocuments(paneId)
                 terminalManager.closeSession(paneId)
+                browserManager.closeSession(paneId)
                 workspaceManager.closePane(id: paneId)
             }
             .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
-                forceSave()
+                if !postBrowserCommandIfFocused(.browserSavePage) {
+                    forceSave()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
                 handleSidebarToggleRequest()
@@ -372,8 +385,13 @@ struct ContentView: View {
                 appState.commandPaletteMode = .splitLauncher
                 appState.commandPaletteOpen.toggle()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
+                _ = postBrowserCommandIfFocused(.browserFind)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpenNewTab)) { _ in
-                workspaceManager.addWorkspace()
+                if !postBrowserCommandIfFocused(.browserNewTab) {
+                    workspaceManager.addWorkspace()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 openSettingsTab()
@@ -389,34 +407,25 @@ struct ContentView: View {
                 openDailyNote()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openGraphView)) { _ in
-                appState.currentView = .editor
-                appState.showSettings = false
-                openContentInFocusedPane(.graphDocument())
+                presentEditorPane(.graphDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openMail)) { _ in
-                appState.currentView = .editor
-                appState.showSettings = false
-                openContentInFocusedPane(.mailDocument())
+                presentEditorPane(.mailDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openCalendar)) { _ in
-                appState.currentView = .editor
-                appState.showSettings = false
-                openContentInFocusedPane(.calendarDocument())
+                presentEditorPane(.calendarDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
-                appState.currentView = .editor
-                appState.showSettings = false
-                openContentInFocusedPane(.meetingsDocument())
+                presentEditorPane(.meetingsDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openGateway)) { _ in
-                appState.currentView = .editor
-                appState.showSettings = false
-                openContentInFocusedPane(.gatewayDocument())
+                presentEditorPane(.gatewayDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openTerminal)) { _ in
-                appState.currentView = .editor
-                appState.showSettings = false
-                openContentInFocusedPane(.terminal)
+                presentEditorPane(.terminal)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openBrowser)) { _ in
+                presentEditorPane(.browserDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleShortcutOverlay)) { _ in
                 withAnimation(.easeInOut(duration: 0.15)) {
@@ -427,23 +436,33 @@ struct ContentView: View {
                 createNewDatabase()
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateBack)) { _ in
-                navigateBackInActiveTab()
+                if !postBrowserCommandIfFocused(.browserBack) {
+                    navigateBackInActiveTab()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateForward)) { _ in
-                navigateForwardInActiveTab()
+                if !postBrowserCommandIfFocused(.browserForward) {
+                    navigateForwardInActiveTab()
+                }
             }
     }
 
     private func applyZoomNotifications<V: View>(to view: V) -> some View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .editorZoomIn)) { _ in
-                adjustEditorZoom(by: 0.1)
+                if !postBrowserCommandIfFocused(.browserZoomIn) {
+                    adjustEditorZoom(by: 0.1)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .editorZoomOut)) { _ in
-                adjustEditorZoom(by: -0.1)
+                if !postBrowserCommandIfFocused(.browserZoomOut) {
+                    adjustEditorZoom(by: -0.1)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .editorZoomReset)) { _ in
-                resetEditorZoom()
+                if !postBrowserCommandIfFocused(.browserZoomReset) {
+                    resetEditorZoom()
+                }
             }
     }
 
@@ -455,14 +474,13 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFullChat)) { _ in
                 ensureAiInitializedIfNeeded()
-                appState.openNotesChat()
+                appState.toggleAiPanel()
             }
             .onReceive(NotificationCenter.default.publisher(for: .askAI)) { notification in
                 let prompt = notification.userInfo?["prompt"] as? String
                     ?? notification.userInfo?["query"] as? String
                 ensureAiInitializedIfNeeded()
-                appState.aiInitialPrompt = prompt
-                appState.openNotesChat()
+                appState.openAiPanel(prompt: prompt)
             }
             .onReceive(NotificationCenter.default.publisher(for: .blockTypeShortcut)) { notification in
                 handleBlockTypeShortcut(notification.object as? String)
@@ -481,24 +499,56 @@ struct ContentView: View {
             }
     }
 
-    // MARK: - Sidebar
+    // MARK: - Shell Navigation
+
+    private var railVisible: Bool {
+        appState.settings.railPinned || railPinnedOpen || railEdgeHovering || railHovering
+    }
+
+    private var navigationRailOverlay: some View {
+        NavigationRailView(
+            indicatorProvider: railIndicator(for:),
+            onSelect: handleRailSelection(_:)
+        )
+        .offset(x: railVisible ? 0 : -ShellSidebarMetrics.railWidth)
+        .animation(.easeInOut(duration: 0.15), value: railVisible)
+        .allowsHitTesting(railVisible)
+        .onHover { hovering in
+            railHovering = hovering
+        }
+        .zIndex(3)
+    }
 
     @ViewBuilder
-    private var sidebarSection: some View {
-        if appState.sidebarOpen {
-            SidebarView(
-                appState: appState,
-                fileSystem: fileSystem,
-                onSelectFile: { entry in
-                    handleSidebarFileSelect(entry)
-                },
-                onToggleSidebar: { handleSidebarToggleRequest() },
-                onAddSidebarReference: { payload in
-                    addSidebarReference(payload)
-                }
-            )
-            .layoutPriority(1)
+    private var railEdgeHotZone: some View {
+        if !appState.settings.railPinned {
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 6)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        railEdgeHovering = hovering
+                    }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .zIndex(2)
         }
+    }
+
+    @ViewBuilder
+    private var contextualSidebarSection: some View {
+        if appState.showSettings {
+            SettingsSidebarView(appState: appState)
+                .transition(shellSidebarTransition)
+        } else if let leaf = contextualSidebarLeaf {
+            contextualSidebarView(for: leaf)
+                .transition(shellSidebarTransition)
+        }
+    }
+
+    private var shellSidebarTransition: AnyTransition {
+        .move(edge: .leading).combined(with: .opacity)
     }
 
     @ViewBuilder
@@ -522,7 +572,7 @@ struct ContentView: View {
         if sidebarPeekEligible {
             VStack {
                 HStack {
-                    sidebarChromeButton(icon: "sidebar.left", help: "Open Sidebar") {
+                    sidebarChromeButton(icon: "sidebar.left", help: "Toggle Sidebar (⌘.)") {
                         openSidebarPinned()
                     }
                     .padding(ShellZoomMetrics.size(4))
@@ -714,7 +764,7 @@ struct ContentView: View {
     }
 
     private var sidebarPeekEligible: Bool {
-        !appState.sidebarOpen && !appState.showSettings && !editorUI.focusModeActive && !sidebarHiddenByPeek
+        !shellShowsSidebarPanel && !editorUI.focusModeActive && !sidebarHiddenByPeek
     }
 
     private var sidebarPeekHiddenOffset: CGFloat {
@@ -727,12 +777,154 @@ struct ContentView: View {
     }
 
     private func handleSidebarToggleRequest() {
-        guard !appState.showSettings else { return }
-        if appState.sidebarOpen {
-            appState.sidebarOpen = false
-            sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-        } else {
-            openSidebarPinned()
+        withAnimation(.easeInOut(duration: 0.15)) {
+            railPinnedOpen.toggle()
+        }
+    }
+
+    @discardableResult
+    private func postBrowserCommandIfFocused(_ name: Notification.Name, object: Any? = nil) -> Bool {
+        guard focusedBrowserPaneID != nil else { return false }
+        NotificationCenter.default.post(name: name, object: object)
+        return true
+    }
+
+    private var activeWorkspaceLeaves: [PaneNode.Leaf] {
+        workspaceManager.activeWorkspace?.allLeaves ?? []
+    }
+
+    private var contextualSidebarLeaf: PaneNode.Leaf? {
+        guard !appState.showSettings,
+              let workspace = workspaceManager.activeWorkspace,
+              workspace.allLeaves.count == 1,
+              let leaf = workspace.focusedLeaf,
+              paneUsesContextualSidebar(leaf) else {
+            return nil
+        }
+        return leaf
+    }
+
+    private var shellShowsSidebarPanel: Bool {
+        appState.showSettings || contextualSidebarLeaf != nil
+    }
+
+    private var focusedBrowserPaneID: UUID? {
+        guard let leaf = workspaceManager.focusedPane else { return nil }
+        guard case .document(let file) = leaf.content, file.isBrowser else { return nil }
+        return leaf.id
+    }
+
+    private var contextualSidebarActiveFilePath: String? {
+        guard let leaf = workspaceManager.activeWorkspace?.focusedLeaf,
+              case .document(let file) = leaf.content,
+              !file.path.isEmpty,
+              !file.path.hasPrefix("bugbook://") else {
+            return nil
+        }
+        return file.path
+    }
+
+    private func paneUsesContextualSidebar(_ leaf: PaneNode.Leaf) -> Bool {
+        switch leaf.content {
+        case .terminal:
+            return false
+        case .document(let file):
+            return file.isMail || file.isCalendar
+        }
+    }
+
+    private func leafMatchesRailItem(_ leaf: PaneNode.Leaf, item: RailItemID) -> Bool {
+        switch (item, leaf.content) {
+        case (.terminal, .terminal):
+            return true
+        case (.terminal, .document):
+            return false
+        case (_, .terminal):
+            return false
+        case let (.home, .document(file)):
+            return file.isGateway
+        case let (.mail, .document(file)):
+            return file.isMail
+        case let (.calendar, .document(file)):
+            return file.isCalendar
+        case let (.browser, .document(file)):
+            return file.isBrowser
+        case (.settings, _):
+            return appState.showSettings
+        }
+    }
+
+    private func handleViewDisappear() {
+        flushDirtyTabs()
+        appSettingsStore.save(appState.settings)
+        terminalManager.shutdown()
+        browserManager.persistAllSessions()
+        paneReplaceWarningTask?.cancel()
+        aiInitTask?.cancel()
+        aiInitTask = nil
+        editorUI.cleanUp()
+        sidebarPeek.cleanUp()
+        workspaceWatcher?.stop()
+        recordingPillController.cleanup()
+    }
+
+    private func railIndicator(for item: RailItemID) -> RailIndicatorState {
+        if item == .settings {
+            return appState.showSettings ? .focused : .none
+        }
+        let leaves = activeWorkspaceLeaves
+        guard leaves.contains(where: { leafMatchesRailItem($0, item: item) }) else {
+            return .none
+        }
+        if let focusedLeaf = workspaceManager.focusedPane,
+           leafMatchesRailItem(focusedLeaf, item: item) {
+            return .focused
+        }
+        return .open
+    }
+
+    private func presentEditorPane(_ content: PaneContent) {
+        appState.currentView = .editor
+        appState.showSettings = false
+        openOrFocusPane(content)
+    }
+
+    private func handleRailSelection(_ item: RailItemID) {
+        switch item {
+        case .settings:
+            openSettingsTab()
+        case .home:
+            presentEditorPane(.gatewayDocument())
+        case .mail:
+            presentEditorPane(.mailDocument())
+        case .calendar:
+            presentEditorPane(.calendarDocument())
+        case .browser:
+            presentEditorPane(.browserDocument())
+        case .terminal:
+            presentEditorPane(.terminal)
+        }
+    }
+
+    @ViewBuilder
+    private func contextualSidebarView(for leaf: PaneNode.Leaf) -> some View {
+        if case .document(let file) = leaf.content, file.isMail {
+            MailContextualSidebarView(
+                appState: appState,
+                mailService: mailService,
+                onRefresh: {
+                    guard let token = appState.settings.googleToken else { return }
+                    Task {
+                        await mailService.refreshSelectedMailbox(token: token)
+                    }
+                }
+            )
+        } else if case .document(let file) = leaf.content, file.isCalendar {
+            CalendarContextualSidebarView(
+                calendarVM: calendarVM,
+                calendarService: calendarService,
+                workspacePath: appState.workspacePath
+            )
         }
     }
 
@@ -899,20 +1091,176 @@ struct ContentView: View {
     /// Rewrite absolute paths inside a single .md file (e.g. database embed paths).
     // MARK: - Main Content
 
+    private var activeDocumentForAiDrawer: BlockDocument? {
+        workspaceManager.activeWorkspace.flatMap { ws in
+            blockDocuments[ws.focusedPaneId]
+        }
+    }
+
+    private var aiDrawerContext: AiDrawerContext {
+        guard let leaf = workspaceManager.focusedPane else {
+            return AiDrawerContext(placeholder: "Ask anything…")
+        }
+
+        switch leaf.content {
+        case .terminal:
+            return makeTerminalAiDrawerContext(for: leaf.id)
+        case .document(let file):
+            if file.isBrowser {
+                return makeBrowserAiDrawerContext(for: leaf.id)
+            }
+
+            if file.isMail {
+                return makeMailAiDrawerContext()
+            }
+
+            if file.isCalendar {
+                return makeCalendarAiDrawerContext()
+            }
+
+            return makeDocumentAiDrawerContext(for: file)
+        }
+    }
+
+    private func makeTerminalAiDrawerContext(for paneID: UUID) -> AiDrawerContext {
+        let session = terminalManager.session(for: paneID)
+        let title = session?.title ?? "Terminal"
+        let workingDirectory = session?.workingDirectory ?? ""
+
+        return AiDrawerContext(
+            placeholder: "Ask about this terminal…",
+            title: title,
+            subtitle: workingDirectory.isEmpty ? nil : workingDirectory,
+            contextProvider: {
+                """
+                Terminal title: \(title)
+                Working directory: \(workingDirectory)
+
+                Note: terminal scrollback is not currently exposed. Answer using the available session metadata.
+                """
+            }
+        )
+    }
+
+    private func makeBrowserAiDrawerContext(for paneID: UUID) -> AiDrawerContext {
+        let session = browserManager.session(for: paneID)
+        guard let selectedTabID = session.selectedTabID else {
+            return AiDrawerContext(placeholder: "Ask about this page…", title: "Browser")
+        }
+
+        let tab = session.activeTab
+        let title = tab?.displayTitle ?? "Current Page"
+        let urlString = tab?.urlString ?? ""
+
+        return AiDrawerContext(
+            placeholder: "Ask about this page…",
+            title: title,
+            subtitle: urlString.isEmpty ? nil : urlString,
+            contextProvider: {
+                let extractedText = await BrowserAgentService().extractPageContent(
+                    from: paneID,
+                    tabID: selectedTabID,
+                    browserManager: browserManager
+                )
+                return """
+                Browser page title: \(title)
+                URL: \(urlString)
+
+                \(extractedText)
+                """
+            }
+        )
+    }
+
+    private func makeMailAiDrawerContext() -> AiDrawerContext {
+        let thread = mailService.selectedThread
+        let subject = thread?.subject ?? "Selected Email"
+        let subtitle = thread?.participants.joined(separator: ", ")
+
+        return AiDrawerContext(
+            placeholder: "Ask about this email…",
+            title: subject,
+            subtitle: subtitle,
+            contextProvider: {
+                let snippet = thread?.snippet ?? ""
+                let body = thread?.messages.last?.bodyText ?? ""
+                return """
+                Email subject: \(subject)
+                Participants: \(subtitle ?? "")
+                Snippet: \(snippet)
+
+                \(body)
+                """
+            }
+        )
+    }
+
+    private func makeCalendarAiDrawerContext() -> AiDrawerContext {
+        let visibleSources = calendarService.sources
+            .filter(\.isVisible)
+            .map(\.name)
+            .joined(separator: ", ")
+        let selectedDate = calendarVM.selectedDate.formatted(.dateTime.weekday(.wide).month(.wide).day().year())
+        let viewMode = calendarVM.viewMode.rawValue
+
+        return AiDrawerContext(
+            placeholder: "Ask about this schedule…",
+            title: selectedDate,
+            subtitle: "\(viewMode) view",
+            contextProvider: {
+                """
+                Calendar date: \(selectedDate)
+                Calendar view: \(viewMode)
+                Visible calendars: \(visibleSources)
+                """
+            }
+        )
+    }
+
+    private func makeDocumentAiDrawerContext(for file: OpenFile) -> AiDrawerContext {
+        if file.isMeetings {
+            return AiDrawerContext(
+                placeholder: "Ask about this meeting…",
+                title: file.displayName ?? "Meetings"
+            )
+        }
+
+        if file.isGateway {
+            return AiDrawerContext(
+                placeholder: "Ask about this workspace…",
+                title: "Home"
+            )
+        }
+
+        return AiDrawerContext(
+            placeholder: "Ask about this note…",
+            title: file.displayName
+        )
+    }
+
+    private func usesImmersivePaneLayout(_ file: OpenFile) -> Bool {
+        file.isMail || file.isCalendar || file.isMeetings || file.isGateway || file.isBrowser
+    }
+
+    private func showsPageOptionsMenu(for file: OpenFile) -> Bool {
+        !file.isEmptyTab
+            && !file.isDatabase
+            && !file.isSkill
+            && !usesImmersivePaneLayout(file)
+            && !file.isChat
+            && !file.isGraphView
+    }
+
+    private func isDocumentEditorFile(_ file: OpenFile) -> Bool {
+        showsPageOptionsMenu(for: file) && !file.isDatabaseRow
+    }
+
     @ViewBuilder
     private var mainContentWithAiPanel: some View {
-        HStack(spacing: 0) {
+        ZStack(alignment: .trailing) {
             VStack(spacing: 0) {
                 if appState.showSettings {
                     SettingsView(appState: appState)
-                } else if appState.currentView == .chat {
-                    WorkspaceTabBar(
-                        workspaceManager: workspaceManager,
-                        sidebarOpen: appState.sidebarOpen,
-                        currentView: appState.currentView
-                    )
-                    .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
-                    NotesChatView(appState: appState, aiService: aiService)
                 } else if appState.currentView == .graphView {
                     if let workspace = appState.workspacePath {
                         GraphView(
@@ -933,48 +1281,44 @@ struct ContentView: View {
             .background(Color.fallbackEditorBg)
 
             if appState.aiSidePanelOpen && appState.currentView == .editor {
-                Divider()
                 AiSidePanelView(
                     appState: appState,
                     aiService: aiService,
-                    activeDocument: workspaceManager.activeWorkspace.flatMap { ws in blockDocuments[ws.focusedPaneId] }
+                    activeDocument: activeDocumentForAiDrawer,
+                    drawerContext: aiDrawerContext
                 )
-                    .transition(.move(edge: .trailing))
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.fallbackChromeBorder)
+                        .frame(width: 1)
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .zIndex(2)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipShape(
             UnevenRoundedRectangle(
-                topLeadingRadius: appState.sidebarOpen ? ShellZoomMetrics.size(14) : 0,
+                topLeadingRadius: shellShowsSidebarPanel ? ShellZoomMetrics.size(14) : 0,
                 bottomLeadingRadius: 0,
                 bottomTrailingRadius: 0,
                 topTrailingRadius: 0
             )
         )
-        .overlay(alignment: .leading) {
-            if appState.sidebarOpen {
-                Rectangle()
-                    .fill(Color.fallbackChromeBorder)
-                    .frame(width: 1)
-                    .allowsHitTesting(false)
-            }
-        }
     }
 
     private var activeTabLeadingPadding: CGFloat {
-        let isMail = appState.activeTab?.isMail ?? false
-        let isCalendar = appState.activeTab?.isCalendar ?? false
-        let isMeetings = appState.activeTab?.isMeetings ?? false
-        let isGateway = appState.activeTab?.isGateway ?? false
-        if isMail || isCalendar || isMeetings || isGateway { return 0 }
-        return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
+        guard let activeTab = appState.activeTab else {
+            return ShellZoomMetrics.size(8)
+        }
+        return usesImmersivePaneLayout(activeTab) ? 0 : ShellZoomMetrics.size(8)
     }
 
     @ViewBuilder
     private var editorModeContent: some View {
         WorkspaceTabBar(
             workspaceManager: workspaceManager,
-            sidebarOpen: appState.sidebarOpen,
+            sidebarOpen: shellShowsSidebarPanel,
             currentView: appState.currentView
         )
             .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
@@ -997,6 +1341,9 @@ struct ContentView: View {
                     },
                     onBreadcrumbNavigate: { item in
                         self.navigateToBreadcrumb(item)
+                    },
+                    blockDocumentLookup: { paneId in
+                        self.blockDocuments[paneId]
                     }
                 )
                 .environment(\.paneReplaceWarningId, paneReplaceWarningId)
@@ -1088,8 +1435,7 @@ struct ContentView: View {
     private func paneDocumentContent(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
         VStack(spacing: 0) {
             // Breadcrumb moved to chrome bar. Options menu stays in content area.
-            if !file.isEmptyTab && !file.isDatabase && !file.isSkill
-                && !file.isMail && !file.isCalendar && !file.isMeetings && !file.isGateway {
+            if showsPageOptionsMenu(for: file) {
                 HStack {
                     Spacer()
                     Button {
@@ -1124,8 +1470,7 @@ struct ContentView: View {
     }
 
     private func paneLeadingPadding(for file: OpenFile) -> CGFloat {
-        if file.isMail || file.isCalendar || file.isMeetings || file.isGateway { return 0 }
-        return appState.sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(78)
+        usesImmersivePaneLayout(file) ? 0 : ShellZoomMetrics.size(8)
     }
 
     @ViewBuilder
@@ -1158,8 +1503,77 @@ struct ContentView: View {
             }
         }
 
-        terminalManager.closeSession(paneId)
+        replacePaneContent(paneId: paneId, with: content)
+    }
+
+    private func openOrFocusPane(_ content: PaneContent) {
+        if let paneID = matchingPaneID(for: content) {
+            workspaceManager.setFocusedPane(id: paneID)
+            return
+        }
+
+        guard let workspace = workspaceManager.activeWorkspace else {
+            workspaceManager.addWorkspaceWith(content: content)
+            return
+        }
+
+        if workspace.allLeaves.count == 1,
+           let leaf = workspace.focusedLeaf,
+           isReplaceablePlaceholderPane(leaf) {
+            replacePaneContent(paneId: leaf.id, with: content)
+            workspaceManager.setFocusedPane(id: leaf.id)
+            return
+        }
+
+        workspaceManager.addWorkspaceWith(content: content)
+    }
+
+    private func matchingPaneID(for content: PaneContent) -> UUID? {
+        guard let workspace = workspaceManager.activeWorkspace else { return nil }
+        return workspace.allLeaves.first { leaf in
+            paneContent(leaf.content, matches: content)
+        }?.id
+    }
+
+    private func paneContent(_ existing: PaneContent, matches target: PaneContent) -> Bool {
+        switch (existing, target) {
+        case (.terminal, .terminal):
+            return true
+        case let (.document(file), .document(targetFile)):
+            return file.kind == targetFile.kind
+        default:
+            return false
+        }
+    }
+
+    private func isReplaceablePlaceholderPane(_ leaf: PaneNode.Leaf) -> Bool {
+        switch leaf.content {
+        case .terminal:
+            return false
+        case .document(let file):
+            return file.isEmptyTab
+        }
+    }
+
+    private func replacePaneContent(paneId: UUID, with content: PaneContent) {
+        cleanupPaneResources(paneId)
         workspaceManager.updatePaneContent(paneId: paneId, content: content)
+    }
+
+    private func cleanupPaneResources(_ paneId: UUID) {
+        cleanupTabDocuments(paneId)
+        terminalManager.closeSession(paneId)
+        browserManager.closeSession(paneId)
+    }
+
+    private func isEditorDocumentPane(_ leaf: PaneNode.Leaf) -> Bool {
+        guard case .document(let file) = leaf.content else { return false }
+        return isDocumentEditorFile(file)
+    }
+
+    private func nearestEditorDocumentLeaf(from paneId: UUID) -> PaneNode.Leaf? {
+        guard let workspace = workspaceManager.activeWorkspace else { return nil }
+        return workspace.allLeaves.first { $0.id != paneId && isEditorDocumentPane($0) }
     }
 
     /// Routes a pane's OpenFile to the correct content view based on its TabKind.
@@ -1206,6 +1620,21 @@ struct ContentView: View {
                 aiService: aiService,
                 onNavigateToFile: { path in
                     navigateToFilePath(path)
+                }
+            )
+        } else if file.isBrowser {
+            BrowserPaneView(
+                paneID: leaf.id,
+                session: browserManager.session(for: leaf.id),
+                appState: appState,
+                fileTree: appState.fileTree,
+                isSinglePane: !(workspaceManager.activeWorkspace?.hasMultiplePanes ?? false),
+                browserManager: browserManager,
+                workspaceManager: workspaceManager,
+                fileSystem: fileSystem,
+                aiService: aiService,
+                onOpenBugbookEntry: { entry in
+                    navigateToEntryInPane(entry)
                 }
             )
         } else if file.isGraphView {
@@ -1470,7 +1899,7 @@ struct ContentView: View {
                 doc.blockMenuBlockId = nil
                 if let targetTab = appState.openTabs.first(where: { $0.path == targetPagePath }),
                    let targetDoc = blockDocuments[targetTab.id] {
-                    targetDoc.blocks = MarkdownBlockParser.parse(content)
+                    targetDoc.replaceMarkdown(content)
                 }
             } catch {
                 Log.fileSystem.error("Move block failed: \(error.localizedDescription)")
@@ -1853,7 +2282,7 @@ struct ContentView: View {
             if paneReplaceWarningId == focusedPaneId {
                 // Second press within timeout — proceed: close terminal, replace in place
                 clearPaneReplaceWarning()
-                terminalManager.closeSession(focusedPaneId)
+                cleanupPaneResources(focusedPaneId)
                 // Fall through to replace the focused terminal pane directly
                 let file = makeOpenFile(for: entry, id: focusedPaneId)
                 workspaceManager.updatePaneContent(paneId: focusedPaneId, content: .document(openFile: file))
@@ -1869,9 +2298,9 @@ struct ContentView: View {
 
         // Determine target pane (non-terminal path)
         let targetPaneId: UUID
-        if let focusedLeaf = workspaceManager.focusedPane, case .document = focusedLeaf.content {
+        if let focusedLeaf = workspaceManager.focusedPane, isEditorDocumentPane(focusedLeaf) {
             targetPaneId = focusedLeaf.id
-        } else if let nearestDoc = workspaceManager.nearestDocumentLeaf(from: focusedPaneId) {
+        } else if let nearestDoc = nearestEditorDocumentLeaf(from: focusedPaneId) {
             targetPaneId = nearestDoc.id
         } else {
             targetPaneId = focusedPaneId
@@ -1879,6 +2308,7 @@ struct ContentView: View {
 
         // Update pane content
         let file = makeOpenFile(for: entry, id: targetPaneId)
+        cleanupPaneResources(targetPaneId)
         workspaceManager.updatePaneContent(paneId: targetPaneId, content: .document(openFile: file))
         workspaceManager.setFocusedPane(id: targetPaneId)
         loadFileContentForPane(entry: entry, paneId: targetPaneId)
@@ -1946,44 +2376,39 @@ struct ContentView: View {
 
     /// Load file content from disk into a pane's BlockDocument.
     private func loadFileContentForPane(entry: FileEntry, paneId: UUID) {
-        guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill else { return }
+        guard !entry.isDatabase,
+              !entry.isDatabaseRow,
+              !entry.isSkill,
+              !entry.isMail,
+              !entry.isCalendar,
+              !entry.isMeetings,
+              !entry.isGateway,
+              !entry.isBrowser,
+              !entry.isChat,
+              !entry.isGraphView else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
         editorUI.focusModeSuppress = true
-        do {
-            let diskContent = try fileSystem.loadFile(at: entry.path)
-            let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: entry.path)
-            let content = restoredDraft ?? diskContent
+        if let loadedPage = loadPageContent(at: entry.path) {
+            let content = loadedPage.content
 
             let doc = BlockDocument(markdown: content)
             doc.filePath = entry.path
             wireUpDocumentCallbacks(doc)
-
-            // Inject pageLink blocks for child pages
-            if let children = entry.children, !children.isEmpty {
-                let existingLinks = Set(doc.blocks.filter { $0.type == .pageLink }.map { $0.pageLinkName })
-                for child in children where child.name.hasSuffix(".md") && !child.isDatabase {
-                    let pageName = String(child.name.dropLast(3))
-                    if !existingLinks.contains(pageName) {
-                        doc.blocks.append(Block(type: .pageLink, pageLinkName: pageName))
-                    }
-                }
-            }
+            injectChildPageLinks(into: doc, from: entry)
 
             blockDocuments[paneId] = doc
 
             // Sync icon and display name from parsed document
             workspaceManager.updatePaneOpenFile(paneId: paneId) { file in
                 file.content = content
-                file.isDirty = restoredDraft != nil
+                file.isDirty = loadedPage.isRestoredDraft
                 file.icon = doc.icon
                 if let rawTitle = doc.titleBlock?.text, !rawTitle.isEmpty {
                     file.displayName = AttributedStringConverter.plainText(from: rawTitle)
                 }
             }
-        } catch {
-            Log.editor.error("Failed to load file: \(error.localizedDescription)")
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -2131,6 +2556,20 @@ struct ContentView: View {
         scheduleTrashPurgeIfNeeded(for: workspacePath)
         appState.workspacePath = workspacePath
 
+        // If we took the default path (no explicit user override), upgrade to the
+        // canonical iCloud workspace in the background. The initial local path
+        // renders the UI instantly; this repoints us at iCloud once resolved.
+        if restoredPath == nil {
+            Task { @MainActor in
+                if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
+                    appState.workspacePath = iCloudPath
+                    scheduleTrashPurgeIfNeeded(for: iCloudPath)
+                    refreshFileTree()
+                    startWorkspaceWatcher(path: iCloudPath)
+                }
+            }
+        }
+
         // Register workspace as a qmd collection in the background (no-op if qmd not installed)
         QmdService.registerCollectionInBackground(workspace: workspacePath)
 
@@ -2155,7 +2594,9 @@ struct ContentView: View {
         }
 
         // Initialize workspace manager (restore saved layout or migrate from tabs)
+        restoredWorkspaceDocuments = false
         workspaceManager.restoreOrCreateDefault()
+        restoreWorkspaceDocumentsIfNeeded()
 
         startWorkspaceWatcher(path: workspacePath)
 
@@ -2165,6 +2606,97 @@ struct ContentView: View {
             let servers = fs.parseMCPServers()
             await MainActor.run {
                 self.appState.mcpServers = servers
+            }
+        }
+    }
+
+    private func restoreWorkspaceDocumentsIfNeeded() {
+        guard !restoredWorkspaceDocuments else { return }
+
+        var didRestoreAny = false
+
+        for (workspaceIndex, leaf, file) in workspaceManager.allDocumentLeaves() {
+            guard file.kind == .page, !file.path.isEmpty else { continue }
+            guard let entry = restoredEntry(for: file),
+                  let loadedPage = loadPageContent(at: entry.path) else {
+                continue
+            }
+
+            let doc = BlockDocument(markdown: loadedPage.content)
+            doc.filePath = entry.path
+            wireUpDocumentCallbacks(doc)
+            injectChildPageLinks(into: doc, from: entry)
+            blockDocuments[leaf.id] = doc
+
+            var workspace = workspaceManager.workspaces[workspaceIndex]
+            guard case .document(var openFile) = leaf.content else { continue }
+            openFile.content = loadedPage.content
+            openFile.isDirty = loadedPage.isRestoredDraft
+            openFile.icon = doc.icon
+            if let rawTitle = doc.titleBlock?.text, !rawTitle.isEmpty {
+                openFile.displayName = AttributedStringConverter.plainText(from: rawTitle)
+            }
+            workspace.root = workspace.root.updatingLeafContent(
+                leafId: leaf.id,
+                content: .document(openFile: openFile)
+            )
+            workspaceManager.workspaces[workspaceIndex] = workspace
+            didRestoreAny = true
+        }
+
+        restoredWorkspaceDocuments = true
+        if didRestoreAny {
+            workspaceManager.schedulePersist()
+        }
+    }
+
+    private func restoredEntry(for file: OpenFile) -> FileEntry? {
+        if let entry = fileSystem.findEntry(path: file.path, in: appState.fileTree) {
+            return entry
+        }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            return nil
+        }
+
+        let companionPath = file.path.hasSuffix(".md") ? String(file.path.dropLast(3)) : file.path
+        var children: [FileEntry]?
+        if FileManager.default.fileExists(atPath: companionPath, isDirectory: &isDirectory),
+           isDirectory.boolValue {
+            children = fileSystem.buildFileTree(at: companionPath)
+        }
+
+        return FileEntry(
+            id: file.path,
+            name: (file.path as NSString).lastPathComponent,
+            path: file.path,
+            isDirectory: false,
+            kind: file.kind,
+            icon: file.icon,
+            children: children
+        )
+    }
+
+    private func loadPageContent(at path: String) -> (content: String, isRestoredDraft: Bool)? {
+        do {
+            let diskContent = try fileSystem.loadFile(at: path)
+            let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: path)
+            return (restoredDraft ?? diskContent, restoredDraft != nil)
+        } catch {
+            Log.editor.error("Failed to load file: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func injectChildPageLinks(into doc: BlockDocument, from entry: FileEntry) {
+        guard let children = entry.children, !children.isEmpty else { return }
+        let existingLinks = Set(doc.blocks.filter { $0.type == .pageLink }.map { $0.pageLinkName })
+        for child in children where child.name.hasSuffix(".md") && !child.isDatabase {
+            let pageName = String(child.name.dropLast(3))
+            if !existingLinks.contains(pageName) {
+                doc.blocks.append(Block(type: .pageLink, pageLinkName: pageName))
             }
         }
     }
@@ -2335,29 +2867,15 @@ struct ContentView: View {
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         formattingPanel?.hidePanel()
         editorUI.focusModeSuppress = true
-        do {
-            let diskContent = try fileSystem.loadFile(at: entry.path)
-            let restoredDraft = editorDraftStore.restorePageDraftIfNewer(path: entry.path)
-            let content = restoredDraft ?? diskContent
+        if let loadedPage = loadPageContent(at: entry.path) {
+            let content = loadedPage.content
             if let index = appState.openTabs.firstIndex(where: { $0.path == entry.path }) {
                 appState.openTabs[index].content = content
-                appState.openTabs[index].isDirty = restoredDraft != nil
+                appState.openTabs[index].isDirty = loadedPage.isRestoredDraft
                 let doc = BlockDocument(markdown: content)
                 doc.filePath = entry.path
                 wireUpDocumentCallbacks(doc)
-
-                // Inject pageLink blocks for child pages (from file tree, no extra disk I/O)
-                if let children = entry.children, !children.isEmpty {
-                    let existingLinks = Set(doc.blocks
-                        .filter { $0.type == .pageLink }
-                        .map { $0.pageLinkName })
-                    for child in children where child.name.hasSuffix(".md") && !child.isDatabase {
-                        let pageName = String(child.name.dropLast(3))
-                        if !existingLinks.contains(pageName) {
-                            doc.blocks.append(Block(type: .pageLink, pageLinkName: pageName))
-                        }
-                    }
-                }
+                injectChildPageLinks(into: doc, from: entry)
 
                 blockDocuments[appState.openTabs[index].id] = doc
                 // Sync icon from parsed document
@@ -2366,8 +2884,6 @@ struct ContentView: View {
                     appState.openTabs[index].displayName = AttributedStringConverter.plainText(from: rawTitle)
                 }
             }
-        } catch {
-            Log.editor.error("Failed to load file: \(error.localizedDescription)")
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
