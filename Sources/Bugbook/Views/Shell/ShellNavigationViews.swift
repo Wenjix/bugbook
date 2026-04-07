@@ -628,12 +628,12 @@ private struct CalendarSourceRow: View {
                 Spacer(minLength: 0)
                 if isHovering || !source.isVisible {
                     Image(systemName: source.isVisible ? "eye" : "eye.slash")
-                        .font(ShellZoomMetrics.font(Typography.bodySmall))
-                        .foregroundStyle(.secondary)
+                        .font(ShellZoomMetrics.font(Typography.caption))
+                        .foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, ShellSidebarMetrics.rowHorizontalPadding)
-            .padding(.vertical, ShellSidebarMetrics.rowVerticalPadding)
+            .padding(.vertical, ShellZoomMetrics.size(3))
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -663,7 +663,7 @@ private struct CalendarSourceListView: View {
     let calendarService: CalendarService
 
     var body: some View {
-        VStack(alignment: .leading, spacing: ShellZoomMetrics.size(6)) {
+        VStack(alignment: .leading, spacing: ShellZoomMetrics.size(1)) {
             ForEach(sources, id: \CalendarSource.id) { (source: CalendarSource) in
                 CalendarSourceRow(source: source, workspacePath: workspacePath, calendarService: calendarService)
             }

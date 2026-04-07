@@ -29,14 +29,8 @@ struct MailPaneView: View {
                     batchToolbar
                     Divider()
 
-                    if mailService.selectedThread != nil || mailService.isLoadingThread || mailService.isComposing {
-                        // Split view: thread list + detail
-                        HSplitView {
-                            threadList
-                                .frame(minWidth: 280, idealWidth: 360)
-                            detailPane
-                                .frame(minWidth: 300)
-                        }
+                    if mailService.selectedThread != nil || mailService.isLoadingThread || (mailService.isComposing && mailService.composer.threadId == nil) {
+                        detailPane
                     } else {
                         threadList
                     }
@@ -421,7 +415,7 @@ struct MailPaneView: View {
             // Sender
             Text(senderDisplayName(thread.participants.first ?? "Unknown"))
                 .font(.system(size: 13, weight: unread ? .bold : .regular))
-                .foregroundColor(unread ? .primary : .secondary)
+                .foregroundColor(unread ? Color(nsColor: .labelColor) : Color(nsColor: .tertiaryLabelColor))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.trailing, 6)
@@ -429,7 +423,7 @@ struct MailPaneView: View {
             // Subject
             Text(thread.subject)
                 .font(.system(size: 13, weight: unread ? .semibold : .regular))
-                .foregroundColor(unread ? .primary : .secondary)
+                .foregroundColor(unread ? Color(nsColor: .labelColor) : Color(nsColor: .tertiaryLabelColor))
                 .lineLimit(1)
                 .layoutPriority(1)
 
@@ -497,6 +491,14 @@ struct MailPaneView: View {
 
     private func threadToolbar(_ thread: MailThreadDetail) -> some View {
         HStack(spacing: 10) {
+            Button(action: { mailService.selectedThreadID = nil }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Back to inbox")
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(thread.subject)
                     .font(.system(size: 16, weight: .semibold))
@@ -544,12 +546,6 @@ struct MailPaneView: View {
                 .buttonStyle(.plain)
             }
 
-            Button(action: { mailService.selectedThreadID = nil }) {
-                Image(systemName: "xmark")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Close thread")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
