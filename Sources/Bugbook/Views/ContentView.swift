@@ -32,7 +32,6 @@ struct ContentView: View {
     @State private var railPinnedOpen = false
 
     @State private var saveTask: Task<Void, Never>?
-    @State private var sidebarPeek = SidebarPeekState()
     @State private var editorUI = EditorUIState()
     @State private var themeToast: ThemeMode?
     @State private var themeToastTask: Task<Void, Never>?
@@ -56,7 +55,8 @@ struct ContentView: View {
     @State private var peekWidth: CGFloat = 640
     @State private var peekDragStartWidth: CGFloat?
     @State private var sidebarHiddenByPeek: Bool = false
-    @State private var sidebarWasOpenBeforeSettings: Bool = true
+    @State private var panelBeforePeekHide: SidebarPanelID?
+    @State private var panelBeforeSettings: SidebarPanelID?
     @State private var modalTarget: RowTarget?
     @State private var showPageOptionsMenu = false
     @State private var databaseRowFullWidth: [UUID: Bool] = [:]
@@ -85,16 +85,15 @@ struct ContentView: View {
             Color.fallbackSidebarBg
 
             HStack(spacing: 0) {
+                navigationRailInline
                 contextualSidebarSection
                 mainContentWithAiPanel
             }
-            .padding(.leading, ShellSidebarMetrics.railWidth)
             .animation(.easeInOut(duration: 0.15), value: appState.showSettings)
-            .animation(.easeInOut(duration: 0.15), value: contextualSidebarLeaf?.id)
-            .animation(.easeInOut(duration: 0.15), value: appState.sidebarOpen)
+            .animation(.easeInOut(duration: 0.15), value: appState.activeSidebarPanel)
+            .animation(.easeInOut(duration: 0.15), value: railVisible)
 
             railEdgeHotZone
-            navigationRailOverlay
             commandPaletteOverlay
 
             movePageOverlay
@@ -146,18 +145,13 @@ struct ContentView: View {
             .onChange(of: appState.settings.qmdSearchMode) { _, _ in
                 // v2: no daemon needed, qmd query runs locally
             }
-            .onChange(of: appState.sidebarOpen) { _, _ in
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-            }
             .onChange(of: appState.showSettings) { _, showingSettings in
                 if showingSettings {
-                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-                    sidebarWasOpenBeforeSettings = appState.sidebarOpen
-                    appState.sidebarOpen = true
+                    panelBeforeSettings = appState.activeSidebarPanel
+                    appState.activeSidebarPanel = .settings
                 } else {
-                    appState.sidebarOpen = sidebarWasOpenBeforeSettings
+                    appState.activeSidebarPanel = panelBeforeSettings
                 }
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
             }
             .onChange(of: appState.fileTree) { _, newTree in
                 syncAvailablePages(newTree)
@@ -168,12 +162,6 @@ struct ContentView: View {
                 if isOpen {
                     ensureAiInitializedIfNeeded()
                 }
-            }
-            .onChange(of: editorUI.focusModeActive) { _, _ in
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-            }
-            .onChange(of: sidebarPeek.trashPopoverPresented) { _, _ in
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
             }
             .onChange(of: appState.settings.focusModeOnType) { _, enabled in
                 editorUI.focusModeEnabled = enabled
@@ -507,18 +495,42 @@ struct ContentView: View {
         appState.settings.railPinned || railPinnedOpen || railEdgeHovering || railHovering
     }
 
-    private var navigationRailOverlay: some View {
-        NavigationRailView(
-            indicatorProvider: railIndicator(for:),
-            onSelect: handleRailSelection(_:)
-        )
-        .offset(x: railVisible ? 0 : -ShellSidebarMetrics.railWidth)
-        .animation(.easeInOut(duration: 0.15), value: railVisible)
-        .allowsHitTesting(railVisible)
-        .onHover { hovering in
-            railHovering = hovering
+    private var hasFullBleedPane: Bool {
+        activeWorkspaceLeaves.contains { leaf in
+            switch leaf.content {
+            case .terminal: return true
+            case .document(let file): return file.isBrowser
+            }
         }
-        .zIndex(3)
+    }
+
+    @ViewBuilder
+    private var navigationRailInline: some View {
+        if hasFullBleedPane && !railVisible {
+            // Sliver: 4px hover target when rail is collapsed for full-bleed panes
+            Color.fallbackSidebarBg
+                .frame(width: ShellZoomMetrics.size(4))
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(Color.fallbackChromeBorder)
+                        .frame(width: 0.5)
+                }
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    railEdgeHovering = hovering
+                }
+        } else {
+            NavigationRailView(
+                indicatorProvider: railIndicator(for:),
+                onSelect: handleRailSelection(_:)
+            )
+            .frame(width: railVisible ? ShellSidebarMetrics.railWidth : 0, alignment: .leading)
+            .clipped()
+            .allowsHitTesting(railVisible)
+            .onHover { hovering in
+                railHovering = hovering
+            }
+        }
     }
 
     @ViewBuilder
@@ -540,13 +552,30 @@ struct ContentView: View {
 
     @ViewBuilder
     private var contextualSidebarSection: some View {
-        if appState.showSettings {
+        switch appState.activeSidebarPanel {
+        case .settings:
             SettingsSidebarView(appState: appState)
                 .transition(shellSidebarTransition)
-        } else if let leaf = contextualSidebarLeaf {
-            contextualSidebarView(for: leaf)
-                .transition(shellSidebarTransition)
-        } else if appState.sidebarOpen && !focusedPaneSuppressesSidebar {
+        case .mail:
+            MailContextualSidebarView(
+                appState: appState,
+                mailService: mailService,
+                onRefresh: {
+                    guard let token = appState.settings.googleToken else { return }
+                    Task {
+                        await mailService.refreshSelectedMailbox(token: token)
+                    }
+                }
+            )
+            .transition(shellSidebarTransition)
+        case .calendar:
+            CalendarContextualSidebarView(
+                calendarVM: calendarVM,
+                calendarService: calendarService,
+                workspacePath: appState.workspacePath
+            )
+            .transition(shellSidebarTransition)
+        case .workspace:
             WorkspaceContextualSidebarView(
                 appState: appState,
                 fileSystem: fileSystem,
@@ -559,106 +588,13 @@ struct ContentView: View {
                 }
             )
             .transition(shellSidebarTransition)
+        case nil:
+            EmptyView()
         }
     }
 
     private var shellSidebarTransition: AnyTransition {
         .move(edge: .leading).combined(with: .opacity)
-    }
-
-    @ViewBuilder
-    private var sidebarPeekEdgeHotspot: some View {
-        if sidebarPeekEligible {
-            HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: 4)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        sidebarPeek.setEdgeHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-                    }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private var sidebarToggleOverlay: some View {
-        if sidebarPeekEligible {
-            VStack {
-                HStack {
-                    sidebarChromeButton(icon: "sidebar.left", help: "Toggle Sidebar (⌘.)") {
-                        openSidebarPinned()
-                    }
-                    .padding(ShellZoomMetrics.size(4))
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        sidebarPeek.setToggleHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-                    }
-                    .padding(.leading, ShellZoomMetrics.size(80))
-                    Spacer()
-                }
-                .padding(.top, ShellZoomMetrics.size(4))
-                Spacer()
-            }
-            .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
-        }
-    }
-
-    @ViewBuilder
-    private var sidebarPeekOverlay: some View {
-        if sidebarPeekEligible {
-            SidebarView(
-                appState: appState,
-                fileSystem: fileSystem,
-                onSelectFile: { entry in
-                    handleSidebarFileSelect(entry)
-                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-                },
-                onToggleSidebar: {
-                    openSidebarPinned()
-                },
-                onAddSidebarReference: { payload in
-                    addSidebarReference(payload)
-                },
-                layoutMode: .compact,
-                onActionInvoked: {
-                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-                },
-                trashPopoverOverride: Binding(
-                    get: { sidebarPeek.trashPopoverPresented },
-                    set: { sidebarPeek.trashPopoverPresented = $0 }
-                )
-            )
-            .frame(width: ShellZoomMetrics.size(208))
-            .frame(maxHeight: ShellZoomMetrics.size(430), alignment: .topLeading)
-            .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.md)))
-            .overlay {
-                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.md))
-                    .stroke(Color.fallbackChromeBorder, lineWidth: 0.5)
-                    .allowsHitTesting(false)
-            }
-            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 4, y: 4)
-            .contentShape(Rectangle())
-            .offset(x: sidebarPeek.isVisible ? 0 : sidebarPeekHiddenOffset)
-            .opacity(sidebarPeek.isVisible ? 1 : 0)
-            .allowsHitTesting(sidebarPeek.isVisible)
-            .onHover { hovering in
-                // Only track overlay hover when peek is actually visible —
-                // .onHover fires even with allowsHitTesting(false)
-                guard sidebarPeek.isVisible else {
-                    if sidebarPeek.overlayHovering {
-                        sidebarPeek.setOverlayHovering(false, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-                    }
-                    return
-                }
-                sidebarPeek.setOverlayHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-            }
-            .padding(.top, ShellZoomMetrics.size(72))
-            .padding(.leading, ShellZoomMetrics.size(8))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .zIndex(1)
-        }
     }
 
     @ViewBuilder
@@ -778,19 +714,6 @@ struct ContentView: View {
         .disabled(!isEnabled)
     }
 
-    private var sidebarPeekEligible: Bool {
-        !shellShowsSidebarPanel && !editorUI.focusModeActive && !sidebarHiddenByPeek
-    }
-
-    private var sidebarPeekHiddenOffset: CGFloat {
-        reduceMotion ? 0 : -ShellZoomMetrics.size(18)
-    }
-
-    private func openSidebarPinned() {
-        sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-        appState.sidebarOpen = true
-    }
-
     private func handleSidebarToggleRequest() {
         withAnimation(.easeInOut(duration: 0.15)) {
             railPinnedOpen.toggle()
@@ -808,19 +731,8 @@ struct ContentView: View {
         workspaceManager.activeWorkspace?.allLeaves ?? []
     }
 
-    private var contextualSidebarLeaf: PaneNode.Leaf? {
-        guard !appState.showSettings,
-              let workspace = workspaceManager.activeWorkspace,
-              workspace.allLeaves.count == 1,
-              let leaf = workspace.focusedLeaf,
-              paneUsesContextualSidebar(leaf) else {
-            return nil
-        }
-        return leaf
-    }
-
     private var shellShowsSidebarPanel: Bool {
-        appState.showSettings || contextualSidebarLeaf != nil || (appState.sidebarOpen && !focusedPaneSuppressesSidebar)
+        appState.activeSidebarPanel != nil
     }
 
     private var focusedBrowserPaneID: UUID? {
@@ -837,25 +749,6 @@ struct ContentView: View {
             return nil
         }
         return file.path
-    }
-
-    private var focusedPaneSuppressesSidebar: Bool {
-        guard let leaf = workspaceManager.focusedPane else { return false }
-        switch leaf.content {
-        case .terminal:
-            return true
-        case .document(let file):
-            return file.isBrowser
-        }
-    }
-
-    private func paneUsesContextualSidebar(_ leaf: PaneNode.Leaf) -> Bool {
-        switch leaf.content {
-        case .terminal:
-            return false
-        case .document(let file):
-            return file.isMail || file.isCalendar
-        }
     }
 
     private func leafMatchesRailItem(_ leaf: PaneNode.Leaf, item: RailItemID) -> Bool {
@@ -890,27 +783,35 @@ struct ContentView: View {
         aiInitTask?.cancel()
         aiInitTask = nil
         editorUI.cleanUp()
-        sidebarPeek.cleanUp()
         workspaceWatcher?.stop()
         recordingPillController.cleanup()
     }
 
     private func railIndicator(for item: RailItemID) -> RailIndicatorState {
-        if item == .settings {
-            return appState.showSettings ? .focused : .none
-        }
-        if item == .workspace {
-            return appState.sidebarOpen ? .focused : .none
-        }
-        let leaves = activeWorkspaceLeaves
-        guard leaves.contains(where: { leafMatchesRailItem($0, item: item) }) else {
+        // Panel-bearing items: focused = panel active in slot
+        switch item {
+        case .settings:
+            return appState.activeSidebarPanel == .settings ? .focused : .none
+        case .workspace:
+            return appState.activeSidebarPanel == .workspace ? .focused : .none
+        case .mail:
+            if appState.activeSidebarPanel == .mail { return .focused }
+            if activeWorkspaceLeaves.contains(where: { leafMatchesRailItem($0, item: .mail) }) { return .open }
             return .none
+        case .calendar:
+            if appState.activeSidebarPanel == .calendar { return .focused }
+            if activeWorkspaceLeaves.contains(where: { leafMatchesRailItem($0, item: .calendar) }) { return .open }
+            return .none
+        default:
+            // Non-panel items (home, browser, terminal): focused = pane is focused
+            let leaves = activeWorkspaceLeaves
+            guard leaves.contains(where: { leafMatchesRailItem($0, item: item) }) else { return .none }
+            if let focusedLeaf = workspaceManager.focusedPane,
+               leafMatchesRailItem(focusedLeaf, item: item) {
+                return .focused
+            }
+            return .open
         }
-        if let focusedLeaf = workspaceManager.focusedPane,
-           leafMatchesRailItem(focusedLeaf, item: item) {
-            return .focused
-        }
-        return .open
     }
 
     private func presentEditorPane(_ content: PaneContent) {
@@ -926,39 +827,29 @@ struct ContentView: View {
         case .home:
             presentEditorPane(.gatewayDocument())
         case .mail:
-            presentEditorPane(.mailDocument())
+            toggleSidebarPanel(.mail)
         case .calendar:
-            presentEditorPane(.calendarDocument())
+            toggleSidebarPanel(.calendar)
         case .browser:
             presentEditorPane(.browserDocument())
         case .terminal:
             presentEditorPane(.terminal)
         case .workspace:
-            appState.sidebarOpen.toggle()
+            toggleSidebarPanel(.workspace)
         }
     }
 
-    @ViewBuilder
-    private func contextualSidebarView(for leaf: PaneNode.Leaf) -> some View {
-        if case .document(let file) = leaf.content, file.isMail {
-            MailContextualSidebarView(
-                appState: appState,
-                mailService: mailService,
-                onRefresh: {
-                    guard let token = appState.settings.googleToken else { return }
-                    Task {
-                        await mailService.refreshSelectedMailbox(token: token)
-                    }
-                }
-            )
-        } else if case .document(let file) = leaf.content, file.isCalendar {
-            CalendarContextualSidebarView(
-                calendarVM: calendarVM,
-                calendarService: calendarService,
-                workspacePath: appState.workspacePath
-            )
+    private func toggleSidebarPanel(_ panel: SidebarPanelID) {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            if appState.activeSidebarPanel == panel {
+                appState.activeSidebarPanel = nil
+            } else {
+                appState.activeSidebarPanel = panel
+            }
         }
     }
+
+    // contextualSidebarView removed — routing now in contextualSidebarSection via activeSidebarPanel
 
     // MARK: - Move Page Overlay
 
@@ -3921,10 +3812,11 @@ struct ContentView: View {
         // Auto-hide sidebar when peek is wide
         if clamped > 600 && !sidebarHiddenByPeek {
             sidebarHiddenByPeek = true
-            appState.sidebarOpen = false
+            panelBeforePeekHide = appState.activeSidebarPanel
+            appState.activeSidebarPanel = nil
         } else if clamped <= 600 && sidebarHiddenByPeek {
             sidebarHiddenByPeek = false
-            appState.sidebarOpen = true
+            appState.activeSidebarPanel = panelBeforePeekHide
         }
     }
 
@@ -3932,7 +3824,7 @@ struct ContentView: View {
         peekTarget = nil
         if sidebarHiddenByPeek {
             sidebarHiddenByPeek = false
-            appState.sidebarOpen = true
+            appState.activeSidebarPanel = panelBeforePeekHide
         }
     }
 

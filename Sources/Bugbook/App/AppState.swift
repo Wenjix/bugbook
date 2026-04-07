@@ -22,11 +22,24 @@ struct MCPServerInfo: Identifiable {
     var id: String { name }
 }
 
+enum SidebarPanelID: String, Equatable {
+    case workspace
+    case mail
+    case calendar
+    case settings
+}
+
 @MainActor
 @Observable class AppState {
     var openTabs: [OpenFile] = []
     var activeTabIndex: Int = 0
-    var sidebarOpen: Bool = false
+    var activeSidebarPanel: SidebarPanelID?
+
+    /// Shim: existing call sites read/write sidebarOpen; maps to activeSidebarPanel == .workspace
+    var sidebarOpen: Bool {
+        get { activeSidebarPanel == .workspace }
+        set { activeSidebarPanel = newValue ? .workspace : (activeSidebarPanel == .workspace ? nil : activeSidebarPanel) }
+    }
     var workspacePath: String?
     var fileTree: [FileEntry] = []
     var sidebarReferences: [FileEntry] = []
