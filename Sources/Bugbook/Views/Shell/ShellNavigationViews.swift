@@ -484,13 +484,13 @@ struct MailContextualSidebarView: View {
 
                         Button(action: { mailService.presentNewComposer() }) {
                             Label("Compose", systemImage: "square.and.pencil")
-                                .font(ShellZoomMetrics.font(Typography.body, weight: .medium))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, ShellZoomMetrics.size(12))
+                                .font(ShellZoomMetrics.font(Typography.body, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
                                 .padding(.vertical, ShellZoomMetrics.size(10))
                                 .background(
                                     RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.md))
-                                        .fill(Color.primary.opacity(0.06))
+                                        .fill(Color.accentColor)
                                 )
                         }
                         .buttonStyle(.plain)

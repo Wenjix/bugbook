@@ -386,6 +386,7 @@ struct MailPaneView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fallbackEditorBg)
         } else if mailService.isLoadingThread {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
