@@ -18,6 +18,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var isMail: Bool { kind.isMail }
     var isCalendar: Bool { kind.isCalendar }
     var isMeetings: Bool { kind.isMeetings }
+    var isBrowser: Bool { kind.isBrowser }
     var isGraphView: Bool { kind.isGraphView }
     var isSkill: Bool { kind.isSkill }
     var isGateway: Bool { kind.isGateway }

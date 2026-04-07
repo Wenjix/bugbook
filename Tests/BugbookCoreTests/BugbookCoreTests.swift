@@ -16,10 +16,13 @@ final class SchemaModelTests: XCTestCase {
         XCTAssertEqual(PropertyType.url.rawValue, "url")
         XCTAssertEqual(PropertyType.email.rawValue, "email")
         XCTAssertEqual(PropertyType.relation.rawValue, "relation")
+        XCTAssertEqual(PropertyType.formula.rawValue, "formula")
+        XCTAssertEqual(PropertyType.lookup.rawValue, "lookup")
+        XCTAssertEqual(PropertyType.rollup.rawValue, "rollup")
     }
 
     func testPropertyTypeAllCases() {
-        XCTAssertEqual(PropertyType.allCases.count, 10)
+        XCTAssertEqual(PropertyType.allCases.count, 13)
     }
 
     func testSelectOptionInit() {

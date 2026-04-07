@@ -81,7 +81,7 @@ struct WorkspaceTabBar: View {
                 .padding(.leading, ShellZoomMetrics.size(2))
             }
             .scrollIndicators(.hidden)
-            .padding(.leading, sidebarOpen ? ShellZoomMetrics.size(8) : ShellZoomMetrics.size(112))
+            .padding(.leading, ShellZoomMetrics.size(8))
             Spacer()
             layoutSavedIndicator
         }
@@ -130,6 +130,7 @@ struct WorkspaceTabBar: View {
             case .document(let file):
                 if let name = file.displayName, !name.isEmpty { return name }
                 if file.isEmptyTab { return "New Tab" }
+                if file.isBrowser { return "Browser" }
                 if file.isCalendar { return "Calendar" }
                 if file.isMeetings { return "Meetings" }
                 if file.isGraphView { return "Graph" }
@@ -155,6 +156,7 @@ struct WorkspaceTabBar: View {
             if file.isGateway { return "sf:house" }
             if file.isMail { return "sf:envelope" }
             if file.isCalendar { return "sf:calendar" }
+            if file.isBrowser { return "sf:globe" }
             if file.isMeetings { return "sf:waveform" }
             if file.isGraphView { return "sf:point.3.connected.trianglepath.dotted" }
             return file.icon
@@ -186,6 +188,10 @@ private struct NewPanePopover: View {
             }
             contentRow(icon: "terminal", label: "Terminal") {
                 workspaceManager.addWorkspaceWith(content: .terminal)
+                dismiss()
+            }
+            contentRow(icon: "globe", label: "Browser") {
+                workspaceManager.addWorkspaceWith(content: .browserDocument())
                 dismiss()
             }
             contentRow(icon: "calendar", label: "Calendar") {

@@ -26,7 +26,7 @@ struct MCPServerInfo: Identifiable {
 @Observable class AppState {
     var openTabs: [OpenFile] = []
     var activeTabIndex: Int = 0
-    var sidebarOpen: Bool = true
+    var sidebarOpen: Bool = false
     var workspacePath: String?
     var fileTree: [FileEntry] = []
     var sidebarReferences: [FileEntry] = []
@@ -249,6 +249,8 @@ struct MCPServerInfo: Identifiable {
             return FileEntry(id: path, name: "Mail", path: path, isDirectory: false, kind: .mail, icon: "envelope")
         case "bugbook://calendar":
             return FileEntry(id: path, name: "Calendar", path: path, isDirectory: false, kind: .calendar, icon: "calendar.badge.clock")
+        case "bugbook://browser":
+            return FileEntry(id: path, name: "Browser", path: path, isDirectory: false, kind: .browser, icon: "globe")
         case "bugbook://meetings":
             return FileEntry(id: path, name: "Meetings", path: path, isDirectory: false, kind: .meetings, icon: "person.2")
         case "bugbook://graph":
@@ -353,12 +355,17 @@ struct MCPServerInfo: Identifiable {
 
     func openNotesChat() {
         showSettings = false
-        aiSidePanelOpen = false
-        currentView = .chat
+        if currentView == .chat {
+            currentView = .editor
+        }
+        aiSidePanelOpen = true
     }
 
     func closeNotesChat() {
-        currentView = .editor
+        aiSidePanelOpen = false
+        if currentView == .chat {
+            currentView = .editor
+        }
     }
 
     func openGraphView() {
@@ -386,6 +393,29 @@ struct MCPServerInfo: Identifiable {
             kind: .calendar,
             displayName: "Calendar",
             icon: "calendar.badge.clock"
+        )
+        openTabs.append(tab)
+        activeTabIndex = openTabs.count - 1
+    }
+
+    func openBrowser() {
+        showSettings = false
+        currentView = .editor
+
+        let browserPath = "bugbook://browser"
+        if let existingIndex = openTabs.firstIndex(where: { $0.isBrowser }) {
+            activeTabIndex = existingIndex
+            return
+        }
+        let tab = OpenFile(
+            id: UUID(),
+            path: browserPath,
+            content: "",
+            isDirty: false,
+            isEmptyTab: false,
+            kind: .browser,
+            displayName: "Browser",
+            icon: "globe"
         )
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1

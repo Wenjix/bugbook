@@ -58,14 +58,16 @@ struct PaneContentView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                PaneChromeBar(
-                    leaf: leaf,
-                    workspaceManager: workspaceManager,
-                    isOnlyPane: !showFocusBorder,
-                    fileTree: fileTree,
-                    breadcrumbs: chromeBreadcrumbs,
-                    onBreadcrumbNavigate: onBreadcrumbNavigate
-                )
+                if shouldShowChromeBar {
+                    PaneChromeBar(
+                        leaf: leaf,
+                        workspaceManager: workspaceManager,
+                        isOnlyPane: !showFocusBorder,
+                        fileTree: fileTree,
+                        breadcrumbs: chromeBreadcrumbs,
+                        onBreadcrumbNavigate: onBreadcrumbNavigate
+                    )
+                }
 
                 if showFindBar {
                     PaneFindBar(
@@ -110,7 +112,7 @@ struct PaneContentView: View {
             return true
         }
         .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
-            guard isFocusedPane else { return }
+            guard isFocusedPane, supportsInlineFindBar else { return }
             if showFindBar {
                 findRefocusTrigger.toggle()
             } else {
@@ -156,6 +158,7 @@ struct PaneContentView: View {
 
     @ViewBuilder
     private func paneTypeMenu(action: @escaping (PaneContent) -> Void) -> some View {
+        Button("Browser") { action(.browserDocument()) }
         Button("Terminal") { action(.terminal) }
         Button("Empty Page") { action(.emptyDocument()) }
         Button("Mail") { action(.mailDocument()) }
@@ -169,11 +172,31 @@ struct PaneContentView: View {
         guard let provider = breadcrumbProvider else { return [] }
         switch leaf.content {
         case .document(let file):
-            if file.isEmptyTab || file.isMail || file.isCalendar || file.isMeetings || file.isGateway || file.isChat || file.isGraphView { return [] }
+            if file.isEmptyTab || file.isMail || file.isCalendar || file.isMeetings || file.isGateway || file.isChat || file.isGraphView || file.isBrowser { return [] }
             return provider(file)
         case .terminal:
             return []
         }
+    }
+
+    private var shouldShowChromeBar: Bool {
+        guard case .document(let file) = leaf.content else { return true }
+        if showFocusBorder {
+            return true
+        }
+        return !(file.isMail || file.isCalendar)
+    }
+
+    private var supportsInlineFindBar: Bool {
+        guard case .document(let file) = leaf.content else { return false }
+        return !file.isEmptyTab
+            && !file.isMail
+            && !file.isCalendar
+            && !file.isMeetings
+            && !file.isGateway
+            && !file.isBrowser
+            && !file.isChat
+            && !file.isGraphView
     }
 
     @ViewBuilder

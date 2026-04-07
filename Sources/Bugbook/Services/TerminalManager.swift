@@ -161,6 +161,8 @@ final class TerminalManager {
     /// If ghostty isn't initialized yet, stores the value for later.
     func applyColorScheme(_ scheme: ghostty_color_scheme_e) {
         guard let app = ghosttyApp else {
+            // A plain color-scheme selection should override any deferred custom theme.
+            pendingTheme = nil
             pendingColorScheme = scheme
             return
         }
