@@ -306,6 +306,12 @@ class CalendarService {
         try? store.saveSources(sources, in: workspace)
     }
 
+    func updateSourceColor(id: String, color: String, workspace: String) {
+        guard let idx = sources.firstIndex(where: { $0.id == id }) else { return }
+        sources[idx].color = color
+        try? store.saveSources(sources, in: workspace)
+    }
+
     // MARK: - Event Linking
 
     func linkEventToPage(eventId: String, pagePath: String, workspace: String) {

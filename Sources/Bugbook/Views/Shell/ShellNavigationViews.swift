@@ -603,6 +603,8 @@ struct WorkspaceContextualSidebarView: View {
 }
 
 private struct CalendarSourceListView: View {
+    private static let tagColorNames = ["blue", "green", "red", "yellow", "purple", "pink", "orange", "teal", "gray"]
+
     let sources: [CalendarSource]
     let workspacePath: String?
     let calendarService: CalendarService
@@ -635,6 +637,21 @@ private struct CalendarSourceListView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    ForEach(Self.tagColorNames, id: \.self) { colorName in
+                        Button {
+                            guard let workspacePath else { return }
+                            calendarService.updateSourceColor(id: source.id, color: colorName, workspace: workspacePath)
+                        } label: {
+                            Label {
+                                Text(colorName.capitalized)
+                            } icon: {
+                                Image(systemName: source.color == colorName ? "checkmark.circle.fill" : "circle.fill")
+                                    .foregroundStyle(TagColor.color(for: colorName))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -669,8 +686,8 @@ private struct MiniCalendarView: View {
                 .font(ShellZoomMetrics.font(Typography.caption, weight: .semibold))
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: ShellZoomMetrics.size(4)), count: 7), spacing: ShellZoomMetrics.size(4)) {
-                ForEach(calendar.shortWeekdaySymbols, id: \.self) { symbol in
-                    Text(symbol.uppercased())
+                ForEach(calendar.shortWeekdaySymbols.map { String($0.prefix(2)).uppercased() }, id: \.self) { symbol in
+                    Text(symbol)
                         .font(ShellZoomMetrics.font(9, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
