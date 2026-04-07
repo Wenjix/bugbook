@@ -51,20 +51,16 @@ public enum WorkspaceResolver {
         let documentsURL = containerURL.appendingPathComponent("Documents")
         let defaultPath = documentsURL.appendingPathComponent(defaultFolderName).path
 
-        // If default folder has real content, use it.
-        if fm.fileExists(atPath: defaultPath), mdFileCount(at: defaultPath, fm: fm) > 2 {
-            return defaultPath
-        }
-
-        // Scan siblings for richer workspace (handles iCloud "Bugbook 2/3" duplicates).
+        // Scan all "Bugbook*" siblings and pick the one with the most .md files.
+        // Handles iCloud conflict duplication ("Bugbook 2", "Bugbook 3", etc.)
         if let siblings = try? fm.contentsOfDirectory(atPath: documentsURL.path) {
             let candidates = siblings
                 .filter { $0.hasPrefix(defaultFolderName) }
-                .map { (name: $0, path: documentsURL.appendingPathComponent($0).path) }
-                .map { (name: $0.name, path: $0.path, count: mdFileCount(at: $0.path, fm: fm)) }
+                .map { documentsURL.appendingPathComponent($0).path }
+                .map { (path: $0, count: mdFileCount(at: $0, fm: fm)) }
                 .sorted { $0.count > $1.count }
 
-            if let best = candidates.first, best.count > 2 {
+            if let best = candidates.first, best.count > 0 {
                 return best.path
             }
         }
@@ -77,10 +73,12 @@ public enum WorkspaceResolver {
     }
 
     /// Count .md files (non-underscore-prefixed) recursively, up to a shallow depth.
+    /// Count user-authored .md files, excluding database rows and underscore-prefixed files.
     private static func mdFileCount(at path: String, fm: FileManager, depth: Int = 0) -> Int {
         guard depth < 3, let entries = try? fm.contentsOfDirectory(atPath: path) else { return 0 }
         var count = 0
         for name in entries where !name.hasPrefix(".") {
+            if name == "databases" || name == "Daily Notes" || name == "Templates" { continue }
             let full = (path as NSString).appendingPathComponent(name)
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: full, isDirectory: &isDir) else { continue }
