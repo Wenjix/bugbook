@@ -77,7 +77,7 @@ struct WorkspaceTabBar: View {
                     draggingId: $draggingId
                 ))
             }
-            .padding(.leading, ShellZoomMetrics.size(10))
+            .padding(.leading, ShellZoomMetrics.size(70))
             Spacer(minLength: 0)
             layoutSavedIndicator
         }
