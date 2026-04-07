@@ -86,10 +86,12 @@ struct ContentView: View {
 
             HStack(spacing: 0) {
                 contextualSidebarSection
+                    .padding(.leading, ShellSidebarMetrics.railWidth)
                 mainContentWithAiPanel
             }
             .animation(.easeInOut(duration: 0.15), value: appState.showSettings)
             .animation(.easeInOut(duration: 0.15), value: contextualSidebarLeaf?.id)
+            .animation(.easeInOut(duration: 0.15), value: appState.sidebarOpen)
 
             railEdgeHotZone
             navigationRailOverlay
@@ -544,6 +546,19 @@ struct ContentView: View {
         } else if let leaf = contextualSidebarLeaf {
             contextualSidebarView(for: leaf)
                 .transition(shellSidebarTransition)
+        } else if appState.sidebarOpen && !focusedPaneSuppressesSidebar {
+            WorkspaceContextualSidebarView(
+                appState: appState,
+                fileSystem: fileSystem,
+                activeFilePath: contextualSidebarActiveFilePath,
+                onSelectWorkspaceEntry: { entry in
+                    handleSidebarFileSelect(entry)
+                },
+                onRefreshTree: {
+                    refreshFileTree()
+                }
+            )
+            .transition(shellSidebarTransition)
         }
     }
 
@@ -805,7 +820,7 @@ struct ContentView: View {
     }
 
     private var shellShowsSidebarPanel: Bool {
-        appState.showSettings || contextualSidebarLeaf != nil
+        appState.showSettings || contextualSidebarLeaf != nil || (appState.sidebarOpen && !focusedPaneSuppressesSidebar)
     }
 
     private var focusedBrowserPaneID: UUID? {
@@ -822,6 +837,16 @@ struct ContentView: View {
             return nil
         }
         return file.path
+    }
+
+    private var focusedPaneSuppressesSidebar: Bool {
+        guard let leaf = workspaceManager.focusedPane else { return false }
+        switch leaf.content {
+        case .terminal:
+            return true
+        case .document(let file):
+            return file.isBrowser
+        }
     }
 
     private func paneUsesContextualSidebar(_ leaf: PaneNode.Leaf) -> Bool {
@@ -849,6 +874,8 @@ struct ContentView: View {
             return file.isCalendar
         case let (.browser, .document(file)):
             return file.isBrowser
+        case (.workspace, _):
+            return appState.sidebarOpen
         case (.settings, _):
             return appState.showSettings
         }
@@ -871,6 +898,9 @@ struct ContentView: View {
     private func railIndicator(for item: RailItemID) -> RailIndicatorState {
         if item == .settings {
             return appState.showSettings ? .focused : .none
+        }
+        if item == .workspace {
+            return appState.sidebarOpen ? .focused : .none
         }
         let leaves = activeWorkspaceLeaves
         guard leaves.contains(where: { leafMatchesRailItem($0, item: item) }) else {
@@ -903,6 +933,8 @@ struct ContentView: View {
             presentEditorPane(.browserDocument())
         case .terminal:
             presentEditorPane(.terminal)
+        case .workspace:
+            appState.sidebarOpen.toggle()
         }
     }
 
