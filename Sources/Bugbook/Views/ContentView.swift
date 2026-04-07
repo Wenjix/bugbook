@@ -827,8 +827,10 @@ struct ContentView: View {
         case .home:
             presentEditorPane(.gatewayDocument())
         case .mail:
+            presentEditorPane(.mailDocument())
             toggleSidebarPanel(.mail)
         case .calendar:
+            presentEditorPane(.calendarDocument())
             toggleSidebarPanel(.calendar)
         case .browser:
             presentEditorPane(.browserDocument())
@@ -2467,11 +2469,8 @@ struct ContentView: View {
     }
 
     private func initializeWorkspace() {
-        // Restore the most recently used workspace, falling back to the default
-        let restoredPath = fileSystem.recentWorkspaces.first(where: {
-            FileManager.default.fileExists(atPath: $0)
-        })
-        let workspacePath = restoredPath ?? fileSystem.defaultWorkspacePath()
+        // Always use the default path (which now picks the richest iCloud workspace)
+        let workspacePath = fileSystem.defaultWorkspacePath()
         if !FileManager.default.fileExists(atPath: workspacePath) {
             try? FileManager.default.createDirectory(atPath: workspacePath, withIntermediateDirectories: true)
         }
@@ -2479,17 +2478,13 @@ struct ContentView: View {
         scheduleTrashPurgeIfNeeded(for: workspacePath)
         appState.workspacePath = workspacePath
 
-        // If we took the default path (no explicit user override), upgrade to the
-        // canonical iCloud workspace in the background. The initial local path
-        // renders the UI instantly; this repoints us at iCloud once resolved.
-        if restoredPath == nil {
-            Task { @MainActor in
-                if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
-                    appState.workspacePath = iCloudPath
-                    scheduleTrashPurgeIfNeeded(for: iCloudPath)
-                    refreshFileTree()
-                    startWorkspaceWatcher(path: iCloudPath)
-                }
+        // Upgrade to the canonical iCloud workspace in the background if available.
+        Task { @MainActor in
+            if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
+                appState.workspacePath = iCloudPath
+                scheduleTrashPurgeIfNeeded(for: iCloudPath)
+                refreshFileTree()
+                startWorkspaceWatcher(path: iCloudPath)
             }
         }
 

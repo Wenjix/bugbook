@@ -414,16 +414,16 @@ struct MailPaneView: View {
 
             // Sender
             Text(senderDisplayName(thread.participants.first ?? "Unknown"))
-                .font(.system(size: 13, weight: unread ? .bold : .regular))
+                .font(.system(size: 14, weight: unread ? .bold : .medium))
                 .foregroundColor(Color(nsColor: .labelColor))
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.trailing, 6)
+                .padding(.trailing, 8)
 
             // Subject
             Text(thread.subject)
-                .font(.system(size: 13, weight: unread ? .medium : .regular))
-                .foregroundColor(Color(nsColor: unread ? .labelColor : .secondaryLabelColor))
+                .font(.system(size: 13, weight: unread ? .semibold : .regular))
+                .foregroundColor(Color(nsColor: .labelColor))
                 .lineLimit(1)
                 .layoutPriority(1)
 
