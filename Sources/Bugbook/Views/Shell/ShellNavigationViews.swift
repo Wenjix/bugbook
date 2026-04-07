@@ -417,7 +417,7 @@ struct SettingsSidebarView: View {
                 .buttonStyle(.plain)
                 .padding(.horizontal, ShellZoomMetrics.size(12))
                 .padding(.top, ShellSidebarMetrics.titleTopPadding)
-                .padding(.bottom, ShellZoomMetrics.size(8))
+                .padding(.bottom, ShellZoomMetrics.size(16))
 
                 Text("Settings")
                     .font(ShellZoomMetrics.font(Typography.caption, weight: .semibold))

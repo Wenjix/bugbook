@@ -616,7 +616,7 @@ struct MailPaneView: View {
             if let htmlBody = message.htmlBody,
                !htmlBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 MailHTMLView(html: htmlBody)
-                    .frame(minHeight: 220)
+                    .frame(minHeight: 500, maxHeight: .infinity)
                     .clipShape(.rect(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
