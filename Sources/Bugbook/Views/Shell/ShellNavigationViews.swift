@@ -651,9 +651,9 @@ private struct CalendarSourceListView: View {
                                 Text(colorName.capitalized)
                             } icon: {
                                 Image(systemName: source.color == colorName ? "checkmark.circle.fill" : "circle.fill")
-                                    .foregroundStyle(TagColor.color(for: colorName))
                             }
                         }
+                        .tint(TagColor.color(for: colorName))
                     }
                 }
             }

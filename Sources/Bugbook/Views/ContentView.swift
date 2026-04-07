@@ -86,9 +86,9 @@ struct ContentView: View {
 
             HStack(spacing: 0) {
                 contextualSidebarSection
-                    .padding(.leading, ShellSidebarMetrics.railWidth)
                 mainContentWithAiPanel
             }
+            .padding(.leading, ShellSidebarMetrics.railWidth)
             .animation(.easeInOut(duration: 0.15), value: appState.showSettings)
             .animation(.easeInOut(duration: 0.15), value: contextualSidebarLeaf?.id)
             .animation(.easeInOut(duration: 0.15), value: appState.sidebarOpen)

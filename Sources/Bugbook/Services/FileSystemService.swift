@@ -146,15 +146,15 @@ class FileSystemService {
                     // Companion folder - skip, its contents are handled by the parent .md file
                     continue
                 } else {
-                    // Regular directory - flatten into parent (no visible folders)
+                    // Regular directory - show as expandable folder
                     let children = buildFileTree(at: fullPath, depth: depth + 1)
-                    for child in children {
-                        if child.isDatabase {
-                            folders.append(child)
-                        } else {
-                            files.append(child)
-                        }
-                    }
+                    folders.append(FileEntry(
+                        id: fullPath,
+                        name: name,
+                        path: fullPath,
+                        isDirectory: true,
+                        children: children.isEmpty ? nil : children
+                    ))
                 }
             } else if name.hasSuffix(".md") {
                 let isDbFile = name.hasSuffix(".db.md")
