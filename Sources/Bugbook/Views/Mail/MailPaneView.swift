@@ -354,7 +354,9 @@ struct MailPaneView: View {
                     }
                     .padding(20)
                 }
+                .frame(maxHeight: .infinity)
             }
+            .frame(maxHeight: .infinity)
         } else if mailService.isLoadingThread {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -395,6 +397,12 @@ struct MailPaneView: View {
         let unread = thread.isUnread
 
         return HStack(spacing: 0) {
+            // Unread indicator dot
+            Circle()
+                .fill(unread ? Color.accentColor : Color.clear)
+                .frame(width: 6, height: 6)
+                .padding(.trailing, 6)
+
             // Checkbox
             Button {
                 if isSelected {
@@ -413,7 +421,7 @@ struct MailPaneView: View {
             // Sender (brightest tier)
             Text(senderDisplayName(thread.participants.first ?? "Unknown"))
                 .font(.system(size: 13, weight: unread ? .bold : .regular))
-                .foregroundStyle(unread ? .primary : .secondary)
+                .foregroundStyle(unread ? Color.primary.opacity(1.0) : Color.primary.opacity(0.5))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.trailing, 6)
@@ -421,7 +429,7 @@ struct MailPaneView: View {
             // Subject (mid tier)
             Text(thread.subject)
                 .font(.system(size: 13, weight: unread ? .semibold : .regular))
-                .foregroundStyle(unread ? Color.primary.opacity(0.8) : Color.primary.opacity(0.45))
+                .foregroundStyle(unread ? Color.primary.opacity(0.9) : Color.primary.opacity(0.35))
                 .lineLimit(1)
                 .layoutPriority(1)
 
