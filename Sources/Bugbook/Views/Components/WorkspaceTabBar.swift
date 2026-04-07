@@ -81,8 +81,8 @@ struct WorkspaceTabBar: View {
             Spacer(minLength: 0)
             layoutSavedIndicator
         }
-        .padding(.top, ShellZoomMetrics.size(6))
-        .frame(height: ShellZoomMetrics.size(36))
+        .padding(.top, ShellSidebarMetrics.windowChromeTopInset)
+        .frame(height: ShellSidebarMetrics.windowChromeTopInset + ShellZoomMetrics.size(36))
         .background(
             ZStack(alignment: .bottom) {
                 Color.fallbackTabBarBg
