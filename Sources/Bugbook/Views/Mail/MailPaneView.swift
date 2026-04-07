@@ -23,17 +23,15 @@ struct MailPaneView: View {
                     title: "Connect Gmail",
                     message: "Sign in once and Bugbook will use that Google account for both Mail and Calendar."
                 )
+            } else if mailService.selectedThread != nil || mailService.isLoadingThread || (mailService.isComposing && mailService.composer.threadId == nil) {
+                // Full-screen thread view — no filter tabs, just the thread
+                detailPane
             } else {
                 VStack(spacing: 0) {
                     mailFilterTabs
                     batchToolbar
                     Divider()
-
-                    if mailService.selectedThread != nil || mailService.isLoadingThread || (mailService.isComposing && mailService.composer.threadId == nil) {
-                        detailPane
-                    } else {
-                        threadList
-                    }
+                    threadList
                 }
             }
         }
@@ -231,6 +229,14 @@ struct MailPaneView: View {
             .buttonStyle(.plain)
 
             Spacer()
+
+            Button(action: { mailService.presentNewComposer() }) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Compose")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -678,6 +684,10 @@ struct MailPaneView: View {
     private func openThread(_ thread: MailThreadSummary) {
         withMailToken { token in
             await mailService.loadThread(id: thread.id, mailbox: thread.mailbox, token: token)
+            // Mark as read when opened
+            if thread.isUnread {
+                await mailService.apply(action: .setUnread(false), to: thread.id, token: token)
+            }
         }
     }
 

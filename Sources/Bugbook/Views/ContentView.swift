@@ -2469,8 +2469,8 @@ struct ContentView: View {
     }
 
     private func initializeWorkspace() {
-        // Always use the default path (which now picks the richest iCloud workspace)
-        let workspacePath = fileSystem.defaultWorkspacePath()
+        // Use the full iCloud-aware path (scans siblings to pick richest workspace)
+        let workspacePath = WorkspaceResolver.defaultWorkspacePath(allowBlockingICloudLookup: true)
         if !FileManager.default.fileExists(atPath: workspacePath) {
             try? FileManager.default.createDirectory(atPath: workspacePath, withIntermediateDirectories: true)
         }
