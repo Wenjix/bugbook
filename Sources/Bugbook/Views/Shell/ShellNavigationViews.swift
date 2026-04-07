@@ -403,11 +403,26 @@ struct SettingsSidebarView: View {
     var body: some View {
         ShellSidebarFrame {
             VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    appState.showSettings = false
+                } label: {
+                    HStack(spacing: ShellZoomMetrics.size(6)) {
+                        Image(systemName: "arrow.left")
+                            .font(ShellZoomMetrics.font(Typography.bodySmall))
+                        Text("Back to app")
+                            .font(ShellZoomMetrics.font(Typography.bodySmall))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, ShellZoomMetrics.size(12))
+                .padding(.top, ShellSidebarMetrics.titleTopPadding)
+                .padding(.bottom, ShellZoomMetrics.size(8))
+
                 Text("Settings")
                     .font(ShellZoomMetrics.font(Typography.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.top, ShellSidebarMetrics.titleTopPadding)
                     .padding(.bottom, ShellSidebarMetrics.titleBottomPadding)
 
                 VStack(spacing: ShellZoomMetrics.size(2)) {
