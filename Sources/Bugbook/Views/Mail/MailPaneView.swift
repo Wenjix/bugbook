@@ -415,37 +415,37 @@ struct MailPaneView: View {
             // Sender
             Text(senderDisplayName(thread.participants.first ?? "Unknown"))
                 .font(.system(size: 13, weight: unread ? .bold : .regular))
-                .foregroundColor(unread ? Color(nsColor: .labelColor) : Color(nsColor: .tertiaryLabelColor))
+                .foregroundColor(Color(nsColor: .labelColor))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.trailing, 6)
 
             // Subject
             Text(thread.subject)
-                .font(.system(size: 13, weight: unread ? .semibold : .regular))
-                .foregroundColor(unread ? Color(nsColor: .labelColor) : Color(nsColor: .tertiaryLabelColor))
+                .font(.system(size: 13, weight: unread ? .medium : .regular))
+                .foregroundColor(Color(nsColor: unread ? .labelColor : .secondaryLabelColor))
                 .lineLimit(1)
                 .layoutPriority(1)
 
-            // Separator + snippet (muted tier)
+            // Separator + snippet
             if !thread.snippet.isEmpty {
-                Text("  ·  ")
+                Text(" — ")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.primary.opacity(0.2))
+                    .foregroundColor(Color(nsColor: .tertiaryLabelColor))
 
                 Text(thread.snippet)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.primary.opacity(0.25))
+                    .foregroundColor(Color(nsColor: .tertiaryLabelColor))
                     .lineLimit(1)
             }
 
             Spacer(minLength: 8)
 
-            // Date (mono for alignment)
+            // Date
             if let date = thread.date {
                 Text(relativeDate(date))
-                    .font(.system(size: 12, weight: unread ? .medium : .regular, design: .monospaced))
-                    .foregroundStyle(unread ? Color.primary.opacity(0.6) : Color.primary.opacity(0.25))
+                    .font(.system(size: 12, weight: unread ? .medium : .regular))
+                    .foregroundColor(Color(nsColor: .secondaryLabelColor))
                     .fixedSize()
             }
         }

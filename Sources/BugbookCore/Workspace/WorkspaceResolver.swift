@@ -94,13 +94,31 @@ public enum WorkspaceResolver {
     /// `~/Documents/Bugbook`. Always available. On the canonical setup this is a
     /// symlink into the iCloud Bugbook container, so it resolves to the same
     /// physical folder as `resolveICloudWorkspacePath()`.
+    ///
+    /// If the default path is a symlink into an iCloud container with richer
+    /// sibling workspaces, picks the richest one (same logic as iCloud resolver).
     public static func localFallbackWorkspacePath(createIfMissing: Bool = true) -> String {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let path = documents.appendingPathComponent(defaultFolderName, isDirectory: true).path
-        if createIfMissing, !fm.fileExists(atPath: path) {
-            try? fm.createDirectory(atPath: path, withIntermediateDirectories: true)
+        let defaultPath = documents.appendingPathComponent(defaultFolderName, isDirectory: true).path
+
+        // Resolve symlink to check for sibling workspaces in the iCloud container
+        let resolved = (defaultPath as NSString).resolvingSymlinksInPath
+        let parentDir = (resolved as NSString).deletingLastPathComponent
+        if let siblings = try? fm.contentsOfDirectory(atPath: parentDir) {
+            let candidates = siblings
+                .filter { $0.hasPrefix(defaultFolderName) }
+                .map { (parentDir as NSString).appendingPathComponent($0) }
+                .map { (path: $0, count: mdFileCount(at: $0, fm: fm)) }
+                .sorted { $0.count > $1.count }
+            if let best = candidates.first, best.count > 0 {
+                return best.path
+            }
         }
-        return path
+
+        if createIfMissing, !fm.fileExists(atPath: defaultPath) {
+            try? fm.createDirectory(atPath: defaultPath, withIntermediateDirectories: true)
+        }
+        return defaultPath
     }
 }
