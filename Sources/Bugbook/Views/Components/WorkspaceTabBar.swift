@@ -280,7 +280,7 @@ private struct TabItemView: View {
             }
             .padding(.leading, ShellZoomMetrics.size(14))
             .padding(.trailing, ShellZoomMetrics.size(8))
-            .frame(width: ShellZoomMetrics.size(190), alignment: .leading)
+            .frame(minWidth: ShellZoomMetrics.size(60), maxWidth: ShellZoomMetrics.size(190), alignment: .leading)
             .frame(height: ShellZoomMetrics.size(30))
             .background(
                 Group {

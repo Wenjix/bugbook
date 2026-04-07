@@ -16,7 +16,11 @@ class FileSystemService {
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
     private let favoritesPrefix = "favorites_"
-    nonisolated private static let hiddenSidebarFolders: Set<String> = ["attachments", "inbox", "raw"]
+    nonisolated private static let hiddenSidebarFolders: Set<String> = [
+        "attachments", "inbox", "raw",
+        "aithreads", "assets", "comparisons", "covers", "icons",
+        "settings", "workspacelayouts", "daily notes 2"
+    ]
 
     init() {
         loadRecentWorkspaces()

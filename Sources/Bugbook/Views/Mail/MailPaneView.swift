@@ -229,14 +229,6 @@ struct MailPaneView: View {
             .buttonStyle(.plain)
 
             Spacer()
-
-            Button(action: { mailService.presentNewComposer() }) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Compose")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -682,6 +674,8 @@ struct MailPaneView: View {
     }
 
     private func openThread(_ thread: MailThreadSummary) {
+        // Close the mail sidebar panel so thread gets full width
+        appState.activeSidebarPanel = nil
         withMailToken { token in
             await mailService.loadThread(id: thread.id, mailbox: thread.mailbox, token: token)
             // Mark as read when opened
