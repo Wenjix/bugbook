@@ -401,7 +401,7 @@ class FileSystemService {
         return folderPath
     }
 
-    func retargetDatabaseEmbedsInWorkspace(
+    nonisolated func retargetDatabaseEmbedsInWorkspace(
         from oldDatabasePath: String,
         to newDatabasePath: String,
         workspace: String,
@@ -411,7 +411,8 @@ class FileSystemService {
         let newMarker = "<!-- database: \(newDatabasePath) -->"
         guard oldMarker != newMarker else { return }
 
-        guard let enumerator = fileManager.enumerator(atPath: workspace) else { return }
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(atPath: workspace) else { return }
         while let relativePath = enumerator.nextObject() as? String {
             if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) {
                 enumerator.skipDescendants()
@@ -735,7 +736,7 @@ class FileSystemService {
         let trashPath: String
     }
 
-    private func trashDirectory(in workspace: String) -> String {
+    nonisolated private func trashDirectory(in workspace: String) -> String {
         (workspace as NSString).appendingPathComponent(".trash")
     }
 
@@ -871,7 +872,7 @@ class FileSystemService {
 
     // MARK: - Wiki Link Updates
 
-    func updateWikiLinksOnDisk(in directory: String, oldLink: String, newLink: String, excludingPaths: Set<String>) {
+    nonisolated func updateWikiLinksOnDisk(in directory: String, oldLink: String, newLink: String, excludingPaths: Set<String>) {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(atPath: directory) else { return }
         while let relativePath = enumerator.nextObject() as? String {
@@ -921,9 +922,10 @@ class FileSystemService {
     }
 
     /// List all items in the trash.
-    func listTrash(in workspace: String) -> [TrashItem] {
+    nonisolated func listTrash(in workspace: String) -> [TrashItem] {
         let trashDir = trashDirectory(in: workspace)
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: trashDir) else { return [] }
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(atPath: trashDir) else { return [] }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -933,7 +935,7 @@ class FileSystemService {
             // Skip companion folders in trash (they'll be restored with their page)
             let fullPath = (trashDir as NSString).appendingPathComponent(name)
             var isDir: ObjCBool = false
-            if fileManager.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue,
+            if fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue,
                !isDatabaseFolder(at: fullPath) {
                 return nil
             }
@@ -1019,11 +1021,17 @@ class FileSystemService {
     }
 
     /// Purge items older than 30 days. Call on app launch.
-    func purgeOldTrash(in workspace: String) {
+    nonisolated func purgeOldTrash(in workspace: String) {
         let items = listTrash(in: workspace)
         let cutoff = Date.now.addingTimeInterval(-30 * 24 * 60 * 60)
+        let fm = FileManager.default
         for item in items where item.trashedAt < cutoff {
-            try? deletePermanently(item, workspace: workspace)
+            try? fm.removeItem(atPath: item.trashPath)
+            try? fm.removeItem(atPath: item.trashPath + ".meta.json")
+            if let companionPath = trashCompanionPathNonisolated(for: item, workspace: workspace, fm: fm) {
+                try? fm.removeItem(atPath: companionPath)
+                try? fm.removeItem(atPath: companionPath + ".meta.json")
+            }
         }
     }
 
@@ -1036,6 +1044,14 @@ class FileSystemService {
         let companionBase = companionFolderPath(for: item.name)
         let path = (trashDir as NSString).appendingPathComponent(prefix + companionBase)
         return fileManager.fileExists(atPath: path) ? path : nil
+    }
+
+    nonisolated private func trashCompanionPathNonisolated(for item: TrashItem, workspace: String, fm: FileManager) -> String? {
+        let trashDir = (workspace as NSString).appendingPathComponent(".trash")
+        let prefix = String(item.id.prefix(while: { $0 != "_" })) + "_"
+        let companionBase = companionFolderPath(for: item.name)
+        let path = (trashDir as NSString).appendingPathComponent(prefix + companionBase)
+        return fm.fileExists(atPath: path) ? path : nil
     }
 
     nonisolated private func companionFolderPath(for mdPath: String) -> String {

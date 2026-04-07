@@ -10,6 +10,7 @@ import BugbookCore
 
     private let fileManager = FileManager.default
     private let maxTreeDepth = 10
+    private let hiddenTreeFolders: Set<String> = ["attachments", "inbox", "raw"]
 
     init() {
         // Start with local path immediately so the UI renders
@@ -40,26 +41,44 @@ import BugbookCore
     private func applyResolvedICloudWorkspacePath(_ iCloudPath: String) {
         workspacePath = iCloudPath
         isICloudAvailable = true
-        refreshFiles()
+        Task { await refreshFilesAsync() }
     }
 
     // MARK: - File Tree Building
 
     func refreshFiles() {
+        Task { await refreshFilesAsync() }
+    }
+
+    func refreshFilesAsync() async {
         guard !workspacePath.isEmpty else {
             files = []
             return
         }
-        files = buildTree(at: workspacePath, preserveFolders: false, depth: 0)
+        let path = workspacePath
+        let built = await Task.detached(priority: .userInitiated) {
+            Self.buildTreeStatic(at: path, preserveFolders: false, depth: 0)
+        }.value
+        files = built
     }
 
-    func buildHierarchicalFileTree() -> [MobileNoteFile] {
-        buildTree(at: workspacePath, preserveFolders: true, depth: 0)
+    func buildHierarchicalFileTree() async -> [MobileNoteFile] {
+        let path = workspacePath
+        return await Task.detached(priority: .userInitiated) {
+            Self.buildTreeStatic(at: path, preserveFolders: true, depth: 0)
+        }.value
     }
 
-    private func buildTree(at path: String, preserveFolders: Bool, depth: Int) -> [MobileNoteFile] {
+    nonisolated private static func buildTreeStatic(at path: String, preserveFolders: Bool, depth: Int) -> [MobileNoteFile] {
+        buildTreeImpl(at: path, preserveFolders: preserveFolders, depth: depth,
+                      hiddenTreeFolders: ["attachments", "inbox", "raw"], maxTreeDepth: 10)
+    }
+
+    nonisolated private static func buildTreeImpl(at path: String, preserveFolders: Bool, depth: Int,
+                                      hiddenTreeFolders: Set<String>, maxTreeDepth: Int) -> [MobileNoteFile] {
+        let fm = FileManager.default
         guard depth < maxTreeDepth else { return [] }
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: path) else { return [] }
+        guard let contents = try? fm.contentsOfDirectory(atPath: path) else { return [] }
 
         let siblingNames = Set(contents)
         var folders: [MobileNoteFile] = []
@@ -68,6 +87,7 @@ import BugbookCore
         for name in contents {
             if name.hasPrefix(".") || name.hasPrefix("_") { continue }
             if name == "Daily Notes" || name == "Templates" { continue }
+            if hiddenTreeFolders.contains(name.lowercased()) { continue }
             // Filter internal/legacy folders that shouldn't appear in the file tree
             if ["assets", "logseq", "journals", "pages", "whiteboards"].contains(name) { continue }
 
@@ -75,10 +95,10 @@ import BugbookCore
             if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }
 
             var isDir: ObjCBool = false
-            guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                if isDatabaseFolder(at: fullPath) {
+                if isDatabaseFolderStatic(at: fullPath, fm: fm) {
                     var dbName = name
                     let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
@@ -91,10 +111,12 @@ import BugbookCore
                         name: dbName,
                         isDatabase: true
                     ))
-                } else if isCompanionFolder(name, siblings: siblingNames) {
+                } else if siblingNames.contains("\(name).md") {
+                    // companion folder — skip
                     continue
                 } else {
-                    let children = buildTree(at: fullPath, preserveFolders: preserveFolders, depth: depth + 1)
+                    let children = buildTreeImpl(at: fullPath, preserveFolders: preserveFolders, depth: depth + 1,
+                                                 hiddenTreeFolders: hiddenTreeFolders, maxTreeDepth: maxTreeDepth)
                     if preserveFolders {
                         folders.append(MobileNoteFile(
                             path: fullPath,
@@ -113,14 +135,15 @@ import BugbookCore
                     }
                 }
             } else if name.hasSuffix(".md") {
-                let icon = parseIconFromFile(at: fullPath)
-                let companionPath = companionFolderPath(for: fullPath)
+                let icon = parseIconFromFileStatic(at: fullPath)
+                let companionPath = String(fullPath.dropLast(3))
                 var children: [MobileNoteFile]?
-                if fileManager.fileExists(atPath: companionPath) {
-                    children = buildTree(at: companionPath, preserveFolders: preserveFolders, depth: depth + 1)
+                if fm.fileExists(atPath: companionPath) {
+                    children = buildTreeImpl(at: companionPath, preserveFolders: preserveFolders, depth: depth + 1,
+                                             hiddenTreeFolders: hiddenTreeFolders, maxTreeDepth: maxTreeDepth)
                 }
 
-                let modDate = (try? fileManager.attributesOfItem(atPath: fullPath)[.modificationDate]) as? Date
+                let modDate = (try? fm.attributesOfItem(atPath: fullPath)[.modificationDate]) as? Date
 
                 noteFiles.append(MobileNoteFile(
                     path: fullPath,
@@ -137,6 +160,22 @@ import BugbookCore
         noteFiles.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
         return folders + noteFiles
+    }
+
+    nonisolated private static func isDatabaseFolderStatic(at path: String, fm: FileManager) -> Bool {
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+        return fm.fileExists(atPath: schemaPath)
+    }
+
+    nonisolated private static func parseIconFromFileStatic(at path: String) -> String? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { fh.closeFile() }
+        let data = fh.readData(ofLength: 512)
+        guard let head = String(data: data, encoding: .utf8) else { return nil }
+        guard let range = head.range(of: "<!-- icon:(.*?) -->", options: .regularExpression) else { return nil }
+        let match = String(head[range])
+        let inner = match.dropFirst(10).dropLast(4).trimmingCharacters(in: .whitespaces)
+        return inner.isEmpty ? nil : inner
     }
 
     // MARK: - Daily Notes
@@ -171,15 +210,18 @@ import BugbookCore
 
     // MARK: - Recent Files
 
-    func recentFiles(limit: Int = 10) -> [MobileNoteFile] {
-        let allFiles = collectAllFiles(at: workspacePath)
-        let sorted = allFiles
-            .sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
-        return Array(sorted.prefix(limit))
+    func recentFiles(limit: Int = 10) async -> [MobileNoteFile] {
+        let path = workspacePath
+        return await Task.detached(priority: .userInitiated) {
+            let allFiles = Self.collectAllFilesStatic(at: path)
+            let sorted = allFiles.sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
+            return Array(sorted.prefix(limit))
+        }.value
     }
 
-    private func collectAllFiles(at path: String) -> [MobileNoteFile] {
-        guard let enumerator = fileManager.enumerator(
+    nonisolated private static func collectAllFilesStatic(at path: String) -> [MobileNoteFile] {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
             at: URL(fileURLWithPath: path),
             includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
@@ -191,7 +233,7 @@ import BugbookCore
             let name = url.lastPathComponent
             if name.hasPrefix("_") { continue }
 
-            let relativePath = String(url.path.dropFirst(workspacePath.count))
+            let relativePath = String(url.path.dropFirst(path.count))
             if WorkspacePathRules.shouldIgnoreRelativePath(relativePath) { continue }
 
             let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate

@@ -3305,12 +3305,15 @@ struct ContentView: View {
 
         let updatedOpenDocPaths = retargetDatabaseEmbedsInOpenDocs(from: oldPath, to: newPath)
         if let workspace = appState.workspacePath {
-            fileSystem.retargetDatabaseEmbedsInWorkspace(
-                from: oldPath,
-                to: newPath,
-                workspace: workspace,
-                excluding: updatedOpenDocPaths
-            )
+            let fs = fileSystem
+            Task.detached(priority: .utility) {
+                fs.retargetDatabaseEmbedsInWorkspace(
+                    from: oldPath,
+                    to: newPath,
+                    workspace: workspace,
+                    excluding: updatedOpenDocPaths
+                )
+            }
         }
 
         if peekTarget?.dbPath == oldPath {
@@ -3394,8 +3397,9 @@ struct ContentView: View {
     private func scheduleTrashPurgeIfNeeded(for workspace: String) {
         guard lastTrashPurgeWorkspace != workspace else { return }
         lastTrashPurgeWorkspace = workspace
-        Task { @MainActor in
-            fileSystem.purgeOldTrash(in: workspace)
+        let fs = fileSystem
+        Task.detached(priority: .background) {
+            fs.purgeOldTrash(in: workspace)
         }
     }
 
@@ -3444,7 +3448,10 @@ struct ContentView: View {
         let openPaths = Set(appState.openTabs.map(\.path))
         let oldLink = "[[\(oldName)]]"
         let newLink = "[[\(newName)]]"
-        fileSystem.updateWikiLinksOnDisk(in: workspace, oldLink: oldLink, newLink: newLink, excludingPaths: openPaths)
+        let fs = fileSystem
+        Task.detached(priority: .utility) {
+            fs.updateWikiLinksOnDisk(in: workspace, oldLink: oldLink, newLink: newLink, excludingPaths: openPaths)
+        }
     }
 
     private func triggerFocusMode() {
