@@ -64,7 +64,7 @@ struct WorkspaceTabBar: View {
                         .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
                 }
                 .buttonStyle(.plain)
-                .padding(.leading, ShellZoomMetrics.size(8))
+                .padding(.horizontal, ShellZoomMetrics.size(8))
                 .padding(.bottom, ShellZoomMetrics.size(2))
                 .floatingPopover(isPresented: $showNewMenu) {
                     NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })

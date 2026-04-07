@@ -345,10 +345,10 @@ struct MailPaneView: View {
                         }
                     }
                     .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: .infinity)
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if mailService.isLoadingThread {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -674,8 +674,6 @@ struct MailPaneView: View {
     }
 
     private func openThread(_ thread: MailThreadSummary) {
-        // Close the mail sidebar panel so thread gets full width
-        appState.activeSidebarPanel = nil
         withMailToken { token in
             await mailService.loadThread(id: thread.id, mailbox: thread.mailbox, token: token)
             // Mark as read when opened

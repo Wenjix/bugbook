@@ -482,6 +482,21 @@ struct MailContextualSidebarView: View {
                             .padding(.bottom, ShellZoomMetrics.size(10))
                         }
 
+                        Button(action: { mailService.presentNewComposer() }) {
+                            Label("Compose", systemImage: "square.and.pencil")
+                                .font(ShellZoomMetrics.font(Typography.body, weight: .medium))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, ShellZoomMetrics.size(12))
+                                .padding(.vertical, ShellZoomMetrics.size(10))
+                                .background(
+                                    RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.md))
+                                        .fill(Color.primary.opacity(0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, ShellSidebarMetrics.sectionHorizontalPadding)
+                        .padding(.bottom, ShellZoomMetrics.size(8))
+
                         VStack(spacing: ShellZoomMetrics.size(4)) {
                             ForEach(MailMailbox.allCases) { mailbox in
                                 ShellSidebarShortcutRow(
