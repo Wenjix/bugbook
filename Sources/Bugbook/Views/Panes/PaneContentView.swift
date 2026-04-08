@@ -107,6 +107,7 @@ struct PaneContentView: View {
                     .allowsHitTesting(false)
             }
         }
+        .background(Container.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
         .onDrop(of: [.text], isTargeted: $isDropTarget) { providers in
             guard let provider = providers.first else { return false }
