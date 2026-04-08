@@ -33,6 +33,20 @@ enum EditorSelectionStyle {
     }
 }
 
+enum EditorFindStyle {
+    static var backgroundColor: NSColor {
+        NSColor.systemYellow.withAlphaComponent(0.35)
+    }
+
+    static var activeBackgroundColor: NSColor {
+        NSColor.systemOrange.withAlphaComponent(0.45)
+    }
+
+    static var foregroundColor: NSColor {
+        NSColor.labelColor
+    }
+}
+
 /// NSViewRepresentable wrapping NSTextView for per-block text editing.
 /// Handles keyboard intercepts for block splitting, merging, and navigation.
 /// Supports rich text with WYSIWYG inline formatting (bold, italic, code, strikethrough, links).
@@ -277,7 +291,12 @@ struct BlockTextView: NSViewRepresentable {
         )
         let isFirstResponder = textView.window?.firstResponder === textView
         let isActivelyDraggingMultiBlockSelection = textView.isInBlockSelection
-        context.coordinator.updateTemporaryMultiBlockHighlight(on: textView, range: multiBlockRange)
+        context.coordinator.updateTemporaryHighlights(
+            on: textView,
+            query: document.findHighlightQuery,
+            selectedFindMatch: document.findSelectedMatch,
+            selectionRange: multiBlockRange
+        )
 
         if let range = multiBlockRange, isFirstResponder, !isActivelyDraggingMultiBlockSelection {
             context.coordinator.withProgrammaticViewUpdate {
@@ -455,7 +474,12 @@ struct BlockTextView: NSViewRepresentable {
             parent.document.cutMultiBlockSelectedText()
         }
 
-        func updateTemporaryMultiBlockHighlight(on textView: NSTextView, range: NSRange?) {
+        func updateTemporaryHighlights(
+            on textView: NSTextView,
+            query: String,
+            selectedFindMatch: BlockFindSelection?,
+            selectionRange: NSRange?
+        ) {
             guard let layoutManager = textView.layoutManager else { return }
 
             let fullLength = (textView.string as NSString).length
@@ -465,14 +489,16 @@ struct BlockTextView: NSViewRepresentable {
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
             }
 
-            guard let range,
-                  range.length > 0,
+            applyFindHighlights(on: textView, query: query, selectedFindMatch: selectedFindMatch)
+
+            guard let selectionRange,
+                  selectionRange.length > 0,
                   textView.window?.firstResponder !== textView else {
                 return
             }
 
-            let location = min(max(0, range.location), fullLength)
-            let length = min(max(0, range.length), max(0, fullLength - location))
+            let location = min(max(0, selectionRange.location), fullLength)
+            let length = min(max(0, selectionRange.length), max(0, fullLength - location))
             guard length > 0 else { return }
 
             let highlightRange = NSRange(location: location, length: length)
@@ -486,6 +512,46 @@ struct BlockTextView: NSViewRepresentable {
                 value: EditorSelectionStyle.foregroundColor,
                 forCharacterRange: highlightRange
             )
+        }
+
+        func applyFindHighlights(
+            on textView: NSTextView,
+            query: String,
+            selectedFindMatch: BlockFindSelection?
+        ) {
+            guard let layoutManager = textView.layoutManager else { return }
+
+            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedQuery.isEmpty else { return }
+
+            let visibleText = textView.string as NSString
+            var searchRange = NSRange(location: 0, length: visibleText.length)
+
+            while searchRange.location < visibleText.length {
+                let matchRange = visibleText.range(
+                    of: trimmedQuery,
+                    options: [.caseInsensitive, .diacriticInsensitive],
+                    range: searchRange
+                )
+                guard matchRange.location != NSNotFound else { break }
+
+                layoutManager.addTemporaryAttribute(
+                    .backgroundColor,
+                    value: selectedFindMatch == BlockFindSelection(blockId: parent.blockId, range: matchRange)
+                        ? EditorFindStyle.activeBackgroundColor
+                        : EditorFindStyle.backgroundColor,
+                    forCharacterRange: matchRange
+                )
+                layoutManager.addTemporaryAttribute(
+                    .foregroundColor,
+                    value: EditorFindStyle.foregroundColor,
+                    forCharacterRange: matchRange
+                )
+
+                let nextLocation = matchRange.location + max(matchRange.length, 1)
+                guard nextLocation < visibleText.length else { break }
+                searchRange = NSRange(location: nextLocation, length: visibleText.length - nextLocation)
+            }
         }
 
         // MARK: - Image Paste

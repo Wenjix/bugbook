@@ -6,11 +6,6 @@ import SwiftUI
 /// Focus state is observed by PaneChromeBar and PaneFocusOverlay internally —
 /// the document/terminal content is NOT re-rendered when focus changes.
 struct PaneContentView: View {
-    private struct FindMatch: Equatable {
-        let blockId: UUID
-        let range: NSRange
-    }
-
     let leaf: PaneNode.Leaf
     let workspaceManager: WorkspaceManager
     let showFocusBorder: Bool
@@ -28,7 +23,7 @@ struct PaneContentView: View {
     @State private var showFindBar = false
     @State private var findQuery = ""
     @State private var findCurrentIndex: Int?
-    @State private var findMatchCache: [FindMatch] = []
+    @State private var findMatchCache: [BlockFindSelection] = []
     @FocusState private var findFieldFocused: Bool
 
     private var isFocusedPane: Bool {
@@ -46,7 +41,7 @@ struct PaneContentView: View {
             findMatchCache = []
             return
         }
-        var results: [FindMatch] = []
+        var results: [BlockFindSelection] = []
         func searchBlocks(_ blocks: [Block]) {
             for block in blocks {
                 let visibleText = AttributedStringConverter.plainText(from: block.text) as NSString
@@ -58,7 +53,7 @@ struct PaneContentView: View {
                         range: searchRange
                     )
                     guard range.location != NSNotFound else { break }
-                    results.append(FindMatch(blockId: block.id, range: range))
+                    results.append(BlockFindSelection(blockId: block.id, range: range))
                     let nextLocation = range.location + max(range.length, 1)
                     guard nextLocation < visibleText.length else { break }
                     searchRange = NSRange(location: nextLocation, length: visibleText.length - nextLocation)
@@ -70,6 +65,11 @@ struct PaneContentView: View {
         }
         searchBlocks(doc.blocks)
         findMatchCache = results
+        if let findCurrentIndex, findCurrentIndex < results.count {
+            doc.findSelectedMatch = results[findCurrentIndex]
+        } else {
+            doc.findSelectedMatch = nil
+        }
     }
 
     var body: some View {
@@ -133,6 +133,7 @@ struct PaneContentView: View {
         }
         .onChange(of: findQuery) { _, newValue in
             activeBlockDocument?.findHighlightQuery = newValue
+            activeBlockDocument?.findSelectedMatch = nil
             findCurrentIndex = nil
             recomputeFindMatches()
         }
@@ -307,6 +308,7 @@ struct PaneContentView: View {
         }
         findCurrentIndex = nextIndex
         if let doc = activeBlockDocument {
+            doc.findSelectedMatch = matches[nextIndex]
             doc.scrollToBlockId = matches[nextIndex].blockId
         }
     }
@@ -316,6 +318,7 @@ struct PaneContentView: View {
             showFindBar = false
         }
         activeBlockDocument?.findHighlightQuery = ""
+        activeBlockDocument?.findSelectedMatch = nil
         findQuery = ""
         findCurrentIndex = nil
         findMatchCache = []
