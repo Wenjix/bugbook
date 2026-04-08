@@ -105,6 +105,31 @@ final class MailService {
         isComposing = true
     }
 
+    func prepareForwardDraft(thread: MailThreadDetail) {
+        guard let source = thread.messages.last(where: { !$0.isDraft }) ?? thread.messages.last else { return }
+        let subject = MailService.forwardSubject(for: thread.subject)
+        let quotedBody = "\n\n---------- Forwarded message ----------\nFrom: \(source.from?.displayName ?? "")\nDate: \(source.date?.formatted(date: .abbreviated, time: .shortened) ?? "")\nSubject: \(thread.subject)\n\n\(source.bodyText)"
+
+        composer = MailDraft(
+            mode: .forward,
+            to: "",
+            cc: "",
+            bcc: "",
+            subject: subject,
+            body: quotedBody,
+            threadId: nil,
+            replyToMessageID: nil,
+            referencesHeader: nil
+        )
+        isComposing = true
+    }
+
+    static func forwardSubject(for subject: String) -> String {
+        let trimmed = subject.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.lowercased().hasPrefix("fwd:") else { return trimmed }
+        return trimmed.isEmpty ? "Fwd:" : "Fwd: \(trimmed)"
+    }
+
     func loadMailbox(_ mailbox: MailMailbox, token: GoogleOAuthToken, forceRefresh: Bool = false) async {
         if !forceRefresh, let cached = mailboxThreads[mailbox], !cached.isEmpty {
             selectedThreadID = selectedThreadID ?? cached.first?.id

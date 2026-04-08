@@ -23,7 +23,6 @@ struct WorkspaceCalendarView: View {
     )
     @State private var isCreatingEvent = false
     @State private var createEventError: String?
-    @State private var showEventSidebar = false
     @State private var selectedCalendarEvent: CalendarEvent?
 
     var body: some View {
@@ -33,16 +32,8 @@ struct WorkspaceCalendarView: View {
                 if let error = calendarService.error, !error.isEmpty {
                     calendarErrorBanner(error)
                 }
-                HStack(spacing: 0) {
-                    calendarContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                    if showEventSidebar {
-                        Divider()
-                        calendarEventSidebar
-                            .frame(width: 280)
-                    }
-                }
+                calendarContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: geo.size.width) { _, newWidth in
@@ -199,14 +190,6 @@ struct WorkspaceCalendarView: View {
                 .buttonStyle(.plain)
             }
 
-            // Sidebar toggle
-            Button(action: { showEventSidebar.toggle() }) {
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 13))
-                    .foregroundStyle(showEventSidebar ? Color.accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Toggle event details")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -224,112 +207,6 @@ struct WorkspaceCalendarView: View {
         }
     }
 
-    // MARK: - Event Detail Sidebar
-
-    private var calendarEventSidebar: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Event Details")
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                Button(action: { showEventSidebar = false }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            if let event = selectedCalendarEvent {
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        // Title
-                        Text(event.title)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        // Date + time
-                        Label(eventDateTimeString(event), systemImage: "clock")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-
-                        // Calendar source
-                        if let source = calendarService.sources.first(where: { $0.id == event.calendarId }) {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(calendarSourceColor(source.color))
-                                    .frame(width: 8, height: 8)
-                                Text(source.name)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        // Location
-                        if let location = event.location, !location.isEmpty {
-                            Label(location, systemImage: "mappin")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        // Description / notes
-                        if let notes = event.notes, !notes.isEmpty {
-                            Divider()
-                            Text(notes)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        // Attendees
-                        if !event.attendees.isEmpty {
-                            Divider()
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Attendees")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.tertiary)
-                                    .textCase(.uppercase)
-                                ForEach(event.attendees, id: \.email) { attendee in
-                                    HStack(spacing: 6) {
-                                        Image(systemName: attendeeIcon(attendee.responseStatus))
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(attendeeColor(attendee.responseStatus))
-                                            .frame(width: 14)
-                                        Text(attendee.displayName ?? attendee.email)
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(.primary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(minLength: 8)
-
-                        // Create meeting notes button
-                        Button(action: { createMeetingNoteForSelectedEvent() }) {
-                            Label("Create Meeting Notes", systemImage: "note.text.badge.plus")
-                                .font(.system(size: 12, weight: .medium))
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.regular)
-                    }
-                    .padding(.bottom, 8)
-                }
-            } else {
-                ContentUnavailableView(
-                    "Select an event",
-                    systemImage: "calendar",
-                    description: Text("Click an event to see its details here.")
-                )
-                .frame(maxHeight: .infinity)
-            }
-        }
-        .padding(16)
-        .background(Color.fallbackEditorBg)
-    }
 
     private func eventDateTimeString(_ event: CalendarEvent) -> String {
         let formatter = DateFormatter()
@@ -353,35 +230,6 @@ struct WorkspaceCalendarView: View {
             return Color(hex: String(hex.dropFirst()))
         }
         return TagColor.color(for: hex)
-    }
-
-    private func attendeeIcon(_ status: Attendee.ResponseStatus) -> String {
-        switch status {
-        case .accepted: return "checkmark.circle.fill"
-        case .declined: return "xmark.circle.fill"
-        case .tentative: return "questionmark.circle.fill"
-        case .needsAction: return "circle"
-        }
-    }
-
-    private func attendeeColor(_ status: Attendee.ResponseStatus) -> Color {
-        switch status {
-        case .accepted: return .green
-        case .declined: return .red
-        case .tentative: return .orange
-        case .needsAction: return .secondary
-        }
-    }
-
-    private func createMeetingNoteForSelectedEvent() {
-        guard let event = selectedCalendarEvent,
-              let workspace = appState.workspacePath else { return }
-        Task {
-            if let pagePath = await meetingNoteService.createOrOpenMeetingNote(for: event, workspace: workspace) {
-                calendarService.loadCachedData(workspace: workspace)
-                onNavigateToFile(pagePath)
-            }
-        }
     }
 
     private func calendarErrorBanner(_ message: String) -> some View {
@@ -429,7 +277,6 @@ struct WorkspaceCalendarView: View {
 
     private func handleEventTapped(_ event: CalendarEvent) {
         selectedCalendarEvent = event
-        showEventSidebar = true
     }
 
     private func handleDatabaseItemTapped(_ item: CalendarDatabaseItem) {

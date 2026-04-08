@@ -1,8 +1,9 @@
 [
-  {"position": 1, "row_id": "row_gpaduy", "name": "Fix navigation rail overlaying sidebar content", "files": ["Sources/Bugbook/Views/ContentView.swift"], "cluster": "ContentView"},
-  {"position": 2, "row_id": "row_uwg1pj", "name": "Hide workspace sidebar on browser and terminal panes", "files": ["Sources/Bugbook/Views/ContentView.swift"], "cluster": "ContentView"},
-  {"position": 3, "row_id": "row_93a33n", "name": "Make unread emails visually distinct in mail list", "files": ["Sources/Bugbook/Views/Mail/MailPaneView.swift"], "cluster": "Mail"},
-  {"position": 4, "row_id": "row_vgkl6d", "name": "Email thread detail should fill full vertical space", "files": ["Sources/Bugbook/Views/Mail/MailPaneView.swift"], "cluster": "Mail"},
-  {"position": 5, "row_id": "row_u9galn", "name": "Calendar mini-cal use 2-letter day abbreviations", "files": ["Sources/Bugbook/Views/Shell/ShellNavigationViews.swift"], "cluster": "Calendar"},
-  {"position": 6, "row_id": "row_z98v3n", "name": "Add color picker for subscribed calendar sources", "files": ["Sources/Bugbook/Views/Shell/ShellNavigationViews.swift"], "cluster": "Calendar"}
+  {"position": 1, "row_id": "row_x1g8d6", "name": "Mail: read/unread contrast", "files": ["Sources/Bugbook/Views/Mail/MailPaneView.swift"]},
+  {"position": 2, "row_id": "row_9d6uuv", "name": "Meetings: focus history, shrink record button", "files": ["Sources/Bugbook/Views/Meetings/MeetingsView.swift"]},
+  {"position": 3, "row_id": "row_zy9ouz", "name": "Calendar: source color → event color", "files": ["Sources/Bugbook/Views/Calendar/CalendarWeekView.swift", "Sources/Bugbook/Views/Calendar/CalendarMonthView.swift", "Sources/Bugbook/Views/Calendar/CalendarDayView.swift", "Sources/Bugbook/Services/CalendarService.swift"]},
+  {"position": 4, "row_id": "row_omf7j6", "name": "Calendar: recurring events + time blocking", "files": ["Sources/Bugbook/Views/Calendar/WorkspaceCalendarView.swift", "Sources/Bugbook/Services/CalendarService.swift", "Sources/Bugbook/Views/Calendar/CalendarWeekView.swift", "Sources/Bugbook/Views/Calendar/CalendarDayView.swift"]},
+  {"position": 5, "row_id": "row_9fg5sv", "name": "Browser: remove tabs, full-width URL", "files": ["Sources/Bugbook/Views/Browser/BrowserPaneView.swift"]},
+  {"position": 6, "row_id": "row_ncrdg3", "name": "Cmd+F in-page search", "files": ["Sources/Bugbook/Views/ContentView.swift"]},
+  {"position": 7, "row_id": "row_2hvac7", "name": "Modular container system", "files": ["Sources/Bugbook/Views/ContentView.swift", "Sources/Bugbook/Views/Shell/ShellNavigationViews.swift", "Sources/Bugbook/Views/Components/WorkspaceTabBar.swift", "Sources/Bugbook/Views/Browser/BrowserPaneView.swift", "Sources/Bugbook/Views/Panes/PaneTreeView.swift", "Sources/Bugbook/Views/Panes/PaneContentView.swift", "Sources/Bugbook/Extensions/DesignTokens.swift", "Sources/Bugbook/App/BugbookApp.swift"]}
 ]

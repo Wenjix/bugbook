@@ -27,9 +27,6 @@ struct ContentView: View {
     @State private var workspaceManager = WorkspaceManager()
     @State private var terminalManager = TerminalManager()
     @State private var browserManager = BrowserManager()
-    @State private var railEdgeHovering = false
-    @State private var railHovering = false
-    @State private var railPinnedOpen = false
 
     @State private var saveTask: Task<Void, Never>?
     @State private var editorUI = EditorUIState()
@@ -42,6 +39,7 @@ struct ContentView: View {
     @State private var restoredWorkspaceDocuments = false
     @State private var lastTrashPurgeWorkspace: String?
     @State private var recordingPillController = FloatingRecordingPillController()
+    @State private var sidebarHoverVisible = false
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
 
     // Database row peek / modal
@@ -55,8 +53,7 @@ struct ContentView: View {
     @State private var peekWidth: CGFloat = 640
     @State private var peekDragStartWidth: CGFloat?
     @State private var sidebarHiddenByPeek: Bool = false
-    @State private var panelBeforePeekHide: SidebarPanelID?
-    @State private var panelBeforeSettings: SidebarPanelID?
+    @State private var sidebarVisibleBeforePeekHide: Bool = true
     @State private var modalTarget: RowTarget?
     @State private var showPageOptionsMenu = false
     @State private var databaseRowFullWidth: [UUID: Bool] = [:]
@@ -81,19 +78,72 @@ struct ContentView: View {
 
     private var baseLayout: some View {
         ZStack(alignment: .leading) {
-            // Solid backdrop so the content area's rounded corner reveals rail/sidebar color.
             Color.fallbackSidebarBg
 
             HStack(spacing: 0) {
-                navigationRailInline
-                contextualSidebarSection
+                if appState.sidebarVisible {
+                    if appState.showSettings {
+                        SettingsSidebarView(appState: appState)
+                            .frame(width: appState.sidebarWidth)
+                    } else {
+                        HarborSidebarView(
+                            appState: appState,
+                            fileSystem: fileSystem,
+                            activeFilePath: contextualSidebarActiveFilePath,
+                            onSelectEntry: { entry in handleSidebarFileSelect(entry) },
+                            onRefreshTree: { refreshFileTree() },
+                            onOpenSettings: { openSettingsTab() },
+                            contextualLabel: sidebarContextLabel,
+                            contextualContent: { sidebarContextualContent }
+                        )
+                        .frame(width: appState.sidebarWidth)
+                    }
+
+                    SidebarResizeHandle(width: $appState.sidebarWidth)
+                }
+
                 mainContentWithAiPanel
             }
             .animation(.easeInOut(duration: 0.15), value: appState.showSettings)
-            .animation(.easeInOut(duration: 0.15), value: appState.activeSidebarPanel)
-            .animation(.easeInOut(duration: 0.15), value: railVisible)
+            .animation(.easeInOut(duration: 0.15), value: appState.sidebarVisible)
 
-            railEdgeHotZone
+            // Hover-reveal sidebar when collapsed
+            if !appState.sidebarVisible && !appState.showSettings {
+                HStack(spacing: 0) {
+                    // Invisible hover target at left edge
+                    Color.clear
+                        .frame(width: 6)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            if hovering { sidebarHoverVisible = true }
+                        }
+
+                    if sidebarHoverVisible {
+                        HarborSidebarView(
+                            appState: appState,
+                            fileSystem: fileSystem,
+                            activeFilePath: contextualSidebarActiveFilePath,
+                            onSelectEntry: { entry in handleSidebarFileSelect(entry) },
+                            onRefreshTree: { refreshFileTree() },
+                            onOpenSettings: { openSettingsTab() },
+                            contextualLabel: sidebarContextLabel,
+                            contextualContent: { sidebarContextualContent }
+                        )
+                        .frame(width: appState.sidebarWidth)
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 2, y: 0)
+                        .onHover { hovering in
+                            if !hovering { sidebarHoverVisible = false }
+                        }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxHeight: .infinity)
+                .animation(.easeInOut(duration: 0.15), value: sidebarHoverVisible)
+                .zIndex(10)
+            }
+
             commandPaletteOverlay
 
             movePageOverlay
@@ -146,11 +196,9 @@ struct ContentView: View {
                 // v2: no daemon needed, qmd query runs locally
             }
             .onChange(of: appState.showSettings) { _, showingSettings in
-                if showingSettings {
-                    panelBeforeSettings = appState.activeSidebarPanel
-                    appState.activeSidebarPanel = .settings
-                } else {
-                    appState.activeSidebarPanel = panelBeforeSettings
+                // Ensure sidebar is visible when settings are opened
+                if showingSettings && !appState.sidebarVisible {
+                    appState.sidebarVisible = true
                 }
             }
             .onChange(of: appState.fileTree) { _, newTree in
@@ -169,9 +217,13 @@ struct ContentView: View {
             .onChange(of: workspaceManager.activeWorkspace?.focusedPaneId) { _, _ in
                 hideFormattingPanel()
                 closeDatabaseRowModal()
+                updateSidebarContextType()
             }
             .onChange(of: appState.currentView) { _, newView in
                 handleCurrentViewChange(newView)
+            }
+            .onChange(of: workspaceManager.activeWorkspaceIndex) { _, _ in
+                updateSidebarContextType()
             }
             .onChange(of: workspaceManager.workspaces) { _, workspaces in
                 let paneIDs = Set(workspaces.flatMap { $0.allLeaves.map(\.id) })
@@ -368,7 +420,10 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-                handleSidebarToggleRequest()
+                guard !appState.showSettings else { return }
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    appState.sidebarVisible.toggle()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
                 flushDirtyTabContent()
@@ -489,73 +544,20 @@ struct ContentView: View {
             }
     }
 
-    // MARK: - Shell Navigation
+    // MARK: - Sidebar
 
-    private var railVisible: Bool {
-        appState.settings.railPinned || railPinnedOpen || railEdgeHovering || railHovering
-    }
-
-    private var hasFullBleedPane: Bool {
-        activeWorkspaceLeaves.contains { leaf in
-            switch leaf.content {
-            case .terminal: return true
-            case .document(let file): return file.isBrowser
-            }
+    private var sidebarContextLabel: String? {
+        switch appState.sidebarContextType {
+        case .mail: return "Mail"
+        case .calendar: return "Calendar"
+        case .workspace: return "Pages"
+        case .none: return nil
         }
     }
 
     @ViewBuilder
-    private var navigationRailInline: some View {
-        if hasFullBleedPane && !railVisible {
-            // Sliver: 4px hover target when rail is collapsed for full-bleed panes
-            Color.fallbackSidebarBg
-                .frame(width: ShellZoomMetrics.size(4))
-                .overlay(alignment: .trailing) {
-                    Rectangle()
-                        .fill(Color.fallbackChromeBorder)
-                        .frame(width: 0.5)
-                }
-                .contentShape(Rectangle())
-                .onHover { hovering in
-                    railEdgeHovering = hovering
-                }
-        } else {
-            NavigationRailView(
-                indicatorProvider: railIndicator(for:),
-                onSelect: handleRailSelection(_:)
-            )
-            .frame(width: railVisible ? ShellSidebarMetrics.railWidth : 0, alignment: .leading)
-            .clipped()
-            .allowsHitTesting(railVisible)
-            .onHover { hovering in
-                railHovering = hovering
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var railEdgeHotZone: some View {
-        if !appState.settings.railPinned {
-            HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: 6)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        railEdgeHovering = hovering
-                    }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .zIndex(2)
-        }
-    }
-
-    @ViewBuilder
-    private var contextualSidebarSection: some View {
-        switch appState.activeSidebarPanel {
-        case .settings:
-            SettingsSidebarView(appState: appState)
-                .transition(shellSidebarTransition)
+    private var sidebarContextualContent: some View {
+        switch appState.sidebarContextType {
         case .mail:
             MailContextualSidebarView(
                 appState: appState,
@@ -567,34 +569,29 @@ struct ContentView: View {
                     }
                 }
             )
-            .transition(shellSidebarTransition)
         case .calendar:
             CalendarContextualSidebarView(
                 calendarVM: calendarVM,
                 calendarService: calendarService,
                 workspacePath: appState.workspacePath
             )
-            .transition(shellSidebarTransition)
         case .workspace:
             WorkspaceContextualSidebarView(
                 appState: appState,
                 fileSystem: fileSystem,
                 activeFilePath: contextualSidebarActiveFilePath,
-                onSelectWorkspaceEntry: { entry in
-                    handleSidebarFileSelect(entry)
-                },
-                onRefreshTree: {
-                    refreshFileTree()
-                }
+                onSelectWorkspaceEntry: { entry in handleSidebarFileSelect(entry) },
+                onRefreshTree: { refreshFileTree() }
             )
-            .transition(shellSidebarTransition)
-        case nil:
+        case .none:
             EmptyView()
         }
     }
 
-    private var shellSidebarTransition: AnyTransition {
-        .move(edge: .leading).combined(with: .opacity)
+    private func updateSidebarContextType() {
+        guard let ws = workspaceManager.activeWorkspace,
+              let focusedLeaf = ws.focusedLeaf else { return }
+        appState.sidebarContextType = SidebarContextType.from(focusedLeaf.content)
     }
 
     @ViewBuilder
@@ -714,11 +711,6 @@ struct ContentView: View {
         .disabled(!isEnabled)
     }
 
-    private func handleSidebarToggleRequest() {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            railPinnedOpen.toggle()
-        }
-    }
 
     @discardableResult
     private func postBrowserCommandIfFocused(_ name: Notification.Name, object: Any? = nil) -> Bool {
@@ -732,7 +724,7 @@ struct ContentView: View {
     }
 
     private var shellShowsSidebarPanel: Bool {
-        appState.activeSidebarPanel != nil
+        appState.sidebarVisible
     }
 
     private var focusedBrowserPaneID: UUID? {
@@ -751,28 +743,6 @@ struct ContentView: View {
         return file.path
     }
 
-    private func leafMatchesRailItem(_ leaf: PaneNode.Leaf, item: RailItemID) -> Bool {
-        switch (item, leaf.content) {
-        case (.terminal, .terminal):
-            return true
-        case (.terminal, .document):
-            return false
-        case (_, .terminal):
-            return false
-        case let (.home, .document(file)):
-            return file.isGateway
-        case let (.mail, .document(file)):
-            return file.isMail
-        case let (.calendar, .document(file)):
-            return file.isCalendar
-        case let (.browser, .document(file)):
-            return file.isBrowser
-        case (.workspace, _):
-            return appState.sidebarOpen
-        case (.settings, _):
-            return appState.showSettings
-        }
-    }
 
     private func handleViewDisappear() {
         flushDirtyTabs()
@@ -787,32 +757,6 @@ struct ContentView: View {
         recordingPillController.cleanup()
     }
 
-    private func railIndicator(for item: RailItemID) -> RailIndicatorState {
-        // Panel-bearing items: focused = panel active in slot
-        switch item {
-        case .settings:
-            return appState.activeSidebarPanel == .settings ? .focused : .none
-        case .workspace:
-            return appState.activeSidebarPanel == .workspace ? .focused : .none
-        case .mail:
-            if appState.activeSidebarPanel == .mail { return .focused }
-            if activeWorkspaceLeaves.contains(where: { leafMatchesRailItem($0, item: .mail) }) { return .open }
-            return .none
-        case .calendar:
-            if appState.activeSidebarPanel == .calendar { return .focused }
-            if activeWorkspaceLeaves.contains(where: { leafMatchesRailItem($0, item: .calendar) }) { return .open }
-            return .none
-        default:
-            // Non-panel items (home, browser, terminal): focused = pane is focused
-            let leaves = activeWorkspaceLeaves
-            guard leaves.contains(where: { leafMatchesRailItem($0, item: item) }) else { return .none }
-            if let focusedLeaf = workspaceManager.focusedPane,
-               leafMatchesRailItem(focusedLeaf, item: item) {
-                return .focused
-            }
-            return .open
-        }
-    }
 
     private func presentEditorPane(_ content: PaneContent) {
         appState.currentView = .editor
@@ -820,38 +764,12 @@ struct ContentView: View {
         openOrFocusPane(content)
     }
 
-    private func handleRailSelection(_ item: RailItemID) {
-        switch item {
-        case .settings:
-            openSettingsTab()
-        case .home:
-            presentEditorPane(.gatewayDocument())
-        case .mail:
-            presentEditorPane(.mailDocument())
-            toggleSidebarPanel(.mail)
-        case .calendar:
-            presentEditorPane(.calendarDocument())
-            toggleSidebarPanel(.calendar)
-        case .browser:
-            presentEditorPane(.browserDocument())
-        case .terminal:
-            presentEditorPane(.terminal)
-        case .workspace:
-            toggleSidebarPanel(.workspace)
-        }
-    }
-
-    private func toggleSidebarPanel(_ panel: SidebarPanelID) {
+    private func handleSidebarToggle() {
         withAnimation(.easeInOut(duration: 0.15)) {
-            if appState.activeSidebarPanel == panel {
-                appState.activeSidebarPanel = nil
-            } else {
-                appState.activeSidebarPanel = panel
-            }
+            appState.sidebarVisible.toggle()
         }
     }
 
-    // contextualSidebarView removed — routing now in contextualSidebarSection via activeSidebarPanel
 
     // MARK: - Move Page Overlay
 
@@ -3807,11 +3725,11 @@ struct ContentView: View {
         // Auto-hide sidebar when peek is wide
         if clamped > 600 && !sidebarHiddenByPeek {
             sidebarHiddenByPeek = true
-            panelBeforePeekHide = appState.activeSidebarPanel
-            appState.activeSidebarPanel = nil
+            sidebarVisibleBeforePeekHide = appState.sidebarVisible
+            appState.sidebarVisible = false
         } else if clamped <= 600 && sidebarHiddenByPeek {
             sidebarHiddenByPeek = false
-            appState.activeSidebarPanel = panelBeforePeekHide
+            appState.sidebarVisible = sidebarVisibleBeforePeekHide
         }
     }
 
@@ -3819,7 +3737,7 @@ struct ContentView: View {
         peekTarget = nil
         if sidebarHiddenByPeek {
             sidebarHiddenByPeek = false
-            appState.activeSidebarPanel = panelBeforePeekHide
+            appState.sidebarVisible = sidebarVisibleBeforePeekHide
         }
     }
 

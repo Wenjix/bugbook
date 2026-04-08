@@ -378,7 +378,9 @@ struct MailPaneView: View {
                         }
 
                         if mailService.isComposing, mailService.composer.threadId == thread.id {
-                            composeView(title: mailService.composer.mode == .replyAll ? "Reply All" : "Reply")
+                            composeView(title: mailService.composer.mode == .replyAll ? "Reply All" : (mailService.composer.mode == .forward ? "Forward" : "Reply"))
+                        } else {
+                            threadActionButtons(thread)
                         }
                     }
                     .padding(20)
@@ -587,6 +589,32 @@ struct MailPaneView: View {
         .padding(.vertical, 12)
     }
 
+    private func threadActionButtons(_ thread: MailThreadDetail) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                mailService.prepareReplyDraft(thread: thread, connectedEmail: appState.settings.googleConnectedEmail, replyAll: false)
+            } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                mailService.prepareReplyDraft(thread: thread, connectedEmail: appState.settings.googleConnectedEmail, replyAll: true)
+            } label: {
+                Label("Reply all", systemImage: "arrowshape.turn.up.left.2")
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                mailService.prepareForwardDraft(thread: thread)
+            } label: {
+                Label("Forward", systemImage: "arrowshape.turn.up.right")
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.top, 8)
+    }
+
     private func messageCard(_ message: MailMessage) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -616,7 +644,7 @@ struct MailPaneView: View {
             if let htmlBody = message.htmlBody,
                !htmlBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 MailHTMLView(html: htmlBody)
-                    .frame(minHeight: 500, maxHeight: .infinity)
+                    .frame(minHeight: 700, maxHeight: .infinity)
                     .clipShape(.rect(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
