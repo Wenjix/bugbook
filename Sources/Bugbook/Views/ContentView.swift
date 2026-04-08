@@ -1154,6 +1154,7 @@ struct ContentView: View {
                     .zIndex(2)
                 }
             }
+            .padding(.leading, appState.sidebarVisible ? 0 : Container.groutGap)
             .padding(.trailing, Container.groutGap)
             .padding(.bottom, Container.groutGap)
         }
