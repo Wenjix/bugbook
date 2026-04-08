@@ -18,6 +18,7 @@ struct MeetingsView: View {
     @State private var isSaving = false
     @State private var showTranscript = false
     @State private var notesText = ""
+    @State private var showRecordSetup = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,7 +29,10 @@ struct MeetingsView: View {
             } else if isSaving {
                 savingView
             } else {
-                recorderPrompt
+                if showRecordSetup {
+                    recordSetupBar
+                    Divider()
+                }
                 recentRecordings
             }
         }
@@ -60,54 +64,67 @@ struct MeetingsView: View {
                 Text("Recording")
                     .font(.system(size: Typography.caption, weight: .medium))
                     .foregroundStyle(StatusColor.error)
+            } else if !isSaving {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        showRecordSetup.toggle()
+                    }
+                }) {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(showRecordSetup ? StatusColor.error : Color.primary.opacity(0.5))
+                            .frame(width: 7, height: 7)
+                        Text("Record")
+                            .font(.system(size: Typography.caption, weight: .medium))
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(showRecordSetup ? Opacity.light : Opacity.subtle))
+                    .clipShape(.rect(cornerRadius: Radius.xs))
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
     }
 
-    // MARK: - Recorder Prompt (idle state)
+    // MARK: - Record Setup Bar (inline, shown when record is toggled)
 
-    private var recorderPrompt: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            // Title field
+    private var recordSetupBar: some View {
+        HStack(spacing: 8) {
             TextField("Meeting title (optional)", text: $meetingTitle)
                 .textFieldStyle(.plain)
-                .font(.system(size: Typography.body))
+                .font(.system(size: Typography.bodySmall))
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(Opacity.subtle))
-                .clipShape(.rect(cornerRadius: Radius.sm))
-                .padding(.horizontal, 24)
 
-            // Big record button
-            Button(action: startRecording) {
-                HStack(spacing: 10) {
+            Button(action: {
+                showRecordSetup = false
+                startRecording()
+            }) {
+                HStack(spacing: 5) {
                     Circle()
                         .fill(StatusColor.error)
-                        .frame(width: 14, height: 14)
-                    Text("Start recording")
-                        .font(.system(size: Typography.body, weight: .medium))
+                        .frame(width: 7, height: 7)
+                    Text("Start")
+                        .font(.system(size: Typography.caption, weight: .medium))
                 }
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
                 .background(Color.primary.opacity(Opacity.light))
-                .clipShape(.rect(cornerRadius: Radius.md))
+                .clipShape(.rect(cornerRadius: Radius.xs))
                 .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md)
+                    RoundedRectangle(cornerRadius: Radius.xs)
                         .strokeBorder(Color.primary.opacity(Opacity.medium), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 24)
-
-            Spacer()
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color.primary.opacity(Opacity.subtle))
     }
 
     // MARK: - Recording View (active state)
@@ -248,19 +265,31 @@ struct MeetingsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Recent Recordings (compact list below prompt)
+    // MARK: - Recent Recordings (primary content)
 
     @ViewBuilder
     private var recentRecordings: some View {
         let groups = viewModel.groupedMeetings
-        if !groups.isEmpty {
-            Divider()
-
+        if groups.isEmpty {
+            VStack(spacing: 6) {
+                Spacer()
+                Text("No meetings yet")
+                    .font(.system(size: Typography.bodySmall))
+                    .foregroundStyle(.quaternary)
+                Text("Press Record to start one")
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(.quaternary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    sectionDivider("Recent")
-                    ForEach(groups.flatMap(\.meetings).prefix(8)) { meeting in
-                        meetingRow(meeting)
+                    ForEach(groups, id: \.bucket) { group in
+                        sectionDivider(group.bucket.rawValue)
+                        ForEach(group.meetings) { meeting in
+                            meetingRow(meeting)
+                        }
                     }
                 }
                 .padding(.vertical, 4)
