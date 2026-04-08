@@ -73,17 +73,69 @@ public struct DatabaseDateValue: Equatable, Codable, Sendable {
         try container.encode(dateFormat, forKey: .dateFormat)
     }
 
+    private static nonisolated(unsafe) let sharedJSONDecoder = JSONDecoder()
+
     public static func decode(from raw: String) -> DatabaseDateValue? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if trimmed.hasPrefix("{"),
            let data = trimmed.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode(DatabaseDateValue.self, from: data) {
+           let decoded = try? sharedJSONDecoder.decode(DatabaseDateValue.self, from: data) {
             return decoded.normalized()
         }
 
+        // Fast path: if the string is already in canonical format (yyyy-MM-dd or yyyy-MM-ddTHH:mm),
+        // skip the full init → normalizedString → date → canonicalString round-trip.
+        if isCanonicalDate(trimmed) {
+            let hasTime = trimmed.count > 10 && (trimmed[trimmed.index(trimmed.startIndex, offsetBy: 10)] == "T")
+            return DatabaseDateValue(
+                canonicalStart: trimmed,
+                end: nil,
+                includeTime: hasTime,
+                dateFormat: .long
+            )
+        }
+
         return DatabaseDateValue(start: trimmed)
+    }
+
+    /// Private fast-path init that skips normalization for already-canonical strings.
+    private init(canonicalStart: String, end: String?, includeTime: Bool, dateFormat: DatabaseDateFormat) {
+        self.start = canonicalStart
+        self.end = end
+        self.includeTime = includeTime
+        self.dateFormat = dateFormat
+    }
+
+    /// Check if a string matches yyyy-MM-dd or yyyy-MM-ddTHH:mm format exactly.
+    /// Uses direct UTF8View indexing to avoid heap-allocating a byte array.
+    @inline(__always)
+    private static func isCanonicalDate(_ s: String) -> Bool {
+        let u = s.utf8
+        let count = u.count
+        guard count == 10 || count == 16 else { return false }
+        // All characters must be ASCII (single-byte UTF-8)
+        guard s.count == count else { return false }
+
+        @inline(__always) func byte(_ offset: Int) -> UInt8 {
+            u[u.index(u.startIndex, offsetBy: offset)]
+        }
+        @inline(__always) func isDigit(_ offset: Int) -> Bool {
+            let b = byte(offset); return b >= 0x30 && b <= 0x39
+        }
+
+        // yyyy-MM-dd
+        guard byte(4) == 0x2D, byte(7) == 0x2D else { return false }
+        guard isDigit(0), isDigit(1), isDigit(2), isDigit(3),
+              isDigit(5), isDigit(6), isDigit(8), isDigit(9) else { return false }
+
+        if count == 16 {
+            // yyyy-MM-ddTHH:mm
+            guard byte(10) == 0x54, byte(13) == 0x3A else { return false }
+            guard isDigit(11), isDigit(12), isDigit(14), isDigit(15) else { return false }
+        }
+        return true
     }
 
     public var rawValue: String {
@@ -102,7 +154,9 @@ public struct DatabaseDateValue: Equatable, Codable, Sendable {
     }
 
     public var sortKey: String {
-        normalized().start
+        // Fast path: if start is already canonical, skip normalization
+        if Self.isCanonicalDate(start) { return start }
+        return normalized().start
     }
 
     public var startDayKey: String {

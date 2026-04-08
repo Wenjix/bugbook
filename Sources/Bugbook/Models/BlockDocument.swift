@@ -1857,10 +1857,11 @@ class BlockDocument {
         persistsBlockIDs: Bool
     ) {
         let (metadata, content) = MarkdownBlockParser.parseMetadata(markdown)
+        let output = MarkdownBlockParser.parseWithFlags(content)
         return (
             metadata: metadata,
-            blocks: MarkdownBlockParser.parse(content),
-            persistsBlockIDs: content.contains("<!-- block-id:")
+            blocks: output.blocks,
+            persistsBlockIDs: output.hasBlockIDs
         )
     }
 

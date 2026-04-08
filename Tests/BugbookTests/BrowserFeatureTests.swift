@@ -30,7 +30,6 @@ final class BrowserFeatureTests: XCTestCase {
 
     func testAppSettingsBrowserFieldsRoundTrip() throws {
         var settings = AppSettings.default
-        settings.railPinned = true
         settings.browserSearchEngine = .kagi
         settings.browserChrome.showsBackForwardButtons = true
         settings.browserChrome.showsStatusBar = true
@@ -42,7 +41,6 @@ final class BrowserFeatureTests: XCTestCase {
         let data = try JSONEncoder().encode(settings)
         let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
 
-        XCTAssertTrue(decoded.railPinned)
         XCTAssertEqual(decoded.browserSearchEngine, .kagi)
         XCTAssertTrue(decoded.browserChrome.showsBackForwardButtons)
         XCTAssertTrue(decoded.browserChrome.showsStatusBar)

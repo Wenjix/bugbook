@@ -110,8 +110,17 @@ public struct RowSerializer {
                 if line.hasPrefix("  ") {
                     let propLine = line[line.index(line.startIndex, offsetBy: 2)...]
                     if let colonIdx = propLine.firstIndex(of: ":") {
-                        let key = String(propLine[propLine.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
-                        let rawValue = String(propLine[propLine.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                        // Property keys in YAML are not padded, so skip trim.
+                        let key = String(propLine[propLine.startIndex..<colonIdx])
+                        // Value has exactly one leading space after colon in our format.
+                        let afterColon = propLine.index(after: colonIdx)
+                        let valStart: Substring.Index
+                        if afterColon < propLine.endIndex && propLine[afterColon] == " " {
+                            valStart = propLine.index(after: afterColon)
+                        } else {
+                            valStart = afterColon
+                        }
+                        let rawValue = String(propLine[valStart...])
                         rawProperties[key] = rawValue
                         if let propType = propLookup[key] {
                             properties[key] = parseValue(rawValue, type: propType)
@@ -126,13 +135,17 @@ public struct RowSerializer {
                 if trimmed == "properties:" {
                     inProperties = true
                 } else if trimmed.hasPrefix("id:") {
-                    id = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                    let sub = trimmed.dropFirst(3)
+                    let start = sub.firstIndex(where: { $0 != " " }) ?? sub.endIndex
+                    id = String(sub[start...])
                 } else if trimmed.hasPrefix("created_at:") {
-                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    createdAt = parseISO8601Date(val)
+                    let sub = trimmed.dropFirst(11)
+                    let start = sub.firstIndex(where: { $0 != " " }) ?? sub.endIndex
+                    createdAt = parseISO8601Date(String(sub[start...]))
                 } else if trimmed.hasPrefix("updated_at:") {
-                    let val = String(trimmed.dropFirst(11)).trimmingCharacters(in: .whitespaces)
-                    updatedAt = parseISO8601Date(val)
+                    let sub = trimmed.dropFirst(11)
+                    let start = sub.firstIndex(where: { $0 != " " }) ?? sub.endIndex
+                    updatedAt = parseISO8601Date(String(sub[start...]))
                 }
             }
         }
@@ -148,14 +161,17 @@ public struct RowSerializer {
     // MARK: - Private
 
     private static func parseValue(_ raw: String, type: PropertyType) -> PropertyValue {
-        var value = raw
+        var value: String
         // Strip one pair of surrounding quotes
-        if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
-            value = String(value.dropFirst().dropLast())
+        if raw.count >= 2 && raw.first == "\"" && raw.last == "\"" {
+            value = String(raw.dropFirst().dropLast())
+        } else {
+            value = raw
         }
-        // Unescape backslash sequences
-        value = value.replacingOccurrences(of: "\\\"", with: "\"")
-                     .replacingOccurrences(of: "\\\\", with: "\\")
+        // Single-pass unescape: handle \\" and \\" in one scan
+        if value.contains("\\") {
+            value = yamlUnescape(value)
+        }
         if value.isEmpty { return .empty }
 
         switch type {
@@ -166,14 +182,7 @@ public struct RowSerializer {
         case .select:
             return .select(value)
         case .multiSelect:
-            if value.hasPrefix("[") {
-                let items = value.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-                    .components(separatedBy: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
-                    .filter { !$0.isEmpty }
-                return .multiSelect(items)
-            }
-            return .multiSelect(value.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+            return .multiSelect(parseArray(value))
         case .date:
             return .date(value)
         case .checkbox:
@@ -183,24 +192,80 @@ public struct RowSerializer {
         case .email:
             return .email(value)
         case .relation:
-            if value.hasPrefix("[") {
-                let items = value.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-                    .components(separatedBy: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
-                    .filter { !$0.isEmpty }
-                return .relationMany(items)
+            if value.first == "[" {
+                return .relationMany(parseArray(value))
             }
             return .relation(value)
         case .formula:
-            // Formula values are computed at display time, never persisted.
+            // Computed at display time, never persisted
             return .empty
         case .lookup:
-            // Lookup is computed at render time; stored value is treated as text.
+            // Computed at render time; stored value is treated as text
             return .text(value)
         case .rollup:
-            // Rollup is computed at render time; stored value is treated as text.
+            // Computed at render time; stored value is treated as text
             return .text(value)
         }
+    }
+
+    /// Single-pass YAML unescape: \" → " and \\\\ → \\
+    @inline(__always)
+    private static func yamlUnescape(_ s: String) -> String {
+        var result = String()
+        result.reserveCapacity(s.count)
+        var iter = s.makeIterator()
+        while let c = iter.next() {
+            if c == "\\" {
+                if let next = iter.next() {
+                    switch next {
+                    case "\"": result.append("\"")
+                    case "\\": result.append("\\")
+                    default:
+                        result.append("\\")
+                        result.append(next)
+                    }
+                } else {
+                    result.append("\\")
+                }
+            } else {
+                result.append(c)
+            }
+        }
+        return result
+    }
+
+    /// Parse "[a, b, c]" or "a, b" into array of trimmed, non-empty strings.
+    /// Avoids intermediate array/string allocations from split+trim+filter chains.
+    @inline(__always)
+    private static func parseArray(_ value: String) -> [String] {
+        let s: Substring
+        if value.first == "[" && value.last == "]" {
+            s = value.dropFirst().dropLast()
+        } else {
+            s = value[...]
+        }
+        var items: [String] = []
+        var start = s.startIndex
+        while start < s.endIndex {
+            // Skip leading whitespace
+            while start < s.endIndex && (s[start] == " " || s[start] == "\t") { start = s.index(after: start) }
+            guard start < s.endIndex else { break }
+            // Find comma or end
+            let commaIdx = s[start...].firstIndex(of: ",") ?? s.endIndex
+            // Trim trailing whitespace and quotes
+            var end = commaIdx
+            while end > start && (s[s.index(before: end)] == " " || s[s.index(before: end)] == "\t") { end = s.index(before: end) }
+            // Strip surrounding quotes
+            var itemStart = start
+            var itemEnd = end
+            if itemStart < itemEnd && s[itemStart] == "\"" { itemStart = s.index(after: itemStart) }
+            if itemEnd > itemStart && s[s.index(before: itemEnd)] == "\"" { itemEnd = s.index(before: itemEnd) }
+            if itemStart < itemEnd {
+                items.append(String(s[itemStart..<itemEnd]))
+            }
+            start = commaIdx < s.endIndex ? s.index(after: commaIdx) : s.endIndex
+        }
+        return items
     }
 
     private static func yamlEscape(_ s: String) -> String {

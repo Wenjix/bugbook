@@ -428,7 +428,7 @@ struct TableView: View {
                                 : isHovered ? Color.primary.opacity(0.04) : Color.clear
                         )
                 )
-                .overlay { columnDividers().allowsHitTesting(false) }
+                .overlay { columnDividers(offsets: columnDividerOffsets).allowsHitTesting(false) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .topLeading) {
@@ -475,13 +475,25 @@ struct TableView: View {
     private func columnDividers() -> some View {
         if showVerticalLines {
             let offsets = columnDividerOffsets
-            Canvas { context, size in
-                for x in offsets {
-                    context.fill(
-                        Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
-                        with: .color(.gray.opacity(0.15))
-                    )
-                }
+            columnDividersCanvas(offsets: offsets)
+        }
+    }
+
+    /// Variant that accepts precomputed offsets to avoid recomputing per row.
+    @ViewBuilder
+    private func columnDividers(offsets: [CGFloat]) -> some View {
+        if !offsets.isEmpty {
+            columnDividersCanvas(offsets: offsets)
+        }
+    }
+
+    private func columnDividersCanvas(offsets: [CGFloat]) -> some View {
+        Canvas { context, size in
+            for x in offsets {
+                context.fill(
+                    Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
+                    with: .color(.gray.opacity(0.15))
+                )
             }
         }
     }
@@ -754,13 +766,13 @@ struct TableView: View {
         }
         .buttonStyle(.plain)
 
-        // Group rows
+        // Group rows — use Set for O(1) membership test instead of iterating all rows per group
         if !isCollapsed {
             let groupRowIds = Set(group.rows.map(\.id))
             ForEach($rows) { $row in
                 if groupRowIds.contains(row.id) {
                     dataRow($row)
-                        .id($row.wrappedValue.id)
+                        .id(row.id)
                     tableDivider.opacity(0.5)
                 }
             }

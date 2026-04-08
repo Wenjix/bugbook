@@ -50,41 +50,49 @@ public class IndexManager {
     // MARK: - Rebuild
 
     public func rebuild(dbPath: String, schema: DatabaseSchema, rows: [DatabaseRow]) -> [String: Any] {
-        var rowsMap: [String: Any] = [:]
-        for row in rows {
-            rowsMap[row.id] = buildRowEntry(row: row, schema: schema, dbPath: dbPath)
+        // Pre-filter indexed properties once
+        let indexedTypes: Set<PropertyType> = [.select, .multiSelect, .relation, .checkbox]
+        let indexedProps = schema.properties.filter { indexedTypes.contains($0.type) }
+
+        // Single pass: build row entries and reverse indexes simultaneously
+        var rowsMap: [String: Any] = Dictionary(minimumCapacity: rows.count)
+        var indexes: [String: [String: [String]]] = Dictionary(minimumCapacity: indexedProps.count)
+        for prop in indexedProps {
+            indexes[prop.id] = [:]
         }
 
-        // Build reverse indexes
-        let indexedTypes: Set<PropertyType> = [.select, .multiSelect, .relation, .checkbox]
-        var indexes: [String: [String: [String]]] = [:]
-        for prop in schema.properties where indexedTypes.contains(prop.type) {
-            var propIndex: [String: [String]] = [:]
-            for row in rows {
+        // Build local index dicts to avoid repeated hash lookups on `indexes`
+        var localIndexes: [String: [String: [String]]] = Dictionary(minimumCapacity: indexedProps.count)
+        for prop in indexedProps { localIndexes[prop.id] = [:] }
+
+        for row in rows {
+            rowsMap[row.id] = buildRowEntry(row: row, schema: schema, dbPath: dbPath)
+
+            // Build reverse indexes in the same pass
+            for prop in indexedProps {
                 guard let val = row.properties[prop.id] else { continue }
                 switch val {
                 case .select(let optId):
-                    propIndex[optId, default: []].append(row.id)
+                    localIndexes[prop.id]![optId, default: []].append(row.id)
                 case .multiSelect(let optIds):
                     for optId in optIds {
-                        propIndex[optId, default: []].append(row.id)
+                        localIndexes[prop.id]![optId, default: []].append(row.id)
                     }
                 case .relation(let rowId):
-                    propIndex[rowId, default: []].append(row.id)
+                    localIndexes[prop.id]![rowId, default: []].append(row.id)
                 case .relationMany(let rowIds):
                     for rid in rowIds {
-                        propIndex[rid, default: []].append(row.id)
+                        localIndexes[prop.id]![rid, default: []].append(row.id)
                     }
                 case .checkbox(let b):
-                    propIndex[b ? "true" : "false", default: []].append(row.id)
+                    localIndexes[prop.id]![b ? "true" : "false", default: []].append(row.id)
                 default:
                     break
                 }
             }
-            if !propIndex.isEmpty {
-                indexes[prop.id] = propIndex
-            }
         }
+
+        indexes = localIndexes.filter { !$0.value.isEmpty }
 
         return [
             "version": 1,
