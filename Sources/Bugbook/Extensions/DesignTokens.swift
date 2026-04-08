@@ -35,16 +35,16 @@ enum Typography {
 
 enum Container {
     /// Window/grout background — the surface cards float on
-    static let groutBg = Color(light: Color(hex: "e2e0db"), dark: Color(hex: "161616"))
+    static let groutBg = Color(light: Color(hex: "e2e0db"), dark: Color(hex: "232323"))
 
     /// Content card background
-    static let cardBg = Color(light: .white, dark: Color(hex: "232323"))
+    static let cardBg = Color(light: .white, dark: Color(hex: "161616"))
 
     /// Sidebar active item highlight
     static let sidebarActiveBg = Color(light: Color(hex: "d6d4cf"), dark: Color(hex: "2a2a2a"))
 
     /// Workspace pill tab — active fill (matches card bg so it feels connected)
-    static let pillActiveBg = Color(light: .white, dark: Color(hex: "232323"))
+    static let pillActiveBg = Color(light: .white, dark: Color(hex: "161616"))
 
     /// Workspace pill tab — inactive text
     static let pillInactiveText = Color(light: Color(hex: "888888"), dark: Color(hex: "555555"))

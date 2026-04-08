@@ -61,7 +61,7 @@ extension Color {
     static let fallbackSidebarBg = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))
     static let fallbackTabBarBg  = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))
     // Canvas — editor, active tab (matches Container.cardBg)
-    static let fallbackEditorBg  = Color(light: .white, dark: Color(hex: "232323"))
+    static let fallbackEditorBg  = Color(light: .white, dark: Color(hex: "161616"))
 
     // Semantic surfaces
     static let fallbackCardBg        = Color(light: .white,               dark: Color(hex: "202020"))
