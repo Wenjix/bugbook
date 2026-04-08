@@ -43,8 +43,8 @@ enum Container {
     /// Sidebar active item highlight
     static let sidebarActiveBg = Color(light: Color(hex: "d6d4cf"), dark: Color(hex: "2a2a2a"))
 
-    /// Workspace pill tab — active fill
-    static let pillActiveBg = Color(light: Color(hex: "ccc9c3"), dark: Color(hex: "2e2e2e"))
+    /// Workspace pill tab — active fill (matches card bg so it feels connected)
+    static let pillActiveBg = Color(light: .white, dark: Color(hex: "232323"))
 
     /// Workspace pill tab — inactive text
     static let pillInactiveText = Color(light: Color(hex: "888888"), dark: Color(hex: "555555"))
