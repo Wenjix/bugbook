@@ -208,18 +208,30 @@ struct BrowserPaneView: View {
                     }
                 }
 
-                // Compact tabs — each tab is a pill, active one shows the address field
-                ForEach(session.tabs) { tab in
-                    compactTab(tab)
-                }
-
-                Button(action: createNewTab) {
-                    Image(systemName: "plus")
+                // Full-width URL bar
+                HStack(spacing: 8) {
+                    Image(systemName: activeTab?.securityIconName ?? "magnifyingglass")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
+
+                    TextField("Search or enter URL", text: $omnibarText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .focused($omnibarFocused)
+                        .onSubmit {
+                            submitOmnibar(omnibarText)
+                        }
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md)
+                        .fill(Color.primary.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md)
+                                .strokeBorder(omnibarFocused ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
+                        )
+                )
 
                 browserActionMenu
             }
