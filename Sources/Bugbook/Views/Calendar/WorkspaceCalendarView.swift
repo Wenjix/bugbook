@@ -93,7 +93,8 @@ struct WorkspaceCalendarView: View {
                 calendarVM: calendarVM,
                 calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
-                onDatabaseItemTapped: handleDatabaseItemTapped
+                onDatabaseItemTapped: handleDatabaseItemTapped,
+                onCreateEvent: handleDragCreateEvent
             )
         case .week:
             CalendarWeekView(
@@ -103,7 +104,8 @@ struct WorkspaceCalendarView: View {
                 calendarVM: calendarVM,
                 calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
-                onDatabaseItemTapped: handleDatabaseItemTapped
+                onDatabaseItemTapped: handleDatabaseItemTapped,
+                onCreateEvent: handleDragCreateEvent
             )
         case .month:
             CalendarMonthView(
@@ -323,6 +325,21 @@ struct WorkspaceCalendarView: View {
         }
     }
 
+    private func handleDragCreateEvent(startDate: Date, endDate: Date) {
+        guard appState.settings.googleConfigured, appState.settings.googleConnected else {
+            appState.showSettings = true
+            appState.selectedSettingsTab = "google"
+            return
+        }
+        createEventDraft = CalendarEventDraft(
+            startDate: startDate,
+            endDate: endDate,
+            calendarId: "primary"
+        )
+        createEventError = nil
+        showCreateEventSheet = true
+    }
+
     private func handleCreateEventButton() {
         guard appState.settings.googleConfigured, appState.settings.googleConnected else {
             appState.showSettings = true
@@ -522,6 +539,8 @@ struct CalendarEventComposerSheet: View {
                     DatePicker("Ends", selection: $draft.endDate)
                 }
 
+                recurrencePicker
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Location")
                         .font(.system(size: 12, weight: .medium))
@@ -583,5 +602,77 @@ struct CalendarEventComposerSheet: View {
             draft.startDate = calendar.startOfDay(for: draft.startDate)
             draft.endDate = calendar.startOfDay(for: max(draft.startDate, draft.endDate))
         }
+    }
+
+    // MARK: - Recurrence Picker
+
+    @State private var showCustomRrule = false
+    @State private var customRruleText = ""
+
+    @ViewBuilder
+    private var recurrencePicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Repeat")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Picker("Repeat", selection: recurrencePickerBinding) {
+                Text("Does not repeat").tag("none")
+                Divider()
+                ForEach(RecurrenceFrequency.allCases) { freq in
+                    Text(freq.label).tag(freq.rawValue)
+                }
+                Divider()
+                Text("Custom…").tag("custom")
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showCustomRrule {
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("FREQ=WEEKLY;BYDAY=MO,WE,FR", text: $customRruleText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                        .onChange(of: customRruleText) { _, value in
+                            draft.recurrence = .custom(value)
+                        }
+                    Text("Enter an RRULE value (without the RRULE: prefix).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var recurrencePickerBinding: Binding<String> {
+        Binding(
+            get: {
+                switch draft.recurrence {
+                case .none: return "none"
+                case .preset(let freq): return freq.rawValue
+                case .custom: return "custom"
+                }
+            },
+            set: { newTag in
+                showCustomRrule = false
+                switch newTag {
+                case "none":
+                    draft.recurrence = .none
+                case "custom":
+                    showCustomRrule = true
+                    if case .custom(let raw) = draft.recurrence {
+                        customRruleText = raw
+                    } else {
+                        customRruleText = ""
+                    }
+                    draft.recurrence = .custom(customRruleText)
+                default:
+                    if let freq = RecurrenceFrequency(rawValue: newTag) {
+                        draft.recurrence = .preset(freq)
+                    }
+                }
+            }
+        )
     }
 }

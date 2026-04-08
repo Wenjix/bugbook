@@ -9,9 +9,15 @@ struct CalendarWeekView: View {
     let calendarSources: [CalendarSource]
     var onEventTapped: (CalendarEvent) -> Void
     var onDatabaseItemTapped: (CalendarDatabaseItem) -> Void
+    var onCreateEvent: ((Date, Date) -> Void)?
 
     @State private var hoveredEventId: String?
     @State private var hoveredDbItemId: String?
+
+    // Drag-to-create state
+    @State private var dragStart: CGPoint?
+    @State private var dragCurrent: CGPoint?
+    @State private var dragDayIndex: Int?
 
     private let hourHeight: CGFloat = 48
     private let timeGutterWidth: CGFloat = 58
@@ -251,11 +257,86 @@ struct CalendarWeekView: View {
                             databaseItemBlock(item)
                         }
                     }
+
+                    // Drag-to-create preview for this column
+                    if let preview = dragPreview, dragDayIndex == index {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.18))
+                            .overlay(
+                                Rectangle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 2),
+                                alignment: .leading
+                            )
+                            .frame(height: preview.height)
+                            .offset(y: preview.y)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 1)
+                .contentShape(Rectangle())
+                .gesture(
+                    onCreateEvent != nil ? dragCreateGesture(dayIndex: index, day: day) : nil
+                )
             }
         }
+    }
+
+    // MARK: - Drag-to-create gesture
+
+    private struct DragPreview {
+        let y: CGFloat
+        let height: CGFloat
+    }
+
+    private var dragPreview: DragPreview? {
+        guard let start = dragStart, let current = dragCurrent else { return nil }
+        let minY = min(start.y, current.y)
+        let height = max(abs(current.y - start.y), hourHeight * 0.5)
+        return DragPreview(y: minY, height: height)
+    }
+
+    private func dragCreateGesture(dayIndex: Int, day: Date) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .local)
+            .onChanged { value in
+                if dragDayIndex == nil {
+                    dragDayIndex = dayIndex
+                    dragStart = value.startLocation
+                }
+                dragCurrent = value.location
+            }
+            .onEnded { value in
+                defer {
+                    dragStart = nil
+                    dragCurrent = nil
+                    dragDayIndex = nil
+                }
+                guard dragDayIndex == dayIndex,
+                      let start = dragStart else { return }
+
+                let startY = min(start.y, value.location.y)
+                let endY = max(start.y, value.location.y)
+
+                let startTime = date(from: startY, on: day)
+                var endTime = date(from: endY, on: day)
+                if endTime <= startTime {
+                    endTime = startTime.addingTimeInterval(1800)
+                }
+                onCreateEvent?(startTime, endTime)
+            }
+    }
+
+    private func date(from y: CGFloat, on day: Date) -> Date {
+        let totalSeconds = (y / hourHeight) * 3600
+        let hour = Int(totalSeconds / 3600)
+        let minute = Int((totalSeconds.truncatingRemainder(dividingBy: 3600)) / 60)
+        let clampedHour = max(0, min(23, calendarVM.dayStartHour + hour))
+        var comps = calendar.dateComponents([.year, .month, .day], from: day)
+        comps.hour = clampedHour
+        comps.minute = (minute / 15) * 15  // snap to 15 min
+        comps.second = 0
+        return calendar.date(from: comps) ?? day
     }
 
     private func timedEventBlock(_ event: CalendarEvent, column: Int, totalColumns: Int, containerWidth: CGFloat) -> some View {
