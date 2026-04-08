@@ -67,6 +67,13 @@ jobs:
         run: |
           swift build
 
+      - name: Install XcodeGen
+        run: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
       - name: Run SwiftLint
         run: |
           set -euo pipefail
