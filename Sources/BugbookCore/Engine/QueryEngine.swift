@@ -11,10 +11,7 @@ public struct QueryEngine {
         } else {
             let filters = query.filters
             sorted = rows.filter { row in
-                for filter in filters {
-                    if !matches(row: row, filter: filter) { return false }
-                }
-                return true
+                filters.allSatisfy { matches(row: row, filter: $0) }
             }
         }
 
