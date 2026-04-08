@@ -1,5 +1,4 @@
 import Foundation
-import WebKit
 
 @MainActor
 struct BrowserAgentService {
@@ -9,6 +8,20 @@ struct BrowserAgentService {
     }
 
     private let savedPageStore: SavedWebPageStore
+    private static let pageContentExtractionScript = """
+    (() => {
+      const title = document.title || '';
+      const text = (document.body && document.body.innerText ? document.body.innerText : '').trim();
+      return JSON.stringify({ title, text, url: location.href });
+    })()
+    """
+    private static let pageSaveExtractionScript = """
+    (() => {
+      const title = document.title || '';
+      const text = (document.body && document.body.innerText ? document.body.innerText : '').trim().slice(0, 20000);
+      return JSON.stringify({ title, text, url: location.href });
+    })()
+    """
 
     init(savedPageStore: SavedWebPageStore = SavedWebPageStore()) {
         self.savedPageStore = savedPageStore
@@ -29,16 +42,7 @@ struct BrowserAgentService {
     }
 
     func extractPageContent(from paneID: UUID, tabID: UUID, browserManager: BrowserManager) async -> String {
-        let webView = browserManager.ensureWebView(for: paneID, tabID: tabID)
-        let script = """
-        (() => {
-          const title = document.title || '';
-          const text = (document.body && document.body.innerText ? document.body.innerText : '').trim();
-          return JSON.stringify({ title, text, url: location.href });
-        })()
-        """
-
-        guard let raw = try? await evaluateJavaScript(script, in: webView),
+        guard let raw = try? await browserManager.evaluateJavaScript(Self.pageContentExtractionScript, in: paneID, tabID: tabID),
               let data = raw.data(using: .utf8),
               let payload = try? JSONDecoder().decode(PageExtractionPayload.self, from: data) else {
             return ""
@@ -56,8 +60,8 @@ struct BrowserAgentService {
         settings: AppSettings,
         aiService: AiService?
     ) async throws -> SaveResult {
-        let webView = browserManager.ensureWebView(for: paneID, tabID: tabID)
-        let payload = try await extractPayload(from: webView)
+        _ = browserManager.ensurePage(for: paneID, tabID: tabID)
+        let payload = try await extractPayload(from: paneID, tabID: tabID, browserManager: browserManager)
 
         if let existing = savedPageStore.record(forURL: payload.url.absoluteString, in: workspacePath) {
             browserManager.session(for: paneID).updateSavedRecordID(existing.id, for: tabID)
@@ -174,21 +178,21 @@ struct BrowserAgentService {
         for proposal in proposals {
             switch proposal.decision {
             case .save:
-                if (try? await saveTab(
-                    from: paneID,
-                    tabID: proposal.tabID,
+                if await saveResult(
+                    for: proposal.tabID,
+                    paneID: paneID,
                     browserManager: browserManager,
                     fileSystem: fileSystem,
                     workspacePath: workspacePath,
                     settings: settings,
                     aiService: aiService
-                )) != nil {
+                ) != nil {
                     saved += 1
                 }
             case .readLater:
-                if let result = try? await saveTab(
-                    from: paneID,
-                    tabID: proposal.tabID,
+                if let result = await saveResult(
+                    for: proposal.tabID,
+                    paneID: paneID,
                     browserManager: browserManager,
                     fileSystem: fileSystem,
                     workspacePath: workspacePath,
@@ -209,16 +213,8 @@ struct BrowserAgentService {
         return "Saved \(saved), queued \(queued), closed \(closed)"
     }
 
-    private func extractPayload(from webView: WKWebView) async throws -> PageExtractionPayload {
-        let script = """
-        (() => {
-          const title = document.title || '';
-          const text = (document.body && document.body.innerText ? document.body.innerText : '').trim().slice(0, 20000);
-          return JSON.stringify({ title, text, url: location.href });
-        })()
-        """
-
-        let raw = try await evaluateJavaScript(script, in: webView)
+    private func extractPayload(from paneID: UUID, tabID: UUID, browserManager: BrowserManager) async throws -> PageExtractionPayload {
+        let raw = try await browserManager.evaluateJavaScript(Self.pageSaveExtractionScript, in: paneID, tabID: tabID)
         guard let data = raw.data(using: .utf8) else {
             throw BrowserAgentError.invalidPagePayload
         }
@@ -262,6 +258,26 @@ struct BrowserAgentService {
         return fallbackSummary(from: trimmedText)
     }
 
+    private func saveResult(
+        for tabID: UUID,
+        paneID: UUID,
+        browserManager: BrowserManager,
+        fileSystem: FileSystemService,
+        workspacePath: String,
+        settings: AppSettings,
+        aiService: AiService?
+    ) async -> SaveResult? {
+        try? await saveTab(
+            from: paneID,
+            tabID: tabID,
+            browserManager: browserManager,
+            fileSystem: fileSystem,
+            workspacePath: workspacePath,
+            settings: settings,
+            aiService: aiService
+        )
+    }
+
     private func fallbackSummary(from text: String) -> String {
         let sentences = text
             .components(separatedBy: CharacterSet(charactersIn: ".!?"))
@@ -300,22 +316,6 @@ struct BrowserAgentService {
             .replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return sanitized.isEmpty ? "Saved Page" : String(sanitized.prefix(80))
-    }
-
-    private func evaluateJavaScript(_ script: String, in webView: WKWebView) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            webView.evaluateJavaScript(script) { result, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                if let string = result as? String {
-                    continuation.resume(returning: string)
-                } else {
-                    continuation.resume(throwing: BrowserAgentError.invalidPagePayload)
-                }
-            }
-        }
     }
 }
 
