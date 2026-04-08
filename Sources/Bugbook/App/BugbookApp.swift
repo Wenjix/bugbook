@@ -1,6 +1,9 @@
 import SwiftUI
 import Sentry
 import os
+#if BUGBOOK_BROWSER_CHROMIUM
+import ChromiumBridge
+#endif
 
 @main
 struct BugbookApp: App {
