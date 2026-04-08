@@ -1121,6 +1121,8 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     if appState.showSettings {
                         SettingsView(appState: appState)
+                            .background(Container.cardBg)
+                            .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
                     } else if appState.currentView == .graphView {
                         if let workspace = appState.workspacePath {
                             GraphView(
@@ -1131,6 +1133,8 @@ struct ContentView: View {
                                     navigateToFilePath(path)
                                 }
                             )
+                            .background(Container.cardBg)
+                            .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
                         }
                     } else {
                         paneTreeContent
@@ -1138,8 +1142,6 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .ignoresSafeArea(.container, edges: .top)
-                .background(Container.cardBg)
-                .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
 
                 if appState.aiSidePanelOpen && appState.currentView == .editor {
                     AiSidePanelView(

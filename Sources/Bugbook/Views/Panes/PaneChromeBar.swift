@@ -44,13 +44,13 @@ struct PaneChromeBar: View {
         .onDrag {
             NSItemProvider(object: leaf.id.uuidString as NSString)
         }
-        .background(isReplaceWarning ? amberWarning.opacity(0.12) : Color.fallbackEditorBg)
+        .background(isReplaceWarning ? amberWarning.opacity(0.12) : Container.cardBg)
         .overlay(alignment: .top) {
             if isReplaceWarning {
                 Rectangle()
                     .fill(amberWarning)
                     .frame(height: 2)
-            } else if isFocused {
+            } else if isFocused && !isOnlyPane {
                 Rectangle()
                     .fill(steelBlue)
                     .frame(height: 2)
