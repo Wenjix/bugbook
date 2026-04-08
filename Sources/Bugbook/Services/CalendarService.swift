@@ -13,6 +13,71 @@ enum CalendarError: LocalizedError {
     }
 }
 
+// MARK: - Recurrence Rule
+
+enum RecurrenceFrequency: String, CaseIterable, Identifiable, Equatable {
+    case daily = "DAILY"
+    case weekly = "WEEKLY"
+    case monthly = "MONTHLY"
+    case yearly = "YEARLY"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        case .monthly: return "Monthly"
+        case .yearly: return "Yearly"
+        }
+    }
+}
+
+enum RecurrenceRule: Equatable {
+    case none
+    case preset(RecurrenceFrequency)
+    /// Custom rule — the raw RRULE value string after "RRULE:", e.g. "FREQ=WEEKLY;BYDAY=MO,WE"
+    case custom(String)
+
+    var label: String {
+        switch self {
+        case .none: return "Does not repeat"
+        case .preset(let freq): return freq.label
+        case .custom: return "Custom…"
+        }
+    }
+
+    /// Returns the full "RRULE:…" string to send to Google Calendar, or nil for .none.
+    func rruleString(for startDate: Date) -> String? {
+        switch self {
+        case .none:
+            return nil
+        case .preset(let freq):
+            switch freq {
+            case .daily:
+                return "RRULE:FREQ=DAILY"
+            case .weekly:
+                let weekday = RecurrenceRule.googleWeekdayAbbreviation(for: startDate)
+                return "RRULE:FREQ=WEEKLY;BYDAY=\(weekday)"
+            case .monthly:
+                return "RRULE:FREQ=MONTHLY"
+            case .yearly:
+                return "RRULE:FREQ=YEARLY"
+            }
+        case .custom(let raw):
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return nil }
+            return trimmed.hasPrefix("RRULE:") ? trimmed : "RRULE:\(trimmed)"
+        }
+    }
+
+    private static func googleWeekdayAbbreviation(for date: Date) -> String {
+        let weekday = Calendar.current.component(.weekday, from: date)
+        let abbrevs = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+        return abbrevs[max(0, min(weekday - 1, 6))]
+    }
+}
+
 struct CalendarEventDraft: Equatable {
     var title: String
     var startDate: Date
@@ -21,6 +86,7 @@ struct CalendarEventDraft: Equatable {
     var location: String
     var notes: String
     var calendarId: String
+    var recurrence: RecurrenceRule
 
     init(
         title: String = "",
@@ -29,7 +95,8 @@ struct CalendarEventDraft: Equatable {
         isAllDay: Bool = false,
         location: String = "",
         notes: String = "",
-        calendarId: String = "primary"
+        calendarId: String = "primary",
+        recurrence: RecurrenceRule = .none
     ) {
         self.title = title
         self.startDate = startDate
@@ -38,6 +105,7 @@ struct CalendarEventDraft: Equatable {
         self.location = location
         self.notes = notes
         self.calendarId = calendarId
+        self.recurrence = recurrence
     }
 
     func normalized(calendar: Calendar = .current) -> CalendarEventDraft {
@@ -55,7 +123,8 @@ struct CalendarEventDraft: Equatable {
                 isAllDay: true,
                 location: trimmedLocation,
                 notes: trimmedNotes,
-                calendarId: calendarId
+                calendarId: calendarId,
+                recurrence: recurrence
             )
         }
 
@@ -67,7 +136,8 @@ struct CalendarEventDraft: Equatable {
             isAllDay: false,
             location: trimmedLocation,
             notes: trimmedNotes,
-            calendarId: calendarId
+            calendarId: calendarId,
+            recurrence: recurrence
         )
     }
 }
@@ -85,6 +155,9 @@ enum GoogleCalendarEventRequestEncoder {
         }
         if !normalized.notes.isEmpty {
             payload["description"] = normalized.notes
+        }
+        if let rrule = normalized.recurrence.rruleString(for: normalized.startDate) {
+            payload["recurrence"] = [rrule]
         }
 
         if normalized.isAllDay {

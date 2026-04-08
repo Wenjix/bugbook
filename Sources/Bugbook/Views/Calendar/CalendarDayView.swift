@@ -9,8 +9,13 @@ struct CalendarDayView: View {
     let calendarSources: [CalendarSource]
     var onEventTapped: (CalendarEvent) -> Void
     var onDatabaseItemTapped: (CalendarDatabaseItem) -> Void
+    var onCreateEvent: ((Date, Date) -> Void)?
 
     @State private var hoveredEventId: String?
+
+    // Drag-to-create state
+    @State private var dragStart: CGFloat?
+    @State private var dragCurrent: CGFloat?
 
     private let hourHeight: CGFloat = 48
     private let timeGutterWidth: CGFloat = 44
@@ -146,9 +151,69 @@ struct CalendarDayView: View {
                 ForEach(dayDbItems, id: \.id) { item in
                     databaseItemCard(item)
                 }
+
+                // Drag-to-create preview
+                if let start = dragStart, let current = dragCurrent {
+                    let minY = min(start, current)
+                    let height = max(abs(current - start), hourHeight * 0.5)
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.18))
+                        .overlay(
+                            Rectangle()
+                                .fill(Color.accentColor)
+                                .frame(width: 3),
+                            alignment: .leading
+                        )
+                        .frame(height: height)
+                        .offset(y: minY)
+                        .allowsHitTesting(false)
+                        .padding(.horizontal, 4)
+                }
             }
             .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .gesture(onCreateEvent != nil ? dragCreateGesture : nil)
         }
+    }
+
+    // MARK: - Drag-to-create
+
+    private var dragCreateGesture: some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .local)
+            .onChanged { value in
+                if dragStart == nil {
+                    dragStart = value.startLocation.y
+                }
+                dragCurrent = value.location.y
+            }
+            .onEnded { value in
+                defer {
+                    dragStart = nil
+                    dragCurrent = nil
+                }
+                guard let start = dragStart else { return }
+                let startY = min(start, value.location.y)
+                let endY = max(start, value.location.y)
+
+                let startTime = timeFromY(startY)
+                var endTime = timeFromY(endY)
+                if endTime <= startTime {
+                    endTime = startTime.addingTimeInterval(1800)
+                }
+                onCreateEvent?(startTime, endTime)
+            }
+    }
+
+    private func timeFromY(_ y: CGFloat) -> Date {
+        let totalSeconds = (y / hourHeight) * 3600
+        let hour = Int(totalSeconds / 3600)
+        let minute = Int((totalSeconds.truncatingRemainder(dividingBy: 3600)) / 60)
+        let clampedHour = max(0, min(23, calendarVM.dayStartHour + hour))
+        var comps = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        comps.hour = clampedHour
+        comps.minute = (minute / 15) * 15  // snap to 15 min
+        comps.second = 0
+        return Calendar.current.date(from: comps) ?? date
     }
 
     private func timedEventCard(_ event: CalendarEvent) -> some View {
