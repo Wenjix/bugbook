@@ -11,7 +11,7 @@ jobs:
     runs-on: macos-15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           lfs: true
@@ -37,7 +37,7 @@ jobs:
           echo "sdk_version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Cache SPM dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .build
           key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-${{ hashFiles('Package.resolved') }}
