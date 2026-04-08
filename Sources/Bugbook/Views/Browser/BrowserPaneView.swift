@@ -529,7 +529,19 @@ struct BrowserPaneView: View {
                     }
             }
         } else {
-            newTabPage
+            ZStack {
+                if let hostView = browserManager.activeHostView(for: paneID) {
+                    // Keep the Chromium host mounted so the first real navigation
+                    // doesn't also have to pay browser creation cost.
+                    BrowserHostViewContainer(hostView: hostView)
+                        .frame(width: 1, height: 1)
+                        .opacity(0.001)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+
+                newTabPage
+            }
         }
     }
 
