@@ -28,12 +28,16 @@ struct Page: ParsableCommand {
         @Option(name: .long, help: "Filter to a relative path prefix")
         var pathPrefix: String?
 
+        @Option(name: .long, help: "Filter by import source (e.g. obsidian, notion)")
+        var source: String?
+
         func run() throws {
             let pages = try listWorkspacePages(
                 in: options.resolvedWorkspace,
                 pathPrefix: pathPrefix,
                 type: type,
-                tag: tag
+                tag: tag,
+                source: source
             )
 
             let capped = limit > 0 ? Array(pages.prefix(limit)) : pages
