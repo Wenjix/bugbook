@@ -7,13 +7,13 @@ settings:
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.6.0"
+    version: "2.6.0"
   SentryCocoa:
     url: https://github.com/getsentry/sentry-cocoa
-    from: "8.40.0"
+    version: "8.40.0"
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
-    from: "0.7.9"
+    version: "0.7.9"
   # GhosttyKit: GPU-accelerated terminal engine (local XCFramework)
   # Linked via Frameworks/GhosttyKit.xcframework
 targets:
@@ -37,6 +37,186 @@ targets:
         PRODUCT_NAME: BugbookCore
         PRODUCT_MODULE_NAME: BugbookCore
         DEFINES_MODULE: YES
+  ChromiumBridge:
+    type: framework
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ChromiumBridge
+    dependencies:
+      - sdk: AppKit.framework
+      - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.ChromiumBridge
+        PRODUCT_NAME: ChromiumBridge
+        PRODUCT_MODULE_NAME: ChromiumBridge
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        CLANG_ENABLE_OBJC_ARC: YES
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - CEF_API_VERSION=13900
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/vendor/cef/current
+        SKIP_INSTALL: YES
+  BugbookHelper:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ChromiumHelper
+    dependencies:
+      - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
+        embed: false
+    info:
+      path: App/BugbookHelper-Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper
+        PRODUCT_NAME: "Bugbook Helper"
+        EXECUTABLE_NAME: "Bugbook Helper"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/vendor/cef/current
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - CEF_API_VERSION=13900
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../../../"
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper
+  BugbookHelperAlerts:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ChromiumHelper
+    dependencies:
+      - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
+        embed: false
+    info:
+      path: App/BugbookHelper-Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.alerts
+        PRODUCT_NAME: "Bugbook Helper (Alerts)"
+        EXECUTABLE_NAME: "Bugbook Helper (Alerts)"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/vendor/cef/current
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - CEF_API_VERSION=13900
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../../../"
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.alerts
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.alerts
+  BugbookHelperGPU:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ChromiumHelper
+    dependencies:
+      - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
+        embed: false
+    info:
+      path: App/BugbookHelper-Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.gpu
+        PRODUCT_NAME: "Bugbook Helper (GPU)"
+        EXECUTABLE_NAME: "Bugbook Helper (GPU)"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/vendor/cef/current
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - CEF_API_VERSION=13900
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../../../"
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.gpu
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.gpu
+  BugbookHelperPlugin:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ChromiumHelper
+    dependencies:
+      - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
+        embed: false
+    info:
+      path: App/BugbookHelper-Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.plugin
+        PRODUCT_NAME: "Bugbook Helper (Plugin)"
+        EXECUTABLE_NAME: "Bugbook Helper (Plugin)"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/vendor/cef/current
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - CEF_API_VERSION=13900
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../../../"
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.plugin
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.plugin
+  BugbookHelperRenderer:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ChromiumHelper
+    dependencies:
+      - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
+        embed: false
+    info:
+      path: App/BugbookHelper-Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.renderer
+        PRODUCT_NAME: "Bugbook Helper (Renderer)"
+        EXECUTABLE_NAME: "Bugbook Helper (Renderer)"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/vendor/cef/current
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - CEF_API_VERSION=13900
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../../../"
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.renderer
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.renderer
   BugbookApp:
     type: application
     platform: macOS
@@ -48,6 +228,17 @@ targets:
       - path: App/Assets.xcassets
     dependencies:
       - target: BugbookCore
+      - target: ChromiumBridge
+      - target: BugbookHelper
+        embed: false
+      - target: BugbookHelperAlerts
+        embed: false
+      - target: BugbookHelperGPU
+        embed: false
+      - target: BugbookHelperPlugin
+        embed: false
+      - target: BugbookHelperRenderer
+        embed: false
       - package: Sparkle
       - package: SentryCocoa
         product: Sentry
@@ -68,6 +259,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
+        NSPrincipalClass: BBChromiumApplication
         NSHighResolutionCapable: true
         SUFeedURL: ""
         SUPublicEDKey: ""
@@ -103,10 +295,28 @@ targets:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev
           ASSETCATALOG_COMPILER_APPICON_NAME: DevAppIcon
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DEBUG, BUGBOOK_DEV]
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DEBUG, BUGBOOK_DEV, BUGBOOK_BROWSER_CHROMIUM]
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: []
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [BUGBOOK_BROWSER_CHROMIUM]
+    preBuildScripts:
+      - name: Validate CEF Runtime
+        path: ../scripts/validate-cef.sh
+        basedOnDependencyAnalysis: false
+    postBuildScripts:
+      - name: Copy CEF Assets
+        script: |
+          bash "$SRCROOT/../scripts/copy-cef-assets.sh" \
+            "$TARGET_BUILD_DIR/$WRAPPER_NAME" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper.app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Alerts).app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (GPU).app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Plugin).app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Renderer).app"
+        inputFiles:
+          - $(SRCROOT)/vendor/cef/current/Release/Chromium Embedded Framework.framework
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Frameworks/Chromium Embedded Framework.framework
   BugbookUITests:
     type: bundle.ui-testing
     platform: macOS
@@ -126,6 +336,12 @@ schemes:
       targets:
         BugbookApp: all
         BugbookCore: all
+        ChromiumBridge: all
+        BugbookHelper: all
+        BugbookHelperAlerts: all
+        BugbookHelperGPU: all
+        BugbookHelperPlugin: all
+        BugbookHelperRenderer: all
         BugbookUITests: [test]
     run:
       config: Debug
