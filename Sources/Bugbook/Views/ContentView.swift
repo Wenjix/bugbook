@@ -78,7 +78,7 @@ struct ContentView: View {
 
     private var baseLayout: some View {
         ZStack(alignment: .leading) {
-            Color.fallbackSidebarBg
+            Container.groutBg
 
             HStack(spacing: 0) {
                 if appState.sidebarVisible {
@@ -429,6 +429,11 @@ struct ContentView: View {
                 flushDirtyTabContent()
                 appState.commandPaletteMode = .splitLauncher
                 appState.commandPaletteOpen.toggle()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findInPage)) { _ in
+                if !postBrowserCommandIfFocused(.browserFind) {
+                    NotificationCenter.default.post(name: .findInPane, object: nil)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
                 _ = postBrowserCommandIfFocused(.browserFind)
@@ -1100,54 +1105,57 @@ struct ContentView: View {
 
     @ViewBuilder
     private var mainContentWithAiPanel: some View {
-        ZStack(alignment: .trailing) {
-            VStack(spacing: 0) {
-                if appState.showSettings {
-                    SettingsView(appState: appState)
-                } else if appState.currentView == .graphView {
-                    if let workspace = appState.workspacePath {
-                        GraphView(
-                            backlinkService: backlinkService,
-                            workspacePath: workspace,
-                            currentPagePath: appState.activeTab?.path,
-                            onNavigateToFile: { path in
-                                navigateToFilePath(path)
-                            }
-                        )
-                    }
-                } else {
-                    editorModeContent
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .ignoresSafeArea(.container, edges: .top)
-            .background(Color.fallbackEditorBg)
-
-            if appState.aiSidePanelOpen && appState.currentView == .editor {
-                AiSidePanelView(
-                    appState: appState,
-                    aiService: aiService,
-                    activeDocument: activeDocumentForAiDrawer,
-                    drawerContext: aiDrawerContext
+        VStack(spacing: 0) {
+            // Tab bar sits on the grout surface (above the card)
+            if !appState.showSettings && appState.currentView != .graphView {
+                WorkspaceTabBar(
+                    workspaceManager: workspaceManager,
+                    sidebarOpen: shellShowsSidebarPanel,
+                    currentView: appState.currentView
                 )
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.fallbackChromeBorder)
-                        .frame(width: 1)
-                }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-                .zIndex(2)
+                .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
+
+            // Content card with grout padding
+            ZStack(alignment: .trailing) {
+                VStack(spacing: 0) {
+                    if appState.showSettings {
+                        SettingsView(appState: appState)
+                    } else if appState.currentView == .graphView {
+                        if let workspace = appState.workspacePath {
+                            GraphView(
+                                backlinkService: backlinkService,
+                                workspacePath: workspace,
+                                currentPagePath: appState.activeTab?.path,
+                                onNavigateToFile: { path in
+                                    navigateToFilePath(path)
+                                }
+                            )
+                        }
+                    } else {
+                        paneTreeContent
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .ignoresSafeArea(.container, edges: .top)
+                .background(Container.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
+
+                if appState.aiSidePanelOpen && appState.currentView == .editor {
+                    AiSidePanelView(
+                        appState: appState,
+                        aiService: aiService,
+                        activeDocument: activeDocumentForAiDrawer,
+                        drawerContext: aiDrawerContext
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(2)
+                }
+            }
+            .padding(.trailing, Container.groutGap)
+            .padding(.bottom, Container.groutGap)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: shellShowsSidebarPanel ? ShellZoomMetrics.size(14) : 0,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0
-            )
-        )
     }
 
     private var activeTabLeadingPadding: CGFloat {
@@ -1158,14 +1166,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private var editorModeContent: some View {
-        WorkspaceTabBar(
-            workspaceManager: workspaceManager,
-            sidebarOpen: shellShowsSidebarPanel,
-            currentView: appState.currentView
-        )
-            .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
-
+    private var paneTreeContent: some View {
         Group {
             if let ws = workspaceManager.activeWorkspace {
                 PaneTreeView(

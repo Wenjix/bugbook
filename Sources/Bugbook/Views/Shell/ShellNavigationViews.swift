@@ -127,13 +127,8 @@ struct HarborSidebarView<ContextualContent: View>: View {
             .padding(.bottom, ShellZoomMetrics.size(8))
         }
         .frame(maxHeight: .infinity)
-        .background(Color.fallbackSidebarBg)
+        .background(Container.groutBg)
         .clipped()
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(Color.fallbackChromeBorder)
-                .frame(width: 1)
-        }
     }
 
     private func fixedIconButton(_ icon: String, help: String, action: @escaping () -> Void) -> some View {
@@ -420,12 +415,7 @@ struct SettingsSidebarView: View {
             Spacer(minLength: 0)
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.fallbackSidebarBg)
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(Color.fallbackChromeBorder)
-                .frame(width: 1)
-        }
+        .background(Container.groutBg)
     }
 }
 

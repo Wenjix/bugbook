@@ -226,7 +226,7 @@ struct BrowserPaneView: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: Radius.md)
-                        .fill(Color.primary.opacity(0.05))
+                        .fill(Container.urlBarBg)
                         .overlay(
                             RoundedRectangle(cornerRadius: Radius.md)
                                 .strokeBorder(omnibarFocused ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
@@ -249,11 +249,11 @@ struct BrowserPaneView: View {
                 .padding(.bottom, 4)
             }
         }
-        .background(Color.fallbackTabBarBg)
+        .background(Container.cardBg)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.fallbackChromeBorder)
-                .frame(height: 1)
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 0.5)
         }
     }
 

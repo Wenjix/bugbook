@@ -97,14 +97,7 @@ struct WorkspaceTabBar: View {
             layoutSavedIndicator
         }
         .frame(height: ShellZoomMetrics.size(36))
-        .background(
-            ZStack(alignment: .bottom) {
-                Color.fallbackTabBarBg
-                Rectangle()
-                    .fill(Color.fallbackChromeBorder)
-                    .frame(height: 1)
-            }
-        )
+        .background(Container.groutBg)
         .onChange(of: workspaceManager.lastSavedAt) { _, _ in
             savedIndicatorTask?.cancel()
             withAnimation(.easeIn(duration: 0.15)) { showSavedIndicator = true }
@@ -272,7 +265,6 @@ private struct TabItemView: View {
 
     @State private var isHovered = false
     @State private var isCloseHovered = false
-    private var wingRadius: CGFloat { ShellZoomMetrics.size(5) }
 
     var body: some View {
         Button(action: onSelect) {
@@ -280,7 +272,8 @@ private struct TabItemView: View {
                 tabIconView
 
                 Text(title)
-                    .font(ShellZoomMetrics.font(Typography.bodySmall))
+                    .font(ShellZoomMetrics.font(Typography.bodySmall, weight: isActive ? .semibold : .regular))
+                    .foregroundStyle(isActive ? .primary : Container.pillInactiveText)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -289,7 +282,7 @@ private struct TabItemView: View {
                     Image(systemName: "xmark")
                         .font(ShellZoomMetrics.font(9, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: ShellZoomMetrics.size(20), height: ShellZoomMetrics.size(20))
+                        .frame(width: ShellZoomMetrics.size(18), height: ShellZoomMetrics.size(18))
                         .background(isCloseHovered ? Color.primary.opacity(0.1) : .clear)
                         .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.xs)))
                 }
@@ -297,35 +290,16 @@ private struct TabItemView: View {
                 .onHover { isCloseHovered = $0 }
                 .opacity(isHovered ? 1 : 0)
             }
-            .padding(.leading, ShellZoomMetrics.size(14))
+            .padding(.leading, ShellZoomMetrics.size(12))
             .padding(.trailing, ShellZoomMetrics.size(8))
-            .frame(minWidth: ShellZoomMetrics.size(60), maxWidth: ShellZoomMetrics.size(190), alignment: .leading)
-            .frame(height: ShellZoomMetrics.size(30))
+            .frame(minWidth: ShellZoomMetrics.size(60), maxWidth: ShellZoomMetrics.size(180), alignment: .leading)
+            .frame(height: ShellZoomMetrics.size(28))
             .background(
-                Group {
-                    if isActive {
-                        ZStack(alignment: .bottom) {
-                            ConnectedTabShape(
-                                cornerRadius: ShellZoomMetrics.size(Radius.sm),
-                                wingRadius: wingRadius
-                            )
-                                .fill(Color.fallbackEditorBg)
-                            ConnectedTabShape(
-                                cornerRadius: ShellZoomMetrics.size(Radius.sm),
-                                wingRadius: wingRadius
-                            )
-                                .stroke(Color.fallbackChromeBorder, lineWidth: 1)
-                        }
-                    } else if isHovered {
-                        RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                            .fill(Color.primary.opacity(0.05))
-                    } else {
-                        Color.clear
-                    }
-                }
+                RoundedRectangle(cornerRadius: Container.pillRadius)
+                    .fill(isActive ? Container.pillActiveBg : (isHovered ? Color.primary.opacity(0.04) : Color.clear))
             )
-            .padding(.horizontal, ShellZoomMetrics.size(4))
-            .contentShape(Rectangle())
+            .padding(.horizontal, ShellZoomMetrics.size(2))
+            .contentShape(RoundedRectangle(cornerRadius: Container.pillRadius))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

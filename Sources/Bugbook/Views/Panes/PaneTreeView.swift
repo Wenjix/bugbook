@@ -49,7 +49,7 @@ struct PaneTreeView: View {
             )
 
             if split.axis == .horizontal {
-                HStack(spacing: 0) {
+                HStack(spacing: Container.groutGap) {
                     PaneTreeView(
                         node: split.first,
                         workspaceManager: workspaceManager,
@@ -78,7 +78,7 @@ struct PaneTreeView: View {
                     )
                 }
             } else {
-                VStack(spacing: 0) {
+                VStack(spacing: Container.groutGap) {
                     PaneTreeView(
                         node: split.first,
                         workspaceManager: workspaceManager,

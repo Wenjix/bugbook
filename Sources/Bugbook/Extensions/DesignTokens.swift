@@ -31,6 +31,37 @@ enum Typography {
     static let title: CGFloat = 28
 }
 
+// MARK: - Container System (Grout + Card)
+
+enum Container {
+    /// Window/grout background — the surface cards float on
+    static let groutBg = Color(light: Color(hex: "e2e0db"), dark: Color(hex: "161616"))
+
+    /// Content card background
+    static let cardBg = Color(light: .white, dark: Color(hex: "232323"))
+
+    /// Sidebar active item highlight
+    static let sidebarActiveBg = Color(light: Color(hex: "d6d4cf"), dark: Color(hex: "2a2a2a"))
+
+    /// Workspace pill tab — active fill
+    static let pillActiveBg = Color(light: Color(hex: "ccc9c3"), dark: Color(hex: "2e2e2e"))
+
+    /// Workspace pill tab — inactive text
+    static let pillInactiveText = Color(light: Color(hex: "888888"), dark: Color(hex: "555555"))
+
+    /// Browser URL bar background (inside card)
+    static let urlBarBg = Color(light: Color(hex: "f5f3ef"), dark: Color(hex: "2e2e2e"))
+
+    /// Gap between cards and around content area
+    static let groutGap: CGFloat = 6
+
+    /// Card corner radius
+    static let cardRadius: CGFloat = 10
+
+    /// Pill tab corner radius
+    static let pillRadius: CGFloat = 8
+}
+
 // MARK: - Corner Radii
 
 enum Radius {
