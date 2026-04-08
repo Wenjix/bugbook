@@ -10,6 +10,7 @@ macos/build/
 xcuserdata/
 DerivedData/
 .DS_Store
+macos/vendor/cef/
 
 # Local coding-agent/tooling folders
 .agent/
