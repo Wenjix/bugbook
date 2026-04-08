@@ -101,6 +101,7 @@ struct WorkspaceCalendarView: View {
                 events: visibleEvents,
                 databaseItems: calendarService.databaseItems,
                 calendarVM: calendarVM,
+                calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
                 onDatabaseItemTapped: handleDatabaseItemTapped
             )
@@ -110,6 +111,7 @@ struct WorkspaceCalendarView: View {
                 events: visibleEvents,
                 databaseItems: calendarService.databaseItems,
                 calendarVM: calendarVM,
+                calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
                 onDatabaseItemTapped: handleDatabaseItemTapped
             )

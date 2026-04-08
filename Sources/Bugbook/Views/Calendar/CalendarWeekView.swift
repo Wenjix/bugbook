@@ -6,6 +6,7 @@ struct CalendarWeekView: View {
     let events: [CalendarEvent]
     let databaseItems: [CalendarDatabaseItem]
     let calendarVM: CalendarViewModel
+    let calendarSources: [CalendarSource]
     var onEventTapped: (CalendarEvent) -> Void
     var onDatabaseItemTapped: (CalendarDatabaseItem) -> Void
 
@@ -104,7 +105,7 @@ struct CalendarWeekView: View {
     }
 
     private func allDayEventChip(_ event: CalendarEvent) -> some View {
-        let color = Color.accentColor
+        let color = eventColor(for: event)
         return Button(action: { onEventTapped(event) }) {
             HStack(spacing: 4) {
                 Circle().fill(color).frame(width: 6, height: 6)
@@ -261,7 +262,7 @@ struct CalendarWeekView: View {
         let y = calendarVM.yPosition(for: event.startDate, hourHeight: hourHeight)
         let h = calendarVM.eventHeight(start: event.startDate, end: event.endDate, hourHeight: hourHeight)
         let isHovered = hoveredEventId == event.id
-        let eventColor = Color.accentColor
+        let eventColor = self.eventColor(for: event)
 
         let cols = max(totalColumns, 1)
         let gutter: CGFloat = 1
@@ -388,5 +389,16 @@ struct CalendarWeekView: View {
 
     private func isToday(_ date: Date) -> Bool {
         calendar.isDateInToday(date)
+    }
+
+    private func eventColor(for event: CalendarEvent) -> Color {
+        if let source = calendarSources.first(where: { $0.id == event.calendarId }) {
+            let hex = source.color
+            if hex.hasPrefix("#") {
+                return Color(hex: String(hex.dropFirst()))
+            }
+            return TagColor.color(for: hex)
+        }
+        return Color.accentColor
     }
 }
