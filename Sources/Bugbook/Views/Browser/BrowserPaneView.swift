@@ -1,7 +1,6 @@
 import AppKit
 import Observation
 import SwiftUI
-import WebKit
 
 struct BrowserPaneView: View {
     let paneID: UUID
@@ -104,16 +103,10 @@ struct BrowserPaneView: View {
     private func applyBrowserLifecycle<V: View>(to view: V) -> some View {
         view
         .onAppear {
-            syncDisplayedText()
-            if let tabID = session.selectedTabID {
-                _ = browserManager.ensureWebView(for: paneID, tabID: tabID)
-            }
+            refreshSelectedTabDisplay()
         }
         .onChange(of: session.selectedTabID) { _, _ in
-            syncDisplayedText()
-            if let tabID = session.selectedTabID {
-                _ = browserManager.ensureWebView(for: paneID, tabID: tabID)
-            }
+            refreshSelectedTabDisplay()
         }
         .onChange(of: session.tabs) { _, _ in
             syncDisplayedText()
@@ -193,6 +186,12 @@ struct BrowserPaneView: View {
 
     private var isFocusedPane: Bool {
         workspaceManager.activeWorkspace?.focusedPaneId == paneID
+    }
+
+    private func refreshSelectedTabDisplay() {
+        syncDisplayedText()
+        guard let tabID = session.selectedTabID else { return }
+        _ = browserManager.ensurePage(for: paneID, tabID: tabID)
     }
 
     private var chromeBar: some View {
@@ -520,13 +519,13 @@ struct BrowserPaneView: View {
     @ViewBuilder
     private var browserContent: some View {
         if let activeTab, !activeTab.urlString.isEmpty {
-            if let webView = browserManager.activeWebView(for: paneID) {
-                BrowserWebViewContainer(webView: webView)
+            if let hostView = browserManager.activeHostView(for: paneID) {
+                BrowserHostViewContainer(hostView: hostView)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Color.fallbackEditorBg
                     .onAppear {
-                        _ = browserManager.ensureWebView(for: paneID, tabID: activeTab.id)
+                        _ = browserManager.ensurePage(for: paneID, tabID: activeTab.id)
                     }
             }
         } else {
@@ -960,34 +959,34 @@ struct BrowserPaneView: View {
     }
 }
 
-private struct BrowserWebViewContainer: NSViewRepresentable {
-    let webView: WKWebView
+private struct BrowserHostViewContainer: NSViewRepresentable {
+    let hostView: NSView
 
     func makeNSView(context: Context) -> BrowserWebContainerView {
         let view = BrowserWebContainerView()
-        view.host(webView: webView)
+        view.host(view: hostView)
         return view
     }
 
     func updateNSView(_ nsView: BrowserWebContainerView, context: Context) {
-        nsView.host(webView: webView)
+        nsView.host(view: hostView)
     }
 }
 
 private final class BrowserWebContainerView: NSView {
-    private weak var hostedWebView: WKWebView?
+    private weak var hostedView: NSView?
 
-    func host(webView: WKWebView) {
-        guard hostedWebView !== webView else { return }
-        hostedWebView?.removeFromSuperview()
-        hostedWebView = webView
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(webView)
+    func host(view: NSView) {
+        guard hostedView !== view else { return }
+        hostedView?.removeFromSuperview()
+        hostedView = view
+        view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(view)
         NSLayoutConstraint.activate([
-            webView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            webView.topAnchor.constraint(equalTo: topAnchor),
-            webView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            view.topAnchor.constraint(equalTo: topAnchor),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 }
