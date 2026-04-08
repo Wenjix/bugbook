@@ -10,6 +10,16 @@ import BugbookCore
 
     private let fileManager = FileManager.default
     private let maxTreeDepth = 10
+    private static let dailyNoteFilenameFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+    private static let dailyNoteTitleFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter
+    }()
 
     init() {
         let path = resolveWorkspacePath()
@@ -135,9 +145,7 @@ import BugbookCore
     // MARK: - Daily Notes
 
     func dailyNotePath() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let filename = formatter.string(from: Date()) + ".md"
+        let filename = Self.dailyNoteFilenameFormatter.string(from: Date()) + ".md"
         let folder = (workspacePath as NSString).appendingPathComponent("Daily Notes")
         return (folder as NSString).appendingPathComponent(filename)
     }
@@ -152,9 +160,7 @@ import BugbookCore
         }
 
         if !fileManager.fileExists(atPath: path) {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE, MMMM d"
-            let title = formatter.string(from: Date())
+            let title = Self.dailyNoteTitleFormatter.string(from: Date())
             try? "# \(title)\n\n".write(toFile: path, atomically: true, encoding: .utf8)
         }
 

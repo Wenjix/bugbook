@@ -195,8 +195,9 @@ struct BrowserPaneView: View {
     }
 
     private var chromeBar: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(spacing: 0) {
+            // Compact tab bar — tabs fill the row, active tab shows URL inline
+            HStack(spacing: 4) {
                 if chrome.showsBackForwardButtons {
                     navButton("chevron.left", enabled: activeTab?.canGoBack == true) {
                         browserManager.goBack(in: paneID)
@@ -206,14 +207,35 @@ struct BrowserPaneView: View {
                     }
                 }
 
-                if !chrome.autoHidesTabPills || session.tabs.count > 1 {
-                    tabStrip
-                }
+                // Full-width URL bar
+                HStack(spacing: 8) {
+                    Image(systemName: activeTab?.securityIconName ?? "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
 
-                addressField
+                    TextField("Search or enter URL", text: $omnibarText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .focused($omnibarFocused)
+                        .onSubmit {
+                            submitOmnibar(omnibarText)
+                        }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md)
+                        .fill(Container.urlBarBg)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md)
+                                .strokeBorder(omnibarFocused ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
+                        )
+                )
 
                 browserActionMenu
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
 
             if let saveMessage, !saveMessage.isEmpty {
                 HStack {
@@ -222,15 +244,85 @@ struct BrowserPaneView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.fallbackTabBarBg)
+        .background(Container.cardBg)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.fallbackChromeBorder)
-                .frame(height: 1)
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 0.5)
+        }
+    }
+
+    private func compactTab(_ tab: BrowserTabState) -> some View {
+        let isSelected = session.selectedTabID == tab.id
+        let isHovered = hoveredTabID == tab.id
+
+        return HStack(spacing: 6) {
+            // Favicon dot
+            Circle()
+                .fill(tabColor(for: tab))
+                .frame(width: 6, height: 6)
+                .padding(.leading, 8)
+
+            if isSelected {
+                // Active tab: show editable URL field inline
+                TextField("Search or enter URL", text: $omnibarText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .focused($omnibarFocused)
+                    .onSubmit {
+                        submitOmnibar(omnibarText)
+                    }
+            } else {
+                // Inactive tab: show title
+                Button {
+                    session.selectTab(tab.id)
+                } label: {
+                    Text(tab.displayTitle)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 0)
+
+            // Close button on hover
+            if isHovered && session.tabs.count > 1 {
+                Button {
+                    session.closeTab(tab.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 16, height: 16)
+                        .background(Circle().fill(Color.primary.opacity(0.06)))
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 6)
+                .transition(.opacity)
+            } else {
+                Spacer()
+                    .frame(width: 8)
+            }
+        }
+        .frame(height: 28)
+        .frame(maxWidth: isSelected ? .infinity : 160)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Color.primary.opacity(0.06) : (isHovered ? Color.primary.opacity(0.03) : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(isSelected ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 0.5)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering in
+            hoveredTabID = hovering ? tab.id : (hoveredTabID == tab.id ? nil : hoveredTabID)
         }
     }
 
@@ -308,77 +400,6 @@ struct BrowserPaneView: View {
         }
     }
 
-    private var tabStrip: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(session.tabs) { tab in
-                    tabPill(tab)
-                }
-
-                Button(action: createNewTab) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 22, height: 22)
-                        .background(
-                            Circle()
-                                .fill(Color.primary.opacity(0.05))
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.vertical, 2)
-        }
-        .frame(maxWidth: 260)
-        .scrollIndicators(.hidden)
-    }
-
-    private func tabPill(_ tab: BrowserTabState) -> some View {
-        let isSelected = session.selectedTabID == tab.id
-        let showClose = hoveredTabID == tab.id
-
-        return HStack(spacing: 6) {
-            Button {
-                session.selectTab(tab.id)
-            } label: {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(tabColor(for: tab))
-                        .frame(width: 6, height: 6)
-                    Text(tab.displayTitle)
-                        .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                        .lineLimit(1)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if showClose {
-                Button {
-                    session.closeTab(tab.id)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 22)
-        .frame(maxWidth: 150)
-        .background(
-            RoundedRectangle(cornerRadius: 11)
-                .fill(Color.clear)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11)
-                        .strokeBorder(isSelected ? Color.primary.opacity(0.16) : Color.clear, lineWidth: 0.5)
-                )
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 11))
-        .onHover { hovering in
-            hoveredTabID = hovering ? tab.id : (hoveredTabID == tab.id ? nil : hoveredTabID)
-        }
-    }
 
     private var browserActionMenu: some View {
         Menu {
@@ -467,31 +488,6 @@ struct BrowserPaneView: View {
         .fixedSize()
     }
 
-    private var addressField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: activeTab?.securityIconName ?? "magnifyingglass")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-
-            TextField("Search the web or your notes...", text: $omnibarText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .focused($omnibarFocused)
-                .onSubmit {
-                    submitOmnibar(omnibarText)
-                }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md)
-                .fill(Color.primary.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md)
-                        .strokeBorder(omnibarFocused ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
-                )
-        )
-    }
 
     @ViewBuilder
     private var saveSection: some View {
@@ -573,30 +569,6 @@ struct BrowserPaneView: View {
                     submitOmnibar(newTabSearchText)
                 }
 
-            if chrome.showsNewTabQuickLaunch, !appState.settings.browserQuickLaunchItems.isEmpty {
-                FlowLayout(spacing: 10) {
-                    ForEach(appState.settings.browserQuickLaunchItems) { item in
-                        Button {
-                            guard let url = URL(string: item.url) else { return }
-                            browserManager.openURL(url, in: paneID, newTab: false)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: item.icon)
-                                Text(item.title)
-                            }
-                            .font(.system(size: 12, weight: .medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: Radius.md)
-                                    .fill(Color.primary.opacity(0.05))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .frame(maxWidth: 620)
-            }
 
             if chrome.showsNewTabRecentVisits, !session.recentVisits.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {

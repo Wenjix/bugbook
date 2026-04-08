@@ -6,6 +6,7 @@ struct CalendarMonthView: View {
     let events: [CalendarEvent]
     let databaseItems: [CalendarDatabaseItem]
     let calendarVM: CalendarViewModel
+    let calendarSources: [CalendarSource]
     var onEventTapped: (CalendarEvent) -> Void
     var onDatabaseItemTapped: (CalendarDatabaseItem) -> Void
 
@@ -85,9 +86,10 @@ struct CalendarMonthView: View {
             VStack(spacing: 1) {
                 ForEach(Array(dayEvents.prefix(3)), id: \.id) { event in
                     Button(action: { onEventTapped(event) }) {
+                        let color = eventColor(for: event)
                         HStack(spacing: 3) {
                             if !event.isAllDay {
-                                Circle().fill(Color.accentColor).frame(width: 5, height: 5)
+                                Circle().fill(color).frame(width: 5, height: 5)
                             }
                             Text(event.isAllDay ? event.title : "\(calendarVM.timeString(for: event.startDate)) \(event.title)")
                                 .font(.system(size: Typography.caption2))
@@ -96,7 +98,7 @@ struct CalendarMonthView: View {
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(event.isAllDay ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .background(event.isAllDay ? color.opacity(0.12) : Color.clear)
                         .clipShape(.rect(cornerRadius: 2))
                     }
                     .buttonStyle(.plain)
@@ -141,5 +143,16 @@ struct CalendarMonthView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .onHover { hovering in hoveredDay = hovering ? day : nil }
+    }
+
+    private func eventColor(for event: CalendarEvent) -> Color {
+        if let source = calendarSources.first(where: { $0.id == event.calendarId }) {
+            let hex = source.color
+            if hex.hasPrefix("#") {
+                return Color(hex: String(hex.dropFirst()))
+            }
+            return TagColor.color(for: hex)
+        }
+        return Color.accentColor
     }
 }

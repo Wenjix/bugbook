@@ -106,7 +106,6 @@ struct BrowserChromeConfiguration: Codable, Equatable {
 
 struct AppSettings: Codable, Equatable {
     var theme: ThemeMode
-    var railPinned: Bool
     var focusModeOnType: Bool
     var preferredAIEngine: PreferredAIEngine
     var executionPolicy: ExecutionPolicy
@@ -140,7 +139,6 @@ struct AppSettings: Codable, Equatable {
 
     static let `default` = AppSettings(
         theme: .system,
-        railPinned: false,
         focusModeOnType: false,
         preferredAIEngine: .auto,
         executionPolicy: .ask,
@@ -176,7 +174,6 @@ struct AppSettings: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case theme
-        case railPinned
         case focusModeOnType
         case preferredAIEngine
         case executionPolicy
@@ -216,7 +213,6 @@ struct AppSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         theme = try container.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? .system
-        railPinned = try container.decodeIfPresent(Bool.self, forKey: .railPinned) ?? false
         focusModeOnType = try container.decodeIfPresent(Bool.self, forKey: .focusModeOnType) ?? false
         preferredAIEngine = try container.decodeIfPresent(PreferredAIEngine.self, forKey: .preferredAIEngine) ?? .auto
         executionPolicy = try container.decodeIfPresent(ExecutionPolicy.self, forKey: .executionPolicy) ?? .ask
@@ -252,7 +248,6 @@ struct AppSettings: Codable, Equatable {
 
     init(
         theme: ThemeMode,
-        railPinned: Bool = false,
         focusModeOnType: Bool,
         preferredAIEngine: PreferredAIEngine,
         executionPolicy: ExecutionPolicy,
@@ -282,7 +277,6 @@ struct AppSettings: Codable, Equatable {
         googleGrantedScopes: [String] = []
     ) {
         self.theme = theme
-        self.railPinned = railPinned
         self.focusModeOnType = focusModeOnType
         self.preferredAIEngine = preferredAIEngine
         self.executionPolicy = executionPolicy
@@ -315,7 +309,6 @@ struct AppSettings: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(theme, forKey: .theme)
-        try container.encode(railPinned, forKey: .railPinned)
         try container.encode(focusModeOnType, forKey: .focusModeOnType)
         try container.encode(preferredAIEngine, forKey: .preferredAIEngine)
         try container.encode(executionPolicy, forKey: .executionPolicy)

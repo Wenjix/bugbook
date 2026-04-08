@@ -79,18 +79,43 @@ enum MarkdownBlockParser {
 
     // MARK: - Parse
 
+    /// Parse result that includes metadata about the parse.
+    struct ParseOutput {
+        let blocks: [Block]
+        let hasBlockIDs: Bool
+    }
+
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     static func parse(_ markdown: String) -> [Block] {
+        parseWithFlags(markdown).blocks
+    }
+
+    /// Parse returning blocks + whether the markdown contained block-id comments.
+    /// Avoids a separate `content.contains("<!-- block-id:")` scan.
+    static func parseWithFlags(_ markdown: String) -> ParseOutput {
         guard !markdown.isEmpty else {
-            return [Block(type: .paragraph)]
+            return ParseOutput(blocks: [Block(type: .paragraph)], hasBlockIDs: false)
         }
 
         var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
         if lines.count > 1, lines.last == "" {
             lines.removeLast()
         }
+        var foundBlockIDs = false
+        let blocks = parseLines(lines[...], foundBlockIDs: &foundBlockIDs)
+        return ParseOutput(blocks: blocks, hasBlockIDs: foundBlockIDs)
+    }
+
+    /// Internal parse that operates on a Substring array slice, avoiding join+re-split overhead.
+    private static func parseLines(_ lines: ArraySlice<Substring>) -> [Block] {
+        var ignored = false
+        return parseLines(lines, foundBlockIDs: &ignored)
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    private static func parseLines(_ lines: ArraySlice<Substring>, foundBlockIDs: inout Bool) -> [Block] {
         var blocks: [Block] = []
-        var i = 0
+        var i = lines.startIndex
         var pendingBlockID: UUID?
         var pendingColors: (BlockColor, BlockColor)?
 
@@ -135,12 +160,13 @@ enum MarkdownBlockParser {
             return block
         }
 
-        while i < lines.count {
+        while i < lines.endIndex {
             let line = String(lines[i])
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if let blockID = parseBlockIDComment(line) {
                 pendingBlockID = blockID
+                foundBlockIDs = true
                 i += 1
                 continue
             }
@@ -156,7 +182,7 @@ enum MarkdownBlockParser {
                 let language = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
                 var codeLines: [Substring] = []
                 i += 1
-                while i < lines.count {
+                while i < lines.endIndex {
                     if lines[i].hasPrefix("```") {
                         i += 1
                         break
@@ -251,18 +277,20 @@ enum MarkdownBlockParser {
             // Callout block
             if let calloutMeta = parseCalloutOpenComment(trimmed) {
                 i += 1
-                let title = i < lines.count ? String(lines[i]) : ""
+                let title = i < lines.endIndex ? String(lines[i]) : ""
                 i += 1
-                var childLines: [Substring] = []
-                while i < lines.count {
+                let childStart = i
+                var foundClose = false
+                while i < lines.endIndex {
                     if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /callout -->" {
+                        foundClose = true
                         i += 1
                         break
                     }
-                    childLines.append(lines[i])
                     i += 1
                 }
-                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                let childEnd = foundClose ? i - 1 : i
+                let children = childStart < childEnd ? parseLines(lines[childStart..<childEnd]) : []
                 var block = makeBlock(type: .callout, text: title, children: children)
                 block.calloutIcon = calloutMeta.icon
                 block.calloutColor = calloutMeta.color
@@ -282,19 +310,21 @@ enum MarkdownBlockParser {
                 let collapsed = trimmed.contains("collapsed")
                 i += 1
                 // First line is the toggle title
-                let title = i < lines.count ? String(lines[i]) : ""
+                let title = i < lines.endIndex ? String(lines[i]) : ""
                 i += 1
                 // Remaining lines until <!-- /toggle --> are children
-                var childLines: [Substring] = []
-                while i < lines.count {
+                let childStart = i
+                var foundClose = false
+                while i < lines.endIndex {
                     if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle -->" {
+                        foundClose = true
                         i += 1
                         break
                     }
-                    childLines.append(lines[i])
                     i += 1
                 }
-                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                let childEnd = foundClose ? i - 1 : i
+                let children = childStart < childEnd ? parseLines(lines[childStart..<childEnd]) : []
                 blocks.append(makeBlock(type: .toggle, text: title, children: children, isExpanded: !collapsed))
                 continue
             }
@@ -303,18 +333,20 @@ enum MarkdownBlockParser {
             if let headingToggleLevel = parseHeadingToggleComment(trimmed) {
                 let collapsed = trimmed.contains("collapsed")
                 i += 1
-                let title = i < lines.count ? lines[i] : ""
+                let title = i < lines.endIndex ? lines[i] : ""
                 i += 1
-                var childLines: [String] = []
-                while i < lines.count {
+                let childStart = i
+                var foundClose = false
+                while i < lines.endIndex {
                     if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toggle-heading -->" {
+                        foundClose = true
                         i += 1
                         break
                     }
-                    childLines.append(String(lines[i]))
                     i += 1
                 }
-                let children = childLines.isEmpty ? [] : parse(childLines.joined(separator: "\n"))
+                let childEnd = foundClose ? i - 1 : i
+                let children = childStart < childEnd ? parseLines(lines[childStart..<childEnd]) : []
                 blocks.append(makeBlock(type: .headingToggle, text: String(title), headingLevel: headingToggleLevel, children: children, isExpanded: !collapsed))
                 continue
             }
@@ -323,40 +355,37 @@ enum MarkdownBlockParser {
             if trimmed == "<!-- columns -->" {
                 var allChildren: [Block] = []
                 var currentColumnIndex = 0
-                var currentColumnLines: [Substring] = []
+                var currentColumnStart = i + 1
                 i += 1
-                while i < lines.count {
+                while i < lines.endIndex {
                     let colLine = lines[i]
                     if colLine.trimmingCharacters(in: .whitespaces) == "<!-- /columns -->" {
-                        i += 1
-                        break
-                    }
-                    if colLine.trimmingCharacters(in: .whitespaces) == "<!-- column-separator -->" {
-                        // Parse accumulated lines for current column
-                        if !currentColumnLines.isEmpty {
-                            let columnContent = currentColumnLines.joined(separator: "\n")
-                            var columnBlocks = parse(columnContent)
+                        // Parse final column
+                        if currentColumnStart < i {
+                            var columnBlocks = parseLines(lines[currentColumnStart..<i])
                             for j in columnBlocks.indices {
                                 columnBlocks[j].columnIndex = currentColumnIndex
                             }
                             allChildren.append(contentsOf: columnBlocks)
                         }
-                        currentColumnLines = []
+                        i += 1
+                        break
+                    }
+                    if colLine.trimmingCharacters(in: .whitespaces) == "<!-- column-separator -->" {
+                        // Parse accumulated lines for current column
+                        if currentColumnStart < i {
+                            var columnBlocks = parseLines(lines[currentColumnStart..<i])
+                            for j in columnBlocks.indices {
+                                columnBlocks[j].columnIndex = currentColumnIndex
+                            }
+                            allChildren.append(contentsOf: columnBlocks)
+                        }
                         currentColumnIndex += 1
+                        currentColumnStart = i + 1
                         i += 1
                         continue
                     }
-                    currentColumnLines.append(colLine)
                     i += 1
-                }
-                // Parse remaining lines for last column
-                if !currentColumnLines.isEmpty {
-                    let columnContent = currentColumnLines.joined(separator: "\n")
-                    var columnBlocks = parse(columnContent)
-                    for j in columnBlocks.indices {
-                        columnBlocks[j].columnIndex = currentColumnIndex
-                    }
-                    allChildren.append(contentsOf: columnBlocks)
                 }
                 blocks.append(makeBlock(type: .column, children: allChildren))
                 continue
@@ -365,7 +394,7 @@ enum MarkdownBlockParser {
             // Outline (Table of Contents) block
             if trimmed == "<!-- toc -->" {
                 i += 1
-                while i < lines.count {
+                while i < lines.endIndex {
                     if lines[i].trimmingCharacters(in: .whitespaces) == "<!-- /toc -->" {
                         i += 1
                         break
@@ -383,9 +412,9 @@ enum MarkdownBlockParser {
                 var transcript = ""
                 var summary = ""
                 var actionItems = ""
-                var noteLines: [String] = []
+                var noteLines: [Substring] = []
                 var section = ""
-                while i < lines.count {
+                while i < lines.endIndex {
                     let mLine = lines[i].trimmingCharacters(in: .whitespaces)
                     if mLine == "<!-- /meeting -->" {
                         i += 1
@@ -410,7 +439,7 @@ enum MarkdownBlockParser {
                         case "transcript":
                             transcript += (transcript.isEmpty ? "" : "\n") + lines[i]
                         case "notes":
-                            noteLines.append(String(lines[i]))
+                            noteLines.append(lines[i])
                         default:
                             break
                         }
@@ -427,7 +456,7 @@ enum MarkdownBlockParser {
                 meetingBlock.meetingNotes = notesStr
                 if !noteLines.isEmpty {
                     let trimmedNotes = notesStr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    meetingBlock.children = trimmedNotes.isEmpty ? [] : parse(trimmedNotes)
+                    meetingBlock.children = trimmedNotes.isEmpty ? [] : parseLines(noteLines[...])
                 }
                 meetingBlock.meetingState = .complete
                 blocks.append(meetingBlock)
@@ -442,7 +471,7 @@ enum MarkdownBlockParser {
                 tableRows.append(parseTableRow(line))
                 i += 1
                 // Check for separator row (indicates header)
-                if i < lines.count {
+                if i < lines.endIndex {
                     let nextLine = lines[i].trimmingCharacters(in: .whitespaces)
                     if isTableSeparator(nextLine) {
                         hasHeader = true
@@ -450,7 +479,7 @@ enum MarkdownBlockParser {
                     }
                 }
                 // Parse remaining data rows
-                while i < lines.count {
+                while i < lines.endIndex {
                     let rowLine = lines[i].trimmingCharacters(in: .whitespaces)
                     guard rowLine.hasPrefix("|") && rowLine.hasSuffix("|") else { break }
                     if isTableSeparator(rowLine) { i += 1; continue }

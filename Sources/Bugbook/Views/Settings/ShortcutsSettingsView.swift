@@ -27,7 +27,7 @@ struct ShortcutsSettingsView: View {
 
             SettingsSection("Navigation") {
                 shortcutRow("Quick Open", "Cmd + K / Cmd + P")
-                shortcutRow("Toggle Rail", "Cmd + \\")
+                shortcutRow("Toggle Sidebar", "Cmd + .")
                 shortcutRow("Toggle Chat Drawer", "Cmd + Shift + C")
                 shortcutRow("New Tab", "Cmd + T")
                 shortcutRow("Close Tab", "Cmd + W")

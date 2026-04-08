@@ -39,12 +39,6 @@ struct AppearanceSettingsView: View {
                 }
             }
 
-            SettingsSection("Navigation Rail") {
-                Toggle("Pin rail open", isOn: $appState.settings.railPinned)
-                Text("When off, the rail stays hidden until you hover the left edge or press Cmd+\\.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 }

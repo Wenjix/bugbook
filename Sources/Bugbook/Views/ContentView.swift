@@ -27,12 +27,8 @@ struct ContentView: View {
     @State private var workspaceManager = WorkspaceManager()
     @State private var terminalManager = TerminalManager()
     @State private var browserManager = BrowserManager()
-    @State private var railEdgeHovering = false
-    @State private var railHovering = false
-    @State private var railPinnedOpen = false
 
     @State private var saveTask: Task<Void, Never>?
-    @State private var sidebarPeek = SidebarPeekState()
     @State private var editorUI = EditorUIState()
     @State private var themeToast: ThemeMode?
     @State private var themeToastTask: Task<Void, Never>?
@@ -43,6 +39,7 @@ struct ContentView: View {
     @State private var restoredWorkspaceDocuments = false
     @State private var lastTrashPurgeWorkspace: String?
     @State private var recordingPillController = FloatingRecordingPillController()
+    @State private var sidebarHoverVisible = false
     @AppStorage(EditorTypography.zoomScaleKey) private var editorZoomScale = Double(EditorTypography.defaultZoomScale)
 
     // Database row peek / modal
@@ -56,7 +53,7 @@ struct ContentView: View {
     @State private var peekWidth: CGFloat = 640
     @State private var peekDragStartWidth: CGFloat?
     @State private var sidebarHiddenByPeek: Bool = false
-    @State private var sidebarWasOpenBeforeSettings: Bool = true
+    @State private var sidebarVisibleBeforePeekHide: Bool = true
     @State private var modalTarget: RowTarget?
     @State private var showPageOptionsMenu = false
     @State private var databaseRowFullWidth: [UUID: Bool] = [:]
@@ -81,18 +78,72 @@ struct ContentView: View {
 
     private var baseLayout: some View {
         ZStack(alignment: .leading) {
-            // Solid backdrop so the content area's rounded corner reveals rail/sidebar color.
-            Color.fallbackSidebarBg
+            Container.groutBg
 
             HStack(spacing: 0) {
-                contextualSidebarSection
+                if appState.sidebarVisible {
+                    if appState.showSettings {
+                        SettingsSidebarView(appState: appState)
+                            .frame(width: appState.sidebarWidth)
+                    } else {
+                        HarborSidebarView(
+                            appState: appState,
+                            fileSystem: fileSystem,
+                            activeFilePath: contextualSidebarActiveFilePath,
+                            onSelectEntry: { entry in handleSidebarFileSelect(entry) },
+                            onRefreshTree: { refreshFileTree() },
+                            onOpenSettings: { openSettingsTab() },
+                            contextualLabel: sidebarContextLabel,
+                            contextualContent: { sidebarContextualContent }
+                        )
+                        .frame(width: appState.sidebarWidth)
+                    }
+
+                    SidebarResizeHandle(width: $appState.sidebarWidth)
+                }
+
                 mainContentWithAiPanel
             }
             .animation(.easeInOut(duration: 0.15), value: appState.showSettings)
-            .animation(.easeInOut(duration: 0.15), value: contextualSidebarLeaf?.id)
+            .animation(.easeInOut(duration: 0.15), value: appState.sidebarVisible)
 
-            railEdgeHotZone
-            navigationRailOverlay
+            // Hover-reveal sidebar when collapsed
+            if !appState.sidebarVisible && !appState.showSettings {
+                HStack(spacing: 0) {
+                    // Invisible hover target at left edge
+                    Color.clear
+                        .frame(width: 6)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            if hovering { sidebarHoverVisible = true }
+                        }
+
+                    if sidebarHoverVisible {
+                        HarborSidebarView(
+                            appState: appState,
+                            fileSystem: fileSystem,
+                            activeFilePath: contextualSidebarActiveFilePath,
+                            onSelectEntry: { entry in handleSidebarFileSelect(entry) },
+                            onRefreshTree: { refreshFileTree() },
+                            onOpenSettings: { openSettingsTab() },
+                            contextualLabel: sidebarContextLabel,
+                            contextualContent: { sidebarContextualContent }
+                        )
+                        .frame(width: appState.sidebarWidth)
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 2, y: 0)
+                        .onHover { hovering in
+                            if !hovering { sidebarHoverVisible = false }
+                        }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxHeight: .infinity)
+                .animation(.easeInOut(duration: 0.15), value: sidebarHoverVisible)
+                .zIndex(10)
+            }
+
             commandPaletteOverlay
 
             movePageOverlay
@@ -144,18 +195,11 @@ struct ContentView: View {
             .onChange(of: appState.settings.qmdSearchMode) { _, _ in
                 // v2: no daemon needed, qmd query runs locally
             }
-            .onChange(of: appState.sidebarOpen) { _, _ in
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-            }
             .onChange(of: appState.showSettings) { _, showingSettings in
-                if showingSettings {
-                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-                    sidebarWasOpenBeforeSettings = appState.sidebarOpen
-                    appState.sidebarOpen = true
-                } else {
-                    appState.sidebarOpen = sidebarWasOpenBeforeSettings
+                // Ensure sidebar is visible when settings are opened
+                if showingSettings && !appState.sidebarVisible {
+                    appState.sidebarVisible = true
                 }
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
             }
             .onChange(of: appState.fileTree) { _, newTree in
                 syncAvailablePages(newTree)
@@ -167,21 +211,19 @@ struct ContentView: View {
                     ensureAiInitializedIfNeeded()
                 }
             }
-            .onChange(of: editorUI.focusModeActive) { _, _ in
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-            }
-            .onChange(of: sidebarPeek.trashPopoverPresented) { _, _ in
-                sidebarPeek.sync(eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-            }
             .onChange(of: appState.settings.focusModeOnType) { _, enabled in
                 editorUI.focusModeEnabled = enabled
             }
             .onChange(of: workspaceManager.activeWorkspace?.focusedPaneId) { _, _ in
                 hideFormattingPanel()
                 closeDatabaseRowModal()
+                updateSidebarContextType()
             }
             .onChange(of: appState.currentView) { _, newView in
                 handleCurrentViewChange(newView)
+            }
+            .onChange(of: workspaceManager.activeWorkspaceIndex) { _, _ in
+                updateSidebarContextType()
             }
             .onChange(of: workspaceManager.workspaces) { _, workspaces in
                 let paneIDs = Set(workspaces.flatMap { $0.allLeaves.map(\.id) })
@@ -378,12 +420,20 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
-                handleSidebarToggleRequest()
+                guard !appState.showSettings else { return }
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    appState.sidebarVisible.toggle()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
                 flushDirtyTabContent()
                 appState.commandPaletteMode = .splitLauncher
                 appState.commandPaletteOpen.toggle()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findInPage)) { _ in
+                if !postBrowserCommandIfFocused(.browserFind) {
+                    NotificationCenter.default.post(name: .findInPane, object: nil)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
                 _ = postBrowserCommandIfFocused(.browserFind)
@@ -499,151 +549,54 @@ struct ContentView: View {
             }
     }
 
-    // MARK: - Shell Navigation
+    // MARK: - Sidebar
 
-    private var railVisible: Bool {
-        appState.settings.railPinned || railPinnedOpen || railEdgeHovering || railHovering
-    }
-
-    private var navigationRailOverlay: some View {
-        NavigationRailView(
-            indicatorProvider: railIndicator(for:),
-            onSelect: handleRailSelection(_:)
-        )
-        .offset(x: railVisible ? 0 : -ShellSidebarMetrics.railWidth)
-        .animation(.easeInOut(duration: 0.15), value: railVisible)
-        .allowsHitTesting(railVisible)
-        .onHover { hovering in
-            railHovering = hovering
-        }
-        .zIndex(3)
-    }
-
-    @ViewBuilder
-    private var railEdgeHotZone: some View {
-        if !appState.settings.railPinned {
-            HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: 6)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        railEdgeHovering = hovering
-                    }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .zIndex(2)
+    private var sidebarContextLabel: String? {
+        switch appState.sidebarContextType {
+        case .mail: return "Mail"
+        case .calendar: return "Calendar"
+        case .workspace: return "Pages"
+        case .none: return nil
         }
     }
 
     @ViewBuilder
-    private var contextualSidebarSection: some View {
-        if appState.showSettings {
-            SettingsSidebarView(appState: appState)
-                .transition(shellSidebarTransition)
-        } else if let leaf = contextualSidebarLeaf {
-            contextualSidebarView(for: leaf)
-                .transition(shellSidebarTransition)
-        }
-    }
-
-    private var shellSidebarTransition: AnyTransition {
-        .move(edge: .leading).combined(with: .opacity)
-    }
-
-    @ViewBuilder
-    private var sidebarPeekEdgeHotspot: some View {
-        if sidebarPeekEligible {
-            HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: 4)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        sidebarPeek.setEdgeHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
+    private var sidebarContextualContent: some View {
+        switch appState.sidebarContextType {
+        case .mail:
+            MailContextualSidebarView(
+                appState: appState,
+                mailService: mailService,
+                onRefresh: {
+                    guard let token = appState.settings.googleToken else { return }
+                    Task {
+                        await mailService.refreshSelectedMailbox(token: token)
                     }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private var sidebarToggleOverlay: some View {
-        if sidebarPeekEligible {
-            VStack {
-                HStack {
-                    sidebarChromeButton(icon: "sidebar.left", help: "Toggle Sidebar (⌘.)") {
-                        openSidebarPinned()
-                    }
-                    .padding(ShellZoomMetrics.size(4))
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        sidebarPeek.setToggleHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-                    }
-                    .padding(.leading, ShellZoomMetrics.size(80))
-                    Spacer()
                 }
-                .padding(.top, ShellZoomMetrics.size(4))
-                Spacer()
-            }
-            .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
-        }
-    }
-
-    @ViewBuilder
-    private var sidebarPeekOverlay: some View {
-        if sidebarPeekEligible {
-            SidebarView(
+            )
+        case .calendar:
+            CalendarContextualSidebarView(
+                calendarVM: calendarVM,
+                calendarService: calendarService,
+                workspacePath: appState.workspacePath
+            )
+        case .workspace:
+            WorkspaceContextualSidebarView(
                 appState: appState,
                 fileSystem: fileSystem,
-                onSelectFile: { entry in
-                    handleSidebarFileSelect(entry)
-                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-                },
-                onToggleSidebar: {
-                    openSidebarPinned()
-                },
-                onAddSidebarReference: { payload in
-                    addSidebarReference(payload)
-                },
-                layoutMode: .compact,
-                onActionInvoked: {
-                    sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-                },
-                trashPopoverOverride: Binding(
-                    get: { sidebarPeek.trashPopoverPresented },
-                    set: { sidebarPeek.trashPopoverPresented = $0 }
-                )
+                activeFilePath: contextualSidebarActiveFilePath,
+                onSelectWorkspaceEntry: { entry in handleSidebarFileSelect(entry) },
+                onRefreshTree: { refreshFileTree() }
             )
-            .frame(width: ShellZoomMetrics.size(208))
-            .frame(maxHeight: ShellZoomMetrics.size(430), alignment: .topLeading)
-            .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.md)))
-            .overlay {
-                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.md))
-                    .stroke(Color.fallbackChromeBorder, lineWidth: 0.5)
-                    .allowsHitTesting(false)
-            }
-            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 4, y: 4)
-            .contentShape(Rectangle())
-            .offset(x: sidebarPeek.isVisible ? 0 : sidebarPeekHiddenOffset)
-            .opacity(sidebarPeek.isVisible ? 1 : 0)
-            .allowsHitTesting(sidebarPeek.isVisible)
-            .onHover { hovering in
-                // Only track overlay hover when peek is actually visible —
-                // .onHover fires even with allowsHitTesting(false)
-                guard sidebarPeek.isVisible else {
-                    if sidebarPeek.overlayHovering {
-                        sidebarPeek.setOverlayHovering(false, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-                    }
-                    return
-                }
-                sidebarPeek.setOverlayHovering(hovering, eligible: sidebarPeekEligible, reduceMotion: reduceMotion)
-            }
-            .padding(.top, ShellZoomMetrics.size(72))
-            .padding(.leading, ShellZoomMetrics.size(8))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .zIndex(1)
+        case .none:
+            EmptyView()
         }
+    }
+
+    private func updateSidebarContextType() {
+        guard let ws = workspaceManager.activeWorkspace,
+              let focusedLeaf = ws.focusedLeaf else { return }
+        appState.sidebarContextType = SidebarContextType.from(focusedLeaf.content)
     }
 
     @ViewBuilder
@@ -763,24 +716,6 @@ struct ContentView: View {
         .disabled(!isEnabled)
     }
 
-    private var sidebarPeekEligible: Bool {
-        !shellShowsSidebarPanel && !editorUI.focusModeActive && !sidebarHiddenByPeek
-    }
-
-    private var sidebarPeekHiddenOffset: CGFloat {
-        reduceMotion ? 0 : -ShellZoomMetrics.size(18)
-    }
-
-    private func openSidebarPinned() {
-        sidebarPeek.dismiss(immediately: true, reduceMotion: reduceMotion)
-        appState.sidebarOpen = true
-    }
-
-    private func handleSidebarToggleRequest() {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            railPinnedOpen.toggle()
-        }
-    }
 
     @discardableResult
     private func postBrowserCommandIfFocused(_ name: Notification.Name, object: Any? = nil) -> Bool {
@@ -793,19 +728,8 @@ struct ContentView: View {
         workspaceManager.activeWorkspace?.allLeaves ?? []
     }
 
-    private var contextualSidebarLeaf: PaneNode.Leaf? {
-        guard !appState.showSettings,
-              let workspace = workspaceManager.activeWorkspace,
-              workspace.allLeaves.count == 1,
-              let leaf = workspace.focusedLeaf,
-              paneUsesContextualSidebar(leaf) else {
-            return nil
-        }
-        return leaf
-    }
-
     private var shellShowsSidebarPanel: Bool {
-        appState.showSettings || contextualSidebarLeaf != nil
+        appState.sidebarVisible
     }
 
     private var focusedBrowserPaneID: UUID? {
@@ -824,35 +748,6 @@ struct ContentView: View {
         return file.path
     }
 
-    private func paneUsesContextualSidebar(_ leaf: PaneNode.Leaf) -> Bool {
-        switch leaf.content {
-        case .terminal:
-            return false
-        case .document(let file):
-            return file.isMail || file.isCalendar
-        }
-    }
-
-    private func leafMatchesRailItem(_ leaf: PaneNode.Leaf, item: RailItemID) -> Bool {
-        switch (item, leaf.content) {
-        case (.terminal, .terminal):
-            return true
-        case (.terminal, .document):
-            return false
-        case (_, .terminal):
-            return false
-        case let (.home, .document(file)):
-            return file.isGateway
-        case let (.mail, .document(file)):
-            return file.isMail
-        case let (.calendar, .document(file)):
-            return file.isCalendar
-        case let (.browser, .document(file)):
-            return file.isBrowser
-        case (.settings, _):
-            return appState.showSettings
-        }
-    }
 
     private func handleViewDisappear() {
         flushDirtyTabs()
@@ -863,25 +758,10 @@ struct ContentView: View {
         aiInitTask?.cancel()
         aiInitTask = nil
         editorUI.cleanUp()
-        sidebarPeek.cleanUp()
         workspaceWatcher?.stop()
         recordingPillController.cleanup()
     }
 
-    private func railIndicator(for item: RailItemID) -> RailIndicatorState {
-        if item == .settings {
-            return appState.showSettings ? .focused : .none
-        }
-        let leaves = activeWorkspaceLeaves
-        guard leaves.contains(where: { leafMatchesRailItem($0, item: item) }) else {
-            return .none
-        }
-        if let focusedLeaf = workspaceManager.focusedPane,
-           leafMatchesRailItem(focusedLeaf, item: item) {
-            return .focused
-        }
-        return .open
-    }
 
     private func presentEditorPane(_ content: PaneContent) {
         appState.currentView = .editor
@@ -889,44 +769,12 @@ struct ContentView: View {
         openOrFocusPane(content)
     }
 
-    private func handleRailSelection(_ item: RailItemID) {
-        switch item {
-        case .settings:
-            openSettingsTab()
-        case .home:
-            presentEditorPane(.gatewayDocument())
-        case .mail:
-            presentEditorPane(.mailDocument())
-        case .calendar:
-            presentEditorPane(.calendarDocument())
-        case .browser:
-            presentEditorPane(.browserDocument())
-        case .terminal:
-            presentEditorPane(.terminal)
+    private func handleSidebarToggle() {
+        withAnimation(.easeInOut(duration: 0.15)) {
+            appState.sidebarVisible.toggle()
         }
     }
 
-    @ViewBuilder
-    private func contextualSidebarView(for leaf: PaneNode.Leaf) -> some View {
-        if case .document(let file) = leaf.content, file.isMail {
-            MailContextualSidebarView(
-                appState: appState,
-                mailService: mailService,
-                onRefresh: {
-                    guard let token = appState.settings.googleToken else { return }
-                    Task {
-                        await mailService.refreshSelectedMailbox(token: token)
-                    }
-                }
-            )
-        } else if case .document(let file) = leaf.content, file.isCalendar {
-            CalendarContextualSidebarView(
-                calendarVM: calendarVM,
-                calendarService: calendarService,
-                workspacePath: appState.workspacePath
-            )
-        }
-    }
 
     // MARK: - Move Page Overlay
 
@@ -1257,54 +1105,60 @@ struct ContentView: View {
 
     @ViewBuilder
     private var mainContentWithAiPanel: some View {
-        ZStack(alignment: .trailing) {
-            VStack(spacing: 0) {
-                if appState.showSettings {
-                    SettingsView(appState: appState)
-                } else if appState.currentView == .graphView {
-                    if let workspace = appState.workspacePath {
-                        GraphView(
-                            backlinkService: backlinkService,
-                            workspacePath: workspace,
-                            currentPagePath: appState.activeTab?.path,
-                            onNavigateToFile: { path in
-                                navigateToFilePath(path)
-                            }
-                        )
-                    }
-                } else {
-                    editorModeContent
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .ignoresSafeArea(.container, edges: .top)
-            .background(Color.fallbackEditorBg)
-
-            if appState.aiSidePanelOpen && appState.currentView == .editor {
-                AiSidePanelView(
-                    appState: appState,
-                    aiService: aiService,
-                    activeDocument: activeDocumentForAiDrawer,
-                    drawerContext: aiDrawerContext
+        VStack(spacing: 0) {
+            // Tab bar sits on the grout surface (above the card)
+            if !appState.showSettings && appState.currentView != .graphView {
+                WorkspaceTabBar(
+                    workspaceManager: workspaceManager,
+                    sidebarOpen: shellShowsSidebarPanel,
+                    currentView: appState.currentView
                 )
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.fallbackChromeBorder)
-                        .frame(width: 1)
-                }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-                .zIndex(2)
+                .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
+
+            // Content card with grout padding
+            ZStack(alignment: .trailing) {
+                VStack(spacing: 0) {
+                    if appState.showSettings {
+                        SettingsView(appState: appState)
+                            .background(Container.cardBg)
+                            .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
+                    } else if appState.currentView == .graphView {
+                        if let workspace = appState.workspacePath {
+                            GraphView(
+                                backlinkService: backlinkService,
+                                workspacePath: workspace,
+                                currentPagePath: appState.activeTab?.path,
+                                onNavigateToFile: { path in
+                                    navigateToFilePath(path)
+                                }
+                            )
+                            .background(Container.cardBg)
+                            .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
+                        }
+                    } else {
+                        paneTreeContent
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .ignoresSafeArea(.container, edges: .top)
+
+                if appState.aiSidePanelOpen && appState.currentView == .editor {
+                    AiSidePanelView(
+                        appState: appState,
+                        aiService: aiService,
+                        activeDocument: activeDocumentForAiDrawer,
+                        drawerContext: aiDrawerContext
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(2)
+                }
+            }
+            .padding(.leading, appState.sidebarVisible ? 0 : Container.groutGap)
+            .padding(.trailing, Container.groutGap)
+            .padding(.bottom, Container.groutGap)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .clipShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: shellShowsSidebarPanel ? ShellZoomMetrics.size(14) : 0,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0
-            )
-        )
     }
 
     private var activeTabLeadingPadding: CGFloat {
@@ -1315,14 +1169,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private var editorModeContent: some View {
-        WorkspaceTabBar(
-            workspaceManager: workspaceManager,
-            sidebarOpen: shellShowsSidebarPanel,
-            currentView: appState.currentView
-        )
-            .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
-
+    private var paneTreeContent: some View {
         Group {
             if let ws = workspaceManager.activeWorkspace {
                 PaneTreeView(
@@ -2544,11 +2391,8 @@ struct ContentView: View {
     }
 
     private func initializeWorkspace() {
-        // Restore the most recently used workspace, falling back to the default
-        let restoredPath = fileSystem.recentWorkspaces.first(where: {
-            FileManager.default.fileExists(atPath: $0)
-        })
-        let workspacePath = restoredPath ?? fileSystem.defaultWorkspacePath()
+        // Use the full iCloud-aware path (scans siblings to pick richest workspace)
+        let workspacePath = WorkspaceResolver.defaultWorkspacePath(allowBlockingICloudLookup: true)
         if !FileManager.default.fileExists(atPath: workspacePath) {
             try? FileManager.default.createDirectory(atPath: workspacePath, withIntermediateDirectories: true)
         }
@@ -2556,17 +2400,13 @@ struct ContentView: View {
         scheduleTrashPurgeIfNeeded(for: workspacePath)
         appState.workspacePath = workspacePath
 
-        // If we took the default path (no explicit user override), upgrade to the
-        // canonical iCloud workspace in the background. The initial local path
-        // renders the UI instantly; this repoints us at iCloud once resolved.
-        if restoredPath == nil {
-            Task { @MainActor in
-                if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
-                    appState.workspacePath = iCloudPath
-                    scheduleTrashPurgeIfNeeded(for: iCloudPath)
-                    refreshFileTree()
-                    startWorkspaceWatcher(path: iCloudPath)
-                }
+        // Upgrade to the canonical iCloud workspace in the background if available.
+        Task { @MainActor in
+            if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
+                appState.workspacePath = iCloudPath
+                scheduleTrashPurgeIfNeeded(for: iCloudPath)
+                refreshFileTree()
+                startWorkspaceWatcher(path: iCloudPath)
             }
         }
 
@@ -3889,10 +3729,11 @@ struct ContentView: View {
         // Auto-hide sidebar when peek is wide
         if clamped > 600 && !sidebarHiddenByPeek {
             sidebarHiddenByPeek = true
-            appState.sidebarOpen = false
+            sidebarVisibleBeforePeekHide = appState.sidebarVisible
+            appState.sidebarVisible = false
         } else if clamped <= 600 && sidebarHiddenByPeek {
             sidebarHiddenByPeek = false
-            appState.sidebarOpen = true
+            appState.sidebarVisible = sidebarVisibleBeforePeekHide
         }
     }
 
@@ -3900,7 +3741,7 @@ struct ContentView: View {
         peekTarget = nil
         if sidebarHiddenByPeek {
             sidebarHiddenByPeek = false
-            appState.sidebarOpen = true
+            appState.sidebarVisible = sidebarVisibleBeforePeekHide
         }
     }
 

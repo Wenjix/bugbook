@@ -65,9 +65,10 @@ public class RowStore {
 
             let rowId = row.id
             if let existing = bestByID[rowId] {
-                let suffix = Self.extractIdSuffix(from: rowId)
-                let existingIsCanonical = existing.filename.contains("(\(suffix))")
-                let newIsCanonical = name.contains("(\(suffix))")
+                // Build the suffix pattern once per conflict, not per row
+                let suffixPattern = "(\(Self.extractIdSuffix(from: rowId)))"
+                let existingIsCanonical = existing.filename.contains(suffixPattern)
+                let newIsCanonical = name.contains(suffixPattern)
 
                 if newIsCanonical && !existingIsCanonical {
                     duplicateFiles.append(existing.filename)
@@ -75,7 +76,6 @@ public class RowStore {
                 } else if !newIsCanonical && existingIsCanonical {
                     duplicateFiles.append(name)
                 } else {
-                    // Both canonical or both non-canonical — keep newer
                     if row.updatedAt > existing.row.updatedAt {
                         duplicateFiles.append(existing.filename)
                         bestByID[rowId] = (row, name)

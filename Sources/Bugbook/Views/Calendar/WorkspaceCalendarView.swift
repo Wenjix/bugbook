@@ -23,7 +23,7 @@ struct WorkspaceCalendarView: View {
     )
     @State private var isCreatingEvent = false
     @State private var createEventError: String?
-    @State private var showEventSidebar = false
+    @State private var selectedCalendarEvent: CalendarEvent?
 
     var body: some View {
         GeometryReader { geo in
@@ -32,16 +32,8 @@ struct WorkspaceCalendarView: View {
                 if let error = calendarService.error, !error.isEmpty {
                     calendarErrorBanner(error)
                 }
-                HStack(spacing: 0) {
-                    calendarContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                    if showEventSidebar {
-                        Divider()
-                        calendarEventSidebar
-                            .frame(width: 280)
-                    }
-                }
+                calendarContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: geo.size.width) { _, newWidth in
@@ -101,7 +93,8 @@ struct WorkspaceCalendarView: View {
                 calendarVM: calendarVM,
                 calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
-                onDatabaseItemTapped: handleDatabaseItemTapped
+                onDatabaseItemTapped: handleDatabaseItemTapped,
+                onCreateEvent: handleDragCreateEvent
             )
         case .week:
             CalendarWeekView(
@@ -109,8 +102,10 @@ struct WorkspaceCalendarView: View {
                 events: visibleEvents,
                 databaseItems: calendarService.databaseItems,
                 calendarVM: calendarVM,
+                calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
-                onDatabaseItemTapped: handleDatabaseItemTapped
+                onDatabaseItemTapped: handleDatabaseItemTapped,
+                onCreateEvent: handleDragCreateEvent
             )
         case .month:
             CalendarMonthView(
@@ -118,6 +113,7 @@ struct WorkspaceCalendarView: View {
                 events: visibleEvents,
                 databaseItems: calendarService.databaseItems,
                 calendarVM: calendarVM,
+                calendarSources: calendarService.sources,
                 onEventTapped: handleEventTapped,
                 onDatabaseItemTapped: handleDatabaseItemTapped
             )
@@ -198,14 +194,6 @@ struct WorkspaceCalendarView: View {
                 .buttonStyle(.plain)
             }
 
-            // Sidebar toggle
-            Button(action: { showEventSidebar.toggle() }) {
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 13))
-                    .foregroundStyle(showEventSidebar ? Color.accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Toggle event details")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
@@ -223,31 +211,29 @@ struct WorkspaceCalendarView: View {
         }
     }
 
-    // MARK: - Event Detail Sidebar
 
-    private var calendarEventSidebar: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Event Details")
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                Button(action: { showEventSidebar = false }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            ContentUnavailableView(
-                "Select an event",
-                systemImage: "calendar",
-                description: Text("Click an event to see its details here.")
-            )
-            .frame(maxHeight: .infinity)
+    private func eventDateTimeString(_ event: CalendarEvent) -> String {
+        let formatter = DateFormatter()
+        if event.isAllDay {
+            formatter.dateFormat = "EEEE, MMMM d"
+            return formatter.string(from: event.startDate)
         }
-        .padding(16)
-        .background(Color.fallbackEditorBg)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEEE, MMMM d"
+        let startDay = dateFormatter.string(from: event.startDate)
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "h:mm a"
+        let startTime = timeFormatter.string(from: event.startDate)
+        let endTime = timeFormatter.string(from: event.endDate)
+        return "\(startDay) · \(startTime)–\(endTime)"
+    }
+
+    private func calendarSourceColor(_ hex: String) -> Color {
+        if hex.hasPrefix("#") {
+            return Color(hex: String(hex.dropFirst()))
+        }
+        return TagColor.color(for: hex)
     }
 
     private func calendarErrorBanner(_ message: String) -> some View {
@@ -294,13 +280,7 @@ struct WorkspaceCalendarView: View {
     // MARK: - Actions
 
     private func handleEventTapped(_ event: CalendarEvent) {
-        guard let workspace = appState.workspacePath else { return }
-        Task {
-            if let pagePath = await meetingNoteService.createOrOpenMeetingNote(for: event, workspace: workspace) {
-                calendarService.loadCachedData(workspace: workspace)
-                onNavigateToFile(pagePath)
-            }
-        }
+        selectedCalendarEvent = event
     }
 
     private func handleDatabaseItemTapped(_ item: CalendarDatabaseItem) {
@@ -343,6 +323,21 @@ struct WorkspaceCalendarView: View {
                 calendarService.error = error.localizedDescription
             }
         }
+    }
+
+    private func handleDragCreateEvent(startDate: Date, endDate: Date) {
+        guard appState.settings.googleConfigured, appState.settings.googleConnected else {
+            appState.showSettings = true
+            appState.selectedSettingsTab = "google"
+            return
+        }
+        createEventDraft = CalendarEventDraft(
+            startDate: startDate,
+            endDate: endDate,
+            calendarId: "primary"
+        )
+        createEventError = nil
+        showCreateEventSheet = true
     }
 
     private func handleCreateEventButton() {
@@ -544,6 +539,8 @@ struct CalendarEventComposerSheet: View {
                     DatePicker("Ends", selection: $draft.endDate)
                 }
 
+                recurrencePicker
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Location")
                         .font(.system(size: 12, weight: .medium))
@@ -605,5 +602,77 @@ struct CalendarEventComposerSheet: View {
             draft.startDate = calendar.startOfDay(for: draft.startDate)
             draft.endDate = calendar.startOfDay(for: max(draft.startDate, draft.endDate))
         }
+    }
+
+    // MARK: - Recurrence Picker
+
+    @State private var showCustomRrule = false
+    @State private var customRruleText = ""
+
+    @ViewBuilder
+    private var recurrencePicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Repeat")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Picker("Repeat", selection: recurrencePickerBinding) {
+                Text("Does not repeat").tag("none")
+                Divider()
+                ForEach(RecurrenceFrequency.allCases) { freq in
+                    Text(freq.label).tag(freq.rawValue)
+                }
+                Divider()
+                Text("Custom…").tag("custom")
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showCustomRrule {
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("FREQ=WEEKLY;BYDAY=MO,WE,FR", text: $customRruleText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+                        .onChange(of: customRruleText) { _, value in
+                            draft.recurrence = .custom(value)
+                        }
+                    Text("Enter an RRULE value (without the RRULE: prefix).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var recurrencePickerBinding: Binding<String> {
+        Binding(
+            get: {
+                switch draft.recurrence {
+                case .none: return "none"
+                case .preset(let freq): return freq.rawValue
+                case .custom: return "custom"
+                }
+            },
+            set: { newTag in
+                showCustomRrule = false
+                switch newTag {
+                case "none":
+                    draft.recurrence = .none
+                case "custom":
+                    showCustomRrule = true
+                    if case .custom(let raw) = draft.recurrence {
+                        customRruleText = raw
+                    } else {
+                        customRruleText = ""
+                    }
+                    draft.recurrence = .custom(customRruleText)
+                default:
+                    if let freq = RecurrenceFrequency(rawValue: newTag) {
+                        draft.recurrence = .preset(freq)
+                    }
+                }
+            }
+        )
     }
 }

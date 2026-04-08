@@ -398,7 +398,7 @@ struct CommandPaletteView: View {
 
     private var availableCommands: [PaletteCommand] {
         [
-            PaletteCommand(id: "toggle_sidebar", name: "Toggle Rail", icon: "sidebar.left", shortcut: "Cmd+\\") {
+            PaletteCommand(id: "toggle_sidebar", name: "Toggle Sidebar", icon: "sidebar.left", shortcut: "Cmd+.") {
                 NotificationCenter.default.post(name: .toggleSidebar, object: nil)
             },
             PaletteCommand(id: "new_note", name: "New Note", icon: "doc.badge.plus", shortcut: "Cmd+N") {

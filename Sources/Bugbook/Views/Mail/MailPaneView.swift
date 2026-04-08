@@ -23,22 +23,20 @@ struct MailPaneView: View {
                     title: "Connect Gmail",
                     message: "Sign in once and Bugbook will use that Google account for both Mail and Calendar."
                 )
+            } else if mailService.selectedThread != nil || mailService.isLoadingThread {
+                // Full-screen thread view — no filter tabs, just the thread
+                detailPane
             } else {
-                VStack(spacing: 0) {
-                    mailFilterTabs
-                    batchToolbar
-                    Divider()
-
-                    if mailService.selectedThread != nil || mailService.isLoadingThread || mailService.isComposing {
-                        // Split view: thread list + detail
-                        HSplitView {
-                            threadList
-                                .frame(minWidth: 280, idealWidth: 360)
-                            detailPane
-                                .frame(minWidth: 300)
-                        }
-                    } else {
+                ZStack {
+                    VStack(spacing: 0) {
+                        mailFilterTabs
+                        batchToolbar
+                        Divider()
                         threadList
+                    }
+
+                    if mailService.isComposing && mailService.composer.threadId == nil {
+                        floatingComposeCard
                     }
                 }
             }
@@ -334,11 +332,42 @@ struct MailPaneView: View {
         .background(Color.fallbackEditorBg)
     }
 
+    private var floatingComposeCard: some View {
+        VStack(spacing: 0) {
+            // Title bar
+            HStack {
+                Text("New Message")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    mailService.dismissComposer()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.primary.opacity(0.04))
+
+            Divider()
+
+            composeView(title: "")
+        }
+        .frame(width: 450, height: 520)
+        .background(Color.fallbackEditorBg)
+        .clipShape(.rect(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.2), radius: 16, x: 0, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.fallbackChromeBorder, lineWidth: 0.5))
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+    }
+
     @ViewBuilder
     private var detailPane: some View {
-        if mailService.isComposing && mailService.composer.threadId == nil {
-            composeView(title: "New Message")
-        } else if let thread = mailService.selectedThread {
+        if let thread = mailService.selectedThread {
             VStack(spacing: 0) {
                 threadToolbar(thread)
                 Divider()
@@ -349,12 +378,17 @@ struct MailPaneView: View {
                         }
 
                         if mailService.isComposing, mailService.composer.threadId == thread.id {
-                            composeView(title: mailService.composer.mode == .replyAll ? "Reply All" : "Reply")
+                            composeView(title: mailService.composer.mode == .replyAll ? "Reply All" : (mailService.composer.mode == .forward ? "Forward" : "Reply"))
+                        } else {
+                            threadActionButtons(thread)
                         }
                     }
                     .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.fallbackEditorBg)
         } else if mailService.isLoadingThread {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -395,6 +429,12 @@ struct MailPaneView: View {
         let unread = thread.isUnread
 
         return HStack(spacing: 0) {
+            // Unread indicator dot
+            Circle()
+                .fill(unread ? Color.accentColor : Color.clear)
+                .frame(width: 6, height: 6)
+                .padding(.trailing, 6)
+
             // Checkbox
             Button {
                 if isSelected {
@@ -410,40 +450,40 @@ struct MailPaneView: View {
             .buttonStyle(.plain)
             .padding(.trailing, 10)
 
-            // Sender (brightest tier)
+            // Sender
             Text(senderDisplayName(thread.participants.first ?? "Unknown"))
-                .font(.system(size: 13, weight: unread ? .bold : .regular))
-                .foregroundStyle(unread ? .primary : .secondary)
+                .font(.system(size: 14, weight: unread ? .bold : .medium))
+                .foregroundColor(unread ? Color(nsColor: .labelColor) : Color(nsColor: .secondaryLabelColor))
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.trailing, 6)
+                .padding(.trailing, 8)
 
-            // Subject (mid tier)
+            // Subject
             Text(thread.subject)
                 .font(.system(size: 13, weight: unread ? .semibold : .regular))
-                .foregroundStyle(unread ? Color.primary.opacity(0.8) : Color.primary.opacity(0.45))
+                .foregroundColor(unread ? Color(nsColor: .labelColor) : Color(nsColor: .secondaryLabelColor))
                 .lineLimit(1)
                 .layoutPriority(1)
 
-            // Separator + snippet (muted tier)
+            // Separator + snippet
             if !thread.snippet.isEmpty {
-                Text("  ·  ")
+                Text(" — ")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.primary.opacity(0.2))
+                    .foregroundColor(Color(nsColor: .tertiaryLabelColor))
 
                 Text(thread.snippet)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.primary.opacity(0.25))
+                    .foregroundColor(Color(nsColor: .tertiaryLabelColor))
                     .lineLimit(1)
             }
 
             Spacer(minLength: 8)
 
-            // Date (mono for alignment)
+            // Date
             if let date = thread.date {
                 Text(relativeDate(date))
-                    .font(.system(size: 12, weight: unread ? .medium : .regular, design: .monospaced))
-                    .foregroundStyle(unread ? Color.primary.opacity(0.6) : Color.primary.opacity(0.25))
+                    .font(.system(size: 12, weight: unread ? .medium : .regular))
+                    .foregroundColor(Color(nsColor: .secondaryLabelColor))
                     .fixedSize()
             }
         }
@@ -489,6 +529,14 @@ struct MailPaneView: View {
 
     private func threadToolbar(_ thread: MailThreadDetail) -> some View {
         HStack(spacing: 10) {
+            Button(action: { mailService.selectedThreadID = nil }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Back to inbox")
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(thread.subject)
                     .font(.system(size: 16, weight: .semibold))
@@ -535,9 +583,36 @@ struct MailPaneView: View {
                 }
                 .buttonStyle(.plain)
             }
+
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
+    }
+
+    private func threadActionButtons(_ thread: MailThreadDetail) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                mailService.prepareReplyDraft(thread: thread, connectedEmail: appState.settings.googleConnectedEmail, replyAll: false)
+            } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                mailService.prepareReplyDraft(thread: thread, connectedEmail: appState.settings.googleConnectedEmail, replyAll: true)
+            } label: {
+                Label("Reply all", systemImage: "arrowshape.turn.up.left.2")
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                mailService.prepareForwardDraft(thread: thread)
+            } label: {
+                Label("Forward", systemImage: "arrowshape.turn.up.right")
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.top, 8)
     }
 
     private func messageCard(_ message: MailMessage) -> some View {
@@ -569,7 +644,7 @@ struct MailPaneView: View {
             if let htmlBody = message.htmlBody,
                !htmlBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 MailHTMLView(html: htmlBody)
-                    .frame(minHeight: 220)
+                    .frame(minHeight: 700, maxHeight: .infinity)
                     .clipShape(.rect(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
@@ -589,14 +664,16 @@ struct MailPaneView: View {
 
     private func composeView(title: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Button("Discard") {
-                    mailService.dismissComposer()
+            if !title.isEmpty {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Button("Discard") {
+                        mailService.dismissComposer()
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
             }
 
             composeField("To", text: $mailService.composer.to)
@@ -667,6 +744,10 @@ struct MailPaneView: View {
     private func openThread(_ thread: MailThreadSummary) {
         withMailToken { token in
             await mailService.loadThread(id: thread.id, mailbox: thread.mailbox, token: token)
+            // Mark as read when opened
+            if thread.isUnread {
+                await mailService.apply(action: .setUnread(false), to: thread.id, token: token)
+            }
         }
     }
 

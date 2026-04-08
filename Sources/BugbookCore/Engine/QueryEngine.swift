@@ -5,19 +5,18 @@ public struct QueryEngine {
     /// Execute a query against a set of rows: filter, sort, paginate.
     public static func execute(query: Query, schema: DatabaseSchema, rows: [DatabaseRow]) -> QueryResult {
         // 1. Apply all filters in a single pass (ANDed)
-        let filtered: [DatabaseRow]
+        var sorted: [DatabaseRow]
         if query.filters.isEmpty {
-            filtered = rows
+            sorted = rows
         } else {
             let filters = query.filters
-            filtered = rows.filter { row in
+            sorted = rows.filter { row in
                 for filter in filters {
                     if !matches(row: row, filter: filter) { return false }
                 }
                 return true
             }
         }
-        var sorted = filtered
 
         // 2. Sort
         if !query.sorts.isEmpty {
@@ -34,16 +33,15 @@ public struct QueryEngine {
             }
         }
 
-        // 3. Total count before pagination
+        // 3. Paginate using slice indices to avoid extra Array allocations
         let totalCount = sorted.count
-
-        // 4. Apply offset/limit
         let offset = query.offset ?? 0
-        if offset > 0 {
-            sorted = Array(sorted.dropFirst(offset))
-        }
+        let startIdx = min(offset, totalCount)
+        let endIdx: Int
         if let limit = query.limit {
-            sorted = Array(sorted.prefix(limit))
+            endIdx = min(startIdx + limit, totalCount)
+        } else {
+            endIdx = totalCount
         }
 
         let hasMore: Bool
@@ -53,7 +51,8 @@ public struct QueryEngine {
             hasMore = false
         }
 
-        return QueryResult(rows: sorted, totalCount: totalCount, hasMore: hasMore)
+        let page = startIdx < endIdx ? Array(sorted[startIdx..<endIdx]) : []
+        return QueryResult(rows: page, totalCount: totalCount, hasMore: hasMore)
     }
 
     // MARK: - Filter Matching
@@ -128,16 +127,7 @@ public struct QueryEngine {
 
     /// Returns <0 if a<b, 0 if equal, >0 if a>b
     private static func compareValues(_ a: PropertyValue?, _ b: PropertyValue?) -> Int {
-        let aStr = a?.stringValue ?? ""
-        let bStr = b?.stringValue ?? ""
-
-        // Both empty
-        if aStr.isEmpty && bStr.isEmpty { return 0 }
-        // Empties sort last
-        if aStr.isEmpty { return 1 }
-        if bStr.isEmpty { return -1 }
-
-        // Try numeric comparison
+        // Fast path: check type-specific comparisons before computing stringValue
         if case .number(let an) = a, case .number(let bn) = b {
             if an < bn { return -1 }
             if an > bn { return 1 }
@@ -150,7 +140,15 @@ public struct QueryEngine {
             return aKey.compare(bKey).rawValue
         }
 
-        // String comparison (works for dates in YYYY-MM-DD format too)
+        let aStr = a?.stringValue ?? ""
+        let bStr = b?.stringValue ?? ""
+
+        // Both empty
+        if aStr.isEmpty && bStr.isEmpty { return 0 }
+        // Empties sort last
+        if aStr.isEmpty { return 1 }
+        if bStr.isEmpty { return -1 }
+
         return aStr.compare(bStr).rawValue
     }
 }

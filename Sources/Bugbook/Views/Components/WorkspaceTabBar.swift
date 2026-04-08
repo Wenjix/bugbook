@@ -17,84 +17,87 @@ struct WorkspaceTabBar: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            ScrollView(.horizontal) {
-                HStack(alignment: .bottom, spacing: -ShellZoomMetrics.size(8)) {
-                    ForEach(Array(workspaceManager.workspaces.enumerated()), id: \.element.id) { index, workspace in
-                        HStack(spacing: 0) {
-                            if dragOverIndex == index {
-                                Rectangle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 2, height: ShellZoomMetrics.size(24))
-                                    .padding(.vertical, ShellZoomMetrics.size(4))
-                            }
-
-                            TabItemView(
-                                title: tabTitle(for: workspace),
-                                icon: tabIcon(for: workspace),
-                                isActive: index == workspaceManager.activeWorkspaceIndex,
-                                onSelect: { workspaceManager.switchWorkspace(to: index) },
-                                onClose: { workspaceManager.closeWorkspace(at: index) }
-                            )
-                            .zIndex(index == workspaceManager.activeWorkspaceIndex ? 1 : 0)
-                            .opacity(draggingId == workspace.id ? 0.4 : 1.0)
-                            .onDrag {
-                                draggingId = workspace.id
-                                return NSItemProvider(object: workspace.id.uuidString as NSString)
-                            }
-                            .onDrop(of: [.text], delegate: TabDropDelegate(
-                                targetIndex: index,
-                                workspaceManager: workspaceManager,
-                                dragOverIndex: $dragOverIndex,
-                                draggingId: $draggingId
-                            ))
-                        }
-                    }
-
-                    if dragOverIndex == workspaceManager.workspaces.count {
-                        Rectangle()
-                            .fill(Color.accentColor)
-                            .frame(width: 2, height: ShellZoomMetrics.size(24))
-                            .padding(.vertical, ShellZoomMetrics.size(4))
-                    }
-
-                    // + button with content picker
-                    Button { showNewMenu = true } label: {
-                        Image(systemName: "plus")
-                            .font(ShellZoomMetrics.font(Typography.bodySmall))
-                            .foregroundStyle(.secondary)
-                            .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, ShellZoomMetrics.size(8))
-                    .padding(.bottom, ShellZoomMetrics.size(2))
-                    .floatingPopover(isPresented: $showNewMenu) {
-                        NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
-                            .popoverSurface()
-                    }
-                    .onDrop(of: [.text], delegate: TabDropDelegate(
-                        targetIndex: workspaceManager.workspaces.count,
-                        workspaceManager: workspaceManager,
-                        dragOverIndex: $dragOverIndex,
-                        draggingId: $draggingId
-                    ))
+            // Sidebar toggle — only visible in tab bar when sidebar is closed
+            if !sidebarOpen {
+                Button {
+                    NotificationCenter.default.post(name: .toggleSidebar, object: nil)
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(ShellZoomMetrics.font(13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: ShellZoomMetrics.size(30), height: ShellZoomMetrics.size(30))
                 }
-                .padding(.leading, ShellZoomMetrics.size(2))
+                .buttonStyle(.plain)
+                .help("Toggle Sidebar")
+                .padding(.leading, ShellZoomMetrics.size(70))
             }
-            .scrollIndicators(.hidden)
-            .padding(.leading, ShellZoomMetrics.size(8))
-            Spacer()
+
+            HStack(alignment: .bottom, spacing: -ShellZoomMetrics.size(8)) {
+                ForEach(Array(workspaceManager.workspaces.enumerated()), id: \.element.id) { index, workspace in
+                    HStack(spacing: 0) {
+                        if dragOverIndex == index {
+                            Rectangle()
+                                .fill(Color.accentColor)
+                                .frame(width: 2, height: ShellZoomMetrics.size(24))
+                                .padding(.vertical, ShellZoomMetrics.size(4))
+                        }
+
+                        TabItemView(
+                            title: tabTitle(for: workspace),
+                            icon: tabIcon(for: workspace),
+                            isActive: index == workspaceManager.activeWorkspaceIndex,
+                            onSelect: { workspaceManager.switchWorkspace(to: index) },
+                            onClose: { workspaceManager.closeWorkspace(at: index) }
+                        )
+                        .zIndex(index == workspaceManager.activeWorkspaceIndex ? 1 : 0)
+                        .opacity(draggingId == workspace.id ? 0.4 : 1.0)
+                        .onDrag {
+                            draggingId = workspace.id
+                            return NSItemProvider(object: workspace.id.uuidString as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: TabDropDelegate(
+                            targetIndex: index,
+                            workspaceManager: workspaceManager,
+                            dragOverIndex: $dragOverIndex,
+                            draggingId: $draggingId
+                        ))
+                    }
+                }
+
+                if dragOverIndex == workspaceManager.workspaces.count {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(width: 2, height: ShellZoomMetrics.size(24))
+                        .padding(.vertical, ShellZoomMetrics.size(4))
+                }
+
+                // + button with content picker
+                Button { showNewMenu = true } label: {
+                    Image(systemName: "plus")
+                        .font(ShellZoomMetrics.font(Typography.bodySmall))
+                        .foregroundStyle(.secondary)
+                        .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, ShellZoomMetrics.size(8))
+                .padding(.bottom, ShellZoomMetrics.size(2))
+                .floatingPopover(isPresented: $showNewMenu) {
+                    NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
+                        .popoverSurface()
+                }
+                .onDrop(of: [.text], delegate: TabDropDelegate(
+                    targetIndex: workspaceManager.workspaces.count,
+                    workspaceManager: workspaceManager,
+                    dragOverIndex: $dragOverIndex,
+                    draggingId: $draggingId
+                ))
+            }
+            .padding(.leading, sidebarOpen ? ShellZoomMetrics.size(4) : 0)
+            Spacer(minLength: 0)
             layoutSavedIndicator
         }
-        .padding(.top, ShellZoomMetrics.size(6))
         .frame(height: ShellZoomMetrics.size(36))
-        .background(
-            ZStack(alignment: .bottom) {
-                Color.fallbackTabBarBg
-                Rectangle()
-                    .fill(Color.fallbackChromeBorder)
-                    .frame(height: 1)
-            }
-        )
+        .background(Container.groutBg)
         .onChange(of: workspaceManager.lastSavedAt) { _, _ in
             savedIndicatorTask?.cancel()
             withAnimation(.easeIn(duration: 0.15)) { showSavedIndicator = true }
@@ -194,6 +197,10 @@ private struct NewPanePopover: View {
                 workspaceManager.addWorkspaceWith(content: .browserDocument())
                 dismiss()
             }
+            contentRow(icon: "envelope", label: "Mail") {
+                workspaceManager.addWorkspaceWith(content: .mailDocument())
+                dismiss()
+            }
             contentRow(icon: "calendar", label: "Calendar") {
                 workspaceManager.addWorkspaceWith(content: .calendarDocument())
                 dismiss()
@@ -258,7 +265,6 @@ private struct TabItemView: View {
 
     @State private var isHovered = false
     @State private var isCloseHovered = false
-    private var wingRadius: CGFloat { ShellZoomMetrics.size(5) }
 
     var body: some View {
         Button(action: onSelect) {
@@ -266,7 +272,8 @@ private struct TabItemView: View {
                 tabIconView
 
                 Text(title)
-                    .font(ShellZoomMetrics.font(Typography.bodySmall))
+                    .font(ShellZoomMetrics.font(Typography.bodySmall, weight: isActive ? .semibold : .regular))
+                    .foregroundStyle(isActive ? .primary : Container.pillInactiveText)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -275,7 +282,7 @@ private struct TabItemView: View {
                     Image(systemName: "xmark")
                         .font(ShellZoomMetrics.font(9, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: ShellZoomMetrics.size(20), height: ShellZoomMetrics.size(20))
+                        .frame(width: ShellZoomMetrics.size(18), height: ShellZoomMetrics.size(18))
                         .background(isCloseHovered ? Color.primary.opacity(0.1) : .clear)
                         .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.xs)))
                 }
@@ -283,35 +290,16 @@ private struct TabItemView: View {
                 .onHover { isCloseHovered = $0 }
                 .opacity(isHovered ? 1 : 0)
             }
-            .padding(.leading, ShellZoomMetrics.size(14))
+            .padding(.leading, ShellZoomMetrics.size(12))
             .padding(.trailing, ShellZoomMetrics.size(8))
-            .frame(width: ShellZoomMetrics.size(190), alignment: .leading)
-            .frame(height: ShellZoomMetrics.size(30))
+            .frame(minWidth: ShellZoomMetrics.size(60), maxWidth: ShellZoomMetrics.size(180), alignment: .leading)
+            .frame(height: ShellZoomMetrics.size(28))
             .background(
-                Group {
-                    if isActive {
-                        ZStack(alignment: .bottom) {
-                            ConnectedTabShape(
-                                cornerRadius: ShellZoomMetrics.size(Radius.sm),
-                                wingRadius: wingRadius
-                            )
-                                .fill(Color.fallbackEditorBg)
-                            ConnectedTabShape(
-                                cornerRadius: ShellZoomMetrics.size(Radius.sm),
-                                wingRadius: wingRadius
-                            )
-                                .stroke(Color.fallbackChromeBorder, lineWidth: 1)
-                        }
-                    } else if isHovered {
-                        RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                            .fill(Color.primary.opacity(0.05))
-                    } else {
-                        Color.clear
-                    }
-                }
+                RoundedRectangle(cornerRadius: Container.pillRadius)
+                    .fill(isActive ? Container.pillActiveBg : (isHovered ? Color.primary.opacity(0.04) : Color.clear))
             )
-            .padding(.horizontal, ShellZoomMetrics.size(4))
-            .contentShape(Rectangle())
+            .padding(.horizontal, ShellZoomMetrics.size(2))
+            .contentShape(RoundedRectangle(cornerRadius: Container.pillRadius))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

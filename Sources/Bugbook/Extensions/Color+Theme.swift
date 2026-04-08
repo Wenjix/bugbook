@@ -60,8 +60,8 @@ extension Color {
     // Chrome — sidebar, tab bar, breadcrumbs
     static let fallbackSidebarBg = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))
     static let fallbackTabBarBg  = Color(light: Color(hex: "f8f8f7"), dark: Color(hex: "202020"))
-    // Canvas — editor, active tab
-    static let fallbackEditorBg  = Color(light: .white, dark: Color(hex: "191919"))
+    // Canvas — editor, active tab (matches Container.cardBg)
+    static let fallbackEditorBg  = Color(light: .white, dark: Color(hex: "161616"))
 
     // Semantic surfaces
     static let fallbackCardBg        = Color(light: .white,               dark: Color(hex: "202020"))

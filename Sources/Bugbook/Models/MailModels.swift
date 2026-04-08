@@ -56,6 +56,7 @@ enum MailComposerMode: String, Codable, Equatable {
     case newMessage
     case reply
     case replyAll
+    case forward
 }
 
 struct MailDraft: Codable, Equatable {

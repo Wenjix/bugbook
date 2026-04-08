@@ -22,11 +22,35 @@ struct MCPServerInfo: Identifiable {
     var id: String { name }
 }
 
+/// What the sidebar's contextual zone should display, derived from the selected pane type.
+enum SidebarContextType: Equatable {
+    case mail
+    case calendar
+    case workspace   // editor pages — shows file tree
+    case none        // terminal, browser — contextual zone collapses
+
+    static func from(_ content: PaneContent) -> SidebarContextType {
+        switch content {
+        case .terminal: return .none
+        case .document(let file):
+            if file.isMail { return .mail }
+            if file.isCalendar { return .calendar }
+            if file.isBrowser { return .none }
+            return .workspace
+        }
+    }
+}
+
 @MainActor
 @Observable class AppState {
     var openTabs: [OpenFile] = []
     var activeTabIndex: Int = 0
-    var sidebarOpen: Bool = false
+
+    // Unified sidebar state
+    var sidebarVisible: Bool = true
+    var sidebarWidth: CGFloat = 200
+    /// Contextual zone type — follows the focused pane, always.
+    var sidebarContextType: SidebarContextType = .workspace
     var workspacePath: String?
     var fileTree: [FileEntry] = []
     var sidebarReferences: [FileEntry] = []

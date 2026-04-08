@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Renders a single pane leaf: chrome bar (30px) + content below.
@@ -21,30 +22,41 @@ struct PaneContentView: View {
     // Find-in-page state (per-pane)
     @State private var showFindBar = false
     @State private var findQuery = ""
-    @State private var findCurrentIndex = 0
-    @State private var findRefocusTrigger = false
-    @State private var findMatchCache: [(blockId: UUID, range: Range<String.Index>)] = []
+    @State private var findCurrentIndex: Int?
+    @State private var findMatchCache: [BlockFindSelection] = []
+    @FocusState private var findFieldFocused: Bool
 
     private var isFocusedPane: Bool {
         workspaceManager.activeWorkspace?.focusedPaneId == leaf.id
     }
 
+    private var activeBlockDocument: BlockDocument? {
+        guard case .document = leaf.content else { return nil }
+        return blockDocumentLookup?(leaf.id)
+    }
+
     private func recomputeFindMatches() {
         guard !findQuery.isEmpty,
-              case .document = leaf.content,
-              let doc = blockDocumentLookup?(leaf.id) else {
+              let doc = activeBlockDocument else {
             findMatchCache = []
             return
         }
-        let needle = findQuery.lowercased()
-        var results: [(blockId: UUID, range: Range<String.Index>)] = []
+        var results: [BlockFindSelection] = []
         func searchBlocks(_ blocks: [Block]) {
             for block in blocks {
-                let haystack = block.text.lowercased()
-                var searchStart = haystack.startIndex
-                while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
-                    results.append((blockId: block.id, range: range))
-                    searchStart = range.upperBound
+                let visibleText = AttributedStringConverter.plainText(from: block.text) as NSString
+                var searchRange = NSRange(location: 0, length: visibleText.length)
+                while searchRange.location < visibleText.length {
+                    let range = visibleText.range(
+                        of: findQuery,
+                        options: [.caseInsensitive, .diacriticInsensitive],
+                        range: searchRange
+                    )
+                    guard range.location != NSNotFound else { break }
+                    results.append(BlockFindSelection(blockId: block.id, range: range))
+                    let nextLocation = range.location + max(range.length, 1)
+                    guard nextLocation < visibleText.length else { break }
+                    searchRange = NSRange(location: nextLocation, length: visibleText.length - nextLocation)
                 }
                 if !block.children.isEmpty {
                     searchBlocks(block.children)
@@ -53,6 +65,11 @@ struct PaneContentView: View {
         }
         searchBlocks(doc.blocks)
         findMatchCache = results
+        if let findCurrentIndex, findCurrentIndex < results.count {
+            doc.findSelectedMatch = results[findCurrentIndex]
+        } else {
+            doc.findSelectedMatch = nil
+        }
     }
 
     var body: some View {
@@ -70,16 +87,8 @@ struct PaneContentView: View {
                 }
 
                 if showFindBar {
-                    PaneFindBar(
-                        query: $findQuery,
-                        matchCount: findMatchCache.count,
-                        currentMatch: findMatchCache.isEmpty ? 0 : findCurrentIndex + 1,
-                        onNext: { advanceFind(forward: true) },
-                        onPrevious: { advanceFind(forward: false) },
-                        onClose: { closeFindBar() }
-                    )
+                    editorFindBar
                     .transition(.move(edge: .top).combined(with: .opacity))
-                    .id(findRefocusTrigger)
                 }
 
                 contentForLeaf
@@ -93,12 +102,13 @@ struct PaneContentView: View {
 
             // Drop target highlight for pane swap
             if isDropTarget {
-                RoundedRectangle(cornerRadius: 0)
+                RoundedRectangle(cornerRadius: Container.cardRadius)
                     .strokeBorder(Color.fallbackAccent.opacity(Opacity.strong), lineWidth: 2)
                     .allowsHitTesting(false)
             }
         }
-        .clipShape(Rectangle())
+        .background(Container.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
         .onDrop(of: [.text], isTargeted: $isDropTarget) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: NSString.self) { item, _ in
@@ -114,15 +124,22 @@ struct PaneContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
             guard isFocusedPane, supportsInlineFindBar else { return }
             if showFindBar {
-                findRefocusTrigger.toggle()
+                focusFindField()
             } else {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     showFindBar = true
                 }
+                focusFindField()
             }
         }
-        .onChange(of: findQuery) { _, _ in
-            findCurrentIndex = 0
+        .onChange(of: findQuery) { _, newValue in
+            activeBlockDocument?.findHighlightQuery = newValue
+            activeBlockDocument?.findSelectedMatch = nil
+            findCurrentIndex = nil
+            recomputeFindMatches()
+        }
+        .onChange(of: activeBlockDocument?.contentVersion ?? 0) { _, _ in
+            guard showFindBar else { return }
             recomputeFindMatches()
         }
         .contextMenu {
@@ -209,16 +226,91 @@ struct PaneContentView: View {
         }
     }
 
+    private var editorFindBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            TextField("Find on page", text: $findQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .focused($findFieldFocused)
+                .onSubmit {
+                    let isReverse = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
+                    advanceFind(forward: !isReverse)
+                }
+                .onExitCommand {
+                    closeFindBar()
+                }
+
+            if !findQuery.isEmpty {
+                Text(findMatchStatus)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            Button {
+                advanceFind(forward: false)
+            } label: {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(findMatchCache.isEmpty)
+
+            Button {
+                advanceFind(forward: true)
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(findMatchCache.isEmpty)
+
+            Button {
+                closeFindBar()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.fallbackTabBarBg)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.fallbackChromeBorder)
+                .frame(height: 1)
+        }
+    }
+
+    private var findMatchStatus: String {
+        guard !findMatchCache.isEmpty else { return "No results" }
+        guard let findCurrentIndex else { return "\(findMatchCache.count) results" }
+        return "\(findCurrentIndex + 1) of \(findMatchCache.count)"
+    }
+
     private func advanceFind(forward: Bool) {
         let matches = findMatchCache
         guard !matches.isEmpty else { return }
-        if forward {
-            findCurrentIndex = (findCurrentIndex + 1) % matches.count
+        let nextIndex: Int
+        if let findCurrentIndex {
+            if forward {
+                nextIndex = (findCurrentIndex + 1) % matches.count
+            } else {
+                nextIndex = (findCurrentIndex - 1 + matches.count) % matches.count
+            }
         } else {
-            findCurrentIndex = (findCurrentIndex - 1 + matches.count) % matches.count
+            nextIndex = forward ? 0 : (matches.count - 1)
         }
-        if let doc = blockDocumentLookup?(leaf.id) {
-            doc.scrollToBlockId = matches[findCurrentIndex].blockId
+        findCurrentIndex = nextIndex
+        if let doc = activeBlockDocument {
+            doc.findSelectedMatch = matches[nextIndex]
+            doc.scrollToBlockId = matches[nextIndex].blockId
         }
     }
 
@@ -226,8 +318,18 @@ struct PaneContentView: View {
         withAnimation(.easeInOut(duration: 0.15)) {
             showFindBar = false
         }
+        activeBlockDocument?.findHighlightQuery = ""
+        activeBlockDocument?.findSelectedMatch = nil
         findQuery = ""
-        findCurrentIndex = 0
+        findCurrentIndex = nil
+        findMatchCache = []
+        findFieldFocused = false
+    }
+
+    private func focusFindField() {
+        DispatchQueue.main.async {
+            findFieldFocused = true
+        }
     }
 }
 

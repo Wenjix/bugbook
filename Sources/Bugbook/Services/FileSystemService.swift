@@ -16,7 +16,11 @@ class FileSystemService {
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
     private let favoritesPrefix = "favorites_"
-    nonisolated private static let hiddenSidebarFolders: Set<String> = ["attachments", "inbox", "raw"]
+    nonisolated private static let hiddenSidebarFolders: Set<String> = [
+        "attachments", "inbox", "raw",
+        "aithreads", "assets", "comparisons", "covers", "icons",
+        "settings", "workspacelayouts", "daily notes 2"
+    ]
 
     init() {
         loadRecentWorkspaces()
@@ -111,10 +115,12 @@ class FileSystemService {
 
         var folders: [FileEntry] = []
         var files: [FileEntry] = []
+        folders.reserveCapacity(contents.count / 4)
+        files.reserveCapacity(contents.count / 2)
 
         for name in contents {
             if name.hasPrefix(".") { continue }
-            if name == "_schema.json" || name == "_index.json" { continue }
+            if name.hasPrefix("_") { continue }
             if name == "Daily Notes" || name == "Templates" { continue }
             if Self.hiddenSidebarFolders.contains(name.lowercased()) { continue }
 
@@ -124,17 +130,13 @@ class FileSystemService {
             guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                if isDatabaseFolder(at: fullPath) {
-                    // Database folder - read display name from _schema.json
-                    var dbName = name
-                    let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let schemaName = json["name"] as? String,
-                       !schemaName.isEmpty {
-                        dbName = schemaName
-                    }
-                    // Treat database as a non-expandable item (like TS version)
+                // Check for _schema.json directly — avoids a second fileExists call
+                // in isDatabaseFolder and then a redundant data load
+                let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
+                if let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    // Database folder — extract display name in same pass
+                    let dbName = (json["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? name
                     folders.append(FileEntry(
                         id: fullPath,
                         name: dbName,
@@ -143,27 +145,26 @@ class FileSystemService {
                         kind: .database
                     ))
                 } else if isCompanionFolder(name, siblings: siblingNames) {
-                    // Companion folder - skip, its contents are handled by the parent .md file
                     continue
                 } else {
-                    // Regular directory - flatten into parent (no visible folders)
                     let children = buildFileTree(at: fullPath, depth: depth + 1)
-                    for child in children {
-                        if child.isDatabase {
-                            folders.append(child)
-                        } else {
-                            files.append(child)
-                        }
-                    }
+                    folders.append(FileEntry(
+                        id: fullPath,
+                        name: name,
+                        path: fullPath,
+                        isDirectory: true,
+                        children: children.isEmpty ? nil : children
+                    ))
                 }
             } else if name.hasSuffix(".md") {
                 let isDbFile = name.hasSuffix(".db.md")
                 let icon = parseIconFromFile(at: fullPath)
 
-                // Check for companion folder children
-                let companionPath = companionFolderPath(for: fullPath)
+                // Check for companion folder — use siblingNames set instead of filesystem call
+                let companionName = String(name.dropLast(3))
                 var children: [FileEntry]?
-                if fm.fileExists(atPath: companionPath) {
+                if siblingNames.contains(companionName) {
+                    let companionPath = (path as NSString).appendingPathComponent(companionName)
                     children = buildFileTree(at: companionPath, depth: depth + 1)
                 }
 
@@ -1085,11 +1086,11 @@ class FileSystemService {
         defer { fh.closeFile() }
         let data = fh.readData(ofLength: 256)
         guard let head = String(data: data, encoding: .utf8) else { return nil }
-        guard let range = head.range(of: "<!-- icon:(.*?) -->", options: .regularExpression) else {
-            return nil
-        }
-        let match = String(head[range])
-        let inner = match.dropFirst(10).dropLast(4).trimmingCharacters(in: .whitespaces)
+        // Manual prefix scan — avoids regex allocation per file
+        guard let startRange = head.range(of: "<!-- icon:") else { return nil }
+        let afterPrefix = startRange.upperBound
+        guard let endRange = head.range(of: " -->", range: afterPrefix..<head.endIndex) else { return nil }
+        let inner = head[afterPrefix..<endRange.lowerBound].trimmingCharacters(in: .whitespaces)
         return inner.isEmpty ? nil : inner
     }
 

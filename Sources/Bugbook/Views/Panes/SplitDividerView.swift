@@ -16,33 +16,23 @@ struct SplitDividerView: View {
 
     private var isVerticalLine: Bool { axis == .horizontal }
 
+    private let dividerSize: CGFloat = Container.groutGap
+
     var body: some View {
         ZStack {
-            // Visible divider line
-            Rectangle()
-                .fill(lineColor)
-                .frame(
-                    width: isVerticalLine ? lineThickness : nil,
-                    height: isVerticalLine ? nil : lineThickness
-                )
+            // Grout gap — transparent so window bg shows through
+            Color.clear
 
             // Grip dots — centered on divider, visible on hover/drag
             if isHovered || isDragging {
                 gripDots
             }
-
-            // Transparent hit area
-            Color.clear
-                .frame(
-                    width: isVerticalLine ? 8 : nil,
-                    height: isVerticalLine ? nil : 8
-                )
-                .contentShape(Rectangle())
         }
         .frame(
-            width: isVerticalLine ? 8 : nil,
-            height: isVerticalLine ? nil : 8
+            width: isVerticalLine ? dividerSize : nil,
+            height: isVerticalLine ? nil : dividerSize
         )
+        .contentShape(Rectangle())
         #if os(macOS)
         .onHover { hovering in
             isHovered = hovering

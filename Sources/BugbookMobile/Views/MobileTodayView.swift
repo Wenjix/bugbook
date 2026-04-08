@@ -9,9 +9,7 @@ struct MobileTodayView: View {
     @State private var recentNotes: [MobileNoteFile] = []
 
     private var todayDateString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter.string(from: Date())
+        Self.todayFormatter.string(from: Date())
     }
 
     var body: some View {
@@ -173,6 +171,11 @@ struct MobileTodayView: View {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .abbreviated
         return f
+    }()
+    private static let todayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter
     }()
 
     private func relativeTime(from date: Date) -> String {

@@ -66,10 +66,10 @@ struct BugbookApp: App {
             }
 
             CommandGroup(after: .toolbar) {
-                Button("Toggle Rail") {
+                Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .toggleSidebar, object: nil)
                 }
-                .keyboardShortcut("\\", modifiers: .command)
+                .keyboardShortcut(".", modifiers: .command)
 
                 Divider()
 
@@ -84,7 +84,7 @@ struct BugbookApp: App {
                 .keyboardShortcut("]", modifiers: .command)
 
                 Button("Find in Page") {
-                    NotificationCenter.default.post(name: .findInPane, object: nil)
+                    NotificationCenter.default.post(name: .findInPage, object: nil)
                 }
                 .keyboardShortcut("f")
 
@@ -404,6 +404,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.post(name: .focusPaneByIndex, object: index)
             return nil
         }
+
+        // Cmd+K — intercept before native NSView responders (e.g. Ghostty terminal)
+        // so the command palette always opens regardless of which view has focus.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command, event.charactersIgnoringModifiers == "k" else { return event }
+            NotificationCenter.default.post(name: .quickOpen, object: nil)
+            return nil
+        }
+
+        // Cmd+F should route through the app-level notification layer even when
+        // an editor NSTextView or terminal responder currently has focus.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags == .command, event.charactersIgnoringModifiers == "f" else { return event }
+            NotificationCenter.default.post(name: .findInPage, object: nil)
+            return nil
+        }
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -419,6 +437,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.title = "Bugbook"
             window.styleMask.insert(.fullSizeContentView)
             window.isMovableByWindowBackground = true
+            window.backgroundColor = NSColor(Container.groutBg)
         }
     }
 
@@ -461,6 +480,7 @@ extension Notification.Name {
     static let movePageToDir = Notification.Name("movePageToDir")
     static let addToSidebar = Notification.Name("addToSidebar")
 
+    static let findInPage = Notification.Name("findInPage")
     static let findInPane = Notification.Name("findInPane")
 
     // Pane/Workspace system
