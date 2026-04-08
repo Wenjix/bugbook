@@ -56,12 +56,6 @@ struct PaneChromeBar: View {
                     .frame(height: 2)
             }
         }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.04))
-                .frame(height: 0.5)
-                .allowsHitTesting(false)
-        }
         .overlay(alignment: .leading) {
             if isReplaceWarning {
                 EmptyView()
