@@ -92,7 +92,7 @@ struct WorkspaceTabBar: View {
                     draggingId: $draggingId
                 ))
             }
-            .padding(.leading, sidebarOpen ? ShellZoomMetrics.size(4) : 0)
+            .padding(.leading, 0)
             Spacer(minLength: 0)
             layoutSavedIndicator
         }

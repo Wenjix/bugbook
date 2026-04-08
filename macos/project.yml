@@ -228,17 +228,6 @@ targets:
       - path: App/Assets.xcassets
     dependencies:
       - target: BugbookCore
-      - target: ChromiumBridge
-      - target: BugbookHelper
-        embed: false
-      - target: BugbookHelperAlerts
-        embed: false
-      - target: BugbookHelperGPU
-        embed: false
-      - target: BugbookHelperPlugin
-        embed: false
-      - target: BugbookHelperRenderer
-        embed: false
       - package: Sparkle
       - package: SentryCocoa
         product: Sentry
@@ -259,7 +248,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
-        NSPrincipalClass: BBChromiumApplication
+        NSPrincipalClass: NSApplication
         NSHighResolutionCapable: true
         SUFeedURL: ""
         SUPublicEDKey: ""
@@ -295,28 +284,10 @@ targets:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev
           ASSETCATALOG_COMPILER_APPICON_NAME: DevAppIcon
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DEBUG, BUGBOOK_DEV, BUGBOOK_BROWSER_CHROMIUM]
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DEBUG, BUGBOOK_DEV, BUGBOOK_BROWSER_WEBKIT]
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [BUGBOOK_BROWSER_CHROMIUM]
-    preBuildScripts:
-      - name: Validate CEF Runtime
-        path: ../scripts/validate-cef.sh
-        basedOnDependencyAnalysis: false
-    postBuildScripts:
-      - name: Copy CEF Assets
-        script: |
-          bash "$SRCROOT/../scripts/copy-cef-assets.sh" \
-            "$TARGET_BUILD_DIR/$WRAPPER_NAME" \
-            "$BUILT_PRODUCTS_DIR/Bugbook Helper.app" \
-            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Alerts).app" \
-            "$BUILT_PRODUCTS_DIR/Bugbook Helper (GPU).app" \
-            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Plugin).app" \
-            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Renderer).app"
-        inputFiles:
-          - $(SRCROOT)/vendor/cef/current/Release/Chromium Embedded Framework.framework
-        outputFiles:
-          - $(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Frameworks/Chromium Embedded Framework.framework
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [BUGBOOK_BROWSER_WEBKIT]
   BugbookUITests:
     type: bundle.ui-testing
     platform: macOS
@@ -336,12 +307,6 @@ schemes:
       targets:
         BugbookApp: all
         BugbookCore: all
-        ChromiumBridge: all
-        BugbookHelper: all
-        BugbookHelperAlerts: all
-        BugbookHelperGPU: all
-        BugbookHelperPlugin: all
-        BugbookHelperRenderer: all
         BugbookUITests: [test]
     run:
       config: Debug

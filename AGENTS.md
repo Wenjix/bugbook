@@ -27,6 +27,10 @@ Do not say "CI passed" unless the commit has been pushed and the GitHub Actions 
 - Leave unrelated tracked modifications alone unless the user explicitly asks to include them.
 - Do not stage local tool folders, generated build output, or workspace-specific metadata.
 
+## Xcode Project — Adding Swift Files
+
+The macOS app uses an Xcode project (`macos/Bugbook.xcodeproj`). When you add a new `.swift` file under `Sources/Bugbook/`, you MUST also add it to `project.pbxproj` (PBXFileReference, PBXBuildFile, the parent PBXGroup, and the Sources build phase). Files on disk but missing from the pbxproj will compile fine via `swift build` but fail in Xcode with "Cannot find type in scope" errors.
+
 ## CI Notes
 
 - The source of truth for package validation is SwiftPM (`swift build`, `swift test`).
