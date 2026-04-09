@@ -63,8 +63,13 @@ swift run BugbookCLI install --force
 ## Build and run
 
 ```bash
-# macOS app
+# macOS app (SwiftPM/WebKit fallback path)
 swift run Bugbook
+
+# macOS app bundle (Xcode/Chromium path)
+bash scripts/fetch-cef.sh
+cd macos && xcodegen generate
+xcodebuild -project /Users/maxforsey/Code/bugbook/macos/Bugbook.xcodeproj -scheme BugbookApp -configuration Debug build
 
 # CLI
 swift build && swift run BugbookCLI --help

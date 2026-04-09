@@ -27,7 +27,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Bugbook needs microphone access to record meeting audio for live transcription.</string>
 	<key>NSPrincipalClass</key>
-	<string>BBChromiumApplication</string>
+	<string>NSApplication</string>
 	<key>SUFeedURL</key>
 	<string></string>
 	<key>SUPublicEDKey</key>

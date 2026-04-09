@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 jobs:
   build:
@@ -45,6 +44,14 @@ jobs:
             ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-
             ${{ runner.os }}-spm-
 
+      - name: Cache CEF runtime
+        uses: actions/cache@v5
+        with:
+          path: macos/vendor/cef
+          key: ${{ runner.os }}-cef-${{ hashFiles('scripts/fetch-cef.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-cef-
+
       - name: Verify Ghostty archive
         run: |
           set -euo pipefail
@@ -53,9 +60,19 @@ jobs:
           file "$ARCHIVE"
           ar -t "$ARCHIVE" >/dev/null
 
+      - name: Fetch CEF runtime
+        run: bash scripts/fetch-cef.sh
+
       - name: Build
         run: |
           swift build
+
+      - name: Install XcodeGen
+        run: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
 
       - name: Run SwiftLint
         run: |
@@ -93,3 +110,16 @@ jobs:
 
       - name: Run smoke test
         run: bash scripts/smoke-cli.sh
+
+      - name: Generate Xcode project
+        run: |
+          cd macos
+          xcodegen generate
+
+      - name: Build macOS app target
+        run: |
+          xcodebuild \
+            -project /Users/runner/work/bugbook/bugbook/macos/Bugbook.xcodeproj \
+            -scheme BugbookApp \
+            -configuration Debug \
+            build
