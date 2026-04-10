@@ -71,6 +71,10 @@ enum SidebarContextType: Equatable {
 
     var isRecording: Bool = false
     var recordingBlockId: UUID?
+    /// Active meeting page recording session (independent of pane).
+    var activeMeetingSession: ActiveMeetingSession?
+    /// If set, the next meeting page loaded at this path should auto-start recording.
+    var pendingAutoRecordPath: String?
     var flashcardReviewOpen: Bool = false
     var showShortcutOverlay: Bool = false
     @ObservationIgnored lazy var aiThreadStore = AiThreadStore()

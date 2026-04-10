@@ -1,7 +1,8 @@
 import SwiftUI
 import Sentry
 import os
-#if BUGBOOK_BROWSER_CHROMIUM
+import UserNotifications
+#if BUGBOOK_BROWSER_CHROMIUM && canImport(ChromiumBridge)
 import ChromiumBridge
 #endif
 
@@ -12,22 +13,7 @@ struct BugbookApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .tint(Color.fallbackAccent)
-                .overlay(alignment: .topTrailing) {
-                    if AppEnvironment.isDev {
-                        Text("DEV")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.85))
-                            .clipShape(.capsule)
-                            .padding(.top, 4)
-                            .padding(.trailing, 72)
-                            .allowsHitTesting(false)
-                    }
-                }
+            BugbookWindowRootView()
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
@@ -262,8 +248,94 @@ struct BugbookApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+private struct BugbookWindowRootView: View {
+    let bootstrap: ContentViewBootstrap?
+
+    init(bootstrap: ContentViewBootstrap? = nil) {
+        self.bootstrap = bootstrap
+    }
+
+    var body: some View {
+        ContentView(bootstrap: bootstrap)
+            .tint(Color.fallbackAccent)
+            .overlay(alignment: .topTrailing) {
+                if AppEnvironment.isDev {
+                    Text("DEV")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.85))
+                        .clipShape(.capsule)
+                        .padding(.top, 4)
+                        .padding(.trailing, 72)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+@MainActor
+final class DetachedWindowManager {
+    static let shared = DetachedWindowManager()
+
+    private var windows: [UUID: NSWindow] = [:]
+    private var delegates: [UUID: DetachedWindowDelegate] = [:]
+
+    func openWindow(
+        title: String,
+        bootstrap: ContentViewBootstrap,
+        size: CGSize = CGSize(width: 1100, height: 700)
+    ) {
+        let windowID = UUID()
+        let contentView = BugbookWindowRootView(bootstrap: bootstrap)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.identifier = NSUserInterfaceItemIdentifier(windowID.uuidString)
+        window.title = title
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unifiedCompact
+        window.isReleasedWhenClosed = false
+        window.contentViewController = NSHostingController(rootView: contentView)
+        let delegate = DetachedWindowDelegate { [weak self] in
+            self?.closeWindow(id: windowID)
+        }
+        window.delegate = delegate
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        windows[windowID] = window
+        delegates[windowID] = delegate
+    }
+
+    private func closeWindow(id: UUID) {
+        windows.removeValue(forKey: id)
+        delegates.removeValue(forKey: id)
+    }
+}
+
+@MainActor
+private final class DetachedWindowDelegate: NSObject, NSWindowDelegate {
+    private let onClose: () -> Void
+
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose()
+    }
+}
+
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
         Log.app.info("Bugbook launching")
@@ -442,6 +514,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    /// Show notifications even when app is in foreground.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    /// Handle notification action buttons.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        let eventId = userInfo["eventId"] as? String ?? ""
+        let eventTitle = userInfo["eventTitle"] as? String ?? "Meeting"
+
+        switch response.actionIdentifier {
+        case MeetingNotificationService.recordActionIdentifier:
+            NotificationCenter.default.post(
+                name: .meetingNotificationRecord,
+                object: nil,
+                userInfo: ["eventId": eventId, "eventTitle": eventTitle]
+            )
+        case MeetingNotificationService.openNotesActionIdentifier,
+             UNNotificationDefaultActionIdentifier:
+            NotificationCenter.default.post(
+                name: .meetingNotificationOpenNotes,
+                object: nil,
+                userInfo: ["eventId": eventId, "eventTitle": eventTitle]
+            )
+        default:
+            break
+        }
+
+        completionHandler()
+    }
 }
 
 extension Notification.Name {
@@ -454,7 +568,6 @@ extension Notification.Name {
     static let quickOpenNewTab = Notification.Name("quickOpenNewTab")
     static let openSettings = Notification.Name("openSettings")
     static let openAIPanel = Notification.Name("openAIPanel")
-    static let openFullChat = Notification.Name("openFullChat")
     static let askAI = Notification.Name("askAI")
     static let toggleTheme = Notification.Name("toggleTheme")
     static let newDatabase = Notification.Name("newDatabase")
@@ -464,7 +577,6 @@ extension Notification.Name {
     static let openDailyNote = Notification.Name("openDailyNote")
     static let openGraphView = Notification.Name("openGraphView")
     static let openMail = Notification.Name("openMail")
-    static let openMessages = Notification.Name("openMessages")
     static let editorZoomIn = Notification.Name("editorZoomIn")
     static let editorZoomOut = Notification.Name("editorZoomOut")
     static let editorZoomReset = Notification.Name("editorZoomReset")
@@ -480,6 +592,9 @@ extension Notification.Name {
     static let movePageToDir = Notification.Name("movePageToDir")
     static let addToSidebar = Notification.Name("addToSidebar")
 
+    static let stopMeetingRecording = Notification.Name("stopMeetingRecording")
+    static let meetingNotificationRecord = Notification.Name("meetingNotificationRecord")
+    static let meetingNotificationOpenNotes = Notification.Name("meetingNotificationOpenNotes")
     static let findInPage = Notification.Name("findInPage")
     static let findInPane = Notification.Name("findInPane")
 

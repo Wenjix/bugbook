@@ -91,6 +91,11 @@ class BlockDocument {
     var meetingVolatileText: String = ""
     @ObservationIgnored var onStartMeeting: ((UUID) -> Void)?
     @ObservationIgnored var onStopMeeting: ((UUID) -> Void)?
+
+    /// Raw YAML frontmatter (without `---` delimiters), preserved through load/save cycle.
+    var yamlFrontmatter: String = ""
+    /// Whether this page has `type: meeting` in its YAML frontmatter.
+    var isMeetingPage: Bool { MarkdownBlockParser.yamlValue(for: "type", in: yamlFrontmatter) == "meeting" }
     @ObservationIgnored var transcriptionService: TranscriptionService?
     @ObservationIgnored var availablePages: [FileEntry] = []
     @ObservationIgnored var filePath: String?
@@ -101,6 +106,14 @@ class BlockDocument {
     @ObservationIgnored private var persistsBlockIDs: Bool = false
 
     var markdown: String {
+        var parts: [String] = []
+
+        // YAML frontmatter
+        if !yamlFrontmatter.isEmpty {
+            parts.append("---\n\(yamlFrontmatter)\n---")
+        }
+
+        // Comment-style metadata (icon, cover, full-width)
         let metadata = MarkdownBlockParser.Metadata(
             icon: icon,
             coverUrl: coverUrl,
@@ -108,11 +121,15 @@ class BlockDocument {
             fullWidth: fullWidth
         )
         let metaStr = MarkdownBlockParser.serializeMetadata(metadata)
-        let blockStr = MarkdownBlockParser.serialize(blocks, includeBlockIDComments: persistsBlockIDs)
-        if metaStr.isEmpty {
-            return blockStr
+        if !metaStr.isEmpty {
+            parts.append(metaStr)
         }
-        return metaStr + "\n" + blockStr
+
+        // Block content
+        let blockStr = MarkdownBlockParser.serialize(blocks, includeBlockIDComments: persistsBlockIDs)
+        parts.append(blockStr)
+
+        return parts.joined(separator: "\n")
     }
 
     init(markdown: String) {
@@ -123,6 +140,7 @@ class BlockDocument {
         self.coverPosition = parsed.metadata.coverPosition
         self.fullWidth = parsed.metadata.fullWidth
         self.blocks = parsed.blocks
+        self.yamlFrontmatter = parsed.yamlFrontmatter
     }
 
     func replaceMarkdown(_ markdown: String) {
@@ -133,6 +151,7 @@ class BlockDocument {
         coverPosition = parsed.metadata.coverPosition
         fullWidth = parsed.metadata.fullWidth
         blocks = parsed.blocks
+        yamlFrontmatter = parsed.yamlFrontmatter
     }
 
     func block(for id: UUID) -> Block? {
@@ -1854,14 +1873,17 @@ class BlockDocument {
     private static func parseDocument(_ markdown: String) -> (
         metadata: MarkdownBlockParser.Metadata,
         blocks: [Block],
-        persistsBlockIDs: Bool
+        persistsBlockIDs: Bool,
+        yamlFrontmatter: String
     ) {
-        let (metadata, content) = MarkdownBlockParser.parseMetadata(markdown)
+        let (yaml, afterYaml) = MarkdownBlockParser.stripYAMLFrontmatter(markdown)
+        let (metadata, content) = MarkdownBlockParser.parseMetadata(afterYaml)
         let output = MarkdownBlockParser.parseWithFlags(content)
         return (
             metadata: metadata,
             blocks: output.blocks,
-            persistsBlockIDs: output.hasBlockIDs
+            persistsBlockIDs: output.hasBlockIDs,
+            yamlFrontmatter: yaml
         )
     }
 

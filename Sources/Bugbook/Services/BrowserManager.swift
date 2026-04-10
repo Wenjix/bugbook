@@ -6,16 +6,22 @@ import Observation
 @Observable
 final class BrowserManager {
     private(set) var sessions: [UUID: BrowserPaneSession] = [:]
+    private(set) var browsingHistory: [BrowserRecentVisit]
+    var isHistoryEnabled = true
 
     @ObservationIgnored private let engine: any BrowserEngine
     @ObservationIgnored private let snapshotStore: BrowserPaneSnapshotStore
+    @ObservationIgnored private let historyStore: BrowserHistoryStore
 
     init(
         engine: (any BrowserEngine)? = nil,
-        snapshotStore: BrowserPaneSnapshotStore = BrowserPaneSnapshotStore()
+        snapshotStore: BrowserPaneSnapshotStore = BrowserPaneSnapshotStore(),
+        historyStore: BrowserHistoryStore = BrowserHistoryStore()
     ) {
         self.engine = engine ?? BrowserEngineFactory.makeDefault()
         self.snapshotStore = snapshotStore
+        self.historyStore = historyStore
+        self.browsingHistory = historyStore.load()
     }
 
     func session(for paneID: UUID) -> BrowserPaneSession {
@@ -50,6 +56,37 @@ final class BrowserManager {
         for paneID in sessions.keys {
             persistSession(paneID)
         }
+    }
+
+    func clearHistory() {
+        browsingHistory.removeAll()
+        historyStore.clear()
+        snapshotStore.clearHistory()
+        for paneID in sessions.keys {
+            sessions[paneID]?.recentVisits.removeAll()
+            persistSession(paneID)
+        }
+    }
+
+    func clearCookies() async throws {
+        try await engine.clearCookies()
+    }
+
+    func setHistoryEnabled(_ enabled: Bool) {
+        isHistoryEnabled = enabled
+    }
+
+    func restoreSessionSnapshot(_ snapshot: BrowserPaneSnapshot, for paneID: UUID) {
+        let session = BrowserPaneSession(paneID: paneID, snapshot: snapshot)
+        session.manager = self
+        sessions[paneID] = session
+    }
+
+    func snapshot(for paneID: UUID) -> BrowserPaneSnapshot? {
+        if let session = sessions[paneID] {
+            return session.snapshot
+        }
+        return snapshotStore.snapshot(for: paneID)
     }
 
     func ensurePage(for paneID: UUID, tabID: UUID) -> any BrowserPage {
@@ -131,9 +168,11 @@ final class BrowserManager {
     }
 
     fileprivate func recordVisit(title: String, url: URL, paneID: UUID) {
+        guard isHistoryEnabled else { return }
         let session = session(for: paneID)
         let visit = BrowserRecentVisit(title: title, urlString: url.absoluteString)
         session.recordVisit(visit)
+        recordGlobalVisit(visit)
         persistSession(paneID)
     }
 
@@ -152,6 +191,15 @@ final class BrowserManager {
 
     fileprivate func updateDownloadStatus(_ message: String, paneID: UUID) {
         session(for: paneID).lastDownloadMessage = message
+    }
+
+    private func recordGlobalVisit(_ visit: BrowserRecentVisit) {
+        browsingHistory.removeAll { $0.urlString == visit.urlString }
+        browsingHistory.insert(visit, at: 0)
+        if browsingHistory.count > 200 {
+            browsingHistory = Array(browsingHistory.prefix(200))
+        }
+        historyStore.save(browsingHistory)
     }
 
     private func makeSession(for paneID: UUID) -> BrowserPaneSession {
@@ -285,6 +333,24 @@ final class BrowserPaneSession {
         manager?.persistSession(paneID)
     }
 
+    func moveTab(from sourceIndex: Int, to destinationIndex: Int) {
+        guard sourceIndex != destinationIndex,
+              sourceIndex >= 0, sourceIndex < tabs.count,
+              destinationIndex >= 0, destinationIndex <= tabs.count else { return }
+
+        let selectedTabID = self.selectedTabID
+        let tab = tabs.remove(at: sourceIndex)
+        let adjustedDestination = destinationIndex > sourceIndex ? destinationIndex - 1 : destinationIndex
+        tabs.insert(tab, at: adjustedDestination)
+
+        if let selectedTabID,
+           let updatedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
+            self.selectedTabID = tabs[updatedIndex].id
+        }
+
+        manager?.persistSession(paneID)
+    }
+
     func selectTab(_ tabID: UUID) {
         selectedTabID = tabID
         if let activeTab,
@@ -391,6 +457,22 @@ struct BrowserPaneSnapshotStore {
         try? fileManager.removeItem(at: fileURL(for: paneID))
     }
 
+    func clearHistory() {
+        guard let enumerator = fileManager.enumerator(at: directoryURL, includingPropertiesForKeys: nil) else {
+            return
+        }
+
+        for case let url as URL in enumerator where url.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: url),
+                  var snapshot = try? decoder.decode(BrowserPaneSnapshot.self, from: data) else {
+                continue
+            }
+            snapshot.recentVisits.removeAll()
+            guard let encoded = try? encoder.encode(snapshot) else { continue }
+            try? encoded.write(to: url, options: .atomic)
+        }
+    }
+
     private func ensureDirectoryExists() throws {
         guard !fileManager.fileExists(atPath: directoryURL.path) else { return }
         try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
@@ -406,5 +488,62 @@ struct BrowserPaneSnapshotStore {
         return baseDirectory
             .appendingPathComponent("Bugbook", isDirectory: true)
             .appendingPathComponent("BrowserPanes", isDirectory: true)
+    }
+}
+
+struct BrowserHistoryStore {
+    private let fileManager: FileManager
+    private let fileURL: URL
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+    private let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
+    init(fileManager: FileManager = .default, fileURL: URL? = nil) {
+        self.fileManager = fileManager
+        self.fileURL = fileURL ?? Self.defaultFileURL(fileManager: fileManager)
+    }
+
+    func load() -> [BrowserRecentVisit] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let visits = try? decoder.decode([BrowserRecentVisit].self, from: data) else {
+            return []
+        }
+        return visits
+    }
+
+    func save(_ visits: [BrowserRecentVisit]) {
+        do {
+            try ensureDirectoryExists()
+            let data = try encoder.encode(visits)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            Log.app.error("Failed to persist browser history: \(error.localizedDescription)")
+        }
+    }
+
+    func clear() {
+        try? fileManager.removeItem(at: fileURL)
+    }
+
+    private func ensureDirectoryExists() throws {
+        let directoryURL = fileURL.deletingLastPathComponent()
+        guard !fileManager.fileExists(atPath: directoryURL.path) else { return }
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    }
+
+    private static func defaultFileURL(fileManager: FileManager) -> URL {
+        let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return baseDirectory
+            .appendingPathComponent("Bugbook", isDirectory: true)
+            .appendingPathComponent("BrowserHistory", isDirectory: true)
+            .appendingPathComponent("history.json")
     }
 }

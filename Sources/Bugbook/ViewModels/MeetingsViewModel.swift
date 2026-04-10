@@ -112,33 +112,59 @@ final class MeetingsViewModel {
             if WorkspacePathRules.shouldIgnoreAbsolutePath(url.path) {
                 continue
             }
-            // Skip trash
             if url.path.contains("/.trash/") { continue }
 
             let filePath = url.path
             let filename = url.lastPathComponent
             let pageName = String(filename.dropLast(3)) // strip .md
 
-            // Compute parent page name relative to workspace
             let relativePath = String(filePath.dropFirst(workspace.count))
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             let parentPageName = (relativePath as NSString).deletingLastPathComponent
             let displayParent = parentPageName.isEmpty ? pageName : "\(parentPageName)/\(pageName)"
 
-            // Strategy 1: Look for <!-- meeting --> blocks inside file content
-            if let content = try? String(contentsOfFile: filePath, encoding: .utf8) {
-                let meetingMatches = parseMeetingBlocks(content: content, pageName: pageName, parentDisplay: displayParent, filePath: filePath)
-                results.append(contentsOf: meetingMatches)
-                if !meetingMatches.isEmpty { continue }
+            guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
+
+            // Strategy 1: YAML frontmatter with `type: meeting` — the canonical meeting format
+            if let meeting = parseFrontmatterMeeting(content: content, pageName: pageName, displayParent: displayParent, filePath: filePath) {
+                results.append(meeting)
+                continue
             }
 
-            // Strategy 2: Date-prefixed meeting note pattern (YYYY-MM-DD - Title.md)
-            if let meeting = parseDatePrefixedMeeting(filename: filename, displayParent: displayParent, filePath: filePath) {
-                results.append(meeting)
-            }
+            // Strategy 2: legacy `<!-- meeting -->` blocks embedded in any page
+            let meetingMatches = parseMeetingBlocks(content: content, pageName: pageName, parentDisplay: displayParent, filePath: filePath)
+            results.append(contentsOf: meetingMatches)
         }
 
         return results
+    }
+
+    /// Parse a meeting page that uses `type: meeting` YAML frontmatter.
+    /// Returns nil if the file isn't a frontmatter-typed meeting page.
+    private nonisolated static func parseFrontmatterMeeting(
+        content: String,
+        pageName: String,
+        displayParent: String,
+        filePath: String
+    ) -> DiscoveredMeeting? {
+        let (yaml, _) = MarkdownBlockParser.stripYAMLFrontmatter(content)
+        guard !yaml.isEmpty,
+              MarkdownBlockParser.yamlValue(for: "type", in: yaml) == "meeting" else {
+            return nil
+        }
+
+        let titleField = MarkdownBlockParser.yamlValue(for: "title", in: yaml)
+        let dateField = MarkdownBlockParser.yamlValue(for: "date", in: yaml)
+
+        let title = (titleField?.isEmpty == false) ? titleField! : pageName
+        let timestamp = dateField.flatMap { MeetingNoteService.isoDateFormatter.date(from: $0) } ?? fileModDate(filePath)
+
+        return DiscoveredMeeting(
+            title: title,
+            timestamp: timestamp,
+            parentPageName: displayParent,
+            filePath: filePath
+        )
     }
 
     /// Parse `<!-- meeting -->...<!-- /meeting -->` blocks from markdown content.
@@ -184,45 +210,6 @@ final class MeetingsViewModel {
         return results
     }
 
-    /// Parse date-prefixed meeting note files like "2024-01-15 - Weekly Standup.md"
-    /// or "2024-01-15 \u{2014} Weekly Standup.md"
-    private nonisolated static func parseDatePrefixedMeeting(
-        filename: String,
-        displayParent: String,
-        filePath: String
-    ) -> DiscoveredMeeting? {
-        let name = String(filename.dropLast(3)) // strip .md
-        // Match YYYY-MM-DD followed by separator
-        guard name.count >= 10 else { return nil }
-        let datePrefix = String(name.prefix(10))
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        guard let date = formatter.date(from: datePrefix) else { return nil }
-
-        // Extract title after separator (dash, em-dash, or pipe)
-        let afterDate = String(name.dropFirst(10)).trimmingCharacters(in: .whitespaces)
-        let title: String
-        if afterDate.hasPrefix("\u{2014}") || afterDate.hasPrefix("-") || afterDate.hasPrefix("|") {
-            title = String(afterDate.dropFirst()).trimmingCharacters(in: .whitespaces)
-        } else if afterDate.isEmpty {
-            title = datePrefix
-        } else {
-            // Doesn't match the meeting note pattern
-            return nil
-        }
-
-        guard !title.isEmpty else { return nil }
-
-        return DiscoveredMeeting(
-            title: title,
-            timestamp: date,
-            parentPageName: displayParent,
-            filePath: filePath
-        )
-    }
-
     // MARK: - Helpers
 
     private nonisolated static func extractFirstHeading(from text: String) -> String? {
@@ -245,24 +232,27 @@ final class MeetingsViewModel {
         return nil
     }
 
+    private nonisolated static let legacyLongDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d, yyyy"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    private nonisolated static let legacyShortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
     private nonisolated static func extractDateFromMetadata(_ text: String) -> Date? {
-        // Look for **Date:** EEEE, MMMM d, yyyy  or  yyyy-MM-dd
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("**Date:**") else { continue }
             let dateStr = String(trimmed.dropFirst("**Date:**".count)).trimmingCharacters(in: .whitespaces)
-
-            // Try long format first
-            let longFmt = DateFormatter()
-            longFmt.dateFormat = "EEEE, MMMM d, yyyy"
-            longFmt.locale = Locale(identifier: "en_US_POSIX")
-            if let date = longFmt.date(from: dateStr) { return date }
-
-            // Try ISO-style
-            let isoFmt = DateFormatter()
-            isoFmt.dateFormat = "yyyy-MM-dd"
-            isoFmt.locale = Locale(identifier: "en_US_POSIX")
-            if let date = isoFmt.date(from: dateStr) { return date }
+            if let date = legacyLongDateFormatter.date(from: dateStr) { return date }
+            if let date = legacyShortDateFormatter.date(from: dateStr) { return date }
         }
         return nil
     }

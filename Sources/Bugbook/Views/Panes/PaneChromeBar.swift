@@ -110,15 +110,14 @@ struct PaneChromeBar: View {
             if breadcrumbs.count > 1, let onNav = onBreadcrumbNavigate {
                 // Show parent breadcrumbs (all except last) as clickable, then current page as label
                 ForEach(breadcrumbs.dropLast()) { crumb in
-                    Button {
-                        onNav(crumb)
-                    } label: {
-                        Text(crumb.name)
-                            .font(.system(size: 11))
-                            .foregroundStyle(mutedColor)
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(.plain)
+                    Text(crumb.name)
+                        .font(.system(size: 11))
+                        .foregroundStyle(mutedColor)
+                        .lineLimit(1)
+                        .padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onNav(crumb) }
+                        .appCursor(.pointingHand)
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .medium))

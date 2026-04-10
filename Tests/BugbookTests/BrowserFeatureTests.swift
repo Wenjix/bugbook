@@ -31,6 +31,10 @@ final class BrowserFeatureTests: XCTestCase {
     func testAppSettingsBrowserFieldsRoundTrip() throws {
         var settings = AppSettings.default
         settings.browserSearchEngine = .kagi
+        settings.browserHistoryEnabled = false
+        settings.browserSuggestionsEnabled = true
+        settings.browserSuggestionLimit = 10
+        settings.browserSuggestsBugbookPages = false
         settings.browserChrome.showsBackForwardButtons = true
         settings.browserChrome.showsStatusBar = true
         settings.browserQuickLaunchItems = [
@@ -42,6 +46,10 @@ final class BrowserFeatureTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
 
         XCTAssertEqual(decoded.browserSearchEngine, .kagi)
+        XCTAssertFalse(decoded.browserHistoryEnabled)
+        XCTAssertTrue(decoded.browserSuggestionsEnabled)
+        XCTAssertEqual(decoded.browserSuggestionLimit, 10)
+        XCTAssertFalse(decoded.browserSuggestsBugbookPages)
         XCTAssertTrue(decoded.browserChrome.showsBackForwardButtons)
         XCTAssertTrue(decoded.browserChrome.showsStatusBar)
         XCTAssertEqual(decoded.browserQuickLaunchItems, settings.browserQuickLaunchItems)
@@ -96,6 +104,50 @@ final class BrowserFeatureTests: XCTestCase {
 
         store.removeSnapshot(for: paneID)
         XCTAssertNil(store.snapshot(for: paneID))
+    }
+
+    func testBrowserHistoryStoreRoundTripsVisits() {
+        let directoryURL = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let store = BrowserHistoryStore(fileURL: directoryURL.appendingPathComponent("history.json"))
+        let visit = BrowserRecentVisit(
+            title: "Example",
+            urlString: "https://example.com",
+            visitedAt: Date(timeIntervalSince1970: 123)
+        )
+
+        store.save([visit])
+        XCTAssertEqual(store.load(), [visit])
+
+        store.clear()
+        XCTAssertTrue(store.load().isEmpty)
+    }
+
+    func testBrowserPaneSessionMoveTabPreservesSelectedTab() {
+        let manager = BrowserManager(snapshotStore: BrowserPaneSnapshotStore(directoryURL: temporaryDirectory()))
+        let paneID = UUID()
+        let session = manager.session(for: paneID)
+        let secondTabID = session.openNewTab(url: URL(string: "https://example.com/second"))
+        let thirdTabID = session.openNewTab(url: URL(string: "https://example.com/third"))
+
+        session.selectTab(secondTabID)
+        session.moveTab(from: 1, to: 3)
+
+        XCTAssertEqual(session.tabs.map(\.id), [session.tabs[0].id, thirdTabID, secondTabID])
+        XCTAssertEqual(session.selectedTabID, secondTabID)
+    }
+
+    func testWorkspaceManagerDetachWorkspaceLeavesFallbackWorkspace() {
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+        manager.addWorkspace(name: "One")
+
+        let detached = manager.detachWorkspace(at: 0)
+
+        XCTAssertEqual(detached?.name, "One")
+        XCTAssertEqual(manager.workspaces.count, 1)
+        XCTAssertEqual(manager.activeWorkspaceIndex, 0)
     }
 
     func testBrowserCleanupProposalUsesSavedAndDuplicateSignals() {

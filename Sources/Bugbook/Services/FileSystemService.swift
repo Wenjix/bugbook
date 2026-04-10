@@ -19,7 +19,9 @@ class FileSystemService {
     nonisolated private static let hiddenSidebarFolders: Set<String> = [
         "attachments", "inbox", "raw",
         "aithreads", "assets", "comparisons", "covers", "icons",
-        "settings", "workspacelayouts", "daily notes 2"
+        "settings", "workspacelayouts", "daily notes 2",
+        // Logseq vault leftovers
+        "journals", "logseq", "whiteboards"
     ]
 
     init() {
@@ -126,10 +128,15 @@ class FileSystemService {
 
             let fullPath = (path as NSString).appendingPathComponent(name)
             if WorkspacePathRules.shouldIgnoreAbsolutePath(fullPath) { continue }
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+            // Single stat() syscall for both directory check and file size, instead of
+            // calling fileExists then attributesOfItem separately.
+            let resourceValues = try? URL(fileURLWithPath: fullPath).resourceValues(
+                forKeys: [.isDirectoryKey, .fileSizeKey]
+            )
+            guard let resourceValues else { continue }
+            let isDirBool = resourceValues.isDirectory ?? false
 
-            if isDir.boolValue {
+            if isDirBool {
                 // Check for _schema.json directly — avoids a second fileExists call
                 // in isDatabaseFolder and then a redundant data load
                 let schemaPath = (fullPath as NSString).appendingPathComponent("_schema.json")
@@ -148,16 +155,25 @@ class FileSystemService {
                     continue
                 } else {
                     let children = buildFileTree(at: fullPath, depth: depth + 1)
+                    // Skip folders that have no visible children (after filtering empties)
+                    if children.isEmpty { continue }
                     folders.append(FileEntry(
                         id: fullPath,
                         name: name,
                         path: fullPath,
                         isDirectory: true,
-                        children: children.isEmpty ? nil : children
+                        children: children
                     ))
                 }
             } else if name.hasSuffix(".md") {
                 let isDbFile = name.hasSuffix(".db.md")
+
+                // Skip empty .md files (and the `# \n` placeholder from createNewFile).
+                // Database files are kept regardless of size since they store metadata elsewhere.
+                if !isDbFile, let size = resourceValues.fileSize, size < 10 {
+                    continue
+                }
+
                 let icon = parseIconFromFile(at: fullPath)
 
                 // Check for companion folder — use siblingNames set instead of filesystem call

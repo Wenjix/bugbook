@@ -53,15 +53,4 @@ struct Workspace: Identifiable, Codable, Equatable {
         )
     }
 
-    /// Create a workspace from an existing OpenFile (migration from tab system).
-    static func fromOpenFile(_ file: OpenFile, name: String = "Workspace") -> Workspace {
-        Workspace(
-            id: UUID(),
-            name: name,
-            icon: nil,
-            root: .leaf(.init(id: file.id, content: .document(openFile: file))),
-            focusedPaneId: file.id,
-            createdAt: Date()
-        )
-    }
 }

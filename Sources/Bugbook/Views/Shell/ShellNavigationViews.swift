@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import BugbookCore
 
 enum ShellSidebarMetrics {
@@ -28,6 +29,7 @@ struct HarborSidebarView<ContextualContent: View>: View {
     let onSelectEntry: (FileEntry) -> Void
     let onRefreshTree: () -> Void
     let onOpenSettings: () -> Void
+    let onNavItemTap: (ShellNavItem, _ inNewTab: Bool) -> Void
     let contextualLabel: String?
     @ViewBuilder let contextualContent: () -> ContextualContent
 
@@ -39,6 +41,7 @@ struct HarborSidebarView<ContextualContent: View>: View {
         let stored = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
         return Set(stored)
     }()
+    @State private var showTrashPopover = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -53,19 +56,23 @@ struct HarborSidebarView<ContextualContent: View>: View {
             .padding(.trailing, inset)
 
             // ── Fixed Zone ──────────────────────────────────
-            // Icon row: Home, Search
-            HStack(spacing: ShellZoomMetrics.size(2)) {
-                fixedIconButton("house", help: "Home") {
-                    NotificationCenter.default.post(name: .openGateway, object: nil)
+            // Vertical navigation list. Click replaces focused pane; Cmd+click opens new workspace tab.
+            VStack(alignment: .leading, spacing: ShellZoomMetrics.size(1)) {
+                ForEach(ShellNavigationItems.all) { item in
+                    ShellSidebarShortcutRow(
+                        title: item.label,
+                        systemImage: item.icon,
+                        verticalPadding: ShellZoomMetrics.size(5),
+                        action: {
+                            let cmdHeld = NSEvent.modifierFlags.contains(.command)
+                            onNavItemTap(item, cmdHeld)
+                        }
+                    )
                 }
-                fixedIconButton("magnifyingglass", help: "Search") {
-                    NotificationCenter.default.post(name: .quickOpen, object: nil)
-                }
-                Spacer(minLength: 0)
             }
-            .padding(.top, ShellZoomMetrics.size(2))
+            .padding(.top, ShellZoomMetrics.size(4))
             .padding(.horizontal, inset)
-            .padding(.bottom, ShellZoomMetrics.size(6))
+            .padding(.bottom, ShellZoomMetrics.size(8))
 
             // Favorites
             if !appState.favorites.isEmpty {
@@ -94,9 +101,6 @@ struct HarborSidebarView<ContextualContent: View>: View {
 
             // ── Contextual Zone ─────────────────────────────
             if let label = contextualLabel {
-                Divider()
-                    .padding(.horizontal, inset)
-
                 Text(label.uppercased())
                     .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
                     .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
@@ -110,19 +114,45 @@ struct HarborSidebarView<ContextualContent: View>: View {
 
             Spacer(minLength: 0)
 
-            // Footer — settings
-            Button(action: onOpenSettings) {
-                HStack(spacing: ShellZoomMetrics.size(8)) {
-                    Image(systemName: "gearshape")
-                        .font(ShellZoomMetrics.font(Typography.bodySmall))
-                    Text("Settings")
-                        .font(ShellZoomMetrics.font(Typography.body))
-                    Spacer(minLength: 0)
+            // Footer — Trash above Settings
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: { showTrashPopover.toggle() }) {
+                    HStack(spacing: ShellZoomMetrics.size(8)) {
+                        Image(systemName: "trash")
+                            .font(ShellZoomMetrics.font(Typography.bodySmall))
+                        Text("Trash")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(.secondary)
-                .padding(.vertical, ShellZoomMetrics.size(10))
+                .buttonStyle(.plain)
+                .floatingPopover(isPresented: $showTrashPopover) {
+                    TrashPopoverView(
+                        appState: appState,
+                        fileSystem: fileSystem,
+                        onRestore: { onRefreshTree() }
+                    )
+                    .frame(width: 360, height: 480)
+                    .popoverSurface()
+                }
+
+                Button(action: onOpenSettings) {
+                    HStack(spacing: ShellZoomMetrics.size(8)) {
+                        Image(systemName: "gearshape")
+                            .font(ShellZoomMetrics.font(Typography.bodySmall))
+                        Text("Settings")
+                            .font(ShellZoomMetrics.font(Typography.body))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, ShellZoomMetrics.size(6))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             .padding(.horizontal, inset)
             .padding(.bottom, ShellZoomMetrics.size(8))
         }
@@ -142,6 +172,29 @@ struct HarborSidebarView<ContextualContent: View>: View {
         .buttonStyle(.plain)
         .help(help)
     }
+}
+
+// MARK: - Fixed Navigation Items
+
+/// A row in the fixed top navigation list of HarborSidebarView.
+struct ShellNavItem: Identifiable {
+    let id: String
+    let label: String
+    let icon: String
+    let notification: Notification.Name
+}
+
+enum ShellNavigationItems {
+    static let all: [ShellNavItem] = [
+        ShellNavItem(id: "home", label: "Home", icon: "house", notification: .openGateway),
+        ShellNavItem(id: "search", label: "Search", icon: "magnifyingglass", notification: .quickOpen),
+        ShellNavItem(id: "meeting", label: "Meeting", icon: "waveform", notification: .openMeetings),
+        ShellNavItem(id: "calendar", label: "Calendar", icon: "calendar.badge.clock", notification: .openCalendar),
+        ShellNavItem(id: "terminal", label: "Terminal", icon: "terminal", notification: .openTerminal),
+        ShellNavItem(id: "browser", label: "Browser", icon: "globe", notification: .openBrowser),
+        ShellNavItem(id: "mail", label: "Mail", icon: "envelope", notification: .openMail),
+        ShellNavItem(id: "notes", label: "Notes", icon: "doc.text", notification: .openDailyNote)
+    ]
 }
 
 // MARK: - Sidebar Resize Handle
@@ -214,8 +267,9 @@ private struct ShellSidebarSectionHeaderView: View {
 private struct ShellSidebarShortcutRow: View {
     let title: String
     let systemImage: String
-    var trailingText: String? = nil
+    var trailingText: String?
     var isSelected = false
+    var verticalPadding: CGFloat?
     var action: () -> Void
 
     var body: some View {
@@ -236,7 +290,7 @@ private struct ShellSidebarShortcutRow: View {
             }
             .foregroundStyle(isSelected ? Color.accentColor : .primary)
             .padding(.horizontal, ShellSidebarMetrics.rowHorizontalPadding)
-            .padding(.vertical, ShellSidebarMetrics.rowVerticalPadding)
+            .padding(.vertical, verticalPadding ?? ShellSidebarMetrics.rowVerticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
                     .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
@@ -501,27 +555,6 @@ struct CalendarContextualSidebarView: View {
                     MiniCalendarView(selectedDate: $calendarVM.selectedDate)
                         .padding(.horizontal, ShellZoomMetrics.size(10))
                         .padding(.bottom, ShellZoomMetrics.size(12))
-
-                    HStack(spacing: ShellZoomMetrics.size(8)) {
-                        ForEach(CalendarViewMode.allCases, id: \.self) { mode in
-                            Button {
-                                calendarVM.viewMode = mode
-                            } label: {
-                                Text(mode.rawValue)
-                                    .font(ShellZoomMetrics.font(11, weight: calendarVM.viewMode == mode ? .medium : .regular))
-                                    .foregroundStyle(calendarVM.viewMode == mode ? Color.accentColor : .primary)
-                                    .padding(.horizontal, ShellZoomMetrics.size(8))
-                                    .padding(.vertical, ShellZoomMetrics.size(5))
-                                    .background(
-                                        RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                                            .fill(calendarVM.viewMode == mode ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.04))
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, ShellZoomMetrics.size(12))
-                    .padding(.bottom, ShellZoomMetrics.size(12))
 
                     Text("Calendars")
                         .font(ShellZoomMetrics.font(Typography.caption, weight: .semibold))

@@ -1488,6 +1488,21 @@ class BlockNSTextView: NSTextView {
             return // Image paste handled
         }
 
+        // Strip Bugbook metadata comments (<!-- icon:... -->, <!-- full-width -->, etc.)
+        // from pasted markdown so "Copy Page Content" round-trips cleanly back into the editor.
+        if let string = NSPasteboard.general.string(forType: .string),
+           string.contains("<!--") {
+            let cleaned = string.replacingOccurrences(
+                of: "<!--.*?-->\\n?",
+                with: "",
+                options: .regularExpression
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned != string {
+                insertText(cleaned, replacementRange: selectedRange())
+                return
+            }
+        }
+
         super.paste(sender)
     }
 

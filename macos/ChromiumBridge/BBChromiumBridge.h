@@ -25,6 +25,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface BBChromiumRuntime : NSObject
 + (void)startIfNeeded;
 + (NSString *)runtimeDescription;
++ (void)clearCookies;
 @end
 
 @interface BBChromiumPage : NSObject

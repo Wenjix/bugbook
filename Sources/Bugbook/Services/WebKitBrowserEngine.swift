@@ -5,6 +5,7 @@ import WebKit
 @MainActor
 final class WebKitBrowserEngine: BrowserEngine {
     private let websiteDataStore = WKWebsiteDataStore.default()
+    private var popupWindows: [UUID: WebKitBrowserPopupWindowController] = [:]
 
     func makePage(
         for paneID: UUID,
@@ -15,8 +16,36 @@ final class WebKitBrowserEngine: BrowserEngine {
         WebKitBrowserPage(
             websiteDataStore: websiteDataStore,
             initialURL: initialURL,
-            eventHandler: eventHandler
+            eventHandler: eventHandler,
+            popupPresenter: { [weak self] configuration in
+                self?.presentPopup(using: configuration)
+            }
         )
+    }
+
+    func clearCookies() async throws {
+        let cookieDataTypes: Set<String> = [WKWebsiteDataTypeCookies]
+        let records = await websiteDataStore.dataRecords(ofTypes: cookieDataTypes)
+        guard !records.isEmpty else { return }
+        await websiteDataStore.removeData(ofTypes: cookieDataTypes, for: records)
+    }
+
+    private func presentPopup(using configuration: WKWebViewConfiguration) -> WKWebView {
+        let popupID = UUID()
+        let controller = WebKitBrowserPopupWindowController(
+            configuration: configuration,
+            onClose: { [weak self] in
+                self?.popupWindows.removeValue(forKey: popupID)
+            },
+            popupPresenter: { [weak self] nestedConfiguration in
+                self?.presentPopup(using: nestedConfiguration)
+            }
+        )
+        popupWindows[popupID] = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return controller.webView
     }
 }
 
@@ -24,20 +53,23 @@ final class WebKitBrowserEngine: BrowserEngine {
 private final class WebKitBrowserPage: NSObject, BrowserPage {
     let webView: WKWebView
     private let eventHandler: BrowserPageEventHandler
+    private let popupPresenter: (WKWebViewConfiguration) -> WKWebView?
     private lazy var coordinator = WebKitBrowserPageCoordinator(page: self)
     private lazy var downloadDelegate = WebKitBrowserDownloadDelegate(page: self)
 
     init(
         websiteDataStore: WKWebsiteDataStore,
         initialURL: URL?,
-        eventHandler: @escaping BrowserPageEventHandler
+        eventHandler: @escaping BrowserPageEventHandler,
+        popupPresenter: @escaping (WKWebViewConfiguration) -> WKWebView?
     ) {
         self.eventHandler = eventHandler
+        self.popupPresenter = popupPresenter
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = websiteDataStore
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        configuration.applicationNameForUserAgent = "HarborDesktop"
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
 
         let userContentController = WKUserContentController()
         configuration.userContentController = userContentController
@@ -159,6 +191,10 @@ private final class WebKitBrowserPage: NSObject, BrowserPage {
         eventHandler(.openInNewTab(url))
     }
 
+    fileprivate func presentPopup(configuration: WKWebViewConfiguration) -> WKWebView? {
+        popupPresenter(configuration)
+    }
+
     fileprivate func emitDownloadStatus(_ message: String) {
         eventHandler(.downloadStatusChanged(message))
     }
@@ -268,12 +304,169 @@ private final class WebKitBrowserPageCoordinator: NSObject, WKNavigationDelegate
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        guard navigationAction.targetFrame == nil,
-              let url = navigationAction.request.url else {
-            return nil
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+
+        let shouldPresentPopupWindow =
+            navigationAction.navigationType != .linkActivated
+            || windowFeatures.width != nil
+            || windowFeatures.height != nil
+
+        if shouldPresentPopupWindow,
+           let popupWebView = page?.presentPopup(configuration: configuration) {
+            return popupWebView
         }
-        page?.emitOpenInNewTab(url)
+
+        if navigationAction.targetFrame == nil,
+           let url = navigationAction.request.url {
+            page?.emitOpenInNewTab(url)
+        }
         return nil
+    }
+}
+
+@MainActor
+private final class WebKitBrowserPopupWindowController: NSWindowController {
+    let webView: WKWebView
+    private let onClose: () -> Void
+    private lazy var coordinator = WebKitPopupCoordinator(
+        webView: webView,
+        onClose: onClose,
+        popupPresenter: popupPresenter
+    )
+    private let popupPresenter: (WKWebViewConfiguration) -> WKWebView?
+
+    init(
+        configuration: WKWebViewConfiguration,
+        onClose: @escaping () -> Void,
+        popupPresenter: @escaping (WKWebViewConfiguration) -> WKWebView?
+    ) {
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        self.webView = WKWebView(frame: .zero, configuration: configuration)
+        self.onClose = onClose
+        self.popupPresenter = popupPresenter
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unifiedCompact
+        window.isReleasedWhenClosed = false
+
+        let container = NSView(frame: window.contentView?.bounds ?? .zero)
+        container.autoresizingMask = [.width, .height]
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        webView.allowsBackForwardNavigationGestures = true
+        webView.setValue(false, forKey: "drawsBackground")
+        if #available(macOS 13.3, *), AppEnvironment.isDev {
+            webView.isInspectable = true
+        }
+        container.addSubview(webView)
+        window.contentView = container
+
+        super.init(window: window)
+
+        webView.navigationDelegate = coordinator
+        webView.uiDelegate = coordinator
+        coordinator.attach()
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [onClose] _ in
+            onClose()
+        }
+        window.center()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+@MainActor
+private final class WebKitPopupCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    private weak var webView: WKWebView?
+    private let onClose: () -> Void
+    private let popupPresenter: (WKWebViewConfiguration) -> WKWebView?
+    private var observations: [NSKeyValueObservation] = []
+    private let downloadDelegate = WebKitPopupDownloadDelegate()
+
+    init(
+        webView: WKWebView,
+        onClose: @escaping () -> Void,
+        popupPresenter: @escaping (WKWebViewConfiguration) -> WKWebView?
+    ) {
+        self.webView = webView
+        self.onClose = onClose
+        self.popupPresenter = popupPresenter
+    }
+
+    func attach() {
+        guard let webView else { return }
+        observations = [
+            webView.observe(\.title, options: [.initial, .new]) { webView, _ in
+                webView.window?.title = webView.title ?? "Browser"
+                if let host = webView.url?.host, webView.window?.title == "Browser" {
+                    webView.window?.title = host
+                }
+            }
+        ]
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        webView.window?.close()
+        onClose()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        let shouldPresentPopupWindow =
+            navigationAction.navigationType != .linkActivated
+            || windowFeatures.width != nil
+            || windowFeatures.height != nil
+        guard shouldPresentPopupWindow else { return nil }
+        return popupPresenter(configuration)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        navigationAction: WKNavigationAction,
+        didBecome download: WKDownload
+    ) {
+        download.delegate = downloadDelegate
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        navigationResponse: WKNavigationResponse,
+        didBecome download: WKDownload
+    ) {
+        download.delegate = downloadDelegate
+    }
+}
+
+@MainActor
+private final class WebKitPopupDownloadDelegate: NSObject, WKDownloadDelegate {
+    func download(
+        _ download: WKDownload,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String,
+        completionHandler: @escaping @MainActor @Sendable (URL?) -> Void
+    ) {
+        let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        completionHandler(directory.appendingPathComponent(suggestedFilename))
     }
 }
 

@@ -88,7 +88,7 @@ struct TextBlockView: View {
         guard block.type == .heading, block.headingLevel == 1 else { return nil }
         let blocks = document.blocks
         guard !blocks.isEmpty, blocks[0].id == block.id else { return nil }
-        return "New page"
+        return document.isMeetingPage ? "New Meeting" : "New page"
     }
 
     private var swiftUIFont: Font {

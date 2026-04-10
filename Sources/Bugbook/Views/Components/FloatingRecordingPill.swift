@@ -24,7 +24,7 @@ final class FloatingRecordingPillPanel: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        hasShadow = false
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         isMovableByWindowBackground = true
@@ -71,44 +71,27 @@ private struct RecordingPillView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            // Tappable area: icon + bars + duration → brings app to front
-            HStack(spacing: 6) {
-                Image(systemName: "ladybug.fill")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.9))
+            Image(systemName: "ladybug.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.9))
 
-                AudioBarsView(isAnimating: isAnimating)
-                    .frame(width: 16, height: 14)
-
-                if isAnimating {
-                    DurationLabel(since: recordingStart)
-                }
-            }
-            .contentShape(Capsule())
-            .onTapGesture {
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                onTap?()
-            }
+            AudioBarsView(isAnimating: isAnimating)
+                .frame(width: 16, height: 14)
 
             if isAnimating {
-                // Stop button
-                Button {
-                    onStop?()
-                } label: {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white)
-                        .frame(width: 8, height: 8)
-                }
-                .buttonStyle(.borderless)
+                DurationLabel(since: recordingStart)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(Color(hex: "1a1a1a"))
-                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
-        )
+        .background(Capsule().fill(Color(hex: "1a1a1a")))
+        .contentShape(Capsule())
+        .onTapGesture {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            onTap?()
+        }
+        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+        .padding(6)
     }
 }
 
