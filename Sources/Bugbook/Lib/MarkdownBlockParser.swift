@@ -11,6 +11,43 @@ enum MarkdownBlockParser {
         var fullWidth: Bool = false
     }
 
+    /// Strip YAML frontmatter (between `---` delimiters) from the top of a markdown string.
+    /// Returns the raw frontmatter string (without delimiters) and the remaining content.
+    static func stripYAMLFrontmatter(_ markdown: String) -> (yamlFrontmatter: String, content: String) {
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else {
+            return ("", markdown)
+        }
+        // Find closing ---
+        for i in 1..<lines.count {
+            if lines[i].trimmingCharacters(in: .whitespaces) == "---" {
+                let yaml = lines[1..<i].joined(separator: "\n")
+                let rest = lines[(i + 1)...].joined(separator: "\n")
+                // Trim leading blank line from content
+                let trimmedRest = rest.hasPrefix("\n") ? String(rest.dropFirst()) : rest
+                return (yaml, trimmedRest)
+            }
+        }
+        // No closing --- found, treat as regular content
+        return ("", markdown)
+    }
+
+    /// Parse a value from raw YAML frontmatter by key (simple single-line values only).
+    static func yamlValue(for key: String, in yaml: String) -> String? {
+        for line in yaml.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("\(key):") {
+                let value = trimmed.dropFirst(key.count + 1).trimmingCharacters(in: .whitespaces)
+                // Strip surrounding quotes
+                if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+                    return String(value.dropFirst().dropLast())
+                }
+                return value.isEmpty ? nil : value
+            }
+        }
+        return nil
+    }
+
     /// Parse file-level metadata comments from the top of the markdown string.
     /// Returns the metadata and the remaining markdown content after metadata lines.
     static func parseMetadata(_ markdown: String) -> (Metadata, String) {

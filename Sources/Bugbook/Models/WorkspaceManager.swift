@@ -11,6 +11,7 @@ class WorkspaceManager {
     var activeWorkspaceIndex: Int = 0
     /// Set after each successful layout save; UI can observe this for a brief indicator.
     var lastSavedAt: Date?
+    var layoutPersistenceEnabled = true
 
     @ObservationIgnored private var persistTask: Task<Void, Never>?
 
@@ -109,10 +110,22 @@ class WorkspaceManager {
         schedulePersist()
     }
 
-    func renameWorkspace(at index: Int, name: String) {
-        guard index >= 0, index < workspaces.count else { return }
-        workspaces[index].name = name
+    func detachWorkspace(at index: Int) -> Workspace? {
+        guard index >= 0, index < workspaces.count else { return nil }
+
+        let detachedWorkspace = workspaces.remove(at: index)
+
+        if workspaces.isEmpty {
+            workspaces = [Workspace.makeDefault(name: "Workspace")]
+            activeWorkspaceIndex = 0
+        } else if activeWorkspaceIndex >= workspaces.count {
+            activeWorkspaceIndex = workspaces.count - 1
+        } else if activeWorkspaceIndex > index {
+            activeWorkspaceIndex -= 1
+        }
+
         schedulePersist()
+        return detachedWorkspace
     }
 
     // MARK: - Pane Operations
@@ -181,31 +194,6 @@ class WorkspaceManager {
         )
         workspaces.append(newWs)
         activeWorkspaceIndex = workspaces.count - 1
-        schedulePersist()
-    }
-
-    /// Merge another tab's content into the current layout as a split next to `targetPaneId`.
-    func mergeTab(at tabIndex: Int, intoPane targetPaneId: UUID, axis: PaneNode.Split.Axis) {
-        guard tabIndex >= 0, tabIndex < workspaces.count else { return }
-        guard tabIndex != activeWorkspaceIndex else { return }
-
-        // Grab the other tab's root node
-        let otherWs = workspaces[tabIndex]
-        let mergedNode = otherWs.root
-
-        // Remove the other tab
-        workspaces.remove(at: tabIndex)
-        // Adjust active index if needed
-        if activeWorkspaceIndex > tabIndex {
-            activeWorkspaceIndex -= 1
-        } else if activeWorkspaceIndex >= workspaces.count {
-            activeWorkspaceIndex = workspaces.count - 1
-        }
-
-        // Insert the merged content as a split next to the target pane
-        guard var ws = activeWorkspace else { return }
-        ws.root = ws.root.insertingSplit(replacing: targetPaneId, axis: axis, newSibling: mergedNode)
-        activeWorkspace = ws
         schedulePersist()
     }
 
@@ -291,16 +279,6 @@ class WorkspaceManager {
         return results
     }
 
-    /// Find the first document leaf in the active workspace that isn't the given pane.
-    func nearestDocumentLeaf(from paneId: UUID) -> PaneNode.Leaf? {
-        guard let ws = activeWorkspace else { return nil }
-        for leaf in ws.allLeaves {
-            if leaf.id != paneId, case .document = leaf.content {
-                return leaf
-            }
-        }
-        return nil
-    }
 
     // MARK: - Persistence
 
@@ -323,6 +301,7 @@ class WorkspaceManager {
     }
 
     func schedulePersist() {
+        guard layoutPersistenceEnabled else { return }
         persistTask?.cancel()
         persistTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 500_000_000)

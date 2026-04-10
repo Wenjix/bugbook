@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     var appState: AppState
+    var browserManager: BrowserManager
 
     private var tabTitle: String {
         switch appState.selectedSettingsTab {
@@ -39,7 +40,7 @@ struct SettingsView: View {
                 case "terminal":
                     TerminalSettingsView(appState: appState)
                 case "browser":
-                    BrowserSettingsView(appState: appState)
+                    BrowserSettingsView(appState: appState, browserManager: browserManager)
                 case "agents":
                     AgentsSettingsView(appState: appState)
                 case "search":

@@ -26,6 +26,9 @@ struct WikiLinkView: View {
                 .font(.system(size: EditorTypography.bodyFontSize))
                 .foregroundStyle(.primary)
                 .underline()
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(.secondary.opacity(0.6))
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onNavigate)

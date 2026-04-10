@@ -146,6 +146,63 @@ final class BrowserEngineTests: XCTestCase {
         XCTAssertTrue(content.contains("First sentence"))
     }
 
+    func testBrowserManagerClearsCookiesThroughEngine() async throws {
+        let engine = FakeBrowserEngine()
+        let snapshotStore = BrowserPaneSnapshotStore(directoryURL: temporaryDirectory())
+        let manager = BrowserManager(engine: engine, snapshotStore: snapshotStore)
+
+        try await manager.clearCookies()
+
+        XCTAssertEqual(engine.clearCookiesCallCount, 1)
+    }
+
+    func testBrowserManagerDoesNotRecordHistoryWhenDisabled() {
+        let directoryURL = temporaryDirectory()
+        let engine = FakeBrowserEngine()
+        let snapshotStore = BrowserPaneSnapshotStore(directoryURL: directoryURL.appendingPathComponent("snapshots", isDirectory: true))
+        let historyStore = BrowserHistoryStore(fileURL: directoryURL.appendingPathComponent("history.json"))
+        let manager = BrowserManager(engine: engine, snapshotStore: snapshotStore, historyStore: historyStore)
+        let paneID = UUID()
+        let session = manager.session(for: paneID)
+        let tabID = tryUnwrap(session.selectedTabID)
+
+        _ = manager.ensurePage(for: paneID, tabID: tabID)
+        let page = tryUnwrap(engine.pages[tabID])
+        manager.setHistoryEnabled(false)
+
+        page.emit(.didFinishNavigation(title: "Example", url: URL(string: "https://example.com")!))
+
+        XCTAssertTrue(manager.browsingHistory.isEmpty)
+        XCTAssertTrue(session.recentVisits.isEmpty)
+        XCTAssertTrue(historyStore.load().isEmpty)
+    }
+
+    func testBrowserManagerClearHistoryRemovesGlobalAndSessionHistory() {
+        let directoryURL = temporaryDirectory()
+        let engine = FakeBrowserEngine()
+        let snapshotStore = BrowserPaneSnapshotStore(directoryURL: directoryURL.appendingPathComponent("snapshots", isDirectory: true))
+        let historyStore = BrowserHistoryStore(fileURL: directoryURL.appendingPathComponent("history.json"))
+        let manager = BrowserManager(engine: engine, snapshotStore: snapshotStore, historyStore: historyStore)
+        let paneID = UUID()
+        let session = manager.session(for: paneID)
+        let tabID = tryUnwrap(session.selectedTabID)
+
+        _ = manager.ensurePage(for: paneID, tabID: tabID)
+        let page = tryUnwrap(engine.pages[tabID])
+        page.emit(.didFinishNavigation(title: "Example", url: URL(string: "https://example.com")!))
+
+        XCTAssertEqual(manager.browsingHistory.count, 1)
+        XCTAssertEqual(session.recentVisits.count, 1)
+        XCTAssertEqual(historyStore.load().count, 1)
+
+        manager.clearHistory()
+
+        XCTAssertTrue(manager.browsingHistory.isEmpty)
+        XCTAssertTrue(session.recentVisits.isEmpty)
+        XCTAssertTrue(historyStore.load().isEmpty)
+        XCTAssertTrue(snapshotStore.snapshot(for: paneID)?.recentVisits.isEmpty == true)
+    }
+
     private func temporaryDirectory() -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -164,6 +221,7 @@ final class BrowserEngineTests: XCTestCase {
 @MainActor
 private final class FakeBrowserEngine: BrowserEngine {
     private(set) var pages: [UUID: FakeBrowserPage] = [:]
+    private(set) var clearCookiesCallCount = 0
 
     func makePage(
         for paneID: UUID,
@@ -174,6 +232,10 @@ private final class FakeBrowserEngine: BrowserEngine {
         let page = FakeBrowserPage(initialURL: initialURL, eventHandler: eventHandler)
         pages[tabID] = page
         return page
+    }
+
+    func clearCookies() async throws {
+        clearCookiesCallCount += 1
     }
 }
 

@@ -6,14 +6,20 @@ import AppKit
 /// Tab bar at the top of the content area. Each tab owns a pane layout.
 struct WorkspaceTabBar: View {
     var workspaceManager: WorkspaceManager
+    var browserManager: BrowserManager
     var sidebarOpen: Bool
     var currentView: ViewMode = .editor
+    var recordingPagePath: String?
 
     @State private var dragOverIndex: Int?
-    @State private var draggingId: UUID?
+    @State private var draggedWorkspaceID: UUID?
+    @State private var draggedWorkspaceOffset: CGSize = .zero
+    @State private var workspaceTabFrames: [UUID: CGRect] = [:]
     @State private var showNewMenu = false
     @State private var showSavedIndicator = false
     @State private var savedIndicatorTask: Task<Void, Never>?
+
+    private let detachThreshold: CGFloat = 90
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -46,21 +52,34 @@ struct WorkspaceTabBar: View {
                             title: tabTitle(for: workspace),
                             icon: tabIcon(for: workspace),
                             isActive: index == workspaceManager.activeWorkspaceIndex,
+                            isRecording: isWorkspaceRecording(workspace),
                             onSelect: { workspaceManager.switchWorkspace(to: index) },
-                            onClose: { workspaceManager.closeWorkspace(at: index) }
+                            onClose: { workspaceManager.closeWorkspace(at: index) },
+                            onMoveToNewWindow: {
+                                detachWorkspace(id: workspace.id)
+                            }
                         )
                         .zIndex(index == workspaceManager.activeWorkspaceIndex ? 1 : 0)
-                        .opacity(draggingId == workspace.id ? 0.4 : 1.0)
-                        .onDrag {
-                            draggingId = workspace.id
-                            return NSItemProvider(object: workspace.id.uuidString as NSString)
-                        }
-                        .onDrop(of: [.text], delegate: TabDropDelegate(
-                            targetIndex: index,
-                            workspaceManager: workspaceManager,
-                            dragOverIndex: $dragOverIndex,
-                            draggingId: $draggingId
-                        ))
+                        .opacity(draggedWorkspaceID == workspace.id ? 0.55 : 1.0)
+                        .offset(draggedWorkspaceID == workspace.id ? draggedWorkspaceOffset : .zero)
+                        .background(workspaceTabFrameReader(for: workspace.id))
+                        .gesture(
+                            DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                                .onChanged { value in
+                                    handleWorkspaceDragChanged(
+                                        workspaceID: workspace.id,
+                                        location: value.location,
+                                        translation: value.translation
+                                    )
+                                }
+                                .onEnded { value in
+                                    handleWorkspaceDragEnded(
+                                        workspaceID: workspace.id,
+                                        location: value.location,
+                                        translation: value.translation
+                                    )
+                                }
+                        )
                     }
                 }
 
@@ -85,12 +104,6 @@ struct WorkspaceTabBar: View {
                     NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
                         .popoverSurface()
                 }
-                .onDrop(of: [.text], delegate: TabDropDelegate(
-                    targetIndex: workspaceManager.workspaces.count,
-                    workspaceManager: workspaceManager,
-                    dragOverIndex: $dragOverIndex,
-                    draggingId: $draggingId
-                ))
             }
             .padding(.leading, 0)
             Spacer(minLength: 0)
@@ -107,6 +120,7 @@ struct WorkspaceTabBar: View {
                 withAnimation(.easeOut(duration: 0.3)) { showSavedIndicator = false }
             }
         }
+        .onPreferenceChange(WorkspaceTabFramePreferenceKey.self) { workspaceTabFrames = $0 }
     }
 
     @ViewBuilder
@@ -127,8 +141,9 @@ struct WorkspaceTabBar: View {
             if currentView == .graphView { return "Graph" }
             if currentView == .calendar { return "Calendar" }
         }
-        // Derive name from the focused pane's content
-        if let leaf = ws.focusedLeaf {
+        // In splits, prefer the first document pane over terminal for the tab title
+        let leaf = ws.root.firstDocumentLeaf ?? ws.focusedLeaf
+        if let leaf {
             switch leaf.content {
             case .document(let file):
                 if let name = file.displayName, !name.isEmpty { return name }
@@ -145,6 +160,15 @@ struct WorkspaceTabBar: View {
             }
         }
         return ws.name
+    }
+
+    private func isWorkspaceRecording(_ ws: Workspace) -> Bool {
+        guard let path = recordingPagePath else { return false }
+        guard let leaf = ws.focusedLeaf else { return false }
+        if case .document(let file) = leaf.content {
+            return file.path == path
+        }
+        return false
     }
 
     private func tabIcon(for ws: Workspace) -> String? {
@@ -166,6 +190,101 @@ struct WorkspaceTabBar: View {
         case .terminal:
             return "sf:terminal"
         }
+    }
+
+    private func workspaceTabFrameReader(for workspaceID: UUID) -> some View {
+        GeometryReader { proxy in
+            Color.clear
+                .preference(
+                    key: WorkspaceTabFramePreferenceKey.self,
+                    value: [workspaceID: proxy.frame(in: .global)]
+                )
+        }
+    }
+
+    private func handleWorkspaceDragChanged(
+        workspaceID: UUID,
+        location: CGPoint,
+        translation: CGSize
+    ) {
+        draggedWorkspaceID = workspaceID
+        draggedWorkspaceOffset = translation
+
+        guard abs(translation.height) < detachThreshold else {
+            dragOverIndex = nil
+            return
+        }
+
+        dragOverIndex = insertionIndex(for: location)
+    }
+
+    private func handleWorkspaceDragEnded(
+        workspaceID: UUID,
+        location: CGPoint,
+        translation: CGSize
+    ) {
+        defer { resetWorkspaceDragState() }
+
+        guard let sourceIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspaceID }) else {
+            return
+        }
+
+        if abs(translation.height) >= detachThreshold {
+            detachWorkspace(id: workspaceID)
+            return
+        }
+
+        guard let targetIndex = insertionIndex(for: location) else { return }
+        workspaceManager.reorderWorkspace(from: sourceIndex, to: targetIndex)
+    }
+
+    private func detachWorkspace(id: UUID) {
+        guard let index = workspaceManager.workspaces.firstIndex(where: { $0.id == id }),
+              let workspace = workspaceManager.detachWorkspace(at: index) else {
+            return
+        }
+
+        let title = tabTitle(for: workspace)
+        let browserSnapshots = detachedBrowserSnapshots(for: workspace)
+        let bootstrap = ContentViewBootstrap(
+            workspaces: [workspace],
+            activeWorkspaceIndex: 0,
+            browserSnapshots: browserSnapshots,
+            layoutPersistenceEnabled: false
+        )
+        DetachedWindowManager.shared.openWindow(title: title, bootstrap: bootstrap)
+    }
+
+    private func detachedBrowserSnapshots(for workspace: Workspace) -> [UUID: BrowserPaneSnapshot] {
+        Dictionary(uniqueKeysWithValues: workspace.allLeaves.compactMap { leaf in
+            guard case .document(let file) = leaf.content,
+                  file.isBrowser,
+                  let snapshot = browserManager.snapshot(for: leaf.id) else {
+                return nil
+            }
+            return (leaf.id, snapshot)
+        })
+    }
+
+    private func insertionIndex(for location: CGPoint) -> Int? {
+        let orderedFrames = workspaceManager.workspaces.compactMap { workspace in
+            workspaceTabFrames[workspace.id].map { (workspace.id, $0) }
+        }
+        .sorted { $0.1.minX < $1.1.minX }
+
+        guard !orderedFrames.isEmpty else { return nil }
+
+        for (index, frame) in orderedFrames.enumerated() where location.x < frame.1.midX {
+            return index
+        }
+
+        return orderedFrames.count
+    }
+
+    private func resetWorkspaceDragState() {
+        dragOverIndex = nil
+        draggedWorkspaceID = nil
+        draggedWorkspaceOffset = .zero
     }
 }
 
@@ -260,8 +379,10 @@ private struct TabItemView: View {
     let title: String
     var icon: String?
     let isActive: Bool
+    var isRecording: Bool = false
     var onSelect: () -> Void
     var onClose: () -> Void
+    var onMoveToNewWindow: () -> Void
 
     @State private var isHovered = false
     @State private var isCloseHovered = false
@@ -269,7 +390,12 @@ private struct TabItemView: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: ShellZoomMetrics.size(6)) {
-                tabIconView
+                if isRecording {
+                    PulsingRecordDot()
+                        .scaleEffect(0.75)
+                } else {
+                    tabIconView
+                }
 
                 Text(title)
                     .font(ShellZoomMetrics.font(Typography.bodySmall, weight: isActive ? .semibold : .regular))
@@ -303,6 +429,11 @@ private struct TabItemView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button("Move to New Window") {
+                onMoveToNewWindow()
+            }
+        }
     }
 
     @ViewBuilder
@@ -319,32 +450,12 @@ private struct TabItemView: View {
     }
 }
 
-// MARK: - Tab Drop Delegate
+private struct WorkspaceTabFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
 
-private struct TabDropDelegate: DropDelegate {
-    let targetIndex: Int
-    let workspaceManager: WorkspaceManager
-    @Binding var dragOverIndex: Int?
-    @Binding var draggingId: UUID?
-
-    func dropEntered(info: DropInfo) { dragOverIndex = targetIndex }
-    func dropExited(info: DropInfo) { if dragOverIndex == targetIndex { dragOverIndex = nil } }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-
-    func performDrop(info: DropInfo) -> Bool {
-        dragOverIndex = nil
-        guard let draggingId,
-              let sourceIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == draggingId }) else {
-            self.draggingId = nil
-            return false
-        }
-        guard sourceIndex != targetIndex else { self.draggingId = nil; return true }
-        workspaceManager.reorderWorkspace(from: sourceIndex, to: targetIndex)
-        self.draggingId = nil
-        return true
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
-
-    func validateDrop(info: DropInfo) -> Bool { true }
 }
 
 // MARK: - Connected Tab Shape

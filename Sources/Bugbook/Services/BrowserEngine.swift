@@ -2,6 +2,10 @@ import AppKit
 import Foundation
 
 struct BrowserPageState {
+    /// Default zoom level for browser panes — slightly reduced from 1.0 so content
+    /// renders at a natural scale in the split-pane context.
+    static let defaultPageZoom: Double = 0.85
+
     var title: String?
     var url: URL?
     var isLoading: Bool
@@ -17,7 +21,7 @@ struct BrowserPageState {
         estimatedProgress: 0,
         canGoBack: false,
         canGoForward: false,
-        pageZoom: 1.0
+        pageZoom: defaultPageZoom
     )
 }
 
@@ -39,6 +43,7 @@ protocol BrowserEngine: AnyObject {
         initialURL: URL?,
         eventHandler: @escaping BrowserPageEventHandler
     ) -> any BrowserPage
+    func clearCookies() async throws
 }
 
 @MainActor

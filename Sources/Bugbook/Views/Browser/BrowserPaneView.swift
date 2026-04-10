@@ -15,6 +15,7 @@ struct BrowserPaneView: View {
     let onOpenBugbookEntry: (FileEntry) -> Void
 
     @FocusState private var omnibarFocused: Bool
+    @FocusState private var newTabSearchFocused: Bool
     @FocusState private var findFocused: Bool
     @State private var omnibarText = ""
     @State private var newTabSearchText = ""
@@ -25,22 +26,30 @@ struct BrowserPaneView: View {
     @State private var isApplyingCleanup = false
     @State private var saveMessage: String?
     @State private var hoveredTabID: UUID?
+    @State private var searchableEntries: [BrowserSearchableEntry] = []
+    @State private var savedRecords: [SavedWebPageRecord] = []
+    @State private var omnibarSuggestions: [BrowserSuggestionItem] = []
+    @State private var newTabSuggestions: [BrowserSuggestionItem] = []
+    @State private var browserTabFrames: [UUID: CGRect] = [:]
+    @State private var draggedTabID: UUID?
+    @State private var draggedTabOffset: CGSize = .zero
 
     private let agentService = BrowserAgentService()
     private let savedPageStore = SavedWebPageStore()
     private let relativeDateFormatter = RelativeDateTimeFormatter()
+    private let browserTabDetachThreshold: CGFloat = 90
 
     private var activeTab: BrowserTabState? {
         session.activeTab
     }
 
     private var activeSavedRecord: SavedWebPageRecord? {
-        guard let workspacePath = appState.workspacePath else { return nil }
-        if let recordID = activeTab?.savedRecordID {
-            return savedPageStore.records(in: workspacePath).first(where: { $0.id == recordID })
+        guard let activeTab else { return nil }
+        if let recordID = activeTab.savedRecordID {
+            return savedRecords.first(where: { $0.id == recordID })
         }
-        if let urlString = activeTab?.urlString {
-            return savedPageStore.record(forURL: urlString, in: workspacePath)
+        if !activeTab.urlString.isEmpty {
+            return savedRecords.first(where: { $0.urlString == activeTab.urlString })
         }
         return nil
     }
@@ -50,8 +59,16 @@ struct BrowserPaneView: View {
     }
 
     private var readLaterRecords: [SavedWebPageRecord] {
-        guard let workspacePath = appState.workspacePath else { return [] }
-        return agentService.listReadLater(in: workspacePath)
+        savedRecords.filter { $0.status == .unread }
+    }
+
+    private var recentHistory: [BrowserRecentVisit] {
+        guard appState.settings.browserHistoryEnabled else { return [] }
+        return browserManager.browsingHistory
+    }
+
+    private var showsTabStrip: Bool {
+        !chrome.autoHidesTabPills || session.tabs.count > 1
     }
 
     var body: some View {
@@ -103,75 +120,118 @@ struct BrowserPaneView: View {
     private func applyBrowserLifecycle<V: View>(to view: V) -> some View {
         view
         .onAppear {
-            refreshSelectedTabDisplay()
+            refreshSavedRecords()
+            refreshSearchableEntries()
+            refreshSelectedTabDisplay(force: true)
+            refreshSuggestions()
+            DispatchQueue.main.async {
+                if activeTab?.urlString.isEmpty != false {
+                    newTabSearchFocused = true
+                } else {
+                    omnibarFocused = true
+                }
+            }
         }
         .onChange(of: session.selectedTabID) { _, _ in
-            refreshSelectedTabDisplay()
+            refreshSelectedTabDisplay(force: true)
+            refreshSuggestions()
         }
         .onChange(of: session.tabs) { _, _ in
             syncDisplayedText()
+        }
+        .onChange(of: fileTree) { _, _ in
+            refreshSearchableEntries()
+            refreshSuggestions()
+        }
+        .onChange(of: appState.workspacePath) { _, _ in
+            refreshSavedRecords()
+        }
+        .onChange(of: appState.settings.browserSuggestionsEnabled) { _, _ in
+            refreshSuggestions()
+        }
+        .onChange(of: appState.settings.browserSuggestsBugbookPages) { _, _ in
+            refreshSuggestions()
+        }
+        .onChange(of: appState.settings.browserSuggestionLimit) { _, _ in
+            refreshSuggestions()
+        }
+        .onChange(of: appState.settings.browserSearchEngine) { _, _ in
+            refreshSuggestions()
+        }
+        .onChange(of: appState.settings.browserQuickLaunchItems) { _, _ in
+            refreshSuggestions()
+        }
+        .onChange(of: appState.settings.browserHistoryEnabled) { _, _ in
+            refreshSuggestions()
+        }
+        .onChange(of: browserManager.browsingHistory) { _, _ in
+            refreshSuggestions()
+        }
+        .onChange(of: omnibarText) { _, _ in
+            omnibarSuggestions = suggestions(for: omnibarText)
+        }
+        .onChange(of: newTabSearchText) { _, _ in
+            newTabSuggestions = suggestions(for: newTabSearchText)
         }
     }
 
     private func applyBrowserNotifications<V: View>(to view: V) -> some View {
         view
-        .onReceive(NotificationCenter.default.publisher(for: .browserFocusAddressBar)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserFocusAddressBar)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
+            newTabSearchFocused = false
             omnibarFocused = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserNewTab)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserNewTab)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             createNewTab()
         }
         .onReceive(NotificationCenter.default.publisher(for: .browserCloseTab)) { notification in
-            let targetPaneID = notification.object as? UUID
-            if let targetPaneID, targetPaneID != paneID {
-                return
-            }
-            guard isFocusedPane, let selected = session.selectedTabID else { return }
+            guard shouldHandleBrowserCommand(notification),
+                  let selected = session.selectedTabID else { return }
             session.closeTab(selected)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserBack)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserBack)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             browserManager.goBack(in: paneID)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserForward)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserForward)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             browserManager.goForward(in: paneID)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserFind)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserFind)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             withAnimation(.easeInOut(duration: 0.15)) {
                 showFindBar = true
             }
             findFocused = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserPrint)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserPrint)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             browserManager.printActiveTab(in: paneID)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserSavePage)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserSavePage)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             Task { await saveCurrentTab() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserZoomIn)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserZoomIn)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             adjustZoom(by: 0.1)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserZoomOut)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserZoomOut)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             adjustZoom(by: -0.1)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserZoomReset)) { _ in
-            guard isFocusedPane else { return }
-            browserManager.setPageZoom(1.0, in: paneID)
+        .onReceive(NotificationCenter.default.publisher(for: .browserZoomReset)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
+            browserManager.setPageZoom(BrowserPageState.defaultPageZoom, in: paneID)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserPreviousTab)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserPreviousTab)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             selectAdjacentTab(step: -1)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserNextTab)) { _ in
-            guard isFocusedPane else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .browserNextTab)) { notification in
+            guard shouldHandleBrowserCommand(notification) else { return }
             selectAdjacentTab(step: 1)
         }
         .onReceive(NotificationCenter.default.publisher(for: .browserOpenCleanup)) { notification in
@@ -188,15 +248,44 @@ struct BrowserPaneView: View {
         workspaceManager.activeWorkspace?.focusedPaneId == paneID
     }
 
-    private func refreshSelectedTabDisplay() {
-        syncDisplayedText()
+    private func shouldHandleBrowserCommand(_ notification: Notification) -> Bool {
+        if let targetPaneID = notification.object as? UUID {
+            return targetPaneID == paneID
+        }
+        return isFocusedPane
+    }
+
+    private func refreshSelectedTabDisplay(force: Bool = false) {
+        syncDisplayedText(force: force)
         guard let tabID = session.selectedTabID else { return }
         _ = browserManager.ensurePage(for: paneID, tabID: tabID)
     }
 
     private var chromeBar: some View {
         VStack(spacing: 0) {
-            // Compact tab bar — tabs fill the row, active tab shows URL inline
+            if showsTabStrip {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(session.tabs) { tab in
+                            compactTab(tab)
+                        }
+
+                        Button {
+                            createNewTab()
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .semibold))
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+                }
+                .onPreferenceChange(BrowserTabFramePreferenceKey.self) { browserTabFrames = $0 }
+            }
+
             HStack(spacing: 4) {
                 if chrome.showsBackForwardButtons {
                     navButton("chevron.left", enabled: activeTab?.canGoBack == true) {
@@ -232,10 +321,33 @@ struct BrowserPaneView: View {
                         )
                 )
 
+                if chrome.showsSaveButton {
+                    Button {
+                        Task { await saveCurrentTab() }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(activeTab?.urlString.isEmpty ?? true)
+                }
+
                 browserActionMenu
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
+
+            if omnibarFocused && !omnibarSuggestions.isEmpty {
+                suggestionsList(omnibarSuggestions)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 6)
+            }
+
+            if chrome.showsBookmarksBar && !appState.settings.browserQuickLaunchItems.isEmpty {
+                bookmarksBar
+            }
 
             if let saveMessage, !saveMessage.isEmpty {
                 HStack {
@@ -261,37 +373,24 @@ struct BrowserPaneView: View {
         let isHovered = hoveredTabID == tab.id
 
         return HStack(spacing: 6) {
-            // Favicon dot
             Circle()
                 .fill(tabColor(for: tab))
                 .frame(width: 6, height: 6)
                 .padding(.leading, 8)
 
-            if isSelected {
-                // Active tab: show editable URL field inline
-                TextField("Search or enter URL", text: $omnibarText)
-                    .textFieldStyle(.plain)
+            Button {
+                session.selectTab(tab.id)
+            } label: {
+                Text(tab.displayTitle)
                     .font(.system(size: 12))
-                    .focused($omnibarFocused)
-                    .onSubmit {
-                        submitOmnibar(omnibarText)
-                    }
-            } else {
-                // Inactive tab: show title
-                Button {
-                    session.selectTab(tab.id)
-                } label: {
-                    Text(tab.displayTitle)
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(.plain)
 
             Spacer(minLength: 0)
 
-            // Close button on hover
             if isHovered && session.tabs.count > 1 {
                 Button {
                     session.closeTab(tab.id)
@@ -311,7 +410,9 @@ struct BrowserPaneView: View {
             }
         }
         .frame(height: 28)
-        .frame(maxWidth: isSelected ? .infinity : 160)
+        .frame(width: 170)
+        .opacity(draggedTabID == tab.id ? 0.55 : 1.0)
+        .offset(draggedTabID == tab.id ? draggedTabOffset : .zero)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.primary.opacity(0.06) : (isHovered ? Color.primary.opacity(0.03) : Color.clear))
@@ -321,8 +422,31 @@ struct BrowserPaneView: View {
                 .strokeBorder(isSelected ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 0.5)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
+        .background(browserTabFrameReader(for: tab.id))
         .onHover { hovering in
             hoveredTabID = hovering ? tab.id : (hoveredTabID == tab.id ? nil : hoveredTabID)
+        }
+        .gesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                .onChanged { value in
+                    handleBrowserTabDragChanged(
+                        tabID: tab.id,
+                        location: value.location,
+                        translation: value.translation
+                    )
+                }
+                .onEnded { value in
+                    handleBrowserTabDragEnded(
+                        tabID: tab.id,
+                        location: value.location,
+                        translation: value.translation
+                    )
+                }
+        )
+        .contextMenu {
+            Button("Move Tab to New Window") {
+                detachBrowserTab(tab.id)
+            }
         }
     }
 
@@ -400,6 +524,81 @@ struct BrowserPaneView: View {
         }
     }
 
+    private var bookmarksBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(appState.settings.browserQuickLaunchItems) { item in
+                    Button {
+                        openQuickLaunch(item)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: item.icon.isEmpty ? "globe" : item.icon)
+                                .font(.system(size: 11, weight: .medium))
+                            Text(item.title)
+                                .font(.system(size: 12))
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.md)
+                            .fill(Color.primary.opacity(0.04))
+                    )
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private func suggestionsList(_ suggestions: [BrowserSuggestionItem]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
+                Button {
+                    applySuggestion(suggestion)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: suggestion.iconName)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(suggestion.title)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            if !suggestion.subtitle.isEmpty {
+                                Text(suggestion.subtitle)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
+
+                if index < suggestions.count - 1 {
+                    Divider()
+                        .padding(.leading, 38)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .fill(Container.cardBg)
+                .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 6)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+        )
+    }
 
     private var browserActionMenu: some View {
         Menu {
@@ -427,6 +626,9 @@ struct BrowserPaneView: View {
 
             Divider()
 
+            Button("New Tab") {
+                createNewTab()
+            }
             Button("Clean Tabs") {
                 prepareCleanup()
             }
@@ -459,7 +661,7 @@ struct BrowserPaneView: View {
                     adjustZoom(by: -0.1)
                 }
                 Button("Actual Size") {
-                    browserManager.setPageZoom(1.0, in: paneID)
+                    browserManager.setPageZoom(BrowserPageState.defaultPageZoom, in: paneID)
                 }
             }
             Menu("Quick Pane Switching") {
@@ -487,7 +689,6 @@ struct BrowserPaneView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
     }
-
 
     @ViewBuilder
     private var saveSection: some View {
@@ -558,6 +759,7 @@ struct BrowserPaneView: View {
             TextField("Search the web or your notes...", text: $newTabSearchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
+                .focused($newTabSearchFocused)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .frame(maxWidth: 520)
@@ -569,15 +771,45 @@ struct BrowserPaneView: View {
                     submitOmnibar(newTabSearchText)
                 }
 
+            if newTabSearchFocused && !newTabSuggestions.isEmpty {
+                suggestionsList(newTabSuggestions)
+                    .frame(maxWidth: 520)
+            }
 
-            if chrome.showsNewTabRecentVisits, !session.recentVisits.isEmpty {
+            if chrome.showsNewTabQuickLaunch, !appState.settings.browserQuickLaunchItems.isEmpty {
+                FlowLayout(spacing: 10) {
+                    ForEach(appState.settings.browserQuickLaunchItems) { item in
+                        Button {
+                            openQuickLaunch(item)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: item.icon.isEmpty ? "globe" : item.icon)
+                                    .font(.system(size: 12, weight: .medium))
+                                Text(item.title)
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: Radius.md)
+                                    .fill(Color.primary.opacity(0.04))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: 620)
+            }
+
+            if chrome.showsNewTabRecentVisits, !recentHistory.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Recent")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.secondary)
 
                     VStack(spacing: 6) {
-                        ForEach(session.recentVisits.prefix(8)) { visit in
+                        ForEach(recentHistory.prefix(8)) { visit in
                             Button {
                                 if let url = visit.url {
                                     browserManager.openURL(url, in: paneID, newTab: false)
@@ -751,16 +983,251 @@ struct BrowserPaneView: View {
     }
 
     private func createNewTab() {
+        workspaceManager.setFocusedPane(id: paneID)
         _ = session.openNewTab()
         newTabSearchText = ""
         omnibarText = ""
-        omnibarFocused = true
+        omnibarSuggestions = []
+        newTabSuggestions = []
+        newTabSearchFocused = true
+        omnibarFocused = false
     }
 
-    private func syncDisplayedText() {
-        omnibarText = activeTab?.displayURL ?? ""
-        if activeTab?.urlString.isEmpty != false {
+    private func browserTabFrameReader(for tabID: UUID) -> some View {
+        GeometryReader { proxy in
+            Color.clear
+                .preference(
+                    key: BrowserTabFramePreferenceKey.self,
+                    value: [tabID: proxy.frame(in: .global)]
+                )
+        }
+    }
+
+    private func handleBrowserTabDragChanged(
+        tabID: UUID,
+        location: CGPoint,
+        translation: CGSize
+    ) {
+        draggedTabID = tabID
+        draggedTabOffset = translation
+    }
+
+    private func handleBrowserTabDragEnded(
+        tabID: UUID,
+        location: CGPoint,
+        translation: CGSize
+    ) {
+        defer { resetBrowserTabDragState() }
+
+        guard let sourceIndex = session.tabs.firstIndex(where: { $0.id == tabID }) else {
+            return
+        }
+
+        if abs(translation.height) >= browserTabDetachThreshold {
+            detachBrowserTab(tabID)
+            return
+        }
+
+        guard let targetIndex = browserTabInsertionIndex(for: location) else { return }
+        session.moveTab(from: sourceIndex, to: targetIndex)
+    }
+
+    private func browserTabInsertionIndex(for location: CGPoint) -> Int? {
+        let orderedFrames = session.tabs.compactMap { tab in
+            browserTabFrames[tab.id].map { (tab.id, $0) }
+        }
+        .sorted { $0.1.minX < $1.1.minX }
+
+        guard !orderedFrames.isEmpty else { return nil }
+
+        for (index, frame) in orderedFrames.enumerated() where location.x < frame.1.midX {
+            return index
+        }
+
+        return orderedFrames.count
+    }
+
+    private func detachBrowserTab(_ tabID: UUID) {
+        guard let tab = session.tabs.first(where: { $0.id == tabID }) else { return }
+
+        let paneID = UUID()
+        let browserFile = OpenFile(
+            id: paneID,
+            path: "bugbook://browser",
+            content: "",
+            isDirty: false,
+            isEmptyTab: false,
+            kind: .browser,
+            displayName: "Browser",
+            icon: "globe"
+        )
+        let workspace = Workspace(
+            id: UUID(),
+            name: tab.displayTitle,
+            icon: "globe",
+            root: .leaf(.init(id: paneID, content: .document(openFile: browserFile))),
+            focusedPaneId: paneID,
+            createdAt: Date()
+        )
+        let snapshot = BrowserPaneSnapshot(
+            paneID: paneID,
+            tabs: [
+                BrowserTabSnapshot(
+                    id: tab.id,
+                    title: tab.title,
+                    urlString: tab.urlString,
+                    savedRecordID: tab.savedRecordID,
+                    pageZoom: tab.pageZoom
+                )
+            ],
+            selectedTabID: tab.id,
+            recentVisits: session.recentVisits,
+            isReadLaterDrawerOpen: false
+        )
+        let bootstrap = ContentViewBootstrap(
+            workspaces: [workspace],
+            activeWorkspaceIndex: 0,
+            browserSnapshots: [paneID: snapshot],
+            layoutPersistenceEnabled: false
+        )
+
+        DetachedWindowManager.shared.openWindow(title: tab.displayTitle, bootstrap: bootstrap)
+        session.closeTab(tabID)
+    }
+
+    private func resetBrowserTabDragState() {
+        draggedTabID = nil
+        draggedTabOffset = .zero
+    }
+
+    private func syncDisplayedText(force: Bool = false) {
+        if force || !omnibarFocused {
+            omnibarText = activeTab?.displayURL ?? ""
+        }
+        if (force || !newTabSearchFocused), activeTab?.urlString.isEmpty != false {
             newTabSearchText = ""
+        }
+    }
+
+    private func refreshSavedRecords() {
+        guard let workspacePath = appState.workspacePath else {
+            savedRecords = []
+            return
+        }
+        savedRecords = savedPageStore.records(in: workspacePath)
+    }
+
+    private func refreshSearchableEntries() {
+        searchableEntries = makeSearchableEntries(from: fileTree)
+    }
+
+    private func refreshSuggestions() {
+        omnibarSuggestions = suggestions(for: omnibarText)
+        newTabSuggestions = suggestions(for: newTabSearchText)
+    }
+
+    private func suggestions(for input: String) -> [BrowserSuggestionItem] {
+        guard appState.settings.browserSuggestionsEnabled else { return [] }
+
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let normalized = trimmed.lowercased()
+        let limit = appState.settings.browserSuggestionLimit
+        var suggestions: [BrowserSuggestionItem] = []
+        var seenIDs = Set<String>()
+
+        func append(_ suggestion: BrowserSuggestionItem) {
+            guard seenIDs.insert(suggestion.id).inserted else { return }
+            suggestions.append(suggestion)
+        }
+
+        if appState.settings.browserHistoryEnabled {
+            for visit in recentHistory where suggestions.count < limit {
+                let haystack = [visit.title, visit.urlString, visit.host].joined(separator: " ").lowercased()
+                guard haystack.contains(normalized) else { continue }
+                append(
+                    BrowserSuggestionItem(
+                        id: "history:\(visit.urlString)",
+                        title: visit.title,
+                        subtitle: visit.urlString,
+                        iconName: "clock.arrow.circlepath",
+                        destination: .url(URL(string: visit.urlString))
+                    )
+                )
+            }
+        }
+
+        for item in appState.settings.browserQuickLaunchItems where suggestions.count < limit {
+            let haystack = [item.title, item.url].joined(separator: " ").lowercased()
+            guard haystack.contains(normalized) else { continue }
+            append(
+                BrowserSuggestionItem(
+                    id: "shortcut:\(item.id.uuidString)",
+                    title: item.title,
+                    subtitle: item.url,
+                    iconName: item.icon.isEmpty ? "globe" : item.icon,
+                    destination: .url(URL(string: item.url))
+                )
+            )
+        }
+
+        if appState.settings.browserSuggestsBugbookPages {
+            for entry in searchableEntries where suggestions.count < limit {
+                guard entry.normalizedHaystack.contains(normalized) else { continue }
+                append(
+                    BrowserSuggestionItem(
+                        id: "entry:\(entry.id)",
+                        title: entry.displayName,
+                        subtitle: entry.entry.path,
+                        iconName: entry.iconName,
+                        destination: .entry(entry.entry)
+                    )
+                )
+            }
+        }
+
+        if let directURL = resolvedURL(from: trimmed), suggestions.count < limit {
+            append(
+                BrowserSuggestionItem(
+                    id: "url:\(directURL.absoluteString)",
+                    title: directURL.absoluteString,
+                    subtitle: "Open address",
+                    iconName: "link",
+                    destination: .url(directURL)
+                )
+            )
+        }
+
+        if suggestions.count < limit {
+            append(
+                BrowserSuggestionItem(
+                    id: "search:\(normalized)",
+                    title: "Search \(appState.settings.browserSearchEngine.displayName)",
+                    subtitle: trimmed,
+                    iconName: "magnifyingglass",
+                    destination: .search(trimmed)
+                )
+            )
+        }
+
+        return Array(suggestions.prefix(limit))
+    }
+
+    private func applySuggestion(_ suggestion: BrowserSuggestionItem) {
+        switch suggestion.destination {
+        case .url(let url):
+            guard let url else { return }
+            browserManager.openURL(url, in: paneID, newTab: false)
+            omnibarText = url.absoluteString
+            newTabSearchText = ""
+            dismissSuggestionUI()
+        case .entry(let entry):
+            dismissSuggestionUI()
+            newTabSearchText = ""
+            onOpenBugbookEntry(entry)
+        case .search(let query):
+            submitOmnibar(query)
         }
     }
 
@@ -772,9 +1239,21 @@ struct BrowserPaneView: View {
         case .directURL(let url), .webSearch(let url):
             browserManager.openURL(url, in: paneID, newTab: false)
             omnibarText = url.absoluteString
+            newTabSearchText = ""
+            dismissSuggestionUI()
         case .bugbookEntry(let entry):
+            dismissSuggestionUI()
+            newTabSearchText = ""
             onOpenBugbookEntry(entry)
         }
+    }
+
+    private func openQuickLaunch(_ item: BrowserQuickLaunchItem) {
+        guard let url = URL(string: item.url) else { return }
+        browserManager.openURL(url, in: paneID, newTab: false)
+        omnibarText = url.absoluteString
+        newTabSearchText = ""
+        dismissSuggestionUI()
     }
 
     private func resolveDestination(for input: String) -> BrowserOmnibarDestination {
@@ -809,16 +1288,19 @@ struct BrowserPaneView: View {
     private func matchEntry(for input: String) -> FileEntry? {
         let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return nil }
-        return flattenedEntries(from: fileTree).first { entry in
-            let displayName = entry.name.hasSuffix(".md") ? String(entry.name.dropLast(3)) : entry.name
-            return displayName.lowercased() == normalized || entry.path.lowercased() == normalized
-        }
+        return searchableEntries.first {
+            $0.normalizedDisplayName == normalized || $0.normalizedPath == normalized
+        }?.entry
     }
 
-    private func flattenedEntries(from entries: [FileEntry]) -> [FileEntry] {
+    private func makeSearchableEntries(from entries: [FileEntry]) -> [BrowserSearchableEntry] {
         entries.flatMap { entry in
-            let children = flattenedEntries(from: entry.children ?? [])
-            return [entry] + children
+            var searchable: [BrowserSearchableEntry] = []
+            if !entry.isDirectory {
+                searchable.append(BrowserSearchableEntry(entry: entry))
+            }
+            searchable.append(contentsOf: makeSearchableEntries(from: entry.children ?? []))
+            return searchable
         }
     }
 
@@ -857,6 +1339,7 @@ struct BrowserPaneView: View {
             settings: appState.settings,
             aiService: aiService
         ) {
+            refreshSavedRecords()
             saveMessage = "Saved to \((result.record.folderPath as NSString).lastPathComponent)/"
         }
     }
@@ -877,12 +1360,14 @@ struct BrowserPaneView: View {
         guard let workspacePath = appState.workspacePath else { return }
         let nextStatus: SavedWebPageStatus = record.status == .read ? .unread : .read
         savedPageStore.markStatus(nextStatus, for: record.id, in: workspacePath)
+        refreshSavedRecords()
         saveMessage = nextStatus == .read ? "Marked read" : "Marked unread"
     }
 
     private func unsave(_ record: SavedWebPageRecord) {
         guard let workspacePath = appState.workspacePath else { return }
         savedPageStore.remove(recordID: record.id, in: workspacePath)
+        refreshSavedRecords()
         if let tabID = session.selectedTabID {
             session.updateSavedRecordID(nil, for: tabID)
         }
@@ -938,8 +1423,59 @@ struct BrowserPaneView: View {
             aiService: aiService
         )
         isApplyingCleanup = false
+        refreshSavedRecords()
         saveMessage = summary
         showCleanupSheet = false
+    }
+
+    private func dismissSuggestionUI() {
+        omnibarSuggestions = []
+        newTabSuggestions = []
+        omnibarFocused = false
+        newTabSearchFocused = false
+    }
+}
+
+private struct BrowserSuggestionItem: Identifiable {
+    enum Destination {
+        case url(URL?)
+        case entry(FileEntry)
+        case search(String)
+    }
+
+    let id: String
+    let title: String
+    let subtitle: String
+    let iconName: String
+    let destination: Destination
+}
+
+private struct BrowserSearchableEntry: Identifiable {
+    let entry: FileEntry
+    let displayName: String
+    let normalizedDisplayName: String
+    let normalizedPath: String
+    let normalizedHaystack: String
+    let iconName: String
+
+    var id: String { entry.id }
+
+    init(entry: FileEntry) {
+        let displayName = entry.name.hasSuffix(".md") ? String(entry.name.dropLast(3)) : entry.name
+        self.entry = entry
+        self.displayName = displayName
+        self.normalizedDisplayName = displayName.lowercased()
+        self.normalizedPath = entry.path.lowercased()
+        self.normalizedHaystack = [displayName, entry.path].joined(separator: " ").lowercased()
+        self.iconName = entry.icon ?? "doc.text"
+    }
+}
+
+private struct BrowserTabFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 

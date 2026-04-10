@@ -38,6 +38,11 @@ struct PaneFocusTracker: NSViewRepresentable {
                     let locationInView = self.convert(event.locationInWindow, from: nil)
                     if self.bounds.contains(locationInView) {
                         self.onFocus?(self.paneId)
+                        // Resign the terminal synchronously before the click dispatches,
+                        // so the target view (e.g. NSTextView) can become first responder.
+                        if window.firstResponder is GhosttySurfaceHostView {
+                            window.makeFirstResponder(nil)
+                        }
                     }
                     return event
                 }

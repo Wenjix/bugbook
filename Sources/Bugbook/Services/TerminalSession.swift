@@ -7,7 +7,8 @@ private let log = Logger(subsystem: "com.bugbook.app", category: "Terminal")
 
 /// Tracks the most recently focused Ghostty surface for clipboard callbacks.
 /// Set on the main thread in becomeFirstResponder; read in C callbacks that also run on main.
-nonisolated(unsafe) var _activeSurface: ghostty_surface_t? = nil
+// swiftlint:disable:next identifier_name
+nonisolated(unsafe) var _activeSurface: ghostty_surface_t?
 
 /// Manages a single terminal instance backed by a libghostty surface.
 @MainActor
@@ -89,6 +90,21 @@ class GhosttySurfaceHostView: NSView {
         }
     }
 
+    private var lastSentWidth: UInt32 = 0
+    private var lastSentHeight: UInt32 = 0
+
+    override func layout() {
+        super.layout()
+        guard let surface, bounds.width > 0, bounds.height > 0 else { return }
+        let scale = window?.backingScaleFactor ?? 2.0
+        let w = UInt32(bounds.width * scale)
+        let h = UInt32(bounds.height * scale)
+        guard w != lastSentWidth || h != lastSentHeight else { return }
+        lastSentWidth = w
+        lastSentHeight = h
+        ghostty_surface_set_size(surface, w, h)
+    }
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if let surface {
@@ -112,21 +128,25 @@ class GhosttySurfaceHostView: NSView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let surface else { return super.performKeyEquivalent(with: event) }
 
-        // Forward key equivalents to ghostty before AppKit routes them
-        // through the menu system. This ensures Cmd+V (paste), Cmd+C
-        // (copy), and other ghostty bindings are handled by the terminal.
+        // Let the menu system and SwiftUI keyboard shortcuts try first.
+        // This ensures app-level shortcuts (Cmd+N, Cmd+T, Cmd+W, Cmd+.,
+        // Cmd+Shift+C/D, etc.) work when the terminal has focus.
+        // Terminal paste still works because the menu's Edit > Paste
+        // sends paste: to the first responder (this view).
+        if super.performKeyEquivalent(with: event) { return true }
+
+        // If the menu system didn't handle it, forward to Ghostty for
+        // terminal-specific bindings (Cmd+C copy, etc.)
         let text = event.ghosttyCharacters
         var keyEv = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
         if let text, !text.isEmpty, let codepoint = text.utf8.first, codepoint >= 0x20 {
-            let handled = text.withCString { ptr -> Bool in
+            return text.withCString { ptr -> Bool in
                 keyEv.text = ptr
                 return ghostty_surface_key(surface, keyEv)
             }
-            if handled { return true }
         } else {
-            if ghostty_surface_key(surface, keyEv) { return true }
+            return ghostty_surface_key(surface, keyEv)
         }
-        return super.performKeyEquivalent(with: event)
     }
 
     // MARK: - Paste (fallback for Edit menu)
@@ -187,7 +207,35 @@ class GhosttySurfaceHostView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { super.scrollWheel(with: event); return }
-        ghostty_surface_mouse_scroll(surface, event.scrollingDeltaX, event.scrollingDeltaY, ghostty_input_scroll_mods_t(ghosttyMods(event.modifierFlags).rawValue))
+
+        var x = event.scrollingDeltaX
+        var y = event.scrollingDeltaY
+
+        // Ghostty's official macOS app applies a 2x multiplier to trackpad deltas.
+        if event.hasPreciseScrollingDeltas {
+            x *= 2
+            y *= 2
+        }
+
+        // Build packed scroll mods: [precision:1][momentum:3]
+        // Matches Ghostty's ScrollMods layout from Ghostty.Input.swift.
+        var scrollMods: Int32 = 0
+        if event.hasPreciseScrollingDeltas {
+            scrollMods |= 1  // bit 0: precision
+        }
+        let momentum: Int32
+        switch event.momentumPhase {
+        case .began:      momentum = 1
+        case .stationary: momentum = 2
+        case .changed:    momentum = 3
+        case .ended:      momentum = 4
+        case .cancelled:  momentum = 5
+        case .mayBegin:   momentum = 6
+        default:          momentum = 0
+        }
+        scrollMods |= (momentum << 1)  // bits 1-3: momentum phase
+
+        ghostty_surface_mouse_scroll(surface, x, y, ghostty_input_scroll_mods_t(scrollMods))
     }
 
     override func updateTrackingAreas() {

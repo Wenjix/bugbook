@@ -1,4 +1,4 @@
-#if BUGBOOK_BROWSER_CHROMIUM
+#if BUGBOOK_BROWSER_CHROMIUM && canImport(ChromiumBridge)
 import AppKit
 import Foundation
 @preconcurrency import ChromiumBridge
@@ -15,6 +15,10 @@ final class ChromiumBrowserEngine: BrowserEngine {
     ) -> any BrowserPage {
         BBChromiumRuntime.startIfNeeded()
         return ChromiumBrowserPage(initialURL: initialURL, eventHandler: eventHandler)
+    }
+
+    func clearCookies() async throws {
+        BBChromiumRuntime.clearCookies()
     }
 }
 
@@ -122,7 +126,7 @@ private final class ChromiumBrowserPage: NSObject, BrowserPage, @preconcurrency 
             estimatedProgress: state.estimatedProgress,
             canGoBack: state.canGoBack,
             canGoForward: state.canGoForward,
-            pageZoom: state.pageZoom > 0 ? state.pageZoom : 1.0
+            pageZoom: state.pageZoom > 0 ? state.pageZoom : BrowserPageState.defaultPageZoom
         )
     }
 

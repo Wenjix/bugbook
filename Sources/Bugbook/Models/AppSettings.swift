@@ -124,6 +124,10 @@ struct AppSettings: Codable, Equatable {
     /// Path to the page opened for new/empty tabs. Empty string = default Bugbook landing page.
     var defaultNewTabPage: String
     var browserSearchEngine: BrowserSearchEngine
+    var browserHistoryEnabled: Bool
+    var browserSuggestionsEnabled: Bool
+    var browserSuggestionLimit: Int
+    var browserSuggestsBugbookPages: Bool
     var browserChrome: BrowserChromeConfiguration
     var browserQuickLaunchItems: [BrowserQuickLaunchItem]
     var browserDefaultSaveFolder: String
@@ -156,6 +160,10 @@ struct AppSettings: Codable, Equatable {
         mailMemoryLearningEnabled: true,
         defaultNewTabPage: "",
         browserSearchEngine: .duckDuckGo,
+        browserHistoryEnabled: true,
+        browserSuggestionsEnabled: true,
+        browserSuggestionLimit: 8,
+        browserSuggestsBugbookPages: true,
         browserChrome: .minimal,
         browserQuickLaunchItems: [
             BrowserQuickLaunchItem(title: "Bugbook", url: "https://github.com/maxforsey/bugbook", icon: "book.pages"),
@@ -191,6 +199,10 @@ struct AppSettings: Codable, Equatable {
         case mailMemoryLearningEnabled
         case defaultNewTabPage
         case browserSearchEngine
+        case browserHistoryEnabled
+        case browserSuggestionsEnabled
+        case browserSuggestionLimit
+        case browserSuggestsBugbookPages
         case browserChrome
         case browserQuickLaunchItems
         case browserDefaultSaveFolder
@@ -230,6 +242,10 @@ struct AppSettings: Codable, Equatable {
         mailMemoryLearningEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailMemoryLearningEnabled) ?? true
         defaultNewTabPage = try container.decodeIfPresent(String.self, forKey: .defaultNewTabPage) ?? ""
         browserSearchEngine = try container.decodeIfPresent(BrowserSearchEngine.self, forKey: .browserSearchEngine) ?? .duckDuckGo
+        browserHistoryEnabled = try container.decodeIfPresent(Bool.self, forKey: .browserHistoryEnabled) ?? true
+        browserSuggestionsEnabled = try container.decodeIfPresent(Bool.self, forKey: .browserSuggestionsEnabled) ?? true
+        browserSuggestionLimit = max(3, min(12, try container.decodeIfPresent(Int.self, forKey: .browserSuggestionLimit) ?? 8))
+        browserSuggestsBugbookPages = try container.decodeIfPresent(Bool.self, forKey: .browserSuggestsBugbookPages) ?? true
         browserChrome = try container.decodeIfPresent(BrowserChromeConfiguration.self, forKey: .browserChrome) ?? .minimal
         browserQuickLaunchItems = try container.decodeIfPresent([BrowserQuickLaunchItem].self, forKey: .browserQuickLaunchItems) ?? AppSettings.default.browserQuickLaunchItems
         browserDefaultSaveFolder = try container.decodeIfPresent(String.self, forKey: .browserDefaultSaveFolder) ?? "Web Clippings"
@@ -265,6 +281,10 @@ struct AppSettings: Codable, Equatable {
         mailMemoryLearningEnabled: Bool = true,
         defaultNewTabPage: String,
         browserSearchEngine: BrowserSearchEngine = .duckDuckGo,
+        browserHistoryEnabled: Bool = true,
+        browserSuggestionsEnabled: Bool = true,
+        browserSuggestionLimit: Int = 8,
+        browserSuggestsBugbookPages: Bool = true,
         browserChrome: BrowserChromeConfiguration = .minimal,
         browserQuickLaunchItems: [BrowserQuickLaunchItem] = [],
         browserDefaultSaveFolder: String = "Web Clippings",
@@ -294,6 +314,10 @@ struct AppSettings: Codable, Equatable {
         self.mailMemoryLearningEnabled = mailMemoryLearningEnabled
         self.defaultNewTabPage = defaultNewTabPage
         self.browserSearchEngine = browserSearchEngine
+        self.browserHistoryEnabled = browserHistoryEnabled
+        self.browserSuggestionsEnabled = browserSuggestionsEnabled
+        self.browserSuggestionLimit = max(3, min(12, browserSuggestionLimit))
+        self.browserSuggestsBugbookPages = browserSuggestsBugbookPages
         self.browserChrome = browserChrome
         self.browserQuickLaunchItems = browserQuickLaunchItems
         self.browserDefaultSaveFolder = browserDefaultSaveFolder
@@ -326,6 +350,10 @@ struct AppSettings: Codable, Equatable {
         try container.encode(mailMemoryLearningEnabled, forKey: .mailMemoryLearningEnabled)
         try container.encode(defaultNewTabPage, forKey: .defaultNewTabPage)
         try container.encode(browserSearchEngine, forKey: .browserSearchEngine)
+        try container.encode(browserHistoryEnabled, forKey: .browserHistoryEnabled)
+        try container.encode(browserSuggestionsEnabled, forKey: .browserSuggestionsEnabled)
+        try container.encode(browserSuggestionLimit, forKey: .browserSuggestionLimit)
+        try container.encode(browserSuggestsBugbookPages, forKey: .browserSuggestsBugbookPages)
         try container.encode(browserChrome, forKey: .browserChrome)
         try container.encode(browserQuickLaunchItems, forKey: .browserQuickLaunchItems)
         try container.encode(browserDefaultSaveFolder, forKey: .browserDefaultSaveFolder)

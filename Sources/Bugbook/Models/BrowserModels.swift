@@ -30,7 +30,7 @@ struct BrowserTabSnapshot: Codable, Equatable, Identifiable {
         title: String = "New Tab",
         urlString: String = "",
         savedRecordID: UUID? = nil,
-        pageZoom: Double = 1.0
+        pageZoom: Double = BrowserPageState.defaultPageZoom
     ) {
         self.id = id
         self.title = title
@@ -83,7 +83,7 @@ struct BrowserTabState: Identifiable, Equatable {
         estimatedProgress: Double = 0,
         hoverURLString: String? = nil,
         savedRecordID: UUID? = nil,
-        pageZoom: Double = 1.0,
+        pageZoom: Double = BrowserPageState.defaultPageZoom,
         canGoBack: Bool = false,
         canGoForward: Bool = false,
         securityIconName: String = "magnifyingglass"
@@ -204,3 +204,4 @@ protocol ContextualSidebarProviding {
 protocol PaneDropdownProviding {
     func makePaneDropdown() -> AnyView
 }
+

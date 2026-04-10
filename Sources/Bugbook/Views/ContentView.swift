@@ -6,11 +6,19 @@ import Sentry
 import BugbookCore
 import GhosttyKit
 
+struct ContentViewBootstrap {
+    var workspaces: [Workspace]
+    var activeWorkspaceIndex: Int
+    var browserSnapshots: [UUID: BrowserPaneSnapshot] = [:]
+    var layoutPersistenceEnabled: Bool = true
+}
+
 // swiftlint:disable:next type_body_length
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let editorDraftStore = EditorDraftStore()
+    private let bootstrap: ContentViewBootstrap?
 
     @State private var appState = AppState()
     @State private var appSettingsStore = AppSettingsStore()
@@ -22,6 +30,8 @@ struct ContentView: View {
     @State private var meetingNoteService = MeetingNoteService()
     @State private var transcriptionService = TranscriptionService()
     @State private var meetingsVM = MeetingsViewModel()
+    @State private var meetingNotificationService = MeetingNotificationService()
+    @State private var meetingTranscriptStore = MeetingTranscriptStore()
     @State private var backlinkService = BacklinkService()
     @State private var blockDocuments: [UUID: BlockDocument] = [:]
     @State private var workspaceManager = WorkspaceManager()
@@ -72,6 +82,10 @@ struct ContentView: View {
         let id: UUID  // unique per request so repeated selections of the same entry still fire
     }
 
+    init(bootstrap: ContentViewBootstrap? = nil) {
+        self.bootstrap = bootstrap
+    }
+
     var body: some View {
         configuredLayout
     }
@@ -93,6 +107,7 @@ struct ContentView: View {
                             onSelectEntry: { entry in handleSidebarFileSelect(entry) },
                             onRefreshTree: { refreshFileTree() },
                             onOpenSettings: { openSettingsTab() },
+                            onNavItemTap: { item, inNewTab in handleNavItemTap(item, inNewTab: inNewTab) },
                             contextualLabel: sidebarContextLabel,
                             contextualContent: { sidebarContextualContent }
                         )
@@ -126,6 +141,7 @@ struct ContentView: View {
                             onSelectEntry: { entry in handleSidebarFileSelect(entry) },
                             onRefreshTree: { refreshFileTree() },
                             onOpenSettings: { openSettingsTab() },
+                            onNavItemTap: { item, inNewTab in handleNavItemTap(item, inNewTab: inNewTab) },
                             contextualLabel: sidebarContextLabel,
                             contextualContent: { sidebarContextualContent }
                         )
@@ -179,6 +195,9 @@ struct ContentView: View {
             .onChange(of: appState.settings) { _, newSettings in
                 appSettingsStore.save(newSettings)
                 applyTerminalColorScheme(newSettings.terminalColorScheme)
+            }
+            .onChange(of: appState.settings.browserHistoryEnabled) { _, enabled in
+                browserManager.setHistoryEnabled(enabled)
             }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
@@ -306,7 +325,16 @@ struct ContentView: View {
     }
 
     private func handleRecordingChange(_ recording: Bool) {
-        if recording, let blockId = appState.recordingBlockId {
+        if recording, let session = appState.activeMeetingSession {
+            // Meeting page recording — pill navigates to the meeting tab (opens if closed)
+            recordingPillController.onStop = {
+                NotificationCenter.default.post(name: .stopMeetingRecording, object: nil)
+            }
+            recordingPillController.onTap = {
+                navigateToFilePath(session.meetingPagePath)
+            }
+        } else if recording, let blockId = appState.recordingBlockId {
+            // Legacy inline block recording
             let doc = blockDocuments.values.first { $0.blocks.contains(where: { $0.id == blockId }) }
             recordingPillController.onStop = { [weak doc] in
                 doc?.onStopMeeting?(blockId)
@@ -409,6 +437,19 @@ struct ContentView: View {
                     return
                 }
                 guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId else { return }
+
+                // Warn if closing a pane with an active meeting recording
+                if let session = appState.activeMeetingSession,
+                   let doc = blockDocuments[paneId],
+                   doc.filePath == session.meetingPagePath {
+                    let alert = NSAlert()
+                    alert.messageText = "Recording in Progress"
+                    alert.informativeText = "A meeting is being recorded in this tab. The recording will continue in the background. You can get back via the floating pill."
+                    alert.addButton(withTitle: "Close Tab")
+                    alert.addButton(withTitle: "Cancel")
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                }
+
                 cleanupTabDocuments(paneId)
                 terminalManager.closeSession(paneId)
                 browserManager.closeSession(paneId)
@@ -468,6 +509,12 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openMeetings)) { _ in
                 presentEditorPane(.meetingsDocument())
             }
+            .onReceive(NotificationCenter.default.publisher(for: .meetingNotificationRecord)) { notification in
+                handleMeetingNotification(notification, startRecording: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .meetingNotificationOpenNotes)) { notification in
+                handleMeetingNotification(notification, startRecording: false)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .openGateway)) { _ in
                 presentEditorPane(.gatewayDocument())
             }
@@ -519,10 +566,6 @@ struct ContentView: View {
     private func applyDatabaseNotifications<V: View>(to view: V) -> some View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .openAIPanel)) { _ in
-                ensureAiInitializedIfNeeded()
-                appState.toggleAiPanel()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .openFullChat)) { _ in
                 ensureAiInitializedIfNeeded()
                 appState.toggleAiPanel()
             }
@@ -719,9 +762,13 @@ struct ContentView: View {
 
     @discardableResult
     private func postBrowserCommandIfFocused(_ name: Notification.Name, object: Any? = nil) -> Bool {
-        guard focusedBrowserPaneID != nil else { return false }
-        NotificationCenter.default.post(name: name, object: object)
+        guard let targetPaneID = browserCommandPaneID else { return false }
+        NotificationCenter.default.post(name: name, object: object ?? targetPaneID)
         return true
+    }
+
+    private var browserCommandPaneID: UUID? {
+        focusedBrowserPaneID ?? soleBrowserPaneID
     }
 
     private var activeWorkspaceLeaves: [PaneNode.Leaf] {
@@ -736,6 +783,15 @@ struct ContentView: View {
         guard let leaf = workspaceManager.focusedPane else { return nil }
         guard case .document(let file) = leaf.content, file.isBrowser else { return nil }
         return leaf.id
+    }
+
+    private var soleBrowserPaneID: UUID? {
+        let browserLeaves = activeWorkspaceLeaves.filter { leaf in
+            guard case .document(let file) = leaf.content else { return false }
+            return file.isBrowser
+        }
+        guard browserLeaves.count == 1 else { return nil }
+        return browserLeaves.first?.id
     }
 
     private var contextualSidebarActiveFilePath: String? {
@@ -767,6 +823,42 @@ struct ContentView: View {
         appState.currentView = .editor
         appState.showSettings = false
         openOrFocusPane(content)
+    }
+
+    /// Handle a tap on a sidebar fixed-zone navigation item.
+    /// Default: replace the focused pane. Cmd-click: open in a new workspace tab.
+    private func handleNavItemTap(_ item: ShellNavItem, inNewTab: Bool) {
+        appState.currentView = .editor
+        appState.showSettings = false
+
+        // Modal / file actions don't have pane semantics — fall back to notifications.
+        switch item.id {
+        case "search":
+            NotificationCenter.default.post(name: .quickOpen, object: nil)
+            return
+        case "notes":
+            NotificationCenter.default.post(name: .openDailyNote, object: nil)
+            return
+        default:
+            break
+        }
+
+        let content: PaneContent
+        switch item.id {
+        case "home": content = .gatewayDocument()
+        case "meeting": content = .meetingsDocument()
+        case "calendar": content = .calendarDocument()
+        case "terminal": content = .terminal
+        case "browser": content = .browserDocument()
+        case "mail": content = .mailDocument()
+        default: return
+        }
+
+        if inNewTab {
+            workspaceManager.addWorkspaceWith(content: content)
+        } else {
+            openContentInFocusedPane(content)
+        }
     }
 
     private func handleSidebarToggle() {
@@ -1110,8 +1202,10 @@ struct ContentView: View {
             if !appState.showSettings && appState.currentView != .graphView {
                 WorkspaceTabBar(
                     workspaceManager: workspaceManager,
+                    browserManager: browserManager,
                     sidebarOpen: shellShowsSidebarPanel,
-                    currentView: appState.currentView
+                    currentView: appState.currentView,
+                    recordingPagePath: appState.activeMeetingSession?.meetingPagePath
                 )
                 .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
@@ -1120,7 +1214,7 @@ struct ContentView: View {
             ZStack(alignment: .trailing) {
                 VStack(spacing: 0) {
                     if appState.showSettings {
-                        SettingsView(appState: appState)
+                        SettingsView(appState: appState, browserManager: browserManager)
                             .background(Container.cardBg)
                             .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
                     } else if appState.currentView == .graphView {
@@ -1385,7 +1479,7 @@ struct ContentView: View {
     private func paneContent(_ existing: PaneContent, matches target: PaneContent) -> Bool {
         switch (existing, target) {
         case (.terminal, .terminal):
-            return true
+            return false  // Each terminal gets its own workspace — no reuse
         case let (.document(file), .document(targetFile)):
             return file.kind == targetFile.kind
         default:
@@ -1405,6 +1499,7 @@ struct ContentView: View {
     private func replacePaneContent(paneId: UUID, with content: PaneContent) {
         cleanupPaneResources(paneId)
         workspaceManager.updatePaneContent(paneId: paneId, content: content)
+        updateSidebarContextType()
     }
 
     private func cleanupPaneResources(_ paneId: UUID) {
@@ -1462,9 +1557,7 @@ struct ContentView: View {
             MeetingsView(
                 appState: appState,
                 viewModel: meetingsVM,
-                transcriptionService: transcriptionService,
                 meetingNoteService: meetingNoteService,
-                aiService: aiService,
                 onNavigateToFile: { path in
                     navigateToFilePath(path)
                 }
@@ -1529,6 +1622,8 @@ struct ContentView: View {
             DatabaseFullPageView(dbPath: file.path, initialRowId: dbInitialRowId)
                 .id(leaf.id)
                 .onAppear { dbInitialRowId = nil }
+        } else if let doc = blockDocuments[leaf.id], doc.isMeetingPage {
+            meetingPageView(for: file, document: doc)
         } else {
             editorView(for: file)
         }
@@ -1674,6 +1769,72 @@ struct ContentView: View {
         } else {
             Color.fallbackEditorBg
         }
+    }
+
+    // MARK: - Meeting Notification Handling
+
+    private func handleMeetingNotification(_ notification: Foundation.Notification, startRecording: Bool) {
+        guard let eventId = notification.userInfo?["eventId"] as? String,
+              let eventTitle = notification.userInfo?["eventTitle"] as? String,
+              let workspace = appState.workspacePath else { return }
+
+        // Find the calendar event
+        let event = calendarService.events.first { $0.id == eventId }
+
+        Task {
+            // Create or open the meeting note page
+            let path: String?
+            if let event {
+                path = await meetingNoteService.createOrOpenMeetingNote(for: event, workspace: workspace)
+            } else {
+                // Event not found in cache — create a fresh meeting page
+                let dateStr = MeetingNoteService.sanitize(eventTitle)
+                let dateFmt = DateFormatter()
+                dateFmt.dateFormat = "yyyy-MM-dd"
+                let pageName = "\(dateFmt.string(from: Date())) — \(dateStr)"
+                let pagePath = (workspace as NSString).appendingPathComponent("\(pageName).md")
+
+                let content = """
+                ---
+                title: \(eventTitle)
+                date: \(ISO8601DateFormatter().string(from: Date()))
+                type: meeting
+                ---
+
+                # \(eventTitle)
+
+                ## Notes
+
+                """
+                try? content.write(toFile: pagePath, atomically: true, encoding: .utf8)
+                path = pagePath
+            }
+
+            guard let path else { return }
+            navigateToFilePath(path)
+        }
+    }
+
+    // MARK: - Meeting Page
+
+    @ViewBuilder
+    private func meetingPageView(for file: OpenFile, document: BlockDocument) -> some View {
+        MeetingPageView(
+            appState: appState,
+            document: document,
+            transcriptionService: transcriptionService,
+            meetingNoteService: meetingNoteService,
+            transcriptStore: meetingTranscriptStore,
+            onTextChange: {
+                guard appState.activeTabIndex < appState.openTabs.count else { return }
+                if !appState.openTabs[appState.activeTabIndex].isDirty {
+                    appState.openTabs[appState.activeTabIndex].isDirty = true
+                }
+                scheduleSave()
+            },
+            onTyping: { triggerFocusMode() },
+            onNavigateToFile: { path in navigateToFilePath(path) }
+        )
     }
 
     private func wireUpDocumentCallbacks(_ doc: BlockDocument) {
@@ -2254,6 +2415,9 @@ struct ContentView: View {
                 file.icon = doc.icon
                 if let rawTitle = doc.titleBlock?.text, !rawTitle.isEmpty {
                     file.displayName = AttributedStringConverter.plainText(from: rawTitle)
+                } else if doc.isMeetingPage,
+                          let yamlTitle = MarkdownBlockParser.yamlValue(for: "title", in: doc.yamlFrontmatter) {
+                    file.displayName = yamlTitle
                 }
             }
         }
@@ -2361,12 +2525,14 @@ struct ContentView: View {
         }
 
         let isDatabase = fileSystem.isDatabaseFolder(at: targetPath)
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: targetPath, isDirectory: &isDir)
         let kind: TabKind = isDatabase ? .database : .page
         let entry = FileEntry(
             id: targetPath,
             name: item.name,
             path: targetPath,
-            isDirectory: isDatabase,
+            isDirectory: isDir.boolValue,
             kind: kind,
             icon: item.icon
         )
@@ -2375,9 +2541,7 @@ struct ContentView: View {
 
     private func isOpenableBreadcrumbPath(_ path: String) -> Bool {
         if fileSystem.isDatabaseFolder(at: path) { return true }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return false }
-        return !isDir.boolValue
+        return FileManager.default.fileExists(atPath: path)
     }
 
     private func warmUpTranscriptionModel() {
@@ -2388,6 +2552,7 @@ struct ContentView: View {
 
     private func loadAppSettings() {
         appState.settings = appSettingsStore.load()
+        browserManager.setHistoryEnabled(appState.settings.browserHistoryEnabled)
     }
 
     private func initializeWorkspace() {
@@ -2435,7 +2600,20 @@ struct ContentView: View {
 
         // Initialize workspace manager (restore saved layout or migrate from tabs)
         restoredWorkspaceDocuments = false
-        workspaceManager.restoreOrCreateDefault()
+        if let bootstrap {
+            workspaceManager.layoutPersistenceEnabled = bootstrap.layoutPersistenceEnabled
+            if bootstrap.workspaces.isEmpty {
+                workspaceManager.restoreOrCreateDefault()
+            } else {
+                workspaceManager.workspaces = bootstrap.workspaces
+                workspaceManager.activeWorkspaceIndex = min(bootstrap.activeWorkspaceIndex, bootstrap.workspaces.count - 1)
+                for (paneID, snapshot) in bootstrap.browserSnapshots {
+                    browserManager.restoreSessionSnapshot(snapshot, for: paneID)
+                }
+            }
+        } else {
+            workspaceManager.restoreOrCreateDefault()
+        }
         restoreWorkspaceDocumentsIfNeeded()
 
         startWorkspaceWatcher(path: workspacePath)
@@ -2448,6 +2626,10 @@ struct ContentView: View {
                 self.appState.mcpServers = servers
             }
         }
+
+        // Setup meeting notifications
+        meetingNotificationService.setup()
+        meetingNotificationService.startPolling(calendarService: calendarService)
     }
 
     private func restoreWorkspaceDocumentsIfNeeded() {
@@ -3071,9 +3253,7 @@ struct ContentView: View {
             let path = try fileSystem.openOrCreateDailyNote(in: workspace)
             let name = (path as NSString).lastPathComponent
             let entry = FileEntry(id: path, name: name, path: path, isDirectory: false)
-            appState.currentView = .editor
-            appState.showSettings = false
-            navigateToEntry(entry, preferExistingTab: true)
+            navigateToEntryInPane(entry)
             refreshFileTree()
         } catch {
             Log.fileSystem.error("Failed to open daily note: \(error.localizedDescription)")

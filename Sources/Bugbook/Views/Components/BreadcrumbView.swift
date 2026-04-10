@@ -79,34 +79,3 @@ struct BreadcrumbView: View {
     }
 }
 
-struct BacklinksMenuButton: View {
-    let backlinks: [Backlink]
-    let onNavigate: (String) -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Menu {
-            Section("Backlinks") {
-                ForEach(backlinks) { backlink in
-                    Button(backlink.sourceName) {
-                        onNavigate(backlink.sourcePath)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "link")
-                .font(ShellZoomMetrics.font(Typography.bodySmall, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(width: ShellZoomMetrics.size(32), height: ShellZoomMetrics.size(32))
-        .background(
-            RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                .fill(isHovered ? Color.primary.opacity(0.1) : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-    }
-}

@@ -67,7 +67,7 @@ let package = Package(
             path: "Sources/Bugbook",
             exclude: ["MCP"],
             swiftSettings: [
-                .define("BUGBOOK_BROWSER_WEBKIT")
+                .define("BUGBOOK_BROWSER_CHROMIUM")
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),

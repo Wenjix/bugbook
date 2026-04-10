@@ -89,6 +89,17 @@ indirect enum PaneNode: Identifiable, Codable, Equatable {
         }
     }
 
+    /// First document leaf in depth-first order (short-circuits without materializing the full tree).
+    var firstDocumentLeaf: Leaf? {
+        switch self {
+        case .leaf(let leaf):
+            if case .document = leaf.content { return leaf }
+            return nil
+        case .split(let split):
+            return split.first.firstDocumentLeaf ?? split.second.firstDocumentLeaf
+        }
+    }
+
     /// All leaves flattened in depth-first order.
     var allLeaves: [Leaf] {
         switch self {

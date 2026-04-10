@@ -10,6 +10,7 @@
 #include "include/cef_api_hash.h"
 #include "include/capi/cef_browser_capi.h"
 #include "include/capi/cef_client_capi.h"
+#include "include/capi/cef_cookie_capi.h"
 #include "include/capi/cef_devtools_message_observer_capi.h"
 #include "include/capi/cef_download_handler_capi.h"
 #include "include/capi/cef_download_item_capi.h"
@@ -171,19 +172,41 @@ static NSString *BBChromiumCachePath(void) {
     return [BBChromiumRootCachePath() stringByAppendingPathComponent:@"Default"];
 }
 
+static BOOL BBChromiumEnvironmentFlagEnabled(NSString *name) {
+    NSString *value = NSProcessInfo.processInfo.environment[name];
+    if (!value) {
+        return NO;
+    }
+
+    NSString *normalized = value.lowercaseString;
+    return [normalized isEqualToString:@"1"]
+        || [normalized isEqualToString:@"true"]
+        || [normalized isEqualToString:@"yes"]
+        || [normalized isEqualToString:@"on"];
+}
+
 static NSArray<NSString *> *BBChromiumAdditionalArguments(void) {
     static NSArray<NSString *> *arguments = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        // Metal-backed ANGLE + GPU rasterization pipeline.
-        // Replaces SwiftShader (pure CPU) with hardware-accelerated rendering.
-        // Flags validated via automated benchmark sweep (40 configs tested).
+        if (BBChromiumEnvironmentFlagEnabled(@"BUGBOOK_CHROMIUM_AGGRESSIVE_GPU")) {
+            // Opt-in fast path for local benchmarking. This has proven unstable on
+            // some dev machines, so it should not be the default runtime mode.
+            arguments = @[
+                @"--use-gl=angle",
+                @"--use-angle=metal",
+                @"--enable-gpu-rasterization",
+                @"--enable-zero-copy",
+                @"--num-raster-threads=4",
+            ];
+            return;
+        }
+
+        // Stable default for dev use: keep Chromium on the software renderer so
+        // browser tabs still work even when the GPU helper is not usable.
         arguments = @[
-            @"--use-gl=angle",
-            @"--use-angle=metal",
-            @"--enable-gpu-rasterization",
-            @"--enable-zero-copy",
-            @"--num-raster-threads=4",
+            @"--disable-gpu",
+            @"--disable-gpu-compositing",
         ];
     });
     return arguments;
@@ -410,10 +433,21 @@ static void BBChromiumInvalidateMessagePumpTimer(void) {
 + (cef_request_context_t *)sharedRequestContext;
 @end
 
+@class BBChromiumPage;
+
+@interface BBChromiumPopupWindowController : NSWindowController <NSWindowDelegate>
+@property(nonatomic, readonly) NSUUID *popupID;
+@property(nonatomic, readonly) BBChromiumPage *page;
+- (instancetype)initWithOwnerPage:(BBChromiumPage *)ownerPage initialURLString:(nullable NSString *)initialURLString;
+- (void)showPopupWindow;
+- (void)browserDidClose;
+@end
+
 @interface BBChromiumPage ()
 @property(nonatomic, strong) BBChromiumHostContainerView *hostContainerView;
 @property(nonatomic, strong) NSView *browserView;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, BBPendingJavaScriptEvaluation *> *pendingJavaScriptEvaluations;
+@property(nonatomic, strong) NSMutableDictionary<NSUUID *, BBChromiumPopupWindowController *> *popupControllers;
 @property(nonatomic, copy, nullable) NSString *pendingURLString;
 @property(nonatomic, copy, nullable) NSString *currentURLString;
 @property(nonatomic, copy, nullable) NSString *currentTitle;
@@ -423,9 +457,11 @@ static void BBChromiumInvalidateMessagePumpTimer(void) {
 @property(nonatomic, assign) BOOL canGoBack;
 @property(nonatomic, assign) BOOL canGoForward;
 @property(nonatomic, assign) double pageZoom;
+@property(nonatomic, assign) BOOL expectsPopupBrowser;
 @property(nonatomic, assign) BOOL browserCreationAttempted;
 @property(nonatomic, assign) BOOL disposed;
 @property(nonatomic, assign) int nextDevToolsMessageID;
+@property(nonatomic, weak, nullable) BBChromiumPopupWindowController *owningPopupWindowController;
 @property(nonatomic, assign) cef_browser_t *browser;
 @property(nonatomic, assign) cef_browser_host_t *browserHost;
 @property(nonatomic, assign) cef_registration_t *devToolsRegistration;
@@ -436,7 +472,14 @@ static void BBChromiumInvalidateMessagePumpTimer(void) {
 @property(nonatomic, assign) BBChromiumDownloadHandlerWrapper *downloadHandlerWrapper;
 @property(nonatomic, assign) BBChromiumFindHandlerWrapper *findHandlerWrapper;
 @property(nonatomic, assign) BBChromiumDevToolsObserverWrapper *devToolsObserverWrapper;
+- (instancetype)initWithInitialURLString:(nullable NSString *)initialURLString expectsPopupBrowser:(BOOL)expectsPopupBrowser;
+- (void)commonInitWithInitialURLString:(nullable NSString *)initialURLString expectsPopupBrowser:(BOOL)expectsPopupBrowser;
 - (void)ensureBrowserCreatedIfPossible;
+- (BOOL)configurePopupWindowInfo:(cef_window_info_t *)windowInfo
+                          client:(cef_client_t **)client
+                 targetURLString:(NSString *)targetURLString;
+- (void)releasePopupControllerWithID:(NSUUID *)popupID;
+- (void)closeChildPopups;
 - (void)handleAddressChange:(NSString *)urlString browser:(cef_browser_t *)browser;
 - (void)handleTitleChange:(NSString *)title browser:(cef_browser_t *)browser;
 - (void)handleStatusMessage:(NSString *)status;
@@ -535,6 +578,24 @@ static void BBChromiumInvalidateMessagePumpTimer(void) {
 
 + (NSString *)runtimeDescription {
     return [NSString stringWithFormat:@"CEF %s", CEF_VERSION];
+}
+
++ (void)clearCookies {
+    cef_request_context_t *context = [self sharedRequestContext];
+    if (!context) {
+        return;
+    }
+
+    cef_cookie_manager_t *cookieManager = context->get_cookie_manager(context, nullptr);
+    if (!cookieManager) {
+        return;
+    }
+
+    cookieManager->delete_cookies(cookieManager, nullptr, nullptr, nullptr);
+    if (cookieManager->flush_store) {
+        cookieManager->flush_store(cookieManager, nullptr);
+    }
+    BBChromiumReleaseRefCounted(&cookieManager->base);
 }
 
 + (cef_request_context_t *)sharedRequestContext {
@@ -759,13 +820,24 @@ static int CEF_CALLBACK BBChromiumOnBeforePopup(cef_life_span_handler_t *handler
                                                 __unused cef_window_open_disposition_t target_disposition,
                                                 __unused int user_gesture,
                                                 __unused const cef_popup_features_t *popupFeatures,
-                                                __unused cef_window_info_t *windowInfo,
-                                                __unused cef_client_t **client,
-                                                __unused cef_browser_settings_t *settings,
+                                                cef_window_info_t *windowInfo,
+                                                cef_client_t **client,
+                                                cef_browser_settings_t *settings,
                                                 __unused cef_dictionary_value_t **extra_info,
                                                 __unused int *no_javascript_access) {
     BBChromiumPage *page = BBChromiumLifeSpanHandlerFrom(handler)->page;
-    [page handlePopupURL:BBChromiumStringFromCef(target_url)];
+    NSString *targetURLString = BBChromiumStringFromCef(target_url);
+    if (page && windowInfo && client
+        && [page configurePopupWindowInfo:windowInfo client:client targetURLString:targetURLString]) {
+        if (settings) {
+            settings->size = sizeof(*settings);
+            settings->background_color = CefColorSetARGB(255, 255, 255, 255);
+            settings->javascript_access_clipboard = STATE_ENABLED;
+            settings->webgl = STATE_ENABLED;
+        }
+        return 0;
+    }
+    [page handlePopupURL:targetURLString];
     return 1;
 }
 
@@ -874,6 +946,66 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
     [page failPendingJavaScriptEvaluationsWithError:BBChromiumError(5, @"Chromium DevTools agent detached.")];
 }
 
+@implementation BBChromiumPopupWindowController {
+    __weak BBChromiumPage *_ownerPage;
+    BOOL _closingFromBrowser;
+}
+
+- (instancetype)initWithOwnerPage:(BBChromiumPage *)ownerPage initialURLString:(nullable NSString *)initialURLString {
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 720)
+                                                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    self = [super initWithWindow:window];
+    if (!self) {
+        return nil;
+    }
+
+    _ownerPage = ownerPage;
+    _popupID = [NSUUID UUID];
+    _page = [[BBChromiumPage alloc] initWithInitialURLString:initialURLString expectsPopupBrowser:YES];
+    _page.owningPopupWindowController = self;
+
+    NSView *hostView = _page.hostView;
+    hostView.frame = NSMakeRect(0, 0, 520, 720);
+    hostView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    window.contentView = hostView;
+    window.delegate = self;
+    window.titleVisibility = NSWindowTitleHidden;
+    window.titlebarAppearsTransparent = YES;
+    window.toolbarStyle = NSWindowToolbarStyleUnifiedCompact;
+    window.releasedWhenClosed = NO;
+    window.title = initialURLString.length > 0 ? ([NSURL URLWithString:initialURLString].host ?: @"Browser") : @"Browser";
+    return self;
+}
+
+- (void)showPopupWindow {
+    [self.window center];
+    [self showWindow:nil];
+    [self.window makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)browserDidClose {
+    _closingFromBrowser = YES;
+    if (self.window.isVisible) {
+        [self close];
+        return;
+    }
+    [_ownerPage releasePopupControllerWithID:self.popupID];
+}
+
+- (void)windowWillClose:(NSNotification *)notification {
+    (void)notification;
+    [_ownerPage releasePopupControllerWithID:self.popupID];
+    if (!_closingFromBrowser) {
+        [self.page dispose];
+    }
+}
+
+@end
+
 @implementation BBChromiumPage
 
 - (instancetype)initWithInitialURLString:(nullable NSString *)initialURLString {
@@ -882,10 +1014,25 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
         return nil;
     }
 
+    [self commonInitWithInitialURLString:initialURLString expectsPopupBrowser:NO];
+    return self;
+}
+
+- (instancetype)initWithInitialURLString:(nullable NSString *)initialURLString expectsPopupBrowser:(BOOL)expectsPopupBrowser {
+    self = [self initWithInitialURLString:initialURLString];
+    if (self) {
+        _expectsPopupBrowser = expectsPopupBrowser;
+    }
+    return self;
+}
+
+- (void)commonInitWithInitialURLString:(nullable NSString *)initialURLString expectsPopupBrowser:(BOOL)expectsPopupBrowser {
     _pendingJavaScriptEvaluations = [NSMutableDictionary dictionary];
+    _popupControllers = [NSMutableDictionary dictionary];
     _pendingURLString = initialURLString.length > 0 ? [initialURLString copy] : nil;
     _pageZoom = 1.0;
     _nextDevToolsMessageID = 1;
+    _expectsPopupBrowser = expectsPopupBrowser;
 
     _hostContainerView = [[BBChromiumHostContainerView alloc] initWithFrame:NSZeroRect];
     _hostContainerView.page = self;
@@ -895,7 +1042,6 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
 
     [self setupCEFCallbacks];
     [self notifyStateChanged];
-    return self;
 }
 
 - (void)dealloc {
@@ -1040,6 +1186,7 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
     self.disposed = YES;
     self.delegate = nil;
     self.hostContainerView.page = nil;
+    [self closeChildPopups];
 
     [self failPendingJavaScriptEvaluationsWithError:BBChromiumError(6, @"Chromium page was disposed.")];
 
@@ -1149,7 +1296,7 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
 }
 
 - (void)ensureBrowserCreatedIfPossible {
-    if (self.disposed || self.browser || self.browserCreationAttempted) {
+    if (self.disposed || self.browser || self.browserCreationAttempted || self.expectsPopupBrowser) {
         return;
     }
     if (!self.hostContainerView.window) {
@@ -1207,6 +1354,62 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
     [self notifyStateChanged];
 }
 
+- (BOOL)configurePopupWindowInfo:(cef_window_info_t *)windowInfo
+                          client:(cef_client_t **)client
+                 targetURLString:(NSString *)targetURLString {
+    __block BOOL configured = NO;
+    void (^configurePopup)(void) = ^{
+        BBChromiumPopupWindowController *controller = [[BBChromiumPopupWindowController alloc] initWithOwnerPage:self
+                                                                                               initialURLString:targetURLString];
+        if (!controller) {
+            return;
+        }
+
+        self.popupControllers[controller.popupID] = controller;
+        [controller showPopupWindow];
+
+        BBChromiumPage *popupPage = controller.page;
+        if (!popupPage.clientWrapper) {
+            [self.popupControllers removeObjectForKey:controller.popupID];
+            return;
+        }
+
+        NSRect bounds = popupPage.browserView.bounds;
+        CGFloat width = NSWidth(bounds) > 1 ? NSWidth(bounds) : 520;
+        CGFloat height = NSHeight(bounds) > 1 ? NSHeight(bounds) : 720;
+        windowInfo->size = sizeof(*windowInfo);
+        windowInfo->parent_view = CAST_NSVIEW_TO_CEF_WINDOW_HANDLE(popupPage.hostContainerView);
+        windowInfo->view = CAST_NSVIEW_TO_CEF_WINDOW_HANDLE(popupPage.browserView);
+        windowInfo->bounds = cef_rect_t{0, 0, (int)width, (int)height};
+        windowInfo->runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+        *client = BBChromiumRetainAPI(&popupPage.clientWrapper->client);
+        configured = YES;
+    };
+
+    if (NSThread.isMainThread) {
+        configurePopup();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), configurePopup);
+    }
+
+    return configured;
+}
+
+- (void)releasePopupControllerWithID:(NSUUID *)popupID {
+    if (!popupID) {
+        return;
+    }
+    [self.popupControllers removeObjectForKey:popupID];
+}
+
+- (void)closeChildPopups {
+    NSArray<BBChromiumPopupWindowController *> *controllers = self.popupControllers.allValues;
+    [self.popupControllers removeAllObjects];
+    for (BBChromiumPopupWindowController *controller in controllers) {
+        [controller close];
+    }
+}
+
 - (void)syncStateFromBrowser {
     if (!self.browser || !self.browser->is_valid(self.browser)) {
         return;
@@ -1257,6 +1460,7 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
         BBChromiumReleaseRefCounted(&self.browser->base);
         self.browser = nullptr;
     }
+    [self.owningPopupWindowController browserDidClose];
 }
 
 - (void)handleAddressChange:(NSString *)urlString browser:(cef_browser_t *)browser {
