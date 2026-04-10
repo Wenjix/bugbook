@@ -21,13 +21,15 @@ This plugin turns your Bugbook workspace into a project management system that C
 
 ## Installation
 
-```bash
-/plugin marketplace add github:max4c/bugbook
-/plugin install bugbook
-/plugin install max
+```
+/plugin marketplace add max4c/bugbook
+/plugin install bugbook@max4c-bugbook
+/plugin install max@max4c-bugbook
 ```
 
-The `max` plugin is a companion general skills library (also authored by Max Forsey) that provides `grill-me`, `write-prd`, `tdd`, and more. The bugbook plugin's `/flow`, `/prep`, and `/ticket` skills invoke `max:grill-me` and `max:write-prd` for active spec grilling and ambiguity scoring. Without `max` installed, those skills fall back to passive review gates.
+The install syntax is `plugin-name@marketplace-name` — both plugins ship from the `max4c-bugbook` marketplace bundled in this repo. The `max` plugin source itself lives in `max4c/skills`; the marketplace just points at it.
+
+The `max` plugin is a companion general skills library that provides `grill-me`, `write-prd`, `tdd`, and more. The bugbook plugin's `flow`, `prep`, and `ticket` skills invoke `max:grill-me` and `max:write-prd` for active spec grilling and ambiguity scoring. Without `max` installed, those skills fall back to passive review gates.
 
 ## Requirements
 
