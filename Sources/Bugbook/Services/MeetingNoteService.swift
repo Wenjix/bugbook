@@ -237,6 +237,7 @@ class MeetingNoteService {
             }
         }
         lines.append("type: meeting")
+        lines.append("meeting_id: \(UUID().uuidString)")
         lines.append("---")
         lines.append("")
 

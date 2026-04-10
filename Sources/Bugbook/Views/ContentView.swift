@@ -1787,30 +1787,38 @@ struct ContentView: View {
             if let event {
                 path = await meetingNoteService.createOrOpenMeetingNote(for: event, workspace: workspace)
             } else {
-                // Event not found in cache — create a fresh meeting page
+                // Event not found in cache — open the deterministic page for this title,
+                // creating it only if it doesn't already exist. Writing unconditionally
+                // would clobber prior edits if the notification action is triggered twice.
                 let dateStr = MeetingNoteService.sanitize(eventTitle)
                 let dateFmt = DateFormatter()
                 dateFmt.dateFormat = "yyyy-MM-dd"
                 let pageName = "\(dateFmt.string(from: Date())) — \(dateStr)"
                 let pagePath = (workspace as NSString).appendingPathComponent("\(pageName).md")
 
-                let content = """
-                ---
-                title: \(eventTitle)
-                date: \(ISO8601DateFormatter().string(from: Date()))
-                type: meeting
-                ---
+                if !FileManager.default.fileExists(atPath: pagePath) {
+                    let content = """
+                    ---
+                    title: \(eventTitle)
+                    date: \(ISO8601DateFormatter().string(from: Date()))
+                    type: meeting
+                    meeting_id: \(UUID().uuidString)
+                    ---
 
-                # \(eventTitle)
+                    # \(eventTitle)
 
-                ## Notes
+                    ## Notes
 
-                """
-                try? content.write(toFile: pagePath, atomically: true, encoding: .utf8)
+                    """
+                    try? content.write(toFile: pagePath, atomically: true, encoding: .utf8)
+                }
                 path = pagePath
             }
 
             guard let path else { return }
+            if startRecording {
+                appState.pendingAutoRecordPath = path
+            }
             navigateToFilePath(path)
         }
     }
