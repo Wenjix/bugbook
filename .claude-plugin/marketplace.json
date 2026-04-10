@@ -1,0 +1,28 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "max4c-bugbook",
+  "description": "Bugbook app plugin marketplace — bundles the Bugbook workflow plugin and the max general skills plugin so users get both with one marketplace add.",
+  "owner": {
+    "name": "Max Forsey",
+    "email": "maxforsey@icloud.com"
+  },
+  "plugins": [
+    {
+      "name": "bugbook",
+      "description": "Bugbook workflow skills — flow, ticket, go, prep, catchup, and supporting tools for running the Bugbook app as a project management system.",
+      "source": "./plugins/bugbook",
+      "category": "workflow",
+      "homepage": "https://github.com/max4c/bugbook"
+    },
+    {
+      "name": "max",
+      "description": "General building skills — grill-me, write-prd, tdd, and more. Project-agnostic skills that enhance any workflow. Required companion for the bugbook plugin's active spec grilling.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/max4c/skills.git"
+      },
+      "category": "workflow",
+      "homepage": "https://github.com/max4c/skills"
+    }
+  ]
+}
