@@ -225,54 +225,153 @@ class CalendarService {
 
     // MARK: - Google Calendar Sync
 
-    func syncGoogleCalendar(workspace: String, token: GoogleOAuthToken) async {
+    /// Sync every connected Google account in `settings`. Events from all accounts are
+    /// merged into the same cache; each event is tagged with its owning account email
+    /// so per-account stale detection works when accounts are added or removed.
+    ///
+    /// Token refreshes happen serially up front (they mutate `settings`); network fetches
+    /// and store writes for each account then run in parallel.
+    func syncAllGoogleAccounts(workspace: String, settings: inout AppSettings) async {
         guard !isSyncing else { return }
         isSyncing = true
         error = nil
         defer { isSyncing = false }
 
-        do {
-            let calendars = try await fetchGoogleCalendarList(token: token)
-            let calendarIds = syncedCalendarIDs(from: calendars)
+        // Phase 1: refresh tokens serially so `inout settings` is consistent.
+        var validatedAccounts: [(email: String, token: GoogleOAuthToken)] = []
+        var authFailedEmails: [String] = []
+        for account in settings.connectedGoogleAccounts {
+            do {
+                let token = try await GoogleAuthService.validToken(
+                    using: &settings,
+                    forAccount: account.email,
+                    requiredScopes: GoogleScopeSet.calendar
+                )
+                validatedAccounts.append((account.email, token))
+            } catch {
+                authFailedEmails.append(account.email)
+                Log.app.error("Failed to auth calendar for \(account.email): \(error.localizedDescription)")
+            }
+        }
 
-            var fetchedEvents: [CalendarEvent] = []
-            var failedCalendarIDs: [String] = []
-            for calendarId in calendarIds {
-                do {
-                    let result = try await fetchGoogleEvents(token: token, syncToken: nil, calendarId: calendarId)
-                    fetchedEvents.append(contentsOf: result.events)
-                } catch {
-                    failedCalendarIDs.append(calendarId)
+        // Phase 2: fetch events in parallel. Each task uses a stable token and touches
+        // only its own account's cache slice, so there's no shared mutable state.
+        let results = await withTaskGroup(of: Result<AccountSyncResult, AccountSyncFailure>.self) { group in
+            for entry in validatedAccounts {
+                group.addTask { [weak self] in
+                    guard let self else {
+                        return .failure(AccountSyncFailure(email: entry.email))
+                    }
+                    do {
+                        let result = try await self.syncAccountEvents(
+                            accountEmail: entry.email,
+                            token: entry.token,
+                            workspace: workspace
+                        )
+                        return .success(result)
+                    } catch {
+                        Log.app.error("Failed to sync calendar for \(entry.email): \(error.localizedDescription)")
+                        return .failure(AccountSyncFailure(email: entry.email))
+                    }
                 }
             }
-
-            let existingEvents = store.loadEvents(in: workspace)
-            let fetchedIds = Set(fetchedEvents.map(\.id))
-            let syncedSourceIds = Set(calendarIds)
-            let staleIds = Set(
-                existingEvents
-                    .filter { syncedSourceIds.contains($0.calendarId) && !fetchedIds.contains($0.id) }
-                    .map(\.id)
-            )
-
-            try store.upsertEvents(fetchedEvents, in: workspace)
-            if staleIds.isEmpty == false {
-                try store.removeEvents(withIds: staleIds, in: workspace)
+            var collected: [Result<AccountSyncResult, AccountSyncFailure>] = []
+            for await outcome in group {
+                collected.append(outcome)
             }
+            return collected
+        }
 
-            try persistSources(calendars, in: workspace, ensuringVisible: "primary")
-
-            events = store.loadEvents(in: workspace)
-            lastSyncDate = Date()
-            if failedCalendarIDs.isEmpty == false {
-                error = "Some Google calendars could not be synced. Loaded \(fetchedEvents.count) events from the rest."
+        var aggregatedCalendars: [CalendarSource] = []
+        var failedAccountEmails: [String] = authFailedEmails
+        var totalFetched = 0
+        for outcome in results {
+            switch outcome {
+            case .success(let ok):
+                aggregatedCalendars.append(contentsOf: ok.calendars)
+                totalFetched += ok.eventCount
+            case .failure(let fail):
+                failedAccountEmails.append(fail.email)
             }
+        }
+
+        do {
+            try persistSources(aggregatedCalendars, in: workspace, ensuringVisible: "primary")
         } catch {
-            self.error = error.localizedDescription
+            Log.app.error("Failed to persist calendar sources: \(error.localizedDescription)")
+        }
+
+        events = store.loadEvents(in: workspace)
+        lastSyncDate = Date()
+        if !failedAccountEmails.isEmpty {
+            error = "Some Google calendars could not be synced. Loaded \(totalFetched) events from the rest."
         }
     }
 
-    func createGoogleEvent(workspace: String, token: GoogleOAuthToken, draft: CalendarEventDraft) async throws -> CalendarEvent {
+    private struct AccountSyncFailure: Error {
+        let email: String
+    }
+
+    private struct AccountSyncResult {
+        let calendars: [CalendarSource]
+        let eventCount: Int
+    }
+
+    /// Sync one account's events + calendar list, tagging each event with the account email.
+    /// Cleans up stale events belonging to this account (present in cache, missing from fetch)
+    /// and sweeps legacy (untagged) events on first multi-account sync.
+    private func syncAccountEvents(
+        accountEmail: String,
+        token: GoogleOAuthToken,
+        workspace: String
+    ) async throws -> AccountSyncResult {
+        let calendars = try await fetchGoogleCalendarList(token: token)
+        let calendarIds = syncedCalendarIDs(from: calendars)
+
+        var fetchedEvents: [CalendarEvent] = []
+        for calendarId in calendarIds {
+            let result = try await fetchGoogleEvents(
+                token: token,
+                syncToken: nil,
+                calendarId: calendarId,
+                accountEmail: accountEmail
+            )
+            fetchedEvents.append(contentsOf: result.events)
+        }
+
+        let existingEvents = store.loadEvents(in: workspace)
+        let fetchedIds = Set(fetchedEvents.map(\.id))
+        let syncedSourceIds = Set(calendarIds)
+
+        // Events from THIS account that disappeared from the remote → stale.
+        // Legacy events (accountEmail == nil) also get swept when their calendarId matches
+        // this account's calendar IDs (one-shot migration on first post-upgrade sync).
+        let staleIds = Set(
+            existingEvents
+                .filter { event in
+                    guard syncedSourceIds.contains(event.calendarId) else { return false }
+                    let isOwnedByThisAccount = event.accountEmail?.caseInsensitiveCompare(accountEmail) == .orderedSame
+                    let isLegacy = event.accountEmail == nil
+                    guard isOwnedByThisAccount || isLegacy else { return false }
+                    return !fetchedIds.contains(event.id)
+                }
+                .map(\.id)
+        )
+
+        try store.upsertEvents(fetchedEvents, in: workspace)
+        if !staleIds.isEmpty {
+            try store.removeEvents(withIds: staleIds, in: workspace)
+        }
+
+        return AccountSyncResult(calendars: calendars, eventCount: fetchedEvents.count)
+    }
+
+    func createGoogleEvent(
+        workspace: String,
+        accountEmail: String,
+        token: GoogleOAuthToken,
+        draft: CalendarEventDraft
+    ) async throws -> CalendarEvent {
         let normalizedDraft = draft.normalized()
         var request = URLRequest(url: googleEventsURL(calendarId: normalizedDraft.calendarId))
         request.httpMethod = "POST"
@@ -289,7 +388,7 @@ class CalendarService {
             throw CalendarError.apiError("Google Calendar create error \(http.statusCode): \(body)")
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let event = parseGoogleEvent(json, calendarId: normalizedDraft.calendarId) else {
+              let event = parseGoogleEvent(json, calendarId: normalizedDraft.calendarId, accountEmail: accountEmail) else {
             throw CalendarError.apiError("Google Calendar returned an unreadable event response.")
         }
 
@@ -401,7 +500,12 @@ class CalendarService {
         let nextSyncToken: String?
     }
 
-    private func fetchGoogleEvents(token: GoogleOAuthToken, syncToken: String? = nil, calendarId: String = "primary") async throws -> FetchResult {
+    private func fetchGoogleEvents(
+        token: GoogleOAuthToken,
+        syncToken: String? = nil,
+        calendarId: String = "primary",
+        accountEmail: String? = nil
+    ) async throws -> FetchResult {
         var components = URLComponents(url: googleEventsURL(calendarId: calendarId), resolvingAgainstBaseURL: false)!
         var queryItems: [URLQueryItem] = []
         if let syncToken {
@@ -427,7 +531,7 @@ class CalendarService {
         }
 
         if http.statusCode == 410 {
-            return try await fetchGoogleEvents(token: token, syncToken: nil, calendarId: calendarId)
+            return try await fetchGoogleEvents(token: token, syncToken: nil, calendarId: calendarId, accountEmail: accountEmail)
         }
 
         guard http.statusCode == 200 else {
@@ -440,14 +544,21 @@ class CalendarService {
         }
 
         let items = json["items"] as? [[String: Any]] ?? []
-        var events = items.compactMap { parseGoogleEvent($0, calendarId: calendarId) }
+        var events = items.compactMap { parseGoogleEvent($0, calendarId: calendarId, accountEmail: accountEmail) }
 
         if let nextPageToken = json["nextPageToken"] as? String {
             var pageComponents = components
             var pageQueryItems = queryItems
             pageQueryItems.append(URLQueryItem(name: "pageToken", value: nextPageToken))
             pageComponents.queryItems = pageQueryItems
-            let nextPage = try await fetchGoogleEventsPage(url: pageComponents.url!, token: token, calendarId: calendarId, queryItems: pageQueryItems, baseComponents: pageComponents)
+            let nextPage = try await fetchGoogleEventsPage(
+                url: pageComponents.url!,
+                token: token,
+                calendarId: calendarId,
+                accountEmail: accountEmail,
+                queryItems: pageQueryItems,
+                baseComponents: pageComponents
+            )
             events.append(contentsOf: nextPage)
         }
 
@@ -455,7 +566,14 @@ class CalendarService {
         return FetchResult(events: events, nextSyncToken: nextSyncToken)
     }
 
-    private func fetchGoogleEventsPage(url: URL, token: GoogleOAuthToken, calendarId: String, queryItems: [URLQueryItem], baseComponents: URLComponents) async throws -> [CalendarEvent] {
+    private func fetchGoogleEventsPage(
+        url: URL,
+        token: GoogleOAuthToken,
+        calendarId: String,
+        accountEmail: String?,
+        queryItems: [URLQueryItem],
+        baseComponents: URLComponents
+    ) async throws -> [CalendarEvent] {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token.accessToken)", forHTTPHeaderField: "Authorization")
 
@@ -464,14 +582,21 @@ class CalendarService {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
         let items = json["items"] as? [[String: Any]] ?? []
-        var events = items.compactMap { parseGoogleEvent($0, calendarId: calendarId) }
+        var events = items.compactMap { parseGoogleEvent($0, calendarId: calendarId, accountEmail: accountEmail) }
 
         if let nextPageToken = json["nextPageToken"] as? String {
             var pageComponents = baseComponents
             var pageQueryItems = queryItems.filter { $0.name != "pageToken" }
             pageQueryItems.append(URLQueryItem(name: "pageToken", value: nextPageToken))
             pageComponents.queryItems = pageQueryItems
-            let more = try await fetchGoogleEventsPage(url: pageComponents.url!, token: token, calendarId: calendarId, queryItems: pageQueryItems, baseComponents: pageComponents)
+            let more = try await fetchGoogleEventsPage(
+                url: pageComponents.url!,
+                token: token,
+                calendarId: calendarId,
+                accountEmail: accountEmail,
+                queryItems: pageQueryItems,
+                baseComponents: pageComponents
+            )
             events.append(contentsOf: more)
         }
 
@@ -563,7 +688,7 @@ class CalendarService {
         "\(calendarId)::\(remoteID)"
     }
 
-    private func parseGoogleEvent(_ json: [String: Any], calendarId: String = "primary") -> CalendarEvent? {
+    private func parseGoogleEvent(_ json: [String: Any], calendarId: String = "primary", accountEmail: String? = nil) -> CalendarEvent? {
         guard let remoteID = json["id"] as? String,
               let summary = json["summary"] as? String else { return nil }
 
@@ -618,7 +743,8 @@ class CalendarService {
             calendarId: calendarId,
             attendees: attendees,
             conferenceURL: conferenceURL,
-            htmlLink: json["htmlLink"] as? String
+            htmlLink: json["htmlLink"] as? String,
+            accountEmail: accountEmail
         )
     }
 }

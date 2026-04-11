@@ -16,6 +16,9 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
     public var htmlLink: String?
     /// Path to a linked Bugbook page (meeting note)
     public var linkedPagePath: String?
+    /// Email of the Google account that owns this event. Nil for legacy cached events from
+    /// before multi-account support — those are treated as belonging to the primary account.
+    public var accountEmail: String?
 
     public init(
         id: String,
@@ -29,7 +32,8 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
         attendees: [Attendee] = [],
         conferenceURL: String? = nil,
         htmlLink: String? = nil,
-        linkedPagePath: String? = nil
+        linkedPagePath: String? = nil,
+        accountEmail: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -43,6 +47,30 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
         self.conferenceURL = conferenceURL
         self.htmlLink = htmlLink
         self.linkedPagePath = linkedPagePath
+        self.accountEmail = accountEmail
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, startDate, endDate, isAllDay, location, notes
+        case calendarId, attendees, conferenceURL, htmlLink, linkedPagePath, accountEmail
+    }
+
+    // Custom decoder so legacy cached events without `accountEmail` still decode cleanly.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        startDate = try container.decode(Date.self, forKey: .startDate)
+        endDate = try container.decode(Date.self, forKey: .endDate)
+        isAllDay = try container.decodeIfPresent(Bool.self, forKey: .isAllDay) ?? false
+        location = try container.decodeIfPresent(String.self, forKey: .location)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        calendarId = try container.decodeIfPresent(String.self, forKey: .calendarId) ?? "primary"
+        attendees = try container.decodeIfPresent([Attendee].self, forKey: .attendees) ?? []
+        conferenceURL = try container.decodeIfPresent(String.self, forKey: .conferenceURL)
+        htmlLink = try container.decodeIfPresent(String.self, forKey: .htmlLink)
+        linkedPagePath = try container.decodeIfPresent(String.self, forKey: .linkedPagePath)
+        accountEmail = try container.decodeIfPresent(String.self, forKey: .accountEmail)
     }
 }
 

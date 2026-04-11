@@ -35,16 +35,24 @@ struct CalendarView: View {
         return schema.properties.first(where: { $0.type == .date })
     }
 
+    private static let monthTitleFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+
+    private static let ymdFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
     private var monthTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: displayMonth)
+        Self.monthTitleFormatter.string(from: displayMonth)
     }
 
     private var todayString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
+        Self.ymdFormatter.string(from: Date())
     }
 
     private var daysInMonth: [DayCell] {
@@ -59,15 +67,13 @@ struct CalendarView: View {
             cells.append(DayCell(id: "empty_\(i)", day: 0, dateString: "", isCurrentMonth: false, isToday: false))
         }
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
         let today = todayString
 
         for day in range {
             var components = calendar.dateComponents([.year, .month], from: displayMonth)
             components.day = day
             let date = calendar.date(from: components) ?? Date()
-            let dateStr = formatter.string(from: date)
+            let dateStr = Self.ymdFormatter.string(from: date)
             cells.append(DayCell(id: dateStr, day: day, dateString: dateStr, isCurrentMonth: true, isToday: dateStr == today))
         }
 

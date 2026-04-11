@@ -25,7 +25,7 @@ struct AppSettingsStore {
             return fallback
         }
         var loaded = settings
-        let shouldRewrite = migrateLegacySecrets(from: loaded)
+        let shouldRewrite = migrateLegacySecrets(into: &loaded)
         hydrateSecrets(into: &loaded)
         if shouldRewrite {
             save(loaded)
@@ -48,42 +48,85 @@ struct AppSettingsStore {
         if settings.anthropicApiKey.isEmpty {
             settings.anthropicApiKey = secretStore.string(for: .anthropicApiKey) ?? ""
         }
-        if settings.googleAccessToken.isEmpty {
-            settings.googleAccessToken = secretStore.string(for: .googleAccessToken) ?? ""
-        }
-        if settings.googleRefreshToken.isEmpty {
-            settings.googleRefreshToken = secretStore.string(for: .googleRefreshToken) ?? ""
+        for index in settings.googleAccounts.indices {
+            let accountID = settings.googleAccounts[index].email
+            if settings.googleAccounts[index].accessToken.isEmpty {
+                settings.googleAccounts[index].accessToken = secretStore.string(for: .googleAccessToken, accountID: accountID) ?? ""
+            }
+            if settings.googleAccounts[index].refreshToken.isEmpty {
+                settings.googleAccounts[index].refreshToken = secretStore.string(for: .googleRefreshToken, accountID: accountID) ?? ""
+            }
         }
     }
 
-    private func migrateLegacySecrets(from settings: AppSettings) -> Bool {
+    /// Move any tokens that the on-disk JSON still carries (pre-Keychain installs, or the
+    /// pre-multi-account `google-*-token` global slot) into the correct Keychain location.
+    /// Returns `true` if the settings file should be rewritten to persist the migration.
+    private func migrateLegacySecrets(into settings: inout AppSettings) -> Bool {
         var migrated = false
-        migrated = migrateLegacySecret(settings.anthropicApiKey, key: .anthropicApiKey) || migrated
-        migrated = migrateLegacySecret(settings.googleAccessToken, key: .googleAccessToken) || migrated
-        migrated = migrateLegacySecret(settings.googleRefreshToken, key: .googleRefreshToken) || migrated
+        if migrateAnthropic(into: &settings) { migrated = true }
+        if migrateLegacyGoogleSecrets(into: &settings) { migrated = true }
         return migrated
     }
 
-    private func migrateLegacySecret(_ value: String, key: AppSecretKey) -> Bool {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Moves a plaintext anthropic key off disk into Keychain. Only returns `true` if it
+    /// actually wrote something that requires a settings-file rewrite (i.e. the JSON still
+    /// carries the key in plaintext from an old install).
+    private func migrateAnthropic(into settings: inout AppSettings) -> Bool {
+        let normalized = settings.anthropicApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
-        if secretStore.string(for: key) != normalized {
-            secretStore.set(normalized, for: key)
+        if secretStore.string(for: .anthropicApiKey) != normalized {
+            secretStore.set(normalized, for: .anthropicApiKey)
         }
+        // Rewrite only if the plaintext key is still sitting in the in-memory copy.
+        // `persistSecrets` + `sanitized` will handle the actual stripping on save.
         return true
+    }
+
+    private func migrateLegacyGoogleSecrets(into settings: inout AppSettings) -> Bool {
+        let legacyAccess = secretStore.string(for: .googleAccessToken) ?? ""
+        let legacyRefresh = secretStore.string(for: .googleRefreshToken) ?? ""
+        guard !legacyAccess.isEmpty || !legacyRefresh.isEmpty else { return false }
+        guard let firstIndex = settings.googleAccounts.indices.first else { return false }
+
+        var migrated = false
+        if settings.googleAccounts[firstIndex].accessToken.isEmpty {
+            settings.googleAccounts[firstIndex].accessToken = legacyAccess
+            migrated = true
+        }
+        if settings.googleAccounts[firstIndex].refreshToken.isEmpty {
+            settings.googleAccounts[firstIndex].refreshToken = legacyRefresh
+            migrated = true
+        }
+
+        // Rehome the tokens under the per-account keychain slot, then clear the legacy slot.
+        if migrated {
+            let accountID = settings.googleAccounts[firstIndex].email
+            secretStore.set(settings.googleAccounts[firstIndex].accessToken, for: .googleAccessToken, accountID: accountID)
+            secretStore.set(settings.googleAccounts[firstIndex].refreshToken, for: .googleRefreshToken, accountID: accountID)
+            secretStore.set(nil, for: .googleAccessToken)
+            secretStore.set(nil, for: .googleRefreshToken)
+        }
+        return migrated
     }
 
     private func persistSecrets(from settings: AppSettings) {
         secretStore.set(settings.anthropicApiKey, for: .anthropicApiKey)
-        secretStore.set(settings.googleAccessToken, for: .googleAccessToken)
-        secretStore.set(settings.googleRefreshToken, for: .googleRefreshToken)
+        for account in settings.googleAccounts {
+            secretStore.set(account.accessToken, for: .googleAccessToken, accountID: account.email)
+            secretStore.set(account.refreshToken, for: .googleRefreshToken, accountID: account.email)
+        }
     }
 
     private func sanitized(_ settings: AppSettings) -> AppSettings {
         var sanitized = settings
         sanitized.anthropicApiKey = ""
-        sanitized.googleAccessToken = ""
-        sanitized.googleRefreshToken = ""
+        sanitized.googleAccounts = sanitized.googleAccounts.map { account in
+            var stripped = account
+            stripped.accessToken = ""
+            stripped.refreshToken = ""
+            return stripped
+        }
         return sanitized
     }
 

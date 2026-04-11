@@ -103,14 +103,25 @@ enum GoogleAuthService {
         )
     }
 
-    static func validToken(using settings: inout AppSettings, requiredScopes: [String]) async throws -> GoogleOAuthToken {
+    /// Obtain a valid token for an account (defaults to the active one).
+    /// Refreshes if expired and updates the account's slot in `settings`.
+    static func validToken(
+        using settings: inout AppSettings,
+        forAccount email: String? = nil,
+        requiredScopes: [String]
+    ) async throws -> GoogleOAuthToken {
         guard settings.googleConfigured else {
             throw GoogleAuthError.missingClientConfiguration
         }
-        guard var token = settings.googleToken else {
+
+        let targetEmail = email ?? settings.activeGoogleAccount?.email ?? ""
+        guard !targetEmail.isEmpty,
+              let account = settings.googleAccount(for: targetEmail),
+              account.isConnected else {
             throw GoogleAuthError.notAuthenticated
         }
 
+        var token = account.token
         let normalizedScopes = normalized(scopeList: requiredScopes)
         let granted = Set(token.grantedScopes)
         let missingScopes = normalizedScopes.filter { !granted.contains($0) }
@@ -124,7 +135,7 @@ enum GoogleAuthService {
                 clientID: settings.googleClientID,
                 clientSecret: settings.googleClientSecret
             )
-            settings.updateGoogleToken(token)
+            settings.updateGoogleToken(token, for: targetEmail)
         }
 
         return token

@@ -43,10 +43,13 @@ final class MailFeatureTests: XCTestCase {
 
         XCTAssertEqual(settings.googleClientID, "client-id")
         XCTAssertEqual(settings.googleClientSecret, "client-secret")
-        XCTAssertEqual(settings.googleRefreshToken, "legacy-refresh")
-        XCTAssertEqual(settings.googleAccessToken, "legacy-access")
-        XCTAssertEqual(settings.googleTokenExpiry, 1234)
         XCTAssertEqual(settings.googleConnectedEmail, "legacy@example.com")
+        XCTAssertEqual(settings.googleAccounts.count, 1)
+        let migrated = try XCTUnwrap(settings.googleAccounts.first)
+        XCTAssertEqual(migrated.email, "legacy@example.com")
+        XCTAssertEqual(migrated.refreshToken, "legacy-refresh")
+        XCTAssertEqual(migrated.accessToken, "legacy-access")
+        XCTAssertEqual(migrated.tokenExpiry, 1234)
     }
 
     func testAppSettingsGoogleTokenHelpers() throws {
@@ -102,11 +105,15 @@ final class MailFeatureTests: XCTestCase {
         settings.googleClientID = "client-id"
         settings.googleClientSecret = "client-secret"
         settings.anthropicApiKey = "sk-ant-test"
-        settings.googleAccessToken = "access-token"
-        settings.googleRefreshToken = "refresh-token"
-        settings.googleTokenExpiry = 9_999
-        settings.googleConnectedEmail = "user@example.com"
-        settings.googleGrantedScopes = GoogleScopeSet.calendarAndMail
+        settings.applyGoogleAuthResult(
+            GoogleOAuthResult(
+                accessToken: "access-token",
+                refreshToken: "refresh-token",
+                expiresAt: Date(timeIntervalSince1970: 9_999),
+                email: "user@example.com",
+                grantedScopes: GoogleScopeSet.calendarAndMail
+            )
+        )
 
         store.save(settings)
         let loaded = store.load()
@@ -114,11 +121,43 @@ final class MailFeatureTests: XCTestCase {
 
         XCTAssertEqual(loaded, settings)
         XCTAssertEqual(secretStore.string(for: .anthropicApiKey), "sk-ant-test")
-        XCTAssertEqual(secretStore.string(for: .googleAccessToken), "access-token")
-        XCTAssertEqual(secretStore.string(for: .googleRefreshToken), "refresh-token")
+        XCTAssertEqual(secretStore.string(for: .googleAccessToken, accountID: "user@example.com"), "access-token")
+        XCTAssertEqual(secretStore.string(for: .googleRefreshToken, accountID: "user@example.com"), "refresh-token")
         XCTAssertFalse(onDisk?.contains("sk-ant-test") ?? true)
         XCTAssertFalse(onDisk?.contains("access-token") ?? true)
         XCTAssertFalse(onDisk?.contains("refresh-token") ?? true)
+    }
+
+    func testAppSettingsSupportsMultipleConnectedAccounts() {
+        var settings = AppSettings.default
+        let primary = GoogleOAuthResult(
+            accessToken: "a1",
+            refreshToken: "r1",
+            expiresAt: Date(timeIntervalSince1970: 1_000),
+            email: "first@example.com",
+            grantedScopes: GoogleScopeSet.calendarAndMail
+        )
+        let secondary = GoogleOAuthResult(
+            accessToken: "a2",
+            refreshToken: "r2",
+            expiresAt: Date(timeIntervalSince1970: 2_000),
+            email: "second@example.com",
+            grantedScopes: GoogleScopeSet.calendarAndMail
+        )
+
+        settings.applyGoogleAuthResult(primary)
+        settings.applyGoogleAuthResult(secondary)
+
+        XCTAssertEqual(settings.googleAccounts.count, 2)
+        XCTAssertEqual(settings.googleConnectedEmail, "second@example.com")
+
+        settings.setActiveGoogleAccount(email: "first@example.com")
+        XCTAssertEqual(settings.googleConnectedEmail, "first@example.com")
+        XCTAssertEqual(settings.googleToken?.refreshToken, "r1")
+
+        settings.disconnectGoogle(email: "first@example.com")
+        XCTAssertEqual(settings.googleAccounts.count, 1)
+        XCTAssertEqual(settings.googleConnectedEmail, "second@example.com")
     }
 
     func testMailCacheStoreRoundTripsSnapshot() throws {

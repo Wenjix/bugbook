@@ -8,15 +8,30 @@ enum AppSecretKey: String, CaseIterable {
 }
 
 protocol SecretStoring {
-    func string(for key: AppSecretKey) -> String?
-    func set(_ value: String?, for key: AppSecretKey)
+    /// Read a secret. When `accountID` is non-nil the key is namespaced by that account,
+    /// allowing multiple concurrent Google accounts to have their own keychain slots.
+    func string(for key: AppSecretKey, accountID: String?) -> String?
+    func set(_ value: String?, for key: AppSecretKey, accountID: String?)
+}
+
+extension SecretStoring {
+    func string(for key: AppSecretKey) -> String? {
+        string(for: key, accountID: nil)
+    }
+
+    func set(_ value: String?, for key: AppSecretKey) {
+        set(value, for: key, accountID: nil)
+    }
 }
 
 struct KeychainSecretStore: SecretStoring {
     private let service = "com.maxforsey.Bugbook.app-settings"
+    /// Separator between the base secret key and the account id in a per-account keychain slot,
+    /// e.g. `google-refresh-token::max@example.com`. Changing this orphans existing secrets.
+    private static let accountIDSeparator = "::"
 
-    func string(for key: AppSecretKey) -> String? {
-        var query = baseQuery(for: key)
+    func string(for key: AppSecretKey, accountID: String?) -> String? {
+        var query = baseQuery(for: key, accountID: accountID)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -30,15 +45,15 @@ struct KeychainSecretStore: SecretStoring {
         return value
     }
 
-    func set(_ value: String?, for key: AppSecretKey) {
+    func set(_ value: String?, for key: AppSecretKey, accountID: String?) {
         let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if normalized.isEmpty {
-            SecItemDelete(baseQuery(for: key) as CFDictionary)
+            SecItemDelete(baseQuery(for: key, accountID: accountID) as CFDictionary)
             return
         }
 
         let data = Data(normalized.utf8)
-        let query = baseQuery(for: key)
+        let query = baseQuery(for: key, accountID: accountID)
         let attributes = [kSecValueData as String: data]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
 
@@ -50,36 +65,47 @@ struct KeychainSecretStore: SecretStoring {
         }
 
         if status != errSecSuccess {
-            Log.app.error("Failed to update keychain secret: \(key.rawValue)")
+            Log.app.error("Failed to update keychain secret: \(keychainAccount(for: key, accountID: accountID))")
         }
     }
 
-    private func baseQuery(for key: AppSecretKey) -> [String: Any] {
+    private func baseQuery(for key: AppSecretKey, accountID: String?) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: key.rawValue,
+            kSecAttrAccount as String: keychainAccount(for: key, accountID: accountID),
         ]
+    }
+
+    private func keychainAccount(for key: AppSecretKey, accountID: String?) -> String {
+        guard let accountID, !accountID.isEmpty else { return key.rawValue }
+        return "\(key.rawValue)\(Self.accountIDSeparator)\(accountID.lowercased())"
     }
 }
 
 final class InMemorySecretStore: SecretStoring {
-    private var values: [AppSecretKey: String]
+    private struct SecretKey: Hashable {
+        let key: AppSecretKey
+        let accountID: String
+    }
+
+    private var values: [SecretKey: String]
 
     init(values: [AppSecretKey: String] = [:]) {
-        self.values = values
+        self.values = Dictionary(uniqueKeysWithValues: values.map { (SecretKey(key: $0.key, accountID: ""), $0.value) })
     }
 
-    func string(for key: AppSecretKey) -> String? {
-        values[key]
+    func string(for key: AppSecretKey, accountID: String?) -> String? {
+        values[SecretKey(key: key, accountID: (accountID ?? "").lowercased())]
     }
 
-    func set(_ value: String?, for key: AppSecretKey) {
+    func set(_ value: String?, for key: AppSecretKey, accountID: String?) {
         let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let storageKey = SecretKey(key: key, accountID: (accountID ?? "").lowercased())
         if normalized.isEmpty {
-            values.removeValue(forKey: key)
+            values.removeValue(forKey: storageKey)
         } else {
-            values[key] = normalized
+            values[storageKey] = normalized
         }
     }
 }

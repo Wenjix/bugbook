@@ -123,18 +123,19 @@ struct WorkspaceCalendarView: View {
     // MARK: - Header
 
     private var calendarHeader: some View {
-        HStack(spacing: 8) {
+        let connectedEmail = appState.settings.googleConnectedEmail
+        return HStack(spacing: 8) {
             // Account avatar
-            if !appState.settings.googleConnectedEmail.isEmpty {
+            if !connectedEmail.isEmpty {
                 Circle()
                     .fill(Color.purple)
                     .frame(width: 28, height: 28)
                     .overlay(
-                        Text(String(appState.settings.googleConnectedEmail.prefix(1)).uppercased())
+                        Text(String(connectedEmail.prefix(1)).uppercased())
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.white)
                     )
-                    .help(appState.settings.googleConnectedEmail)
+                    .help(connectedEmail)
             }
 
             // Inline date info
@@ -212,20 +213,25 @@ struct WorkspaceCalendarView: View {
     }
 
 
-    private func eventDateTimeString(_ event: CalendarEvent) -> String {
-        let formatter = DateFormatter()
-        if event.isAllDay {
-            formatter.dateFormat = "EEEE, MMMM d"
-            return formatter.string(from: event.startDate)
-        }
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "EEEE, MMMM d"
-        let startDay = dateFormatter.string(from: event.startDate)
+    private static let eventDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d"
+        return f
+    }()
 
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "h:mm a"
-        let startTime = timeFormatter.string(from: event.startDate)
-        let endTime = timeFormatter.string(from: event.endDate)
+    private static let eventTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
+    private func eventDateTimeString(_ event: CalendarEvent) -> String {
+        if event.isAllDay {
+            return Self.eventDayFormatter.string(from: event.startDate)
+        }
+        let startDay = Self.eventDayFormatter.string(from: event.startDate)
+        let startTime = Self.eventTimeFormatter.string(from: event.startDate)
+        let endTime = Self.eventTimeFormatter.string(from: event.endDate)
         return "\(startDay) · \(startTime)–\(endTime)"
     }
 
@@ -313,15 +319,10 @@ struct WorkspaceCalendarView: View {
     private func syncCalendar() {
         guard let workspace = appState.workspacePath else { return }
         Task {
-            do {
-                var settings = appState.settings
-                let token = try await GoogleAuthService.validToken(using: &settings, requiredScopes: GoogleScopeSet.calendar)
-                appState.settings = settings
-                await calendarService.syncGoogleCalendar(workspace: workspace, token: token)
-                await calendarService.loadDatabaseOverlayItems(workspace: workspace)
-            } catch {
-                calendarService.error = error.localizedDescription
-            }
+            var settings = appState.settings
+            await calendarService.syncAllGoogleAccounts(workspace: workspace, settings: &settings)
+            appState.settings = settings
+            await calendarService.loadDatabaseOverlayItems(workspace: workspace)
         }
     }
 
@@ -354,6 +355,10 @@ struct WorkspaceCalendarView: View {
 
     private func createCalendarEvent() {
         guard let workspace = appState.workspacePath, !isCreatingEvent else { return }
+        guard let accountEmail = appState.settings.activeGoogleAccount?.email, !accountEmail.isEmpty else {
+            createEventError = "No active Google account. Connect one in Settings."
+            return
+        }
         createEventError = nil
         isCreatingEvent = true
 
@@ -362,9 +367,14 @@ struct WorkspaceCalendarView: View {
 
             do {
                 var settings = appState.settings
-                let token = try await GoogleAuthService.validToken(using: &settings, requiredScopes: GoogleScopeSet.calendar)
+                let token = try await GoogleAuthService.validToken(
+                    using: &settings,
+                    forAccount: accountEmail,
+                    requiredScopes: GoogleScopeSet.calendar
+                )
                 let createdEvent = try await calendarService.createGoogleEvent(
                     workspace: workspace,
+                    accountEmail: accountEmail,
                     token: token,
                     draft: createEventDraft
                 )

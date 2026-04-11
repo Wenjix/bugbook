@@ -104,6 +104,57 @@ struct BrowserChromeConfiguration: Codable, Equatable {
     )
 }
 
+/// A single connected Google account. Tokens are kept in Keychain by `AppSettingsStore`;
+/// the fields here are hydrated on load and stripped on save so they never hit disk as JSON.
+struct GoogleAccount: Codable, Equatable, Identifiable {
+    var email: String
+    var accessToken: String
+    var refreshToken: String
+    var tokenExpiry: Double
+    var grantedScopes: [String]
+
+    var id: String { email.lowercased() }
+
+    var token: GoogleOAuthToken {
+        GoogleOAuthToken(
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            expiresAt: Date(timeIntervalSince1970: tokenExpiry),
+            grantedScopes: grantedScopes
+        )
+    }
+
+    init(
+        email: String,
+        accessToken: String = "",
+        refreshToken: String = "",
+        tokenExpiry: Double = 0,
+        grantedScopes: [String] = []
+    ) {
+        self.email = email
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        self.tokenExpiry = tokenExpiry
+        self.grantedScopes = grantedScopes
+    }
+
+    init(from result: GoogleOAuthResult) {
+        self.email = result.email
+        self.accessToken = result.accessToken
+        self.refreshToken = result.refreshToken
+        self.tokenExpiry = result.expiresAt.timeIntervalSince1970
+        self.grantedScopes = result.grantedScopes
+    }
+
+    /// True if at least a refresh token is present.
+    var isConnected: Bool { !refreshToken.isEmpty }
+
+    /// Case-insensitive email match. Use everywhere accounts are looked up.
+    func matches(email: String) -> Bool {
+        self.email.caseInsensitiveCompare(email) == .orderedSame
+    }
+}
+
 struct AppSettings: Codable, Equatable {
     var theme: ThemeMode
     var focusModeOnType: Bool
@@ -132,14 +183,15 @@ struct AppSettings: Codable, Equatable {
     var browserQuickLaunchItems: [BrowserQuickLaunchItem]
     var browserDefaultSaveFolder: String
 
-    // Shared Google account
+    // Shared Google OAuth client configuration (one client, N accounts)
     var googleClientID: String
     var googleClientSecret: String
-    var googleRefreshToken: String
-    var googleAccessToken: String
-    var googleTokenExpiry: Double
-    var googleConnectedEmail: String
-    var googleGrantedScopes: [String]
+
+    /// All connected Google accounts. Mail + Calendar use these.
+    var googleAccounts: [GoogleAccount]
+
+    /// Email of the currently active account for mail. Empty = defaults to first account.
+    var activeGoogleAccountEmail: String
 
     static let `default` = AppSettings(
         theme: .system,
@@ -173,11 +225,8 @@ struct AppSettings: Codable, Equatable {
         browserDefaultSaveFolder: "Web Clippings",
         googleClientID: "",
         googleClientSecret: "",
-        googleRefreshToken: "",
-        googleAccessToken: "",
-        googleTokenExpiry: 0,
-        googleConnectedEmail: "",
-        googleGrantedScopes: []
+        googleAccounts: [],
+        activeGoogleAccountEmail: ""
     )
 
     private enum CodingKeys: String, CodingKey {
@@ -208,13 +257,17 @@ struct AppSettings: Codable, Equatable {
         case browserDefaultSaveFolder
         case googleClientID
         case googleClientSecret
+        case googleAccounts
+        case activeGoogleAccountEmail
+
+        // Legacy single-account fields (pre-multi-account).
         case googleRefreshToken
         case googleAccessToken
         case googleTokenExpiry
         case googleConnectedEmail
         case googleGrantedScopes
 
-        // Legacy calendar-only auth keys.
+        // Legacy calendar-only auth keys (older still).
         case googleCalendarRefreshToken
         case googleCalendarAccessToken
         case googleCalendarTokenExpiry
@@ -251,15 +304,39 @@ struct AppSettings: Codable, Equatable {
         browserDefaultSaveFolder = try container.decodeIfPresent(String.self, forKey: .browserDefaultSaveFolder) ?? "Web Clippings"
         googleClientID = try container.decodeIfPresent(String.self, forKey: .googleClientID) ?? ""
         googleClientSecret = try container.decodeIfPresent(String.self, forKey: .googleClientSecret) ?? ""
-        let legacyRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarRefreshToken)
-        let legacyAccessToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarAccessToken)
-        let legacyTokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleCalendarTokenExpiry)
-        let legacyConnectedEmail = try container.decodeIfPresent(String.self, forKey: .googleCalendarConnectedEmail)
-        googleRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleRefreshToken) ?? legacyRefreshToken ?? ""
-        googleAccessToken = try container.decodeIfPresent(String.self, forKey: .googleAccessToken) ?? legacyAccessToken ?? ""
-        googleTokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleTokenExpiry) ?? legacyTokenExpiry ?? 0
-        googleConnectedEmail = try container.decodeIfPresent(String.self, forKey: .googleConnectedEmail) ?? legacyConnectedEmail ?? ""
-        googleGrantedScopes = try container.decodeIfPresent([String].self, forKey: .googleGrantedScopes) ?? []
+
+        // New multi-account shape takes precedence if present.
+        if let accounts = try container.decodeIfPresent([GoogleAccount].self, forKey: .googleAccounts) {
+            googleAccounts = accounts
+            activeGoogleAccountEmail = try container.decodeIfPresent(String.self, forKey: .activeGoogleAccountEmail) ?? (accounts.first?.email ?? "")
+        } else {
+            // Legacy single-account migration: promote flat fields into a single GoogleAccount.
+            let legacyRefreshToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarRefreshToken)
+            let legacyAccessToken = try container.decodeIfPresent(String.self, forKey: .googleCalendarAccessToken)
+            let legacyTokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleCalendarTokenExpiry)
+            let legacyConnectedEmail = try container.decodeIfPresent(String.self, forKey: .googleCalendarConnectedEmail)
+
+            let refreshToken = try container.decodeIfPresent(String.self, forKey: .googleRefreshToken) ?? legacyRefreshToken ?? ""
+            let accessToken = try container.decodeIfPresent(String.self, forKey: .googleAccessToken) ?? legacyAccessToken ?? ""
+            let tokenExpiry = try container.decodeIfPresent(Double.self, forKey: .googleTokenExpiry) ?? legacyTokenExpiry ?? 0
+            let connectedEmail = try container.decodeIfPresent(String.self, forKey: .googleConnectedEmail) ?? legacyConnectedEmail ?? ""
+            let grantedScopes = try container.decodeIfPresent([String].self, forKey: .googleGrantedScopes) ?? []
+
+            if !connectedEmail.isEmpty || !refreshToken.isEmpty {
+                let account = GoogleAccount(
+                    email: connectedEmail,
+                    accessToken: accessToken,
+                    refreshToken: refreshToken,
+                    tokenExpiry: tokenExpiry,
+                    grantedScopes: grantedScopes
+                )
+                googleAccounts = [account]
+                activeGoogleAccountEmail = connectedEmail
+            } else {
+                googleAccounts = []
+                activeGoogleAccountEmail = ""
+            }
+        }
     }
 
     init(
@@ -290,11 +367,8 @@ struct AppSettings: Codable, Equatable {
         browserDefaultSaveFolder: String = "Web Clippings",
         googleClientID: String = "",
         googleClientSecret: String = "",
-        googleRefreshToken: String = "",
-        googleAccessToken: String = "",
-        googleTokenExpiry: Double = 0,
-        googleConnectedEmail: String = "",
-        googleGrantedScopes: [String] = []
+        googleAccounts: [GoogleAccount] = [],
+        activeGoogleAccountEmail: String = ""
     ) {
         self.theme = theme
         self.focusModeOnType = focusModeOnType
@@ -323,11 +397,8 @@ struct AppSettings: Codable, Equatable {
         self.browserDefaultSaveFolder = browserDefaultSaveFolder
         self.googleClientID = googleClientID
         self.googleClientSecret = googleClientSecret
-        self.googleRefreshToken = googleRefreshToken
-        self.googleAccessToken = googleAccessToken
-        self.googleTokenExpiry = googleTokenExpiry
-        self.googleConnectedEmail = googleConnectedEmail
-        self.googleGrantedScopes = googleGrantedScopes
+        self.googleAccounts = googleAccounts
+        self.activeGoogleAccountEmail = activeGoogleAccountEmail
     }
 
     func encode(to encoder: Encoder) throws {
@@ -359,12 +430,11 @@ struct AppSettings: Codable, Equatable {
         try container.encode(browserDefaultSaveFolder, forKey: .browserDefaultSaveFolder)
         try container.encode(googleClientID, forKey: .googleClientID)
         try container.encode(googleClientSecret, forKey: .googleClientSecret)
-        try container.encode(googleRefreshToken, forKey: .googleRefreshToken)
-        try container.encode(googleAccessToken, forKey: .googleAccessToken)
-        try container.encode(googleTokenExpiry, forKey: .googleTokenExpiry)
-        try container.encode(googleConnectedEmail, forKey: .googleConnectedEmail)
-        try container.encode(googleGrantedScopes, forKey: .googleGrantedScopes)
+        try container.encode(googleAccounts, forKey: .googleAccounts)
+        try container.encode(activeGoogleAccountEmail, forKey: .activeGoogleAccountEmail)
     }
+
+    // MARK: - Google Account Helpers
 
     var googleConfigured: Bool {
         !googleClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
@@ -372,39 +442,88 @@ struct AppSettings: Codable, Equatable {
     }
 
     var googleConnected: Bool {
-        !googleRefreshToken.isEmpty
+        googleAccounts.contains(where: { $0.isConnected })
     }
 
+    /// The currently active account, or nil if none are connected.
+    /// Falls back to the first account if `activeGoogleAccountEmail` doesn't resolve.
+    var activeGoogleAccount: GoogleAccount? {
+        if !activeGoogleAccountEmail.isEmpty,
+           let match = googleAccounts.first(where: { $0.matches(email: activeGoogleAccountEmail) }) {
+            return match
+        }
+        return googleAccounts.first
+    }
+
+    /// Back-compat: the email of the active account, or "".
+    var googleConnectedEmail: String {
+        activeGoogleAccount?.email ?? ""
+    }
+
+    /// Back-compat: the granted scopes of the active account, or [].
+    var googleGrantedScopes: [String] {
+        activeGoogleAccount?.grantedScopes ?? []
+    }
+
+    /// Back-compat: token for the active account, or nil.
     var googleToken: GoogleOAuthToken? {
-        guard googleConnected else { return nil }
-        return GoogleOAuthToken(
-            accessToken: googleAccessToken,
-            refreshToken: googleRefreshToken,
-            expiresAt: Date(timeIntervalSince1970: googleTokenExpiry),
-            grantedScopes: googleGrantedScopes
-        )
+        guard let account = activeGoogleAccount, account.isConnected else { return nil }
+        return account.token
     }
 
+    /// Accounts with a refresh token present — the ones mail/calendar sync can actually use.
+    var connectedGoogleAccounts: [GoogleAccount] {
+        googleAccounts.filter(\.isConnected)
+    }
+
+    func googleAccount(for email: String) -> GoogleAccount? {
+        googleAccounts.first(where: { $0.matches(email: email) })
+    }
+
+    func googleToken(for email: String) -> GoogleOAuthToken? {
+        googleAccount(for: email)?.token
+    }
+
+    // MARK: - Mutating helpers
+
+    /// Apply a fresh OAuth result: insert or update the account and set it as active.
     mutating func applyGoogleAuthResult(_ result: GoogleOAuthResult) {
-        googleAccessToken = result.accessToken
-        googleRefreshToken = result.refreshToken
-        googleTokenExpiry = result.expiresAt.timeIntervalSince1970
-        googleConnectedEmail = result.email
-        googleGrantedScopes = result.grantedScopes
+        let account = GoogleAccount(from: result)
+        if let index = googleAccounts.firstIndex(where: { $0.matches(email: account.email) }) {
+            googleAccounts[index] = account
+        } else {
+            googleAccounts.append(account)
+        }
+        activeGoogleAccountEmail = account.email
     }
 
+    /// Replace the tokens on the active account (used after a refresh).
     mutating func updateGoogleToken(_ token: GoogleOAuthToken) {
-        googleAccessToken = token.accessToken
-        googleRefreshToken = token.refreshToken
-        googleTokenExpiry = token.expiresAt.timeIntervalSince1970
-        googleGrantedScopes = token.grantedScopes
+        guard let email = activeGoogleAccount?.email else { return }
+        updateGoogleToken(token, for: email)
     }
 
-    mutating func disconnectGoogle() {
-        googleRefreshToken = ""
-        googleAccessToken = ""
-        googleTokenExpiry = 0
-        googleConnectedEmail = ""
-        googleGrantedScopes = []
+    mutating func updateGoogleToken(_ token: GoogleOAuthToken, for email: String) {
+        guard let index = googleAccounts.firstIndex(where: { $0.matches(email: email) }) else { return }
+        googleAccounts[index].accessToken = token.accessToken
+        googleAccounts[index].refreshToken = token.refreshToken
+        googleAccounts[index].tokenExpiry = token.expiresAt.timeIntervalSince1970
+        googleAccounts[index].grantedScopes = token.grantedScopes
+    }
+
+    mutating func setActiveGoogleAccount(email: String) {
+        guard googleAccounts.contains(where: { $0.matches(email: email) }) else { return }
+        activeGoogleAccountEmail = email
+    }
+
+    /// Disconnect the active Google account (or a specific account by email).
+    /// After disconnect, picks the next available account as active, or clears if none remain.
+    mutating func disconnectGoogle(email: String? = nil) {
+        let target = email ?? activeGoogleAccount?.email ?? ""
+        guard !target.isEmpty else { return }
+        googleAccounts.removeAll { $0.matches(email: target) }
+        if activeGoogleAccountEmail.caseInsensitiveCompare(target) == .orderedSame {
+            activeGoogleAccountEmail = googleAccounts.first?.email ?? ""
+        }
     }
 }

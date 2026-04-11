@@ -48,74 +48,51 @@ struct GoogleSettingsView: View {
                 }
             }
 
-            SettingsSection("Google Account") {
-                if isConnected {
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .font(.system(size: 16))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Connected to Google")
-                                .font(.system(size: 13, weight: .medium))
-                            if !appState.settings.googleConnectedEmail.isEmpty {
-                                Text(appState.settings.googleConnectedEmail)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        Spacer()
-
-                        HStack(spacing: 12) {
-                            Text(scopeSummary)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Button("Disconnect") {
-                                disconnect()
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(.red)
+            SettingsSection("Google Accounts") {
+                VStack(alignment: .leading, spacing: 10) {
+                    if appState.settings.googleAccounts.isEmpty {
+                        Text("No accounts connected yet.")
                             .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(appState.settings.googleAccounts) { account in
+                            accountRow(for: account)
                         }
                     }
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Button {
-                            Task { await signIn() }
-                        } label: {
-                            HStack(spacing: 8) {
-                                if isSigningIn {
-                                    ProgressView().controlSize(.small)
-                                } else {
-                                    Image(systemName: "person.badge.key")
-                                }
-                                Text("Sign in with Google")
+
+                    Button {
+                        Task { await signIn() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isSigningIn {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: appState.settings.googleAccounts.isEmpty ? "person.badge.key" : "plus.circle")
                             }
-                            .padding(.vertical, 4)
+                            Text(appState.settings.googleAccounts.isEmpty ? "Sign in with Google" : "Add another account")
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isSigningIn || !appState.settings.googleConfigured)
-
-                        if let signInError {
-                            Text(signInError)
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-
-                        if !appState.settings.googleConfigured {
-                            Text("Add your Google OAuth client ID and secret above before signing in.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        .padding(.vertical, 4)
                     }
-                }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSigningIn || !appState.settings.googleConfigured)
 
-                if let reconnectMessage {
-                    Text(reconnectMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if let signInError {
+                        Text(signInError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    if !appState.settings.googleConfigured {
+                        Text("Add your Google OAuth client ID and secret above before signing in.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let reconnectMessage {
+                        Text(reconnectMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -160,6 +137,42 @@ struct GoogleSettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func accountRow(for account: GoogleAccount) -> some View {
+        let isActive = account.matches(email: appState.settings.activeGoogleAccountEmail)
+        HStack(spacing: 10) {
+            Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isActive ? .green : .secondary)
+                .font(.system(size: 16))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.email)
+                    .font(.system(size: 13, weight: .medium))
+                Text(scopeSummary(for: account))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if !isActive {
+                Button("Make active") {
+                    appState.settings.setActiveGoogleAccount(email: account.email)
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 12))
+            }
+
+            Button("Disconnect") {
+                appState.settings.disconnectGoogle(email: account.email)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.red)
+            .font(.system(size: 12))
+        }
+        .padding(.vertical, 4)
+    }
+
     private func signIn() async {
         isSigningIn = true
         signInError = nil
@@ -173,18 +186,10 @@ struct GoogleSettingsView: View {
         }
     }
 
-    private func disconnect() {
-        appState.settings.disconnectGoogle()
-    }
+    private func scopeSummary(for account: GoogleAccount) -> String {
+        guard !account.grantedScopes.isEmpty else { return "Scopes not recorded" }
 
-    private var isConnected: Bool {
-        appState.settings.googleConnected
-    }
-
-    private var scopeSummary: String {
-        guard !appState.settings.googleGrantedScopes.isEmpty else { return "Scopes not recorded" }
-
-        let grantedScopes = Set(appState.settings.googleGrantedScopes)
+        let grantedScopes = Set(account.grantedScopes)
         var descriptions: [String] = []
         if grantedScopes.contains(GoogleScopeSet.gmailModify) {
             descriptions.append("Gmail read/modify")
@@ -204,9 +209,9 @@ struct GoogleSettingsView: View {
     }
 
     private var reconnectMessage: String? {
-        guard isConnected else { return nil }
+        guard let active = appState.settings.activeGoogleAccount else { return nil }
 
-        let missingScopes = GoogleScopeSet.calendarAndMail.filter { !appState.settings.googleGrantedScopes.contains($0) }
+        let missingScopes = GoogleScopeSet.calendarAndMail.filter { !active.grantedScopes.contains($0) }
         guard !missingScopes.isEmpty else { return nil }
 
         if missingScopes.contains(GoogleScopeSet.calendarEvents) {

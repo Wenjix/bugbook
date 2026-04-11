@@ -106,15 +106,42 @@ struct MailPaneView: View {
                     .controlSize(.small)
             }
 
-            if let accountEmail = configuredAccountEmail {
-                Label(accountEmail, systemImage: "person.crop.circle")
+            accountPicker
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var accountPicker: some View {
+        let accounts = appState.settings.googleAccounts
+        if accounts.count > 1 {
+            Menu {
+                ForEach(accounts) { account in
+                    Button {
+                        appState.settings.setActiveGoogleAccount(email: account.email)
+                    } label: {
+                        if account.matches(email: appState.settings.activeGoogleAccountEmail) {
+                            Label(account.email, systemImage: "checkmark")
+                        } else {
+                            Text(account.email)
+                        }
+                    }
+                }
+            } label: {
+                Label(appState.settings.googleConnectedEmail, systemImage: "person.crop.circle")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } else if let accountEmail = configuredAccountEmail {
+            Label(accountEmail, systemImage: "person.crop.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
     }
 
     private var mailFilterTabs: some View {
