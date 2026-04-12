@@ -1,6 +1,6 @@
 import UIKit
 import Social
-import BugbookCore
+import DahsoCore
 
 class ShareViewController: SLComposeServiceViewController {
     override func isContentValid() -> Bool {
@@ -24,7 +24,7 @@ class ShareViewController: SLComposeServiceViewController {
                     body: text
                 )
             } catch {
-                NSLog("[BugbookShareExtension] Failed to write note: %@", "\(error)")
+                NSLog("[DahsoShareExtension] Failed to write note: %@", "\(error)")
             }
             context?.completeRequest(returningItems: nil, completionHandler: nil)
         }

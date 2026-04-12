@@ -2,7 +2,7 @@
 # perf-compare.sh — Compare current performance test results against baseline.
 # Usage: ./scripts/perf-compare.sh [baseline_tsv]
 #
-# Reads the baseline TSV (default: Tests/BugbookTests/perf_baseline.tsv),
+# Reads the baseline TSV (default: Tests/DahsoTests/perf_baseline.tsv),
 # runs performance tests, and reports regressions.
 # Uses zsh for associative array support on macOS (bash 3.x lacks it).
 
@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_ROOT="${SCRIPT_DIR:h}"
-BASELINE="${1:-$PROJECT_ROOT/Tests/BugbookTests/perf_baseline.tsv}"
+BASELINE="${1:-$PROJECT_ROOT/Tests/DahsoTests/perf_baseline.tsv}"
 
 if [ ! -f "$BASELINE" ]; then
     echo "No baseline found at $BASELINE"

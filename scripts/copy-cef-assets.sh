@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 /path/to/Bugbook.app [/path/to/Bugbook Helper.app ...]" >&2
+  echo "Usage: $0 /path/to/Dahso.app [/path/to/Dahso Helper.app ...]" >&2
   exit 1
 fi
 
@@ -68,7 +68,8 @@ codesign_path "$FRAMEWORK_DEST"
 if [ "$#" -gt 0 ]; then
   for helper in "$@"; do
     if [ ! -d "$helper" ]; then
-      continue
+      echo "Helper bundle not found at $helper" >&2
+      exit 1
     fi
     helper_name="$(basename "$helper")"
     helper_dest="$FRAMEWORKS_DIR/$helper_name"

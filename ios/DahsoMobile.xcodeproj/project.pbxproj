@@ -1,0 +1,606 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		003C514FE488F6B4A7093B68 /* MobileMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */; };
+		1075E903A403FCDECE74CCAF /* MobileWorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA5D2DE7BCD25E9C9272383 /* MobileWorkspaceService.swift */; };
+		150A0BDE24C4B7C498CBE7FE /* MobileDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */; };
+		186529056A475981F54CC0EE /* MobileDatabaseRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F345F63A010D58A27E752557 /* MobileDatabaseRowView.swift */; };
+		21075E5928F454EA0CF1CE48 /* MobileAgentHubViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96C36D3DA3FE4DC21187B5C /* MobileAgentHubViewModel.swift */; };
+		2C8D2C7D75E1A7AF5AA40620 /* DahsoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 392A30686598B44A8DFD7C80 /* DahsoCore */; };
+		37BEC47701CC1993D6D188B6 /* MobileFilterSortView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 560F6C106786AE9CAEA8EEE6 /* MobileFilterSortView.swift */; };
+		3DD56C2086D8293161F081B5 /* MobileAgentHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92349C20672F074C124ABE0 /* MobileAgentHubView.swift */; };
+		3F4D4D2BDC83F568265DF990 /* MobileBlockEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E308C2F4405D356932C49B4 /* MobileBlockEditorView.swift */; };
+		59DFAFCE96F36A196CD05173 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 972E5B3AC1E550000B745F7C /* ShareViewController.swift */; };
+		6A3326F45A960AD3B3BB7AEE /* MobileSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625CAA5B82D2405AB424840C /* MobileSearchView.swift */; };
+		81956037EBF58167233BD78C /* MobileDatabaseViewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261CC3AF3139C7517BBB0A2F /* MobileDatabaseViewState.swift */; };
+		97F837C37EF93A792787838F /* MobileNoteFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 847215B2427AF5A5283AFD4C /* MobileNoteFile.swift */; };
+		9ABBFAFAB1A5D5752E6B93B5 /* MobilePageEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36A47C90345B4FBA93572E35 /* MobilePageEditorView.swift */; };
+		BE28F102D9C1BF2D3865B10A /* MobileDatabaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7666F01CC3B53CEF298D74E4 /* MobileDatabaseView.swift */; };
+		C53AFBF30B3888B16596845B /* DahsoCore in Frameworks */ = {isa = PBXBuildFile; productRef = B33EBBD7517867BFB3BCC806 /* DahsoCore */; };
+		DA61509FF8863E8E9097ECDB /* DahsoMobileiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9342DFF6EB743BE4C4E5FA /* DahsoMobileiOSApp.swift */; };
+		DB67FE57DD5749998AA2AB72 /* MobileSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23045C63ED533D7B65DCC916 /* MobileSettingsView.swift */; };
+		E3924009B7AE1F805D1DAFB7 /* MobileSchemaEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119217E3806ACE9F82D0B729 /* MobileSchemaEditorView.swift */; };
+		F3FE4EBA1DCA4421E88CD30B /* DahsoShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4F27094F3E8314F7FE3FC0E1 /* DahsoShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F7EE6D302B3760D219B5EAB5 /* MobileRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48C0E8DBED92B6C420662583 /* MobileRootView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		9F3BCF93D655E2E7B007BEF0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9C4C260448AFA8355793AEC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8CE3DB17AC81B2A1B6F31689;
+			remoteInfo = DahsoShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		292CF8B535927DFDCAF75735 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F3FE4EBA1DCA4421E88CD30B /* DahsoShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		119217E3806ACE9F82D0B729 /* MobileSchemaEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSchemaEditorView.swift; sourceTree = "<group>"; };
+		23045C63ED533D7B65DCC916 /* MobileSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSettingsView.swift; sourceTree = "<group>"; };
+		261CC3AF3139C7517BBB0A2F /* MobileDatabaseViewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDatabaseViewState.swift; sourceTree = "<group>"; };
+		36A47C90345B4FBA93572E35 /* MobilePageEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePageEditorView.swift; sourceTree = "<group>"; };
+		408DD1BD4A2806883B7D13DB /* DahsoMobileApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DahsoMobileApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		48C0E8DBED92B6C420662583 /* MobileRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileRootView.swift; sourceTree = "<group>"; };
+		4F27094F3E8314F7FE3FC0E1 /* DahsoShareExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = DahsoShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		560F6C106786AE9CAEA8EEE6 /* MobileFilterSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileFilterSortView.swift; sourceTree = "<group>"; };
+		60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDesignTokens.swift; sourceTree = "<group>"; };
+		625CAA5B82D2405AB424840C /* MobileSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileSearchView.swift; sourceTree = "<group>"; };
+		676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileMarkdownView.swift; sourceTree = "<group>"; };
+		6E308C2F4405D356932C49B4 /* MobileBlockEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileBlockEditorView.swift; sourceTree = "<group>"; };
+		7666F01CC3B53CEF298D74E4 /* MobileDatabaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDatabaseView.swift; sourceTree = "<group>"; };
+		847215B2427AF5A5283AFD4C /* MobileNoteFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileNoteFile.swift; sourceTree = "<group>"; };
+		88FF68C92DC0F881930BAB51 /* DahsoMobile.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DahsoMobile.entitlements; sourceTree = "<group>"; };
+		8FA4EC15AFF726A278291B6D /* dahso */ = {isa = PBXFileReference; lastKnownFileType = folder; name = dahso; path = ..; sourceTree = SOURCE_ROOT; };
+		972E5B3AC1E550000B745F7C /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		CD9342DFF6EB743BE4C4E5FA /* DahsoMobileiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DahsoMobileiOSApp.swift; sourceTree = "<group>"; };
+		D92349C20672F074C124ABE0 /* MobileAgentHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAgentHubView.swift; sourceTree = "<group>"; };
+		DB8BED037C57550FA331556A /* DahsoShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DahsoShareExtension.entitlements; sourceTree = "<group>"; };
+		E96C36D3DA3FE4DC21187B5C /* MobileAgentHubViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAgentHubViewModel.swift; sourceTree = "<group>"; };
+		EBA5D2DE7BCD25E9C9272383 /* MobileWorkspaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceService.swift; sourceTree = "<group>"; };
+		EFC7202F80EDA42E495FD49E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		F345F63A010D58A27E752557 /* MobileDatabaseRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDatabaseRowView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		48674D56E8D5D546CF02A597 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2C8D2C7D75E1A7AF5AA40620 /* DahsoCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		69B51E9A792BEC4EE7BE4320 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C53AFBF30B3888B16596845B /* DahsoCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		256EE5CD4C1538DE1DAFEE33 = {
+			isa = PBXGroup;
+			children = (
+				D27BC83EAFF663B46C407A45 /* App */,
+				FF41CECE4D45359BBCEF6638 /* DahsoMobile */,
+				7355C073AEC18806C5DD024F /* Packages */,
+				AF1A04A7060A21EFAFB37B3B /* ShareExtension */,
+				2CD5A03DC5535A121B113AAC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		2CD5A03DC5535A121B113AAC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				408DD1BD4A2806883B7D13DB /* DahsoMobileApp.app */,
+				4F27094F3E8314F7FE3FC0E1 /* DahsoShareExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		60CA93045E5AFF3F2714495D /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				847215B2427AF5A5283AFD4C /* MobileNoteFile.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		7355C073AEC18806C5DD024F /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				8FA4EC15AFF726A278291B6D /* dahso */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		ABC3AAD8F167BD34A01A3E4A /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				60656E40A4E936F6123983F9 /* MobileDesignTokens.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		AF1A04A7060A21EFAFB37B3B /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				DB8BED037C57550FA331556A /* DahsoShareExtension.entitlements */,
+				EFC7202F80EDA42E495FD49E /* Info.plist */,
+				972E5B3AC1E550000B745F7C /* ShareViewController.swift */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		B05E150363EEA3857A7E22C2 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				EBA5D2DE7BCD25E9C9272383 /* MobileWorkspaceService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		C72EEA9D06C1373AE1C66022 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				D92349C20672F074C124ABE0 /* MobileAgentHubView.swift */,
+				6E308C2F4405D356932C49B4 /* MobileBlockEditorView.swift */,
+				F345F63A010D58A27E752557 /* MobileDatabaseRowView.swift */,
+				7666F01CC3B53CEF298D74E4 /* MobileDatabaseView.swift */,
+				560F6C106786AE9CAEA8EEE6 /* MobileFilterSortView.swift */,
+				676AB160EE8E6B87BBCCADCD /* MobileMarkdownView.swift */,
+				36A47C90345B4FBA93572E35 /* MobilePageEditorView.swift */,
+				48C0E8DBED92B6C420662583 /* MobileRootView.swift */,
+				119217E3806ACE9F82D0B729 /* MobileSchemaEditorView.swift */,
+				625CAA5B82D2405AB424840C /* MobileSearchView.swift */,
+				23045C63ED533D7B65DCC916 /* MobileSettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		D27BC83EAFF663B46C407A45 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				88FF68C92DC0F881930BAB51 /* DahsoMobile.entitlements */,
+				CD9342DFF6EB743BE4C4E5FA /* DahsoMobileiOSApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		EF068C7703A2F618BD149117 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				E96C36D3DA3FE4DC21187B5C /* MobileAgentHubViewModel.swift */,
+				261CC3AF3139C7517BBB0A2F /* MobileDatabaseViewState.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		FF41CECE4D45359BBCEF6638 /* DahsoMobile */ = {
+			isa = PBXGroup;
+			children = (
+				ABC3AAD8F167BD34A01A3E4A /* Extensions */,
+				60CA93045E5AFF3F2714495D /* Models */,
+				B05E150363EEA3857A7E22C2 /* Services */,
+				EF068C7703A2F618BD149117 /* ViewModels */,
+				C72EEA9D06C1373AE1C66022 /* Views */,
+			);
+			name = DahsoMobile;
+			path = ../Sources/DahsoMobile;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		411175EE1E9CC8339F26E33D /* DahsoMobileApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7C4F50810C4856A9C930C86 /* Build configuration list for PBXNativeTarget "DahsoMobileApp" */;
+			buildPhases = (
+				529E12DB124847A1A74F89B3 /* Sources */,
+				48674D56E8D5D546CF02A597 /* Frameworks */,
+				292CF8B535927DFDCAF75735 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2FD3CDAE5554FB8C2529FBE1 /* PBXTargetDependency */,
+			);
+			name = DahsoMobileApp;
+			packageProductDependencies = (
+				392A30686598B44A8DFD7C80 /* DahsoCore */,
+			);
+			productName = DahsoMobileApp;
+			productReference = 408DD1BD4A2806883B7D13DB /* DahsoMobileApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		8CE3DB17AC81B2A1B6F31689 /* DahsoShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD3B2345D04BB1BE2C1EE2EC /* Build configuration list for PBXNativeTarget "DahsoShareExtension" */;
+			buildPhases = (
+				DD6E40E539490E6B1A09D64F /* Sources */,
+				69B51E9A792BEC4EE7BE4320 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DahsoShareExtension;
+			packageProductDependencies = (
+				B33EBBD7517867BFB3BCC806 /* DahsoCore */,
+			);
+			productName = DahsoShareExtension;
+			productReference = 4F27094F3E8314F7FE3FC0E1 /* DahsoShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9C4C260448AFA8355793AEC5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					411175EE1E9CC8339F26E33D = {
+						DevelopmentTeam = H9N9P29TX5;
+					};
+					8CE3DB17AC81B2A1B6F31689 = {
+						DevelopmentTeam = H9N9P29TX5;
+					};
+				};
+			};
+			buildConfigurationList = 0BDEF796E8DFF9F95F9E5784 /* Build configuration list for PBXProject "DahsoMobile" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 256EE5CD4C1538DE1DAFEE33;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8BEBD0D2999D585303EF7F9E /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				411175EE1E9CC8339F26E33D /* DahsoMobileApp */,
+				8CE3DB17AC81B2A1B6F31689 /* DahsoShareExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		529E12DB124847A1A74F89B3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DA61509FF8863E8E9097ECDB /* DahsoMobileiOSApp.swift in Sources */,
+				3DD56C2086D8293161F081B5 /* MobileAgentHubView.swift in Sources */,
+				21075E5928F454EA0CF1CE48 /* MobileAgentHubViewModel.swift in Sources */,
+				3F4D4D2BDC83F568265DF990 /* MobileBlockEditorView.swift in Sources */,
+				186529056A475981F54CC0EE /* MobileDatabaseRowView.swift in Sources */,
+				BE28F102D9C1BF2D3865B10A /* MobileDatabaseView.swift in Sources */,
+				81956037EBF58167233BD78C /* MobileDatabaseViewState.swift in Sources */,
+				150A0BDE24C4B7C498CBE7FE /* MobileDesignTokens.swift in Sources */,
+				37BEC47701CC1993D6D188B6 /* MobileFilterSortView.swift in Sources */,
+				003C514FE488F6B4A7093B68 /* MobileMarkdownView.swift in Sources */,
+				97F837C37EF93A792787838F /* MobileNoteFile.swift in Sources */,
+				9ABBFAFAB1A5D5752E6B93B5 /* MobilePageEditorView.swift in Sources */,
+				F7EE6D302B3760D219B5EAB5 /* MobileRootView.swift in Sources */,
+				E3924009B7AE1F805D1DAFB7 /* MobileSchemaEditorView.swift in Sources */,
+				6A3326F45A960AD3B3BB7AEE /* MobileSearchView.swift in Sources */,
+				DB67FE57DD5749998AA2AB72 /* MobileSettingsView.swift in Sources */,
+				1075E903A403FCDECE74CCAF /* MobileWorkspaceService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD6E40E539490E6B1A09D64F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				59DFAFCE96F36A196CD05173 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2FD3CDAE5554FB8C2529FBE1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8CE3DB17AC81B2A1B6F31689 /* DahsoShareExtension */;
+			targetProxy = 9F3BCF93D655E2E7B007BEF0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		3D827F42F4DA584514774FD3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		66EB18DC62E3BD1716A6E5CE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/DahsoShareExtension.entitlements;
+				DEVELOPMENT_TEAM = H9N9P29TX5;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.DahsoMobile.ShareExtension;
+				PRODUCT_NAME = DahsoShareExtension;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		74E88E2A5394FE65FF6AB64A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/DahsoShareExtension.entitlements;
+				DEVELOPMENT_TEAM = H9N9P29TX5;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.DahsoMobile.ShareExtension;
+				PRODUCT_NAME = DahsoShareExtension;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		787D2BBE8A494373532BC0DF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		C415DBB0693B5EB9E1A820F7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/DahsoMobile.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = H9N9P29TX5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Dahso;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Dahso uses the camera to capture photos for your notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dahso uses your microphone to record audio notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Dahso uses your photo library to embed images in your notes.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.DahsoMobile;
+				PRODUCT_NAME = Dahso;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E50B2DE21D8E0E195B045583 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/DahsoMobile.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = H9N9P29TX5;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Dahso;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Dahso uses the camera to capture photos for your notes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dahso uses your microphone to record audio notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Dahso uses your photo library to embed images in your notes.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.DahsoMobile;
+				PRODUCT_NAME = Dahso;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0BDEF796E8DFF9F95F9E5784 /* Build configuration list for PBXProject "DahsoMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3D827F42F4DA584514774FD3 /* Debug */,
+				787D2BBE8A494373532BC0DF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A7C4F50810C4856A9C930C86 /* Build configuration list for PBXNativeTarget "DahsoMobileApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E50B2DE21D8E0E195B045583 /* Debug */,
+				C415DBB0693B5EB9E1A820F7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BD3B2345D04BB1BE2C1EE2EC /* Build configuration list for PBXNativeTarget "DahsoShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				74E88E2A5394FE65FF6AB64A /* Debug */,
+				66EB18DC62E3BD1716A6E5CE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		8BEBD0D2999D585303EF7F9E /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		392A30686598B44A8DFD7C80 /* DahsoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DahsoCore;
+		};
+		B33EBBD7517867BFB3BCC806 /* DahsoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DahsoCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 9C4C260448AFA8355793AEC5 /* Project object */;
+}

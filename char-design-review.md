@@ -1,8 +1,8 @@
-# Char Design Review — UI/UX Patterns for Bugbook Meetings
+# Char Design Review — UI/UX Patterns for Dahso Meetings
 
 **Date:** 2026-03-27
 **Subject:** Char (char.com) — AI notepad for private meetings
-**Purpose:** Identify design patterns and inspiration points for Bugbook's meeting experience
+**Purpose:** Identify design patterns and inspiration points for Dahso's meeting experience
 
 ---
 
@@ -87,11 +87,11 @@ Date-organized timeline with:
 
 ---
 
-## 3. Bugbook's Current Meeting Experience
+## 3. Dahso's Current Meeting Experience
 
 ### 3a. Architecture
 
-Bugbook's meeting support is **calendar-centric**, not session-centric:
+Dahso's meeting support is **calendar-centric**, not session-centric:
 
 1. **CalendarService** syncs Google Calendar events to local SQLite
 2. **WorkspaceCalendarView** displays day/week/month views with events
@@ -102,7 +102,7 @@ Bugbook's meeting support is **calendar-centric**, not session-centric:
    - Empty "Notes" and "Action Items" sections
    - Event description
 
-### 3b. What Bugbook Has
+### 3b. What Dahso Has
 
 - Clean calendar views (day/week/month) with Google Calendar sync
 - Notion-style week view headers ("Sun 15")
@@ -113,7 +113,7 @@ Bugbook's meeting support is **calendar-centric**, not session-centric:
 - Auto-generated person pages for attendees with wikilink backlinks
 - Source picker for calendar filtering
 
-### 3c. What Bugbook Lacks (Compared to Char)
+### 3c. What Dahso Lacks (Compared to Char)
 
 - No audio capture or real-time transcription
 - No AI-generated summaries from meeting content
@@ -129,7 +129,7 @@ Bugbook's meeting support is **calendar-centric**, not session-centric:
 
 ## 4. Side-by-Side Comparison
 
-| Dimension | Char | Bugbook |
+| Dimension | Char | Dahso |
 |---|---|---|
 | **Primary metaphor** | Notepad (session-centric) | Calendar (event-centric) |
 | **Meeting lifecycle** | Before → During (recording + notes) → After (summary + chat) | Before (calendar event) → After (static markdown) |
@@ -150,7 +150,7 @@ Bugbook's meeting support is **calendar-centric**, not session-centric:
 
 **What:** Create a dedicated "Meetings" view (distinct from the calendar) that shows a chronological list of past and upcoming meetings with preview cards. Think of it as a filtered, meeting-only timeline.
 
-**Why:** Char's daily/timeline view makes it trivial to find "that meeting from last Tuesday." Bugbook's calendar is great for planning but poor for retrieval. Users need a meeting-specific entry point.
+**Why:** Char's daily/timeline view makes it trivial to find "that meeting from last Tuesday." Dahso's calendar is great for planning but poor for retrieval. Users need a meeting-specific entry point.
 
 **How:** Filter pages created by MeetingNoteService, display as a list with: title, date, attendee count, and a 2-line content preview. Add a "Meetings" tab in the sidebar or as a view mode alongside the calendar.
 
@@ -160,19 +160,19 @@ Bugbook's meeting support is **calendar-centric**, not session-centric:
 
 **Why:** Char's template system (with search, favorites, and relevance ranking) is one of their strongest UX patterns. Different meetings need different structures. A 1:1 has "discussion topics" and "follow-ups"; a standup has "yesterday/today/blockers."
 
-**How:** Store templates as markdown files in a `.bugbook/templates/meetings/` directory. Add a template picker when creating a meeting note (small popover on the calendar event tap, or a dropdown in the generated page header). The current `buildMeetingNoteContent` becomes one template among several.
+**How:** Store templates as markdown files in a `.dahso/templates/meetings/` directory. Add a template picker when creating a meeting note (small popover on the calendar event tap, or a dropdown in the generated page header). The current `buildMeetingNoteContent` becomes one template among several.
 
 ### Recommendation 3: Design a "During Meeting" State
 
 **What:** When a meeting is happening right now (based on calendar start/end time), give the meeting note page a distinct visual treatment: a subtle recording-style indicator in the page header, a floating "meeting in progress" badge, and quick-access buttons for the conference link and attendee list.
 
-**Why:** Char's entire design centers on the "during meeting" experience. Bugbook doesn't need audio recording to benefit from this — just acknowledging that the user is currently in a meeting and surfacing relevant context (join link, attendees, agenda) creates a more intentional experience.
+**Why:** Char's entire design centers on the "during meeting" experience. Dahso doesn't need audio recording to benefit from this — just acknowledging that the user is currently in a meeting and surfacing relevant context (join link, attendees, agenda) creates a more intentional experience.
 
 **How:** Check if `Date()` falls between `event.startDate` and `event.endDate`. If so, show a compact meeting bar at the top of the note page with: a pulsing dot + "In Progress", a "Join" button (links to conferenceURL), and collapsible attendee chips. After the meeting ends, this bar transitions to "Meeting ended — review your notes" with a prompt to add action items.
 
 ### Recommendation 4: Add Source-Linked AI Summaries
 
-**What:** After a user finishes writing meeting notes, offer a "Summarize" action that uses Bugbook's existing AiService to generate a structured summary from the raw notes. Display the summary in a distinct section with visual differentiation (lighter background, different typography) and link each summary point back to the source paragraph.
+**What:** After a user finishes writing meeting notes, offer a "Summarize" action that uses Dahso's existing AiService to generate a structured summary from the raw notes. Display the summary in a distinct section with visual differentiation (lighter background, different typography) and link each summary point back to the source paragraph.
 
 **Why:** Char's source verification pattern (hover to see the exact transcript quote) is their most trust-building feature. Even without transcription, applying this to user-written notes adds value: the AI highlights key points, and the user can verify each one traces back to what they actually wrote.
 
@@ -182,7 +182,7 @@ Bugbook's meeting support is **calendar-centric**, not session-centric:
 
 **What:** When tapping a calendar event, instead of immediately navigating to a full page, show a compact event detail popover with: title, time, attendees, join link, and a prominent "Open Notes" or "Create Notes" button. For events that already have linked notes, show a 2-line preview of the notes content.
 
-**Why:** Char's session preview cards (hover to see title, date, participants, content preview with gradient fade) create a lightweight discovery layer before committing to a full view. Bugbook currently jumps straight from calendar event to full page, which breaks flow when you're scanning your calendar.
+**Why:** Char's session preview cards (hover to see title, date, participants, content preview with gradient fade) create a lightweight discovery layer before committing to a full view. Dahso currently jumps straight from calendar event to full page, which breaks flow when you're scanning your calendar.
 
 **How:** Add a popover on event tap (instead of immediate navigation) using the existing CalendarEvent data. Show metadata, attendee avatars/initials, join link button, and either "Create Meeting Note" or a preview of existing linked notes. The user clicks through to the full page only when ready.
 
@@ -192,11 +192,11 @@ Bugbook's meeting support is **calendar-centric**, not session-centric:
 
 Beyond specific features, Char embodies a few design principles worth adopting:
 
-- **State awareness:** The UI acknowledges what phase of a meeting the user is in (before, during, after) and adapts accordingly. Bugbook currently treats all meetings the same regardless of temporal context.
+- **State awareness:** The UI acknowledges what phase of a meeting the user is in (before, during, after) and adapts accordingly. Dahso currently treats all meetings the same regardless of temporal context.
 
 - **Progressive disclosure:** Char shows a minimal floating button during recording, tabs for different content types, and expandable metadata. Information appears when relevant, not all at once.
 
-- **Trust through transparency:** Source verification, edit approval flows, and the diff view for AI changes all reinforce user control. Any AI features Bugbook adds to meetings should follow this pattern.
+- **Trust through transparency:** Source verification, edit approval flows, and the diff view for AI changes all reinforce user control. Any AI features Dahso adds to meetings should follow this pattern.
 
 - **Keyboard-first navigation:** Alt+M/S/T for tab switching, Cmd+\ for sidebar. Meeting workflows benefit from keeping hands on keyboard.
 

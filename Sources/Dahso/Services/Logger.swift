@@ -1,0 +1,32 @@
+import Foundation
+import os
+
+/// Centralized loggers for structured logging across the app.
+/// Use the appropriate subsystem logger for each area.
+enum Log {
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.dahso.app"
+
+    /// File system operations (create, delete, rename, save)
+    static let fileSystem = Logger(subsystem: subsystem, category: "FileSystem")
+    /// Database queries, mutations, schema operations
+    static let database = Logger(subsystem: subsystem, category: "Database")
+    /// AI service (chat, model detection)
+    static let ai = Logger(subsystem: subsystem, category: "AI")
+    /// Editor operations (block edits, document load/save)
+    static let editor = Logger(subsystem: subsystem, category: "Editor")
+    /// Navigation (tabs, history, sidebar)
+    static let navigation = Logger(subsystem: subsystem, category: "Navigation")
+    /// Agent hub (tasks, runs, events)
+    static let agent = Logger(subsystem: subsystem, category: "Agent")
+    /// Audio capture and transcription
+    static let transcription = Logger(subsystem: subsystem, category: "Transcription")
+    /// Gmail sync, thread actions, and compose/send flows
+    static let mail = Logger(subsystem: subsystem, category: "Mail")
+    /// General app lifecycle
+    static let app = Logger(subsystem: subsystem, category: "App")
+
+    // MARK: - Signpost for Performance
+
+    /// Signpost log for measuring performance intervals in Instruments.
+    static let signpost = OSSignposter(subsystem: subsystem, category: .pointsOfInterest)
+}
