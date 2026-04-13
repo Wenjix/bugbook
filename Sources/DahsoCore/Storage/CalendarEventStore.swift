@@ -63,14 +63,23 @@ public class CalendarEventStore {
             indexById[event.id] = i
         }
         for event in incoming {
-            if let idx = indexById[event.id] {
+            if let idx = indexById[event.id] ?? indexOfEvent(withID: event.id, in: existing) {
                 // Preserve linked page path from existing event
+                let previousID = existing[idx].id
                 var updated = event
                 if updated.linkedPagePath == nil {
                     updated.linkedPagePath = existing[idx].linkedPagePath
                 }
+                if updated.accountEmail == nil {
+                    updated.accountEmail = existing[idx].accountEmail
+                }
                 existing[idx] = updated
+                if previousID != updated.id {
+                    indexById.removeValue(forKey: previousID)
+                }
+                indexById[updated.id] = idx
             } else {
+                indexById[event.id] = existing.count
                 existing.append(event)
             }
         }
@@ -82,6 +91,47 @@ public class CalendarEventStore {
         var events = loadEvents(in: workspace)
         events.removeAll { ids.contains($0.id) }
         try saveEvents(events, in: workspace)
+    }
+
+    @discardableResult
+    public func migrateLegacyIDs(in workspace: String, using activeAccountEmail: String?) throws -> [String: String] {
+        let existingEvents = loadEvents(in: workspace)
+        guard !existingEvents.isEmpty else { return [:] }
+
+        let fallbackAccountEmail = CalendarEvent.normalizedAccountEmail(activeAccountEmail)
+        var rewrittenEvents: [CalendarEvent] = []
+        var indexById: [String: Int] = [:]
+        var idMapping: [String: String] = [:]
+        var didChange = false
+
+        for event in existingEvents {
+            let migrated = migratedEvent(from: event, fallbackAccountEmail: fallbackAccountEmail)
+            if migrated.id != event.id || migrated.accountEmail != event.accountEmail {
+                didChange = true
+            }
+            if migrated.id != event.id {
+                idMapping[event.id] = migrated.id
+            }
+
+            if let idx = indexById[migrated.id] {
+                let merged = mergeMigratedDuplicate(existing: rewrittenEvents[idx], incoming: migrated)
+                if merged != rewrittenEvents[idx] {
+                    rewrittenEvents[idx] = merged
+                    didChange = true
+                }
+            } else {
+                indexById[migrated.id] = rewrittenEvents.count
+                rewrittenEvents.append(migrated)
+            }
+        }
+
+        if didChange {
+            try saveEvents(rewrittenEvents, in: workspace)
+        }
+        if !idMapping.isEmpty {
+            try rewriteMarkdownReferenceIDs(idMapping, in: workspace)
+        }
+        return idMapping
     }
 
     // MARK: - Sources
@@ -140,9 +190,140 @@ public class CalendarEventStore {
 
     public func linkEventToPage(eventId: String, pagePath: String, in workspace: String) throws {
         var events = loadEvents(in: workspace)
-        guard let idx = events.firstIndex(where: { $0.id == eventId }) else { return }
+        guard let idx = indexOfEvent(withID: eventId, in: events) else { return }
         events[idx].linkedPagePath = pagePath
         try saveEvents(events, in: workspace)
+    }
+
+    private func indexOfEvent(withID eventId: String, in events: [CalendarEvent]) -> Int? {
+        if let exactIndex = events.firstIndex(where: { $0.id == eventId }) {
+            return exactIndex
+        }
+        guard let targetComponents = CalendarEvent.idComponents(for: eventId) else {
+            return nil
+        }
+
+        return events.firstIndex { event in
+            guard let eventComponents = event.idComponents else { return false }
+            guard eventComponents.calendarId == targetComponents.calendarId,
+                  eventComponents.remoteID == targetComponents.remoteID else {
+                return false
+            }
+
+            switch (CalendarEvent.normalizedAccountEmail(targetComponents.accountEmail), CalendarEvent.normalizedAccountEmail(eventComponents.accountEmail)) {
+            case let (targetEmail?, eventEmail?):
+                return targetEmail.caseInsensitiveCompare(eventEmail) == .orderedSame
+            case (nil, _), (_, nil):
+                return true
+            }
+        }
+    }
+
+    private func migratedEvent(from event: CalendarEvent, fallbackAccountEmail: String?) -> CalendarEvent {
+        let explicitAccountEmail = CalendarEvent.normalizedAccountEmail(event.accountEmail)
+        let idComponents = event.idComponents
+        let resolvedAccountEmail = explicitAccountEmail ?? idComponents?.accountEmail ?? fallbackAccountEmail
+        let rewrittenID: String
+
+        if let remoteID = idComponents?.remoteID {
+            rewrittenID = CalendarEvent.composeID(
+                accountEmail: resolvedAccountEmail,
+                calendarId: event.calendarId,
+                remoteID: remoteID
+            )
+        } else {
+            rewrittenID = event.id
+        }
+
+        if rewrittenID == event.id, resolvedAccountEmail == event.accountEmail {
+            return event
+        }
+
+        return CalendarEvent(
+            id: rewrittenID,
+            title: event.title,
+            startDate: event.startDate,
+            endDate: event.endDate,
+            isAllDay: event.isAllDay,
+            location: event.location,
+            notes: event.notes,
+            calendarId: event.calendarId,
+            attendees: event.attendees,
+            conferenceURL: event.conferenceURL,
+            htmlLink: event.htmlLink,
+            linkedPagePath: event.linkedPagePath,
+            accountEmail: resolvedAccountEmail
+        )
+    }
+
+    private func mergeMigratedDuplicate(existing: CalendarEvent, incoming: CalendarEvent) -> CalendarEvent {
+        let shouldPreferIncoming = CalendarEvent.normalizedAccountEmail(existing.accountEmail) == nil &&
+            CalendarEvent.normalizedAccountEmail(incoming.accountEmail) != nil
+
+        var preferred = shouldPreferIncoming ? incoming : existing
+        let fallback = shouldPreferIncoming ? existing : incoming
+
+        if preferred.linkedPagePath == nil {
+            preferred.linkedPagePath = fallback.linkedPagePath
+        }
+        if preferred.accountEmail == nil {
+            preferred.accountEmail = fallback.accountEmail
+        }
+
+        return preferred
+    }
+
+    private func rewriteMarkdownReferenceIDs(_ idMapping: [String: String], in workspace: String) throws {
+        guard let enumerator = fm.enumerator(atPath: workspace) else { return }
+
+        for case let relativePath as String in enumerator {
+            if relativePath == ".git" || relativePath == ".build" {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard relativePath.hasSuffix(".md") else { continue }
+
+            let path = (workspace as NSString).appendingPathComponent(relativePath)
+            guard let data = fm.contents(atPath: path),
+                  let content = String(data: data, encoding: .utf8) else {
+                continue
+            }
+
+            let rewritten = rewriteEventIDs(in: content, using: idMapping)
+            guard rewritten != content else { continue }
+            try rewritten.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func rewriteEventIDs(in content: String, using idMapping: [String: String]) -> String {
+        let orderedMappings = idMapping
+            .filter { $0.key != $0.value }
+            .sorted { lhs, rhs in lhs.key.count > rhs.key.count }
+
+        return orderedMappings.reduce(content) { partial, entry in
+            let pattern = idRewritePattern(oldID: entry.key, newID: entry.value)
+            guard let regex = try? NSRegularExpression(pattern: pattern) else {
+                return partial
+            }
+
+            let range = NSRange(partial.startIndex..<partial.endIndex, in: partial)
+            return regex.stringByReplacingMatches(
+                in: partial,
+                options: [],
+                range: range,
+                withTemplate: NSRegularExpression.escapedTemplate(for: entry.value)
+            )
+        }
+    }
+
+    private func idRewritePattern(oldID: String, newID: String) -> String {
+        let escapedOldID = NSRegularExpression.escapedPattern(for: oldID)
+        guard newID.hasSuffix(oldID) else { return escapedOldID }
+
+        let prefix = String(newID.dropLast(oldID.count))
+        guard !prefix.isEmpty else { return escapedOldID }
+        let escapedPrefix = NSRegularExpression.escapedPattern(for: prefix)
+        return "(?<!\(escapedPrefix))\(escapedOldID)"
     }
 }
 

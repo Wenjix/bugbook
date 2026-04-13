@@ -3,6 +3,14 @@ import Foundation
 // MARK: - Calendar Event
 
 public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
+    public struct IDComponents: Sendable, Hashable {
+        public let accountEmail: String?
+        public let calendarId: String
+        public let remoteID: String
+
+        public var isAccountQualified: Bool { accountEmail != nil }
+    }
+
     public let id: String
     public var title: String
     public var startDate: Date
@@ -47,7 +55,47 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
         self.conferenceURL = conferenceURL
         self.htmlLink = htmlLink
         self.linkedPagePath = linkedPagePath
-        self.accountEmail = accountEmail
+        self.accountEmail = Self.normalizedAccountEmail(accountEmail) ?? Self.idComponents(for: id)?.accountEmail
+    }
+
+    public static let idSeparator = "::"
+
+    public static func normalizedAccountEmail(_ accountEmail: String?) -> String? {
+        guard let accountEmail else { return nil }
+        let trimmed = accountEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    public static func composeID(accountEmail: String?, calendarId: String, remoteID: String) -> String {
+        var parts: [String] = []
+        if let email = normalizedAccountEmail(accountEmail) {
+            parts.append(email)
+        }
+        parts.append(calendarId)
+        parts.append(remoteID)
+        return parts.joined(separator: idSeparator)
+    }
+
+    public static func idComponents(for id: String) -> IDComponents? {
+        let parts = id.components(separatedBy: idSeparator)
+        switch parts.count {
+        case 2:
+            guard !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+            return IDComponents(accountEmail: nil, calendarId: parts[0], remoteID: parts[1])
+        case 3:
+            guard !parts[0].isEmpty, !parts[1].isEmpty, !parts[2].isEmpty else { return nil }
+            return IDComponents(
+                accountEmail: normalizedAccountEmail(parts[0]),
+                calendarId: parts[1],
+                remoteID: parts[2]
+            )
+        default:
+            return nil
+        }
+    }
+
+    public var idComponents: IDComponents? {
+        Self.idComponents(for: id)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -70,7 +118,9 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
         conferenceURL = try container.decodeIfPresent(String.self, forKey: .conferenceURL)
         htmlLink = try container.decodeIfPresent(String.self, forKey: .htmlLink)
         linkedPagePath = try container.decodeIfPresent(String.self, forKey: .linkedPagePath)
-        accountEmail = try container.decodeIfPresent(String.self, forKey: .accountEmail)
+        accountEmail = Self.normalizedAccountEmail(
+            try container.decodeIfPresent(String.self, forKey: .accountEmail)
+        ) ?? Self.idComponents(for: id)?.accountEmail
     }
 }
 

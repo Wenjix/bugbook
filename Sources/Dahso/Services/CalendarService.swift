@@ -254,6 +254,23 @@ class CalendarService {
             }
         }
 
+        let activeConnectedEmail = settings.connectedGoogleAccounts
+            .first(where: { $0.matches(email: settings.activeGoogleAccountEmail) })?
+            .email
+        let validatedActiveEmail = activeConnectedEmail.flatMap { activeEmail in
+            validatedAccounts.first(where: { $0.email.caseInsensitiveCompare(activeEmail) == .orderedSame })?.email
+        }
+        let migrationAccountEmail = validatedActiveEmail
+            ?? validatedAccounts.first?.email
+            ?? activeConnectedEmail
+            ?? settings.connectedGoogleAccounts.first?.email
+
+        do {
+            try store.migrateLegacyIDs(in: workspace, using: migrationAccountEmail)
+        } catch {
+            Log.app.error("Failed to migrate legacy calendar IDs: \(error.localizedDescription)")
+        }
+
         // Phase 2: fetch events in parallel. Each task uses a stable token and touches
         // only its own account's cache slice, so there's no shared mutable state.
         let results = await withTaskGroup(of: Result<AccountSyncResult, AccountSyncFailure>.self) { group in
@@ -319,7 +336,7 @@ class CalendarService {
 
     /// Sync one account's events + calendar list, tagging each event with the account email.
     /// Cleans up stale events belonging to this account (present in cache, missing from fetch)
-    /// and sweeps legacy (untagged) events on first multi-account sync.
+    /// after the cache has been migrated to account-qualified IDs.
     private func syncAccountEvents(
         accountEmail: String,
         token: GoogleOAuthToken,
@@ -344,15 +361,11 @@ class CalendarService {
         let syncedSourceIds = Set(calendarIds)
 
         // Events from THIS account that disappeared from the remote → stale.
-        // Legacy events (accountEmail == nil) also get swept when their calendarId matches
-        // this account's calendar IDs (one-shot migration on first post-upgrade sync).
         let staleIds = Set(
             existingEvents
                 .filter { event in
                     guard syncedSourceIds.contains(event.calendarId) else { return false }
-                    let isOwnedByThisAccount = event.accountEmail?.caseInsensitiveCompare(accountEmail) == .orderedSame
-                    let isLegacy = event.accountEmail == nil
-                    guard isOwnedByThisAccount || isLegacy else { return false }
+                    guard event.accountEmail?.caseInsensitiveCompare(accountEmail) == .orderedSame else { return false }
                     return !fetchedIds.contains(event.id)
                 }
                 .map(\.id)
@@ -488,9 +501,7 @@ class CalendarService {
 
     func linkEventToPage(eventId: String, pagePath: String, workspace: String) {
         try? store.linkEventToPage(eventId: eventId, pagePath: pagePath, in: workspace)
-        if let idx = events.firstIndex(where: { $0.id == eventId }) {
-            events[idx].linkedPagePath = pagePath
-        }
+        events = store.loadEvents(in: workspace)
     }
 
     // MARK: - Google Calendar API
@@ -646,10 +657,6 @@ class CalendarService {
         return orderedIds
     }
 
-    private func eventID(remoteID: String, calendarId: String) -> String {
-        "\(calendarId)::\(remoteID)"
-    }
-
     private func parseGoogleEvent(_ json: [String: Any], calendarId: String = "primary", accountEmail: String? = nil) -> CalendarEvent? {
         guard let remoteID = json["id"] as? String,
               let summary = json["summary"] as? String else { return nil }
@@ -695,7 +702,7 @@ class CalendarService {
         }
 
         return CalendarEvent(
-            id: eventID(remoteID: remoteID, calendarId: calendarId),
+            id: CalendarEvent.composeID(accountEmail: accountEmail, calendarId: calendarId, remoteID: remoteID),
             title: summary,
             startDate: startDate,
             endDate: endDate,
