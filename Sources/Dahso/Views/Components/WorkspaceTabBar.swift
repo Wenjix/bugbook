@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -148,7 +149,12 @@ struct WorkspaceTabBar: View {
             case .document(let file):
                 if let name = file.displayName, !name.isEmpty { return name }
                 if file.isEmptyTab { return "New Tab" }
-                if file.isBrowser { return "Browser" }
+                if file.isBrowser {
+                    if let host = URL(string: file.path)?.host, !host.isEmpty {
+                        return host
+                    }
+                    return "Browser"
+                }
                 if file.isCalendar { return "Calendar" }
                 if file.isMeetings { return "Meetings" }
                 if file.isGraphView { return "Graph" }
@@ -257,8 +263,10 @@ struct WorkspaceTabBar: View {
 
     private func detachedBrowserSnapshots(for workspace: Workspace) -> [UUID: BrowserPaneSnapshot] {
         Dictionary(uniqueKeysWithValues: workspace.allLeaves.compactMap { leaf in
-            guard case .document(let file) = leaf.content,
-                  file.isBrowser,
+            guard leaf.tabs.contains(where: { content in
+                guard case .document(let file) = content else { return false }
+                return file.isBrowser
+            }),
                   let snapshot = browserManager.snapshot(for: leaf.id) else {
                 return nil
             }
@@ -309,7 +317,7 @@ private struct NewPanePopover: View {
                 dismiss()
             }
             contentRow(icon: "terminal", label: "Terminal") {
-                workspaceManager.addWorkspaceWith(content: .terminal)
+                workspaceManager.addWorkspaceWith(content: .terminal())
                 dismiss()
             }
             contentRow(icon: "globe", label: "Browser") {
@@ -342,11 +350,11 @@ private struct NewPanePopover: View {
                 .padding(.bottom, 4)
 
             contentRow(icon: "rectangle.split.2x1", label: "Split Right") {
-                _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal)
+                _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal())
                 dismiss()
             }
             contentRow(icon: "rectangle.split.1x2", label: "Split Down") {
-                _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: .terminal)
+                _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: .terminal())
                 dismiss()
             }
         }

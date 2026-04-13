@@ -21,6 +21,9 @@ struct PaneContentView: View {
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
     var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
+    var onCreatePaneTab: ((PaneNode.Leaf) -> Void)? = nil
+    var onClosePaneTab: ((PaneNode.Leaf, UUID) -> Void)? = nil
+    var onClosePane: ((PaneNode.Leaf) -> Void)? = nil
 
     @State private var isDropTarget = false
 
@@ -38,7 +41,7 @@ struct PaneContentView: View {
 
     private var activeBlockDocument: BlockDocument? {
         guard case .document = leaf.content else { return nil }
-        return blockDocumentLookup?(leaf.id)
+        return blockDocumentLookup?(leaf.activeTabID)
     }
 
     private var activeDatabaseFindState: DatabaseViewState? {
@@ -125,7 +128,10 @@ struct PaneContentView: View {
                         isOnlyPane: !showFocusBorder,
                         fileTree: fileTree,
                         breadcrumbs: chromeBreadcrumbs,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate
+                        onBreadcrumbNavigate: onBreadcrumbNavigate,
+                        onCreatePaneTab: onCreatePaneTab,
+                        onClosePaneTab: onClosePaneTab,
+                        onClosePane: onClosePane
                     )
                 }
 
@@ -211,6 +217,11 @@ struct PaneContentView: View {
                     workspaceManager.updatePaneContent(paneId: leaf.id, content: content)
                 }
             }
+            if leaf.activeContent.defaultNewPaneTab() != nil {
+                Button("New Tab") {
+                    onCreatePaneTab?(leaf)
+                }
+            }
             if showFocusBorder {
                 Button("Pop Out to Tab") {
                     workspaceManager.popOutPane(id: leaf.id)
@@ -218,7 +229,11 @@ struct PaneContentView: View {
             }
             Divider()
             Button("Close Pane") {
-                workspaceManager.closePane(id: leaf.id)
+                if let onClosePane {
+                    onClosePane(leaf)
+                } else {
+                    workspaceManager.closePane(id: leaf.id)
+                }
             }
         }
     }
@@ -226,7 +241,7 @@ struct PaneContentView: View {
     @ViewBuilder
     private func paneTypeMenu(action: @escaping (PaneContent) -> Void) -> some View {
         Button("Browser") { action(.browserDocument()) }
-        Button("Terminal") { action(.terminal) }
+        Button("Terminal") { action(.terminal()) }
         Button("Empty Page") { action(.emptyDocument()) }
         Button("Mail") { action(.mailDocument()) }
         Button("Calendar") { action(.calendarDocument()) }

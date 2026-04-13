@@ -180,7 +180,7 @@ struct PaneLauncher: View {
 
     static let builtInPanes: [(label: String, icon: String, content: PaneContent)] = [
         ("Browser", "globe", .browserDocument()),
-        ("Terminal", "terminal", .terminal),
+        ("Terminal", "terminal", .terminal()),
         ("Empty Page", "doc", .emptyDocument()),
         ("Mail", "envelope", .mailDocument()),
         ("Calendar", "calendar", .calendarDocument()),

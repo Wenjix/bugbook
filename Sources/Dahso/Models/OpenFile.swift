@@ -12,6 +12,8 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var icon: String?
     var navigationHistory: [String] = []
     var navigationHistoryIndex: Int = -1
+    var browserSavedRecordID: UUID?
+    var browserPageZoom: Double
 
     // Shims forwarding to kind for incremental migration
     var isDatabase: Bool { kind.isDatabase }
@@ -26,6 +28,14 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }
+    var browserURLString: String {
+        guard isBrowser, path == "dahso://browser" else { return path }
+        return ""
+    }
+    var browserURL: URL? {
+        guard !browserURLString.isEmpty else { return nil }
+        return URL(string: browserURLString)
+    }
 
     init(
         id: UUID,
@@ -38,7 +48,9 @@ struct OpenFile: Identifiable, Equatable, Codable {
         openerPagePath: String? = nil,
         icon: String? = nil,
         navigationHistory: [String] = [],
-        navigationHistoryIndex: Int = -1
+        navigationHistoryIndex: Int = -1,
+        browserSavedRecordID: UUID? = nil,
+        browserPageZoom: Double = 0.85
     ) {
         self.id = id
         self.path = path
@@ -51,5 +63,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
         self.icon = icon
         self.navigationHistory = navigationHistory
         self.navigationHistoryIndex = navigationHistoryIndex
+        self.browserSavedRecordID = browserSavedRecordID
+        self.browserPageZoom = browserPageZoom
     }
 }

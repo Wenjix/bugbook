@@ -29,7 +29,7 @@ struct BrowserAgentService {
 
     func listTabs(browserManager: BrowserManager) -> [BrowserTabState] {
         browserManager.sessions.values
-            .flatMap(\.tabs)
+            .flatMap { browserManager.tabs(in: $0.paneID) }
             .filter { !$0.urlString.isEmpty || $0.title != "New Tab" }
     }
 
@@ -97,11 +97,11 @@ struct BrowserAgentService {
     }
 
     func proposeCleanup(for paneID: UUID, browserManager: BrowserManager, workspacePath: String?) -> [BrowserCleanupProposal] {
-        let session = browserManager.session(for: paneID)
+        let tabs = browserManager.tabs(in: paneID)
         let savedURLs = Set((workspacePath.map { savedPageStore.records(in: $0) } ?? []).map(\.urlString))
         var seenURLs: Set<String> = []
 
-        return session.tabs.compactMap { tab in
+        return tabs.compactMap { tab in
             guard !tab.urlString.isEmpty else {
                 return BrowserCleanupProposal(
                     tabID: tab.id,
@@ -203,7 +203,7 @@ struct BrowserAgentService {
                     queued += 1
                 }
             case .close:
-                browserManager.session(for: paneID).closeTab(proposal.tabID)
+                browserManager.closeTab(proposal.tabID, in: paneID)
                 closed += 1
             case .keep:
                 break

@@ -23,9 +23,7 @@ struct Workspace: Identifiable, Codable, Equatable {
 
     /// The OpenFile for the focused pane, if it is a document pane.
     var focusedOpenFile: OpenFile? {
-        guard let leaf = focusedLeaf,
-              case .document(let file) = leaf.content else { return nil }
-        return file
+        focusedLeaf?.activeOpenFile
     }
 
     /// All leaves in the tree, flattened.
@@ -36,18 +34,11 @@ struct Workspace: Identifiable, Codable, Equatable {
     /// Create a default workspace with a single empty-tab document pane.
     static func makeDefault(name: String = "Workspace") -> Workspace {
         let paneId = UUID()
-        let emptyFile = OpenFile(
-            id: paneId,
-            path: "",
-            content: "",
-            isDirty: false,
-            isEmptyTab: true
-        )
         return Workspace(
             id: UUID(),
             name: name,
             icon: nil,
-            root: .leaf(.init(id: paneId, content: .document(openFile: emptyFile))),
+            root: .leaf(.init(id: paneId, content: .emptyDocument(id: paneId))),
             focusedPaneId: paneId,
             createdAt: Date()
         )

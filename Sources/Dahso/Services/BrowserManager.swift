@@ -12,16 +12,44 @@ final class BrowserManager {
     @ObservationIgnored private let engine: any BrowserEngine
     @ObservationIgnored private let snapshotStore: BrowserPaneSnapshotStore
     @ObservationIgnored private let historyStore: BrowserHistoryStore
+    @ObservationIgnored private let fallbackWorkspaceManager: WorkspaceManager
+    @ObservationIgnored private var boundWorkspaceManager: WorkspaceManager?
+
+    fileprivate var workspaceManager: WorkspaceManager {
+        boundWorkspaceManager ?? fallbackWorkspaceManager
+    }
 
     init(
         engine: (any BrowserEngine)? = nil,
         snapshotStore: BrowserPaneSnapshotStore = BrowserPaneSnapshotStore(),
         historyStore: BrowserHistoryStore = BrowserHistoryStore()
     ) {
+        let fallbackWorkspaceManager = WorkspaceManager()
+        fallbackWorkspaceManager.layoutPersistenceEnabled = false
         self.engine = engine ?? BrowserEngineFactory.makeDefault()
         self.snapshotStore = snapshotStore
         self.historyStore = historyStore
+        self.fallbackWorkspaceManager = fallbackWorkspaceManager
         self.browsingHistory = historyStore.load()
+    }
+
+    func bind(workspaceManager: WorkspaceManager) {
+        boundWorkspaceManager = workspaceManager
+        for paneID in sessions.keys {
+            if workspaceManager.leaf(id: paneID) == nil,
+               let fallbackLeaf = fallbackWorkspaceManager.leaf(id: paneID) {
+                workspaceManager.setPaneTabs(
+                    paneId: paneID,
+                    tabs: fallbackLeaf.tabs,
+                    selectedTabID: fallbackLeaf.activeTabID
+                )
+            } else {
+                ensurePaneExists(
+                    for: paneID,
+                    snapshot: snapshotStore.snapshot(for: paneID) ?? BrowserPaneSnapshot(paneID: paneID)
+                )
+            }
+        }
     }
 
     func session(for paneID: UUID) -> BrowserPaneSession {
@@ -81,6 +109,7 @@ final class BrowserManager {
     }
 
     func restoreSessionSnapshot(_ snapshot: BrowserPaneSnapshot, for paneID: UUID) {
+        ensurePaneExists(for: paneID, snapshot: snapshot)
         let session = BrowserPaneSession(paneID: paneID, snapshot: snapshot)
         session.manager = self
         sessions[paneID] = session
@@ -99,22 +128,21 @@ final class BrowserManager {
             return existing
         }
 
-        let tab = session.tabs.first(where: { $0.id == tabID })
-        let initialURL = tab?.url
+        let file = workspaceManager.openFile(tabId: tabID)
+        let initialURL = file?.browserURL
         let page = engine.makePage(for: paneID, tabID: tabID, initialURL: initialURL) { [weak self] event in
             self?.handlePageEvent(event, paneID: paneID, tabID: tabID)
         }
-        if let pageZoom = tab?.pageZoom, pageZoom > 0 {
+        if let pageZoom = file?.browserPageZoom, pageZoom > 0 {
             page.setPageZoom(pageZoom)
         }
         session.pages[tabID] = page
-        session.sync(tabID: tabID, from: page.state)
+        session.updatePageState(tabID: tabID, from: page.state)
         return page
     }
 
     func activePage(for paneID: UUID) -> (any BrowserPage)? {
-        guard let session = sessions[paneID],
-              let tabID = session.selectedTabID else { return nil }
+        guard let tabID = activeBrowserTabID(in: paneID) else { return nil }
         return ensurePage(for: paneID, tabID: tabID)
     }
 
@@ -123,8 +151,24 @@ final class BrowserManager {
     }
 
     func openURL(_ url: URL, in paneID: UUID, newTab: Bool = false) {
-        let session = session(for: paneID)
-        let tabID = tabIDForOpenURL(url, in: session, newTab: newTab)
+        let tabID: UUID
+        if newTab || activeBrowserTabID(in: paneID) == nil {
+            let content = PaneContent.browserDocument(
+                urlString: url.absoluteString,
+                title: url.host ?? "New Tab"
+            )
+            tabID = content.id
+            _ = workspaceManager.addPaneTab(to: paneID, content: content)
+        } else if let selectedTabID = activeBrowserTabID(in: paneID) {
+            tabID = selectedTabID
+            workspaceManager.updateOpenFile(tabId: tabID, persist: false) { file in
+                file.path = url.absoluteString
+                file.displayName = url.host ?? "New Tab"
+                file.browserSavedRecordID = nil
+            }
+        } else {
+            return
+        }
 
         let page = ensurePage(for: paneID, tabID: tabID)
         page.load(URLRequest(url: url))
@@ -148,12 +192,11 @@ final class BrowserManager {
     }
 
     func setPageZoom(_ zoom: Double, in paneID: UUID) {
-        guard let session = sessions[paneID],
-              let tabID = session.selectedTabID,
+        guard let tabID = activeBrowserTabID(in: paneID),
               let page = activePage(for: paneID) else { return }
         page.setPageZoom(zoom)
-        session.updateTab(tabID: tabID) { tab in
-            tab.pageZoom = zoom
+        workspaceManager.updateOpenFile(tabId: tabID) { file in
+            file.browserPageZoom = zoom
         }
         persistSession(paneID)
     }
@@ -182,14 +225,24 @@ final class BrowserManager {
 
     fileprivate func updateHoverURL(_ urlString: String?, paneID: UUID, tabID: UUID) {
         guard let session = sessions[paneID] else { return }
-        session.updateTab(tabID: tabID) { tab in
-            tab.hoverURLString = urlString
-        }
+        session.updateHoverURL(tabID: tabID, urlString: urlString)
     }
 
     fileprivate func updateTabState(_ state: BrowserPageState, paneID: UUID, tabID: UUID) {
         let session = session(for: paneID)
-        session.sync(tabID: tabID, from: state)
+        session.updatePageState(tabID: tabID, from: state)
+        workspaceManager.updateOpenFile(tabId: tabID, persist: !state.isLoading) { file in
+            let trimmedTitle = state.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmedTitle, !trimmedTitle.isEmpty {
+                file.displayName = trimmedTitle
+            }
+            if let url = state.url {
+                file.path = url.absoluteString
+            }
+            if state.pageZoom > 0 {
+                file.browserPageZoom = state.pageZoom
+            }
+        }
         persistSession(paneID)
     }
 
@@ -206,24 +259,44 @@ final class BrowserManager {
         historyStore.save(browsingHistory)
     }
 
+    func tabs(in paneID: UUID) -> [BrowserTabState] {
+        ensurePaneExists(for: paneID, snapshot: snapshotStore.snapshot(for: paneID) ?? BrowserPaneSnapshot(paneID: paneID))
+        guard let leaf = workspaceManager.leaf(id: paneID) else { return [] }
+        return session(for: paneID).tabStates(for: browserFiles(in: leaf))
+    }
+
+    func activeTab(in paneID: UUID) -> BrowserTabState? {
+        ensurePaneExists(for: paneID, snapshot: snapshotStore.snapshot(for: paneID) ?? BrowserPaneSnapshot(paneID: paneID))
+        guard let leaf = workspaceManager.leaf(id: paneID) else { return nil }
+        return session(for: paneID).activeTab(for: browserFiles(in: leaf), selectedTabID: activeBrowserTabID(in: paneID))
+    }
+
+    func closeTab(_ tabID: UUID, in paneID: UUID) {
+        session(for: paneID).closeTab(tabID)
+    }
+
+    func discardTabResources(_ tabID: UUID, in paneID: UUID) {
+        guard let session = sessions[paneID] else { return }
+        session.discardResources(for: tabID)
+        persistSession(paneID)
+    }
+
     private func makeSession(for paneID: UUID) -> BrowserPaneSession {
         let snapshot = snapshotStore.snapshot(for: paneID) ?? BrowserPaneSnapshot(paneID: paneID)
+        ensurePaneExists(for: paneID, snapshot: snapshot)
         let session = BrowserPaneSession(paneID: paneID, snapshot: snapshot)
         session.manager = self
         return session
     }
 
-    private func tabIDForOpenURL(_ url: URL, in session: BrowserPaneSession, newTab: Bool) -> UUID {
-        if newTab {
-            return session.openNewTab(url: url)
-        }
+    private func activeBrowserTabID(in paneID: UUID) -> UUID? {
+        guard let file = workspaceManager.leaf(id: paneID)?.activeOpenFile,
+              file.isBrowser else { return nil }
+        return file.id
+    }
 
-        let tabID = session.selectedTabID ?? session.openNewTab(url: url)
-        session.updateTab(tabID: tabID) { tab in
-            tab.urlString = url.absoluteString
-            tab.securityIconName = Self.securityIcon(for: url)
-        }
-        return tabID
+    private func browserFiles(in leaf: PaneNode.Leaf) -> [OpenFile] {
+        leaf.tabs.compactMap(\.openFile).filter(\.isBrowser)
     }
 
     fileprivate func handlePageEvent(_ event: BrowserPageEvent, paneID: UUID, tabID: UUID) {
@@ -250,43 +323,73 @@ final class BrowserManager {
         default: return "magnifyingglass"
         }
     }
+
+    fileprivate func replaceTabs(_ tabs: [BrowserTabState], selectedTabID: UUID?, in paneID: UUID) {
+        let contents = tabs.map { tab in
+            PaneContent.browserDocument(
+                id: tab.id,
+                urlString: tab.urlString.isEmpty ? "dahso://browser" : tab.urlString,
+                title: tab.title,
+                savedRecordID: tab.savedRecordID,
+                pageZoom: tab.pageZoom
+            )
+        }
+        workspaceManager.setPaneTabs(paneId: paneID, tabs: contents, selectedTabID: selectedTabID)
+        let session = session(for: paneID)
+        let validTabIDs = Set(tabs.map(\.id))
+        for tabID in Set(session.pages.keys).subtracting(validTabIDs) {
+            session.discardResources(for: tabID)
+        }
+        for tab in tabs {
+            session.hoverURLStrings[tab.id] = tab.hoverURLString
+            session.pageStates[tab.id] = BrowserPageState(
+                title: tab.title,
+                url: tab.url,
+                isLoading: tab.isLoading,
+                estimatedProgress: tab.estimatedProgress,
+                canGoBack: tab.canGoBack,
+                canGoForward: tab.canGoForward,
+                pageZoom: tab.pageZoom
+            )
+        }
+        persistSession(paneID)
+    }
+
+    private func ensurePaneExists(for paneID: UUID, snapshot: BrowserPaneSnapshot) {
+        guard workspaceManager.leaf(id: paneID) == nil else { return }
+
+        let contents = snapshot.tabs.map { tab in
+            PaneContent.browserDocument(
+                id: tab.id,
+                urlString: tab.urlString.isEmpty ? "dahso://browser" : tab.urlString,
+                title: tab.title,
+                savedRecordID: tab.savedRecordID,
+                pageZoom: tab.pageZoom
+            )
+        }
+        let initialTabs = contents.isEmpty ? [PaneContent.browserDocument(id: paneID)] : contents
+        let selectedTabID = snapshot.selectedTabID ?? initialTabs.first?.id
+        workspaceManager.setPaneTabs(paneId: paneID, tabs: initialTabs, selectedTabID: selectedTabID)
+    }
 }
 
 @MainActor
 @Observable
 final class BrowserPaneSession {
     let paneID: UUID
-    var tabs: [BrowserTabState]
-    var selectedTabID: UUID?
     var recentVisits: [BrowserRecentVisit]
     var isReadLaterDrawerOpen: Bool
     var lastDownloadMessage: String?
 
     @ObservationIgnored weak var manager: BrowserManager?
     @ObservationIgnored fileprivate var pages: [UUID: any BrowserPage] = [:]
+    @ObservationIgnored fileprivate var pageStates: [UUID: BrowserPageState] = [:]
+    @ObservationIgnored fileprivate var hoverURLStrings: [UUID: String?] = [:]
 
     init(paneID: UUID, snapshot: BrowserPaneSnapshot) {
         self.paneID = paneID
-        let restoredTabs = snapshot.tabs.map {
-            BrowserTabState(
-                id: $0.id,
-                title: $0.title,
-                urlString: $0.urlString,
-                savedRecordID: $0.savedRecordID,
-                pageZoom: $0.pageZoom,
-                securityIconName: BrowserManager.securityIcon(for: URL(string: $0.urlString))
-            )
-        }
-        let initialTabs = restoredTabs.isEmpty ? [BrowserTabState()] : restoredTabs
-        self.tabs = initialTabs
-        self.selectedTabID = snapshot.selectedTabID ?? initialTabs.first?.id
         self.recentVisits = snapshot.recentVisits
         self.isReadLaterDrawerOpen = snapshot.isReadLaterDrawerOpen
-    }
-
-    var activeTab: BrowserTabState? {
-        guard let selectedTabID else { return tabs.first }
-        return tabs.first { $0.id == selectedTabID }
     }
 
     var snapshot: BrowserPaneSnapshot {
@@ -307,92 +410,88 @@ final class BrowserPaneSession {
         )
     }
 
-    @discardableResult
-    func openNewTab(url: URL? = nil, select: Bool = true) -> UUID {
-        let tab = BrowserTabState(
-            title: url?.host ?? "New Tab",
-            urlString: url?.absoluteString ?? "",
-            securityIconName: BrowserManager.securityIcon(for: url)
-        )
-        tabs.append(tab)
-        if select {
-            selectedTabID = tab.id
+    var tabs: [BrowserTabState] {
+        get { manager?.tabs(in: paneID) ?? [] }
+        set { manager?.replaceTabs(newValue, selectedTabID: selectedTabID, in: paneID) }
+    }
+
+    var selectedTabID: UUID? {
+        get { manager?.workspaceManager.leaf(id: paneID)?.activeTabID }
+        set {
+            guard let newValue else { return }
+            selectTab(newValue)
         }
-        if shouldCreateBlankPage(for: url) {
-            _ = manager?.ensurePage(for: paneID, tabID: tab.id)
-        }
-        return tab.id
+    }
+
+    var activeTab: BrowserTabState? {
+        manager?.activeTab(in: paneID)
+    }
+
+    func tabStates(for files: [OpenFile]) -> [BrowserTabState] {
+        files.map(browserTabState(for:))
+    }
+
+    func activeTab(for files: [OpenFile], selectedTabID: UUID?) -> BrowserTabState? {
+        let states = tabStates(for: files)
+        guard let selectedTabID else { return states.first }
+        return states.first { $0.id == selectedTabID }
     }
 
     func closeTab(_ tabID: UUID) {
-        tabs.removeAll { $0.id == tabID }
         pages[tabID]?.dispose()
         pages.removeValue(forKey: tabID)
-        if tabs.isEmpty {
-            tabs = [BrowserTabState()]
-        }
-        if selectedTabID == tabID {
-            selectedTabID = tabs.first?.id
+        pageStates.removeValue(forKey: tabID)
+        hoverURLStrings.removeValue(forKey: tabID)
+
+        if manager?.workspaceManager.closePaneTab(paneId: paneID, tabId: tabID) == nil {
+            manager?.workspaceManager.updatePaneContent(
+                paneId: paneID,
+                content: .browserDocument(id: tabID)
+            )
         }
         manager?.persistSession(paneID)
     }
 
     func moveTab(from sourceIndex: Int, to destinationIndex: Int) {
-        guard sourceIndex != destinationIndex,
-              sourceIndex >= 0, sourceIndex < tabs.count,
-              destinationIndex >= 0, destinationIndex <= tabs.count else { return }
-
-        let selectedTabID = self.selectedTabID
-        let tab = tabs.remove(at: sourceIndex)
-        let adjustedDestination = destinationIndex > sourceIndex ? destinationIndex - 1 : destinationIndex
-        tabs.insert(tab, at: adjustedDestination)
-
-        if let selectedTabID,
-           let updatedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
-            self.selectedTabID = tabs[updatedIndex].id
-        }
-
+        manager?.workspaceManager.movePaneTab(paneId: paneID, from: sourceIndex, to: destinationIndex)
         manager?.persistSession(paneID)
     }
 
     func selectTab(_ tabID: UUID) {
-        selectedTabID = tabID
-        if let activeTab,
-           let manager {
-            let page = manager.ensurePage(for: paneID, tabID: activeTab.id)
-            if abs(activeTab.pageZoom - page.state.pageZoom) > 0.001 {
-                page.setPageZoom(activeTab.pageZoom)
-            }
+        manager?.workspaceManager.selectPaneTab(paneId: paneID, tabId: tabID)
+        syncPageZoom(for: tabID)
+        manager?.persistSession(paneID)
+    }
+
+    @discardableResult
+    func openNewTab(url: URL? = nil, select: Bool = true) -> UUID {
+        let content = PaneContent.browserDocument(
+            urlString: url?.absoluteString ?? "dahso://browser",
+            title: url?.host ?? "New Tab"
+        )
+        manager?.workspaceManager.addPaneTab(to: paneID, content: content, select: select)
+        if let manager, let url {
+            manager.ensurePage(for: paneID, tabID: content.id).load(URLRequest(url: url))
+        } else if let manager {
+            _ = manager.ensurePage(for: paneID, tabID: content.id)
         }
         manager?.persistSession(paneID)
+        return content.id
     }
 
     func updateSavedRecordID(_ recordID: UUID?, for tabID: UUID) {
-        updateTab(tabID: tabID) { tab in
-            tab.savedRecordID = recordID
+        manager?.workspaceManager.updateOpenFile(tabId: tabID) { file in
+            file.browserSavedRecordID = recordID
         }
         manager?.persistSession(paneID)
     }
 
-    func updateTab(tabID: UUID, transform: (inout BrowserTabState) -> Void) {
-        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
-        transform(&tabs[index])
+    func updatePageState(tabID: UUID, from state: BrowserPageState) {
+        pageStates[tabID] = state
     }
 
-    func sync(tabID: UUID, from state: BrowserPageState) {
-        updateTab(tabID: tabID) { tab in
-            let trimmedTitle = state.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let trimmedTitle, !trimmedTitle.isEmpty {
-                tab.title = trimmedTitle
-            }
-            tab.urlString = state.url?.absoluteString ?? tab.urlString
-            tab.isLoading = state.isLoading
-            tab.estimatedProgress = state.estimatedProgress
-            tab.canGoBack = state.canGoBack
-            tab.canGoForward = state.canGoForward
-            tab.securityIconName = BrowserManager.securityIcon(for: state.url)
-            tab.pageZoom = state.pageZoom > 0 ? state.pageZoom : tab.pageZoom
-        }
+    func updateHoverURL(tabID: UUID, urlString: String?) {
+        hoverURLStrings[tabID] = urlString
     }
 
     func recordVisit(_ visit: BrowserRecentVisit) {
@@ -413,10 +512,44 @@ final class BrowserPaneSession {
             page.dispose()
         }
         pages.removeAll()
+        pageStates.removeAll()
+        hoverURLStrings.removeAll()
     }
 
-    private func shouldCreateBlankPage(for url: URL?) -> Bool {
-        url == nil
+    func discardResources(for tabID: UUID) {
+        pages[tabID]?.dispose()
+        pages.removeValue(forKey: tabID)
+        pageStates.removeValue(forKey: tabID)
+        hoverURLStrings.removeValue(forKey: tabID)
+    }
+
+    private func browserTabState(for file: OpenFile) -> BrowserTabState {
+        let state = pageStates[file.id] ?? pages[file.id]?.state ?? .empty
+        let title = file.displayName ?? state.title ?? "New Tab"
+        let urlString = state.url?.absoluteString ?? file.browserURLString
+        let securityURL = state.url ?? URL(string: urlString)
+        return BrowserTabState(
+            id: file.id,
+            title: title,
+            urlString: urlString,
+            isLoading: state.isLoading,
+            estimatedProgress: state.estimatedProgress,
+            hoverURLString: hoverURLStrings[file.id] ?? nil,
+            savedRecordID: file.browserSavedRecordID,
+            pageZoom: state.pageZoom > 0 ? state.pageZoom : file.browserPageZoom,
+            canGoBack: state.canGoBack,
+            canGoForward: state.canGoForward,
+            securityIconName: BrowserManager.securityIcon(for: securityURL)
+        )
+    }
+
+    private func syncPageZoom(for tabID: UUID) {
+        guard let manager,
+              let file = manager.workspaceManager.openFile(tabId: tabID) else { return }
+        let page = manager.ensurePage(for: paneID, tabID: tabID)
+        if abs(file.browserPageZoom - page.state.pageZoom) > 0.001 {
+            page.setPageZoom(file.browserPageZoom)
+        }
     }
 }
 

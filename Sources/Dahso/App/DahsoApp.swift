@@ -31,10 +31,15 @@ struct DahsoApp: App {
                 }
                 .keyboardShortcut("n")
 
-                Button("New Tab") {
-                    NotificationCenter.default.post(name: .quickOpenNewTab, object: nil)
+                Button("New Pane Tab") {
+                    NotificationCenter.default.post(name: .newPaneTab, object: nil)
                 }
                 .keyboardShortcut("t")
+
+                Button("New Workspace") {
+                    NotificationCenter.default.post(name: .quickOpenNewTab, object: nil)
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
 
                 Divider()
 
@@ -494,6 +499,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             NotificationCenter.default.post(name: .findInPage, object: nil)
             return nil
         }
+
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.control),
+                  !flags.contains(.command),
+                  !flags.contains(.option),
+                  event.keyCode == 48 else { return event }
+
+            if flags.contains(.shift) {
+                NotificationCenter.default.post(name: .cyclePaneTabsBackward, object: nil)
+            } else {
+                NotificationCenter.default.post(name: .cyclePaneTabsForward, object: nil)
+            }
+            return nil
+        }
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -560,6 +580,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
 extension Notification.Name {
     static let newNote = Notification.Name("newNote")
+    static let newPaneTab = Notification.Name("newPaneTab")
     static let newTab = Notification.Name("newTab")
     static let closeTab = Notification.Name("closeTab")
     static let saveFile = Notification.Name("saveFile")
@@ -608,6 +629,8 @@ extension Notification.Name {
     static let movePaneFocusDown = Notification.Name("movePaneFocusDown")
     static let switchWorkspace = Notification.Name("switchWorkspace")
     static let focusPaneByIndex = Notification.Name("focusPaneByIndex")
+    static let cyclePaneTabsForward = Notification.Name("cyclePaneTabsForward")
+    static let cyclePaneTabsBackward = Notification.Name("cyclePaneTabsBackward")
 
     static let browserFocusAddressBar = Notification.Name("browserFocusAddressBar")
     static let browserNewTab = Notification.Name("browserNewTab")

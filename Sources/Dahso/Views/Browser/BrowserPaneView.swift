@@ -3,6 +3,7 @@ import Observation
 import SwiftUI
 
 struct BrowserPaneView: View {
+    let leaf: PaneNode.Leaf
     let paneID: UUID
     @Bindable var session: BrowserPaneSession
     @Bindable var appState: AppState
@@ -25,22 +26,21 @@ struct BrowserPaneView: View {
     @State private var cleanupProposals: [BrowserCleanupProposal] = []
     @State private var isApplyingCleanup = false
     @State private var saveMessage: String?
-    @State private var hoveredTabID: UUID?
     @State private var searchableEntries: [BrowserSearchableEntry] = []
     @State private var savedRecords: [SavedWebPageRecord] = []
     @State private var omnibarSuggestions: [BrowserSuggestionItem] = []
     @State private var newTabSuggestions: [BrowserSuggestionItem] = []
-    @State private var browserTabFrames: [UUID: CGRect] = [:]
-    @State private var draggedTabID: UUID?
-    @State private var draggedTabOffset: CGSize = .zero
 
     private let agentService = BrowserAgentService()
     private let savedPageStore = SavedWebPageStore()
     private let relativeDateFormatter = RelativeDateTimeFormatter()
-    private let browserTabDetachThreshold: CGFloat = 90
+
+    private var browserTabs: [BrowserTabState] {
+        browserManager.tabs(in: paneID)
+    }
 
     private var activeTab: BrowserTabState? {
-        session.activeTab
+        browserManager.activeTab(in: paneID)
     }
 
     private var activeSavedRecord: SavedWebPageRecord? {
@@ -67,8 +67,9 @@ struct BrowserPaneView: View {
         return browserManager.browsingHistory
     }
 
-    private var showsTabStrip: Bool {
-        !chrome.autoHidesTabPills || session.tabs.count > 1
+    private var selectedTabID: UUID? {
+        guard let file = leaf.activeOpenFile, file.isBrowser else { return nil }
+        return file.id
     }
 
     var body: some View {
@@ -134,11 +135,11 @@ struct BrowserPaneView: View {
                 }
             }
         }
-        .onChange(of: session.selectedTabID) { _, _ in
+        .onChange(of: leaf.activeTabID) { _, _ in
             refreshSelectedTabDisplay(force: true)
             refreshSuggestions()
         }
-        .onChange(of: session.tabs) { _, _ in
+        .onChange(of: leaf.tabs) { _, _ in
             syncDisplayedText()
         }
         .onChange(of: fileTree) { _, _ in
@@ -190,7 +191,7 @@ struct BrowserPaneView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .browserCloseTab)) { notification in
             guard shouldHandleBrowserCommand(notification),
-                  let selected = session.selectedTabID else { return }
+                  let selected = selectedTabID else { return }
             session.closeTab(selected)
         }
         .onReceive(NotificationCenter.default.publisher(for: .browserBack)) { notification in
@@ -259,35 +260,12 @@ struct BrowserPaneView: View {
 
     private func refreshSelectedTabDisplay(force: Bool = false) {
         syncDisplayedText(force: force)
-        guard let tabID = session.selectedTabID else { return }
+        guard let tabID = selectedTabID else { return }
         _ = browserManager.ensurePage(for: paneID, tabID: tabID)
     }
 
     private var chromeBar: some View {
         VStack(spacing: 0) {
-            if showsTabStrip {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(session.tabs) { tab in
-                            compactTab(tab)
-                        }
-
-                        Button {
-                            createNewTab()
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 11, weight: .semibold))
-                                .frame(width: 24, height: 24)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.top, 8)
-                }
-                .onPreferenceChange(BrowserTabFramePreferenceKey.self) { browserTabFrames = $0 }
-            }
-
             HStack(spacing: 4) {
                 if chrome.showsBackForwardButtons {
                     navButton("chevron.left", enabled: activeTab?.canGoBack == true) {
@@ -368,88 +346,6 @@ struct BrowserPaneView: View {
             Rectangle()
                 .fill(Color.primary.opacity(0.06))
                 .frame(height: 0.5)
-        }
-    }
-
-    private func compactTab(_ tab: BrowserTabState) -> some View {
-        let isSelected = session.selectedTabID == tab.id
-        let isHovered = hoveredTabID == tab.id
-
-        return HStack(spacing: 6) {
-            Circle()
-                .fill(tabColor(for: tab))
-                .frame(width: 6, height: 6)
-                .padding(.leading, 8)
-
-            Button {
-                session.selectTab(tab.id)
-            } label: {
-                Text(tab.displayTitle)
-                    .font(.system(size: 12))
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 0)
-
-            if isHovered && session.tabs.count > 1 {
-                Button {
-                    session.closeTab(tab.id)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 16, height: 16)
-                        .background(Circle().fill(Color.primary.opacity(0.06)))
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 6)
-                .transition(.opacity)
-            } else {
-                Spacer()
-                    .frame(width: 8)
-            }
-        }
-        .frame(height: 28)
-        .frame(width: 170)
-        .opacity(draggedTabID == tab.id ? 0.55 : 1.0)
-        .offset(draggedTabID == tab.id ? draggedTabOffset : .zero)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.primary.opacity(0.06) : (isHovered ? Color.primary.opacity(0.03) : Color.clear))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(isSelected ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 0.5)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
-        .background(browserTabFrameReader(for: tab.id))
-        .onHover { hovering in
-            hoveredTabID = hovering ? tab.id : (hoveredTabID == tab.id ? nil : hoveredTabID)
-        }
-        .gesture(
-            DragGesture(minimumDistance: 4, coordinateSpace: .global)
-                .onChanged { value in
-                    handleBrowserTabDragChanged(
-                        tabID: tab.id,
-                        location: value.location,
-                        translation: value.translation
-                    )
-                }
-                .onEnded { value in
-                    handleBrowserTabDragEnded(
-                        tabID: tab.id,
-                        location: value.location,
-                        translation: value.translation
-                    )
-                }
-        )
-        .contextMenu {
-            Button("Move Tab to New Window") {
-                detachBrowserTab(tab.id)
-            }
         }
     }
 
@@ -988,120 +884,15 @@ struct BrowserPaneView: View {
 
     private func createNewTab() {
         workspaceManager.setFocusedPane(id: paneID)
-        _ = session.openNewTab()
+        let content = PaneContent.browserDocument(urlString: "dahso://browser", title: "New Tab")
+        _ = workspaceManager.addPaneTab(to: paneID, content: content)
+        _ = browserManager.ensurePage(for: paneID, tabID: content.id)
         newTabSearchText = ""
         omnibarText = ""
         omnibarSuggestions = []
         newTabSuggestions = []
         newTabSearchFocused = true
         omnibarFocused = false
-    }
-
-    private func browserTabFrameReader(for tabID: UUID) -> some View {
-        GeometryReader { proxy in
-            Color.clear
-                .preference(
-                    key: BrowserTabFramePreferenceKey.self,
-                    value: [tabID: proxy.frame(in: .global)]
-                )
-        }
-    }
-
-    private func handleBrowserTabDragChanged(
-        tabID: UUID,
-        location: CGPoint,
-        translation: CGSize
-    ) {
-        draggedTabID = tabID
-        draggedTabOffset = translation
-    }
-
-    private func handleBrowserTabDragEnded(
-        tabID: UUID,
-        location: CGPoint,
-        translation: CGSize
-    ) {
-        defer { resetBrowserTabDragState() }
-
-        guard let sourceIndex = session.tabs.firstIndex(where: { $0.id == tabID }) else {
-            return
-        }
-
-        if abs(translation.height) >= browserTabDetachThreshold {
-            detachBrowserTab(tabID)
-            return
-        }
-
-        guard let targetIndex = browserTabInsertionIndex(for: location) else { return }
-        session.moveTab(from: sourceIndex, to: targetIndex)
-    }
-
-    private func browserTabInsertionIndex(for location: CGPoint) -> Int? {
-        let orderedFrames = session.tabs.compactMap { tab in
-            browserTabFrames[tab.id].map { (tab.id, $0) }
-        }
-        .sorted { $0.1.minX < $1.1.minX }
-
-        guard !orderedFrames.isEmpty else { return nil }
-
-        for (index, frame) in orderedFrames.enumerated() where location.x < frame.1.midX {
-            return index
-        }
-
-        return orderedFrames.count
-    }
-
-    private func detachBrowserTab(_ tabID: UUID) {
-        guard let tab = session.tabs.first(where: { $0.id == tabID }) else { return }
-
-        let paneID = UUID()
-        let browserFile = OpenFile(
-            id: paneID,
-            path: "dahso://browser",
-            content: "",
-            isDirty: false,
-            isEmptyTab: false,
-            kind: .browser,
-            displayName: "Browser",
-            icon: "globe"
-        )
-        let workspace = Workspace(
-            id: UUID(),
-            name: tab.displayTitle,
-            icon: "globe",
-            root: .leaf(.init(id: paneID, content: .document(openFile: browserFile))),
-            focusedPaneId: paneID,
-            createdAt: Date()
-        )
-        let snapshot = BrowserPaneSnapshot(
-            paneID: paneID,
-            tabs: [
-                BrowserTabSnapshot(
-                    id: tab.id,
-                    title: tab.title,
-                    urlString: tab.urlString,
-                    savedRecordID: tab.savedRecordID,
-                    pageZoom: tab.pageZoom
-                )
-            ],
-            selectedTabID: tab.id,
-            recentVisits: session.recentVisits,
-            isReadLaterDrawerOpen: false
-        )
-        let bootstrap = ContentViewBootstrap(
-            workspaces: [workspace],
-            activeWorkspaceIndex: 0,
-            browserSnapshots: [paneID: snapshot],
-            layoutPersistenceEnabled: false
-        )
-
-        DetachedWindowManager.shared.openWindow(title: tab.displayTitle, bootstrap: bootstrap)
-        session.closeTab(tabID)
-    }
-
-    private func resetBrowserTabDragState() {
-        draggedTabID = nil
-        draggedTabOffset = .zero
     }
 
     private func syncDisplayedText(force: Bool = false) {
@@ -1332,7 +1123,7 @@ struct BrowserPaneView: View {
 
     private func saveCurrentTab() async {
         guard let workspacePath = appState.workspacePath,
-              let tabID = session.selectedTabID else { return }
+              let tabID = selectedTabID else { return }
 
         if let result = try? await agentService.saveTab(
             from: paneID,
@@ -1372,7 +1163,7 @@ struct BrowserPaneView: View {
         guard let workspacePath = appState.workspacePath else { return }
         savedPageStore.remove(recordID: record.id, in: workspacePath)
         refreshSavedRecords()
-        if let tabID = session.selectedTabID {
+        if let tabID = selectedTabID {
             session.updateSavedRecordID(nil, for: tabID)
         }
         saveMessage = "Removed from saved pages"
@@ -1399,10 +1190,10 @@ struct BrowserPaneView: View {
     }
 
     private func selectAdjacentTab(step: Int) {
-        guard !session.tabs.isEmpty else { return }
-        let currentIndex = session.tabs.firstIndex(where: { $0.id == session.selectedTabID }) ?? 0
-        let nextIndex = (currentIndex + step + session.tabs.count) % session.tabs.count
-        session.selectTab(session.tabs[nextIndex].id)
+        guard !browserTabs.isEmpty else { return }
+        let currentIndex = browserTabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
+        let nextIndex = (currentIndex + step + browserTabs.count) % browserTabs.count
+        session.selectTab(browserTabs[nextIndex].id)
     }
 
     func prepareCleanup() {

@@ -305,14 +305,12 @@ struct ContentView: View {
                     saveTask?.cancel()
                     saveTask = nil
                     editorDraftStore.clearPageDraft(path: path)
-                    // Close panes showing the deleted file
-                    for ws in workspaceManager.workspaces {
-                        for leaf in ws.allLeaves {
-                            if case .document(let file) = leaf.content, file.path == path {
-                                cleanupTabDocuments(leaf.id)
-                                workspaceManager.closePane(id: leaf.id)
-                            }
-                        }
+                    let matchingWorkspaceTabIDs = workspaceManager.allDocumentLeaves()
+                        .filter { $0.file.path == path }
+                        .map(\.file.id)
+                    for tabID in matchingWorkspaceTabIDs {
+                        cleanupTabDocuments(tabID)
+                        _ = workspaceManager.closeTab(tabId: tabID, closePaneWhenLastTab: true)
                     }
                     // Also clean up legacy tab system
                     let closingIds = appState.openTabs.filter { $0.path == path }.map(\.id)
@@ -398,23 +396,17 @@ struct ContentView: View {
                 handlePendingCmdKNavigation(request)
             }
             .onReceive(NotificationCenter.default.publisher(for: .splitPaneRight)) { _ in
-                _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal)
+                _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal())
             }
             .onReceive(NotificationCenter.default.publisher(for: .splitPaneDown)) { _ in
-                _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: .terminal)
+                _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: .terminal())
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeWorkspace)) { _ in
-                workspaceManager.closeWorkspace(at: workspaceManager.activeWorkspaceIndex)
+                closeActiveWorkspace()
             }
             .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
                 if let index = notification.object as? Int {
-                    if let browserPaneID = focusedBrowserPaneID {
-                        let session = browserManager.session(for: browserPaneID)
-                        guard index < session.tabs.count else { return }
-                        session.selectTab(session.tabs[index].id)
-                    } else {
-                        workspaceManager.switchWorkspace(to: index)
-                    }
+                    workspaceManager.switchWorkspace(to: index)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .focusPaneByIndex)) { notification in
@@ -437,6 +429,12 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .movePaneFocusDown)) { _ in
                 moveFocusToAdjacentPane(direction: .down)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .cyclePaneTabsForward)) { _ in
+                cycleFocusedPaneTabs(step: 1)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .cyclePaneTabsBackward)) { _ in
+                cycleFocusedPaneTabs(step: -1)
             }
     }
 
@@ -465,31 +463,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .newNote)) { _ in
                 createNewFile()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .newPaneTab)) { _ in
+                guard let leaf = workspaceManager.focusedPane else { return }
+                createPaneTab(in: leaf)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .newTab)) { _ in
                 appState.newEmptyTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-                if postBrowserCommandIfFocused(.browserCloseTab, object: focusedBrowserPaneID) {
-                    return
-                }
-                guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId else { return }
-
-                // Warn if closing a pane with an active meeting recording
-                if let session = appState.activeMeetingSession,
-                   let doc = blockDocuments[paneId],
-                   doc.filePath == session.meetingPagePath {
-                    let alert = NSAlert()
-                    alert.messageText = "Recording in Progress"
-                    alert.informativeText = "A meeting is being recorded in this tab. The recording will continue in the background. You can get back via the floating pill."
-                    alert.addButton(withTitle: "Close Tab")
-                    alert.addButton(withTitle: "Cancel")
-                    guard alert.runModal() == .alertFirstButtonReturn else { return }
-                }
-
-                cleanupTabDocuments(paneId)
-                terminalManager.closeSession(paneId)
-                browserManager.closeSession(paneId)
-                workspaceManager.closePane(id: paneId)
+                closeFocusedPaneTabOrWorkspace()
             }
             .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
                 if !postBrowserCommandIfFocused(.browserSavePage) {
@@ -516,9 +498,7 @@ struct ContentView: View {
                 _ = postBrowserCommandIfFocused(.browserFind)
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpenNewTab)) { _ in
-                if !postBrowserCommandIfFocused(.browserNewTab) {
-                    workspaceManager.addWorkspace()
-                }
+                workspaceManager.addWorkspace()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 openSettingsTab()
@@ -555,7 +535,7 @@ struct ContentView: View {
                 presentEditorPane(.gatewayDocument())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openTerminal)) { _ in
-                presentEditorPane(.terminal)
+                presentEditorPane(.terminal())
             }
             .onReceive(NotificationCenter.default.publisher(for: .openBrowser)) { _ in
                 presentEditorPane(.browserDocument())
@@ -755,7 +735,8 @@ struct ContentView: View {
                                     if let query = query as String? {
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                             guard let ws = workspaceManager.activeWorkspace,
-                                                  let doc = blockDocuments[ws.focusedPaneId] else { return }
+                                                  let focusedLeaf = ws.focusedLeaf,
+                                                  let doc = blockDocuments[focusedLeaf.activeTabID] else { return }
                                             let lowerQuery = query.lowercased()
                                             if let block = doc.blocks.first(where: {
                                                 $0.text.lowercased().contains(lowerQuery)
@@ -884,7 +865,7 @@ struct ContentView: View {
         case "home": content = .gatewayDocument()
         case "meeting": content = .meetingsDocument()
         case "calendar": content = .calendarDocument()
-        case "terminal": content = .terminal
+        case "terminal": content = .terminal()
         case "browser": content = .browserDocument()
         case "mail": content = .mailDocument()
         default: return
@@ -1069,7 +1050,7 @@ struct ContentView: View {
 
     private var activeDocumentForAiDrawer: BlockDocument? {
         workspaceManager.activeWorkspace.flatMap { ws in
-            blockDocuments[ws.focusedPaneId]
+            ws.focusedLeaf.flatMap { blockDocuments[$0.activeTabID] }
         }
     }
 
@@ -1080,7 +1061,7 @@ struct ContentView: View {
 
         switch leaf.content {
         case .terminal:
-            return makeTerminalAiDrawerContext(for: leaf.id)
+            return makeTerminalAiDrawerContext(for: leaf.activeTabID)
         case .document(let file):
             if file.isBrowser {
                 return makeBrowserAiDrawerContext(for: leaf.id)
@@ -1119,14 +1100,14 @@ struct ContentView: View {
     }
 
     private func makeBrowserAiDrawerContext(for paneID: UUID) -> AiDrawerContext {
-        let session = browserManager.session(for: paneID)
-        guard let selectedTabID = session.selectedTabID else {
+        guard let leaf = workspaceManager.leaf(id: paneID),
+              let selectedTabID = leaf.activeOpenFile?.id,
+              let tab = browserManager.activeTab(in: paneID) else {
             return AiDrawerContext(placeholder: "Ask about this page…", title: "Browser")
         }
 
-        let tab = session.activeTab
-        let title = tab?.displayTitle ?? "Current Page"
-        let urlString = tab?.urlString ?? ""
+        let title = tab.displayTitle
+        let urlString = tab.urlString
 
         return AiDrawerContext(
             placeholder: "Ask about this page…",
@@ -1319,8 +1300,17 @@ struct ContentView: View {
                     onBreadcrumbNavigate: { item in
                         self.navigateToBreadcrumb(item)
                     },
-                    blockDocumentLookup: { paneId in
-                        self.blockDocuments[paneId]
+                    blockDocumentLookup: { tabId in
+                        self.blockDocuments[tabId]
+                    },
+                    onCreatePaneTab: { leaf in
+                        self.createPaneTab(in: leaf)
+                    },
+                    onClosePaneTab: { leaf, tabId in
+                        self.closePaneTab(in: leaf, tabId: tabId)
+                    },
+                    onClosePane: { leaf in
+                        self.closePane(leaf)
                     }
                 )
                 .environment(\.paneReplaceWarningId, paneReplaceWarningId)
@@ -1429,7 +1419,7 @@ struct ContentView: View {
                     .floatingPopover(isPresented: $showPageOptionsMenu) {
                         if file.isDatabaseRow {
                             databaseRowOptionsMenu(for: file)
-                        } else if let doc = blockDocuments[leaf.id] {
+                        } else if let doc = blockDocuments[file.id] {
                             pageOptionsMenu(for: file, document: doc)
                         }
                     }
@@ -1452,13 +1442,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private func paneTerminalContent(leaf: PaneNode.Leaf) -> some View {
-        if let session = terminalManager.session(for: leaf.id) {
+        let sessionID = leaf.activeTabID
+        if let session = terminalManager.session(for: sessionID) {
             TerminalPaneView(session: session, paneId: leaf.id, workspaceManager: workspaceManager)
+                .id(sessionID)
         } else {
             Color.fallbackEditorBg
                 .onAppear {
                     terminalManager.createSession(
-                        id: leaf.id,
+                        id: sessionID,
                         workingDirectory: appState.workspacePath
                     )
                 }
@@ -1468,10 +1460,12 @@ struct ContentView: View {
     /// Replace the focused pane's content with the given PaneContent.
     /// Guards against replacing a live terminal — requires double-action confirmation.
     private func openContentInFocusedPane(_ content: PaneContent) {
-        guard let paneId = workspaceManager.activeWorkspace?.focusedPaneId else { return }
+        guard let leaf = workspaceManager.activeWorkspace?.focusedLeaf else { return }
+        let paneId = leaf.id
+        let activeTabId = leaf.activeTabID
 
         // Guard: if focused pane is a live terminal, require double-action
-        if isTerminalAlive(paneId: paneId) {
+        if isTerminalAlive(tabId: activeTabId) {
             if paneReplaceWarningId == paneId {
                 clearPaneReplaceWarning()
             } else {
@@ -1533,15 +1527,108 @@ struct ContentView: View {
     }
 
     private func replacePaneContent(paneId: UUID, with content: PaneContent) {
-        cleanupPaneResources(paneId)
-        workspaceManager.updatePaneContent(paneId: paneId, content: content)
+        guard let leaf = workspaceManager.leaf(id: paneId) else { return }
+        cleanupPaneTabResources(paneId: paneId, tabId: leaf.activeTabID)
+        workspaceManager.updatePaneContent(
+            paneId: paneId,
+            content: content.reidentified(as: leaf.activeTabID)
+        )
         updateSidebarContextType()
     }
 
+    private func cleanupPaneTabResources(paneId: UUID, tabId: UUID) {
+        guard let leaf = workspaceManager.leaf(id: paneId),
+              let content = leaf.tabs.first(where: { $0.id == tabId }) else { return }
+
+        switch content {
+        case .terminal:
+            terminalManager.closeSession(tabId)
+        case .document(let file):
+            if file.isBrowser {
+                browserManager.discardTabResources(tabId, in: paneId)
+            } else {
+                cleanupTabDocuments(tabId)
+            }
+        }
+    }
+
     private func cleanupPaneResources(_ paneId: UUID) {
-        cleanupTabDocuments(paneId)
-        terminalManager.closeSession(paneId)
+        guard let leaf = workspaceManager.leaf(id: paneId) else { return }
+        for content in leaf.tabs {
+            switch content {
+            case .terminal(let sessionID):
+                terminalManager.closeSession(sessionID)
+            case .document(let file):
+                if file.isBrowser {
+                    browserManager.discardTabResources(file.id, in: paneId)
+                } else {
+                    cleanupTabDocuments(file.id)
+                }
+            }
+        }
         browserManager.closeSession(paneId)
+    }
+
+    private func createPaneTab(in leaf: PaneNode.Leaf) {
+        guard let newContent = leaf.activeContent.defaultNewPaneTab() else { return }
+        let insertedTabId = workspaceManager.addPaneTab(to: leaf.id, content: newContent)
+        if newContent.isBrowser, let insertedTabId {
+            _ = browserManager.ensurePage(for: leaf.id, tabID: insertedTabId)
+        }
+        updateSidebarContextType()
+    }
+
+    private func closePaneTab(in leaf: PaneNode.Leaf, tabId: UUID) {
+        cleanupPaneTabResources(paneId: leaf.id, tabId: tabId)
+        _ = workspaceManager.closePaneTab(paneId: leaf.id, tabId: tabId)
+        updateSidebarContextType()
+    }
+
+    private func closePane(_ leaf: PaneNode.Leaf) {
+        cleanupPaneResources(leaf.id)
+        workspaceManager.closePane(id: leaf.id)
+        updateSidebarContextType()
+    }
+
+    private func closeActiveWorkspace() {
+        guard let workspace = workspaceManager.activeWorkspace else { return }
+        for leaf in workspace.allLeaves {
+            cleanupPaneResources(leaf.id)
+        }
+        workspaceManager.closeWorkspace(at: workspaceManager.activeWorkspaceIndex)
+        updateSidebarContextType()
+    }
+
+    private func shouldAllowClosingFocusedTab(in leaf: PaneNode.Leaf) -> Bool {
+        guard let session = appState.activeMeetingSession,
+              let doc = blockDocuments[leaf.activeTabID],
+              doc.filePath == session.meetingPagePath else {
+            return true
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Recording in Progress"
+        alert.informativeText = "A meeting is being recorded in this tab. The recording will continue in the background. You can get back via the floating pill."
+        alert.addButton(withTitle: "Close Tab")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func closeFocusedPaneTabOrWorkspace() {
+        guard let leaf = workspaceManager.focusedPane else { return }
+        guard shouldAllowClosingFocusedTab(in: leaf) else { return }
+
+        if leaf.tabs.count > 1 {
+            closePaneTab(in: leaf, tabId: leaf.activeTabID)
+        } else {
+            closeActiveWorkspace()
+        }
+    }
+
+    private func cycleFocusedPaneTabs(step: Int) {
+        guard let leaf = workspaceManager.focusedPane else { return }
+        workspaceManager.cyclePaneTabs(in: leaf.id, step: step)
+        updateSidebarContextType()
     }
 
     private func isEditorDocumentPane(_ leaf: PaneNode.Leaf) -> Bool {
@@ -1568,11 +1655,11 @@ struct ContentView: View {
                 dbPath: dbPath,
                 rowId: rowId,
                 onTitleChange: { title in
-                    updateDatabaseRowTabTitle(tabId: leaf.id, title: title)
+                    updateDatabaseRowTabTitle(tabId: file.id, title: title)
                 },
                 fullWidth: databaseRowFullWidth[leaf.id, default: false]
             )
-            .id(leaf.id)
+            .id(file.id)
         } else if file.isMail {
             MailPaneView(
                 appState: appState,
@@ -1600,6 +1687,7 @@ struct ContentView: View {
             )
         } else if file.isBrowser {
             BrowserPaneView(
+                leaf: leaf,
                 paneID: leaf.id,
                 session: browserManager.session(for: leaf.id),
                 appState: appState,
@@ -1650,15 +1738,15 @@ struct ContentView: View {
                     case .database(let path):
                         navigateToFilePath(path)
                     case .terminal:
-                        openContentInFocusedPane(.terminal)
+                        openContentInFocusedPane(.terminal())
                     }
                 }
             )
         } else if file.isDatabase {
             DatabaseFullPageView(dbPath: file.path, hostPaneId: leaf.id, initialRowId: dbInitialRowId)
-                .id(leaf.id)
+                .id(file.id)
                 .onAppear { dbInitialRowId = nil }
-        } else if let doc = blockDocuments[leaf.id], doc.isMeetingPage {
+        } else if let doc = blockDocuments[file.id], doc.isMeetingPage {
             meetingPageView(for: file, document: doc)
         } else {
             editorView(for: file)
@@ -1685,7 +1773,7 @@ struct ContentView: View {
                                     if let ws = workspaceManager.activeWorkspace,
                                        let leaf = ws.focusedLeaf,
                                        case .document(let openFile) = leaf.content {
-                                        workspaceManager.updatePaneOpenFile(paneId: leaf.id) { file in
+                                        workspaceManager.updateOpenFile(tabId: openFile.id, persist: false) { file in
                                             file.icon = newIcon
                                         }
                                         appState.updateFileTreeIcon(for: openFile.path, icon: newIcon)
@@ -1735,10 +1823,7 @@ struct ContentView: View {
                         BlockEditorView(
                             document: document,
                             onTextChange: {
-                                guard appState.activeTabIndex < appState.openTabs.count else { return }
-                                if !appState.openTabs[appState.activeTabIndex].isDirty {
-                                    appState.openTabs[appState.activeTabIndex].isDirty = true
-                                }
+                                markActiveEditorTabDirty()
                                 syncTitle(from: document)
                                 scheduleSave()
                             },
@@ -1870,10 +1955,7 @@ struct ContentView: View {
             meetingNoteService: meetingNoteService,
             transcriptStore: meetingTranscriptStore,
             onTextChange: {
-                guard appState.activeTabIndex < appState.openTabs.count else { return }
-                if !appState.openTabs[appState.activeTabIndex].isDirty {
-                    appState.openTabs[appState.activeTabIndex].isDirty = true
-                }
+                markActiveEditorTabDirty()
                 scheduleSave()
             },
             onTyping: { triggerFocusMode() },
@@ -2046,6 +2128,9 @@ struct ContentView: View {
 
             // Mark dirty and save immediately so performMovePage sees the link
             // already in the file and doesn't append a duplicate at the bottom
+            updateWorkspaceOpenFile(tabId: tab.id) { file in
+                file.isDirty = true
+            }
             if let tabIdx = appState.openTabs.firstIndex(where: { $0.id == tab.id }) {
                 appState.openTabs[tabIdx].isDirty = true
             }
@@ -2284,7 +2369,7 @@ struct ContentView: View {
             let paneId = UUID()
             let file = makeOpenFile(for: entry, id: paneId)
             if let newPaneId = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .document(openFile: file)) {
-                loadFileContentForPane(entry: entry, paneId: newPaneId)
+                loadFileContentForPane(entry: entry, tabId: newPaneId)
             }
         } else {
             // Normal click: open in the focused pane (or nearest document pane)
@@ -2323,23 +2408,27 @@ struct ContentView: View {
 
         // Save current pane if dirty
         let focusedPaneId = ws.focusedPaneId
+        let focusedTabId = ws.focusedLeaf?.activeTabID
         if let leaf = ws.focusedLeaf,
            case .document(let file) = leaf.content,
            file.isDirty {
-            performSave(tabId: focusedPaneId)
+            performSave(tabId: file.id)
         }
 
         // Guard: if focused pane is a live terminal, warn before replacing it
-        if isTerminalAlive(paneId: focusedPaneId) {
+        if let focusedTabId, isTerminalAlive(tabId: focusedTabId) {
             if paneReplaceWarningId == focusedPaneId {
                 // Second press within timeout — proceed: close terminal, replace in place
                 clearPaneReplaceWarning()
-                cleanupPaneResources(focusedPaneId)
+                cleanupPaneTabResources(paneId: focusedPaneId, tabId: focusedTabId)
                 // Fall through to replace the focused terminal pane directly
-                let file = makeOpenFile(for: entry, id: focusedPaneId)
-                workspaceManager.updatePaneContent(paneId: focusedPaneId, content: .document(openFile: file))
+                let file = makeOpenFile(for: entry, id: focusedTabId)
+                workspaceManager.updatePaneContent(
+                    paneId: focusedPaneId,
+                    content: .document(openFile: file)
+                )
                 workspaceManager.setFocusedPane(id: focusedPaneId)
-                loadFileContentForPane(entry: entry, paneId: focusedPaneId)
+                loadFileContentForPane(entry: entry, tabId: focusedTabId)
                 return
             } else {
                 // First press — show amber warning on the terminal pane
@@ -2359,16 +2448,20 @@ struct ContentView: View {
         }
 
         // Update pane content
-        let file = makeOpenFile(for: entry, id: targetPaneId)
-        cleanupPaneResources(targetPaneId)
-        workspaceManager.updatePaneContent(paneId: targetPaneId, content: .document(openFile: file))
+        let targetTabId = workspaceManager.leaf(id: targetPaneId)?.activeTabID ?? UUID()
+        let file = makeOpenFile(for: entry, id: targetTabId)
+        cleanupPaneTabResources(paneId: targetPaneId, tabId: targetTabId)
+        workspaceManager.updatePaneContent(
+            paneId: targetPaneId,
+            content: .document(openFile: file)
+        )
         workspaceManager.setFocusedPane(id: targetPaneId)
-        loadFileContentForPane(entry: entry, paneId: targetPaneId)
+        loadFileContentForPane(entry: entry, tabId: targetTabId)
     }
 
     /// Check if a pane has an active terminal session.
-    private func isTerminalAlive(paneId: UUID) -> Bool {
-        guard let session = terminalManager.session(for: paneId) else { return false }
+    private func isTerminalAlive(tabId: UUID) -> Bool {
+        guard let session = terminalManager.session(for: tabId) else { return false }
         return session.isAlive
     }
 
@@ -2397,8 +2490,8 @@ struct ContentView: View {
         let paneId = UUID()
         let file = makeOpenFile(for: entry, id: paneId)
         workspaceManager.addWorkspaceWith(content: .document(openFile: file))
-        if let actualPaneId = workspaceManager.activeWorkspace?.focusedPaneId {
-            loadFileContentForPane(entry: entry, paneId: actualPaneId)
+        if let actualTabId = workspaceManager.activeWorkspace?.focusedLeaf?.activeTabID {
+            loadFileContentForPane(entry: entry, tabId: actualTabId)
         }
     }
 
@@ -2414,7 +2507,8 @@ struct ContentView: View {
         if let query = request.searchQuery {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 guard let ws = workspaceManager.activeWorkspace,
-                      let doc = blockDocuments[ws.focusedPaneId] else { return }
+                      let focusedLeaf = ws.focusedLeaf,
+                      let doc = blockDocuments[focusedLeaf.activeTabID] else { return }
                 let lowerQuery = query.lowercased()
                 if let block = doc.blocks.first(where: {
                     $0.text.lowercased().contains(lowerQuery)
@@ -2427,7 +2521,7 @@ struct ContentView: View {
     }
 
     /// Load file content from disk into a pane's BlockDocument.
-    private func loadFileContentForPane(entry: FileEntry, paneId: UUID) {
+    private func loadFileContentForPane(entry: FileEntry, tabId: UUID) {
         guard !entry.isDatabase,
               !entry.isDatabaseRow,
               !entry.isSkill,
@@ -2450,10 +2544,10 @@ struct ContentView: View {
             wireUpDocumentCallbacks(doc)
             injectChildPageLinks(into: doc, from: entry)
 
-            blockDocuments[paneId] = doc
+            blockDocuments[tabId] = doc
 
             // Sync icon and display name from parsed document
-            workspaceManager.updatePaneOpenFile(paneId: paneId) { file in
+            workspaceManager.updateOpenFile(tabId: tabId, persist: false) { file in
                 file.content = content
                 file.isDirty = loadedPage.isRestoredDraft
                 file.icon = doc.icon
@@ -2652,6 +2746,7 @@ struct ContentView: View {
             } else {
                 workspaceManager.workspaces = bootstrap.workspaces
                 workspaceManager.activeWorkspaceIndex = min(bootstrap.activeWorkspaceIndex, bootstrap.workspaces.count - 1)
+                browserManager.bind(workspaceManager: workspaceManager)
                 for (paneID, snapshot) in bootstrap.browserSnapshots {
                     browserManager.restoreSessionSnapshot(snapshot, for: paneID)
                 }
@@ -2659,6 +2754,7 @@ struct ContentView: View {
         } else {
             workspaceManager.restoreOrCreateDefault()
         }
+        browserManager.bind(workspaceManager: workspaceManager)
         restoreWorkspaceDocumentsIfNeeded()
 
         startWorkspaceWatcher(path: workspacePath)
@@ -2682,7 +2778,7 @@ struct ContentView: View {
 
         var didRestoreAny = false
 
-        for (workspaceIndex, leaf, file) in workspaceManager.allDocumentLeaves() {
+        for (workspaceIndex, _, file) in workspaceManager.allDocumentLeaves() {
             guard file.kind == .page, !file.path.isEmpty else { continue }
             guard let entry = restoredEntry(for: file),
                   let loadedPage = loadPageContent(at: entry.path) else {
@@ -2693,20 +2789,19 @@ struct ContentView: View {
             doc.filePath = entry.path
             wireUpDocumentCallbacks(doc)
             injectChildPageLinks(into: doc, from: entry)
-            blockDocuments[leaf.id] = doc
+            blockDocuments[file.id] = doc
 
             var workspace = workspaceManager.workspaces[workspaceIndex]
-            guard case .document(var openFile) = leaf.content else { continue }
+            var openFile = file
             openFile.content = loadedPage.content
             openFile.isDirty = loadedPage.isRestoredDraft
             openFile.icon = doc.icon
             if let rawTitle = doc.titleBlock?.text, !rawTitle.isEmpty {
                 openFile.displayName = AttributedStringConverter.plainText(from: rawTitle)
             }
-            workspace.root = workspace.root.updatingLeafContent(
-                leafId: leaf.id,
-                content: .document(openFile: openFile)
-            )
+            workspace.root = workspace.root.updatingTabContent(tabId: file.id) { _ in
+                .document(openFile: openFile)
+            }
             workspaceManager.workspaces[workspaceIndex] = workspace
             didRestoreAny = true
         }
@@ -3010,8 +3105,7 @@ struct ContentView: View {
         }
 
         // Fallback: use the active tab's document
-        guard appState.activeTabIndex < appState.openTabs.count else { return }
-        let tab = appState.openTabs[appState.activeTabIndex]
+        guard let tab = activeWorkspaceDocumentContext()?.file ?? appState.activeTab else { return }
         guard let doc = blockDocuments[tab.id],
               let blockId = doc.focusedBlockId else { return }
 
@@ -3480,10 +3574,31 @@ struct ContentView: View {
         }
     }
 
+    private func activeWorkspaceDocumentContext() -> (paneId: UUID, file: OpenFile)? {
+        guard let leaf = workspaceManager.focusedPane,
+              case .document(let file) = leaf.content else {
+            return nil
+        }
+        return (leaf.id, file)
+    }
+
+    private func updateWorkspaceOpenFile(tabId: UUID, transform: (inout OpenFile) -> Void) {
+        guard let paneId = workspaceManager.leaf(containingTabId: tabId)?.id else { return }
+        workspaceManager.updatePaneOpenFile(paneId: paneId, tabId: tabId, transform: transform)
+    }
+
     private func scheduleSave() {
-        guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
-        let tabId = tab.id
-        persistPageDraft(for: tabId, path: tab.path)
+        let file: OpenFile
+        if let context = activeWorkspaceDocumentContext() {
+            file = context.file
+        } else if let activeTab = appState.activeTab {
+            file = activeTab
+        } else {
+            return
+        }
+        guard !file.path.isEmpty else { return }
+        let tabId = file.id
+        persistPageDraft(for: tabId, path: file.path)
 
         saveTask?.cancel()
         saveTask = Task { @MainActor in
@@ -3510,7 +3625,8 @@ struct ContentView: View {
 
         // Update on-disk markdown files that aren't currently open
         guard let workspace = appState.workspacePath else { return }
-        let openPaths = Set(appState.openTabs.map(\.path))
+        let workspaceOpenPaths = Set(workspaceManager.allDocumentLeaves().map(\.file.path))
+        let openPaths = Set(appState.openTabs.map(\.path)).union(workspaceOpenPaths)
         let oldLink = "[[\(oldName)]]"
         let newLink = "[[\(newName)]]"
         let fs = fileSystem
@@ -3524,6 +3640,13 @@ struct ContentView: View {
     }
 
     private func markActiveEditorTabDirty() {
+        if let context = activeWorkspaceDocumentContext() {
+            updateWorkspaceOpenFile(tabId: context.file.id) { file in
+                if !file.isDirty {
+                    file.isDirty = true
+                }
+            }
+        }
         guard appState.activeTabIndex >= 0, appState.activeTabIndex < appState.openTabs.count else { return }
         if !appState.openTabs[appState.activeTabIndex].isDirty {
             appState.openTabs[appState.activeTabIndex].isDirty = true
@@ -3539,7 +3662,8 @@ struct ContentView: View {
     private func flushDirtyTabs() {
         saveTask?.cancel()
         saveTask = nil
-        let dirtyTabIds = appState.openTabs
+        let workspaceDirtyIds = workspaceManager.allDocumentLeaves()
+            .map(\.file)
             .filter {
                 $0.isDirty
                     && !$0.path.isEmpty
@@ -3547,6 +3671,15 @@ struct ContentView: View {
                     && !$0.isDatabaseRow
             }
             .map(\.id)
+        let legacyDirtyIds = appState.openTabs
+            .filter {
+                $0.isDirty
+                    && !$0.path.isEmpty
+                    && !$0.isDatabase
+                    && !$0.isDatabaseRow
+            }
+            .map(\.id)
+        let dirtyTabIds = Array(Set(workspaceDirtyIds + legacyDirtyIds))
 
         for tabId in dirtyTabIds {
             saveDocument(tabId: tabId)
@@ -3554,19 +3687,30 @@ struct ContentView: View {
     }
 
     private func saveDocument(tabId: UUID) {
-        guard let index = appState.openTabs.firstIndex(where: { $0.id == tabId }),
-              appState.openTabs[index].isDirty else { return }
-        let oldPath = appState.openTabs[index].path
+        let legacyIndex = appState.openTabs.firstIndex(where: { $0.id == tabId })
+        let workspaceFile = workspaceManager.openFile(tabId: tabId)
+        guard let currentFile = workspaceFile ?? legacyIndex.map({ appState.openTabs[$0] }),
+              currentFile.isDirty else { return }
+        let oldPath = currentFile.path
         // Don't recreate a file that was deleted/trashed
         guard !oldPath.isEmpty, FileManager.default.fileExists(atPath: oldPath) else {
-            appState.openTabs[index].isDirty = false
+            if let legacyIndex {
+                appState.openTabs[legacyIndex].isDirty = false
+            }
+            if workspaceFile != nil {
+                updateWorkspaceOpenFile(tabId: tabId) { file in
+                    file.isDirty = false
+                }
+            }
             return
         }
         var didPersistDocument = false
         var savedPath = oldPath
         if let document = blockDocuments[tabId] {
             let content = document.markdown
-            appState.openTabs[index].content = content
+            if let legacyIndex {
+                appState.openTabs[legacyIndex].content = content
+            }
             do {
                 try fileSystem.saveFile(at: oldPath, content: content)
                 didPersistDocument = true
@@ -3585,8 +3729,10 @@ struct ContentView: View {
                         do {
                             try fileSystem.renameFile(from: oldPath, to: newPath)
                             savedPath = newPath
-                            appState.openTabs[index].path = newPath
-                            appState.updateNavigationPath(for: tabId, from: oldPath, to: newPath)
+                            if let legacyIndex {
+                                appState.openTabs[legacyIndex].path = newPath
+                                appState.updateNavigationPath(for: tabId, from: oldPath, to: newPath)
+                            }
                             updatePageLinks(oldName: currentName, newName: sanitized, docs: blockDocuments)
                             refreshFileTree()
                         } catch {
@@ -3607,7 +3753,17 @@ struct ContentView: View {
         if let workspace = appState.workspacePath {
             backlinkService.updateFile(at: savedPath, in: workspace)
         }
-        appState.openTabs[index].isDirty = false
+        if let legacyIndex {
+            appState.openTabs[legacyIndex].isDirty = false
+        }
+        updateWorkspaceOpenFile(tabId: tabId) { file in
+            file.content = blockDocuments[tabId]?.markdown ?? file.content
+            file.path = savedPath
+            file.isDirty = false
+            if let rawTitle = blockDocuments[tabId]?.titleBlock?.text, !rawTitle.isEmpty {
+                file.displayName = AttributedStringConverter.plainText(from: rawTitle)
+            }
+        }
     }
 
     /// Removes any databaseEmbed blocks referencing `dbPath` from all currently open BlockDocuments.
@@ -3638,9 +3794,7 @@ struct ContentView: View {
 
             Button {
                 document.fullWidth.toggle()
-                if appState.activeTabIndex < appState.openTabs.count {
-                    appState.openTabs[appState.activeTabIndex].isDirty = true
-                }
+                markActiveEditorTabDirty()
                 scheduleSave()
                 showPageOptionsMenu = false
             } label: {
@@ -3842,7 +3996,8 @@ struct ContentView: View {
     }
 
     private func forceSave() {
-        guard let tab = appState.activeTab, !tab.path.isEmpty else { return }
+        guard let tab = activeWorkspaceDocumentContext()?.file ?? appState.activeTab,
+              !tab.path.isEmpty else { return }
         SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "editor.save"))
         performSave(tabId: tab.id)
     }
@@ -3975,15 +4130,19 @@ struct ContentView: View {
     }
 
     private func syncTitle(from document: BlockDocument) {
-        guard appState.activeTabIndex < appState.openTabs.count else { return }
-        if let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty {
-            let title = AttributedStringConverter.plainText(from: rawTitle)
-            // Only write if actually changed — avoid triggering @Observable for no-op
-            if appState.openTabs[appState.activeTabIndex].displayName != title {
-                appState.openTabs[appState.activeTabIndex].displayName = title
-                let path = appState.openTabs[appState.activeTabIndex].path
-                updateFileTreeName(path: path, newName: title)
+        guard let rawTitle = document.titleBlock?.text, !rawTitle.isEmpty else { return }
+        let title = AttributedStringConverter.plainText(from: rawTitle)
+        if let context = activeWorkspaceDocumentContext() {
+            updateWorkspaceOpenFile(tabId: context.file.id) { file in
+                file.displayName = title
             }
+            updateFileTreeName(path: context.file.path, newName: title)
+        }
+        if appState.activeTabIndex < appState.openTabs.count,
+           appState.openTabs[appState.activeTabIndex].displayName != title {
+            appState.openTabs[appState.activeTabIndex].displayName = title
+            let path = appState.openTabs[appState.activeTabIndex].path
+            updateFileTreeName(path: path, newName: title)
         }
     }
 

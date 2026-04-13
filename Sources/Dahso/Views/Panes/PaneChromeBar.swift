@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Compact pane header bar shown for tiled panes and browser single-pane mode.
@@ -10,6 +11,9 @@ struct PaneChromeBar: View {
     let fileTree: [FileEntry]
     var breadcrumbs: [BreadcrumbItem] = []
     var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
+    var onCreatePaneTab: ((PaneNode.Leaf) -> Void)? = nil
+    var onClosePaneTab: ((PaneNode.Leaf, UUID) -> Void)? = nil
+    var onClosePane: ((PaneNode.Leaf) -> Void)? = nil
 
     @State private var isHovered = false
     @State private var showSplitPopover = false
@@ -29,20 +33,24 @@ struct PaneChromeBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Left: label area
-            labelArea
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                labelArea
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            // Right: action buttons
-            actionButtons
-        }
-        .frame(height: 28)
-        .padding(.horizontal, 10)
-        .contentShape(Rectangle())
-        .onDrag {
-            NSItemProvider(object: leaf.id.uuidString as NSString)
+                actionButtons
+            }
+            .frame(height: 28)
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+            .onDrag {
+                NSItemProvider(object: leaf.id.uuidString as NSString)
+            }
+
+            if leaf.hasMultipleTabs {
+                tabStrip
+            }
         }
         .background(isReplaceWarning ? amberWarning.opacity(0.12) : Container.cardBg)
         .overlay(alignment: .top) {
@@ -56,12 +64,6 @@ struct PaneChromeBar: View {
                     .frame(height: 2)
             }
         }
-        .overlay(alignment: .leading) {
-            if isReplaceWarning {
-                EmptyView()
-            }
-        }
-        // Warning text overlay
         .overlay {
             if isReplaceWarning {
                 HStack(spacing: 6) {
@@ -82,7 +84,7 @@ struct PaneChromeBar: View {
     // MARK: - Label Area
 
     private var labelArea: some View {
-        let info = chromeLabel
+        let info = chromeLabel(for: leaf.content)
         let labelColor = isFocused && !isOnlyPane ? steelBlueLight : Color.primary.opacity(0.4)
         let mutedColor = Color.primary.opacity(0.2)
 
@@ -138,6 +140,80 @@ struct PaneChromeBar: View {
         }
     }
 
+    private var tabStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(leaf.tabs.enumerated()), id: \.element.id) { index, content in
+                    paneTabPill(content: content, isSelected: index == leaf.selectedTabIndex)
+                }
+
+                if leaf.activeContent.defaultNewPaneTab() != nil {
+                    Button {
+                        onCreatePaneTab?(leaf)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .semibold))
+                            .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+        .background(Color.fallbackTabBarBg)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.fallbackChromeBorder)
+                .frame(height: 1)
+        }
+    }
+
+    private func paneTabPill(content: PaneContent, isSelected: Bool) -> some View {
+        let info = chromeLabel(for: content)
+
+        return HStack(spacing: 6) {
+            Button {
+                workspaceManager.selectPaneTab(paneId: leaf.id, tabId: content.id)
+            } label: {
+                HStack(spacing: 6) {
+                    chromeIconView(info.icon)
+                        .frame(width: 12, height: 12)
+                    Text(info.label)
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            if leaf.tabs.count > 1 {
+                Button {
+                    onClosePaneTab?(leaf, content.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 6)
+            }
+        }
+        .frame(minWidth: 110, maxWidth: 190)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(isSelected ? Color.primary.opacity(0.1) : Color.clear, lineWidth: 0.5)
+        )
+    }
+
     // MARK: - Action Buttons
 
     @ViewBuilder
@@ -186,7 +262,11 @@ struct PaneChromeBar: View {
 
                 // Close
                 Button {
-                    workspaceManager.closePane(id: leaf.id)
+                    if let onClosePane {
+                        onClosePane(leaf)
+                    } else {
+                        workspaceManager.closePane(id: leaf.id)
+                    }
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .medium))
@@ -237,8 +317,8 @@ struct PaneChromeBar: View {
 
     // MARK: - Label Derivation
 
-    private var chromeLabel: (icon: String, label: String, context: String?) {
-        switch leaf.content {
+    private func chromeLabel(for content: PaneContent) -> (icon: String, label: String, context: String?) {
+        switch content {
         case .terminal:
             return ("terminal", "Terminal", nil)
         case .document(let file):
@@ -246,7 +326,17 @@ struct PaneChromeBar: View {
             if file.isGateway { return ("house", "Home", nil) }
             if file.isMail { return ("envelope", "Mail", nil) }
             if file.isCalendar { return ("calendar.badge.clock", "Calendar", nil) }
-            if file.isBrowser { return ("globe", "Browser", nil) }
+            if file.isBrowser {
+                let browserLabel: String
+                if let displayName = file.displayName, !displayName.isEmpty {
+                    browserLabel = displayName
+                } else if let host = URL(string: file.path)?.host, !host.isEmpty {
+                    browserLabel = host
+                } else {
+                    browserLabel = "New Tab"
+                }
+                return ("globe", browserLabel, nil)
+            }
             if file.isMeetings { return ("person.2", "Meetings", nil) }
             if file.isChat { return ("bubble.left.and.bubble.right", "Chat", nil) }
             if file.isGraphView { return ("point.3.connected.trianglepath.dotted", "Graph View", nil) }

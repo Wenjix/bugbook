@@ -49,16 +49,42 @@ struct BrowserPaneSnapshot: Codable, Equatable {
 
     init(
         paneID: UUID,
-        tabs: [BrowserTabSnapshot] = [BrowserTabSnapshot()],
+        tabs: [BrowserTabSnapshot] = [],
         selectedTabID: UUID? = nil,
         recentVisits: [BrowserRecentVisit] = [],
         isReadLaterDrawerOpen: Bool = false
     ) {
         self.paneID = paneID
-        self.tabs = tabs.isEmpty ? [BrowserTabSnapshot()] : tabs
-        self.selectedTabID = selectedTabID ?? self.tabs.first?.id
+        self.tabs = tabs
+        self.selectedTabID = selectedTabID
         self.recentVisits = recentVisits
         self.isReadLaterDrawerOpen = isReadLaterDrawerOpen
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case paneID
+        case recentVisits
+        case isReadLaterDrawerOpen
+        case tabs
+        case selectedTabID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paneID = try container.decode(UUID.self, forKey: .paneID)
+        tabs = try container.decodeIfPresent([BrowserTabSnapshot].self, forKey: .tabs) ?? []
+        selectedTabID = try container.decodeIfPresent(UUID.self, forKey: .selectedTabID)
+        recentVisits = try container.decodeIfPresent([BrowserRecentVisit].self, forKey: .recentVisits) ?? []
+        isReadLaterDrawerOpen = try container.decodeIfPresent(Bool.self, forKey: .isReadLaterDrawerOpen) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(paneID, forKey: .paneID)
+        try container.encode(tabs, forKey: .tabs)
+        try container.encodeIfPresent(selectedTabID, forKey: .selectedTabID)
+        try container.encode(recentVisits, forKey: .recentVisits)
+        try container.encode(isReadLaterDrawerOpen, forKey: .isReadLaterDrawerOpen)
     }
 }
 
@@ -204,4 +230,3 @@ protocol ContextualSidebarProviding {
 protocol PaneDropdownProviding {
     func makePaneDropdown() -> AnyView
 }
-
