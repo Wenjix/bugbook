@@ -47,7 +47,10 @@ extension AppState {
         _ operation: (inout AppSettings) async throws -> T
     ) async rethrows -> T {
         var updatedSettings = settings
-        defer { settings = updatedSettings }
+        // Only write back when something actually changed — `settings` is `@Observable`
+        // and an unconditional reassignment invalidates every view that reads any AppSettings
+        // property on every Google API call.
+        defer { if updatedSettings != settings { settings = updatedSettings } }
         return try await operation(&updatedSettings)
     }
 

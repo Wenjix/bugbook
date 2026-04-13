@@ -327,6 +327,9 @@ indirect enum PaneNode: Identifiable, Codable, Equatable {
         case .split(let split):
             let newFirst = split.first.updatingLeafContent(leafId: leafId, content: content)
             let newSecond = split.second.updatingLeafContent(leafId: leafId, content: content)
+            // Short-circuit: if nothing in this subtree changed, return self so the parent
+            // tree avoids reallocating Splits and SwiftUI doesn't see a phantom tree mutation.
+            if newFirst == split.first && newSecond == split.second { return self }
             return .split(Split(id: split.id, axis: split.axis, ratio: split.ratio, first: newFirst, second: newSecond))
         }
     }
@@ -339,6 +342,7 @@ indirect enum PaneNode: Identifiable, Codable, Equatable {
         case .split(let split):
             let newFirst = split.first.updatingLeaf(id: targetId, transform: transform)
             let newSecond = split.second.updatingLeaf(id: targetId, transform: transform)
+            if newFirst == split.first && newSecond == split.second { return self }
             return .split(Split(id: split.id, axis: split.axis, ratio: split.ratio, first: newFirst, second: newSecond))
         }
     }
@@ -363,6 +367,7 @@ indirect enum PaneNode: Identifiable, Codable, Equatable {
         case .split(let split):
             let newFirst = split.first.updatingTabContent(tabId: tabId, transform: transform)
             let newSecond = split.second.updatingTabContent(tabId: tabId, transform: transform)
+            if newFirst == split.first && newSecond == split.second { return self }
             return .split(Split(id: split.id, axis: split.axis, ratio: split.ratio, first: newFirst, second: newSecond))
         }
     }

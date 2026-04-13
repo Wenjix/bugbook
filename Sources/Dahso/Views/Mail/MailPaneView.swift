@@ -782,23 +782,35 @@ struct MailPaneView: View {
     }
 
     private func refreshConnectedMailboxes(force: Bool) async {
-        for account in backgroundRefreshAccounts {
-            guard !Task.isCancelled else { return }
-
-            do {
-                _ = try await appState.withValidGoogleToken(
-                    for: account.email,
-                    scopes: GoogleScopeSet.mail
-                ) { token in
-                    await mailService.refreshMailbox(
-                        account.matches(email: appState.settings.googleConnectedEmail) ? mailService.selectedMailbox : .inbox,
-                        for: account.email,
-                        token: token,
-                        forceRefresh: force
-                    )
+        // Per-account refresh is IO-bound and independent — fan out so N accounts
+        // don't take N× the latency of one. Mirrors CalendarService.syncAllGoogleAccounts.
+        let accounts = backgroundRefreshAccounts
+        let activeEmail = appState.settings.googleConnectedEmail
+        let selectedMailbox = mailService.selectedMailbox
+        await withTaskGroup(of: (account: GoogleAccount, error: Error?).self) { group in
+            for account in accounts {
+                group.addTask {
+                    if Task.isCancelled { return (account, nil) }
+                    do {
+                        _ = try await appState.withValidGoogleToken(
+                            for: account.email,
+                            scopes: GoogleScopeSet.mail
+                        ) { token in
+                            await mailService.refreshMailbox(
+                                account.matches(email: activeEmail) ? selectedMailbox : .inbox,
+                                for: account.email,
+                                token: token,
+                                forceRefresh: force
+                            )
+                        }
+                        return (account, nil)
+                    } catch {
+                        return (account, error)
+                    }
                 }
-            } catch {
-                if account.matches(email: appState.settings.googleConnectedEmail) {
+            }
+            for await result in group {
+                if let error = result.error, result.account.matches(email: activeEmail) {
                     mailService.error = error.localizedDescription
                 }
             }

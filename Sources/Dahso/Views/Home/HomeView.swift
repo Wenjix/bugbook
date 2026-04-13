@@ -107,13 +107,12 @@ struct HomeView: View {
 
             // Then try a live Gmail fetch if we have a valid token
             do {
-                var settings = appState.settings
-                let token = try await GoogleAuthService.validToken(
-                    using: &settings,
-                    requiredScopes: GoogleScopeSet.mail
-                )
-                appState.settings = settings
-                await mailService.loadMailbox(.inbox, token: token)
+                _ = try await appState.withValidGoogleToken(
+                    for: email,
+                    scopes: GoogleScopeSet.mail
+                ) { token in
+                    await mailService.loadMailbox(.inbox, token: token)
+                }
             } catch {
                 // Token expired or not available — cached data is fine
             }

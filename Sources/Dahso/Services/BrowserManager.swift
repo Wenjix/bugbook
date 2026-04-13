@@ -260,13 +260,13 @@ final class BrowserManager {
     }
 
     func tabs(in paneID: UUID) -> [BrowserTabState] {
-        ensurePaneExists(for: paneID, snapshot: snapshotStore.snapshot(for: paneID) ?? BrowserPaneSnapshot(paneID: paneID))
+        ensurePaneExists(for: paneID)
         guard let leaf = workspaceManager.leaf(id: paneID) else { return [] }
         return session(for: paneID).tabStates(for: browserFiles(in: leaf))
     }
 
     func activeTab(in paneID: UUID) -> BrowserTabState? {
-        ensurePaneExists(for: paneID, snapshot: snapshotStore.snapshot(for: paneID) ?? BrowserPaneSnapshot(paneID: paneID))
+        ensurePaneExists(for: paneID)
         guard let leaf = workspaceManager.leaf(id: paneID) else { return nil }
         return session(for: paneID).activeTab(for: browserFiles(in: leaf), selectedTabID: activeBrowserTabID(in: paneID))
     }
@@ -287,6 +287,12 @@ final class BrowserManager {
         let session = BrowserPaneSession(paneID: paneID, snapshot: snapshot)
         session.manager = self
         return session
+    }
+
+    /// Convenience overload — loads the snapshot itself, since most call sites just want
+    /// "make sure this pane is registered" without bringing a snapshot of their own.
+    private func ensurePaneExists(for paneID: UUID) {
+        ensurePaneExists(for: paneID, snapshot: snapshotStore.snapshot(for: paneID) ?? BrowserPaneSnapshot(paneID: paneID))
     }
 
     private func activeBrowserTabID(in paneID: UUID) -> UUID? {

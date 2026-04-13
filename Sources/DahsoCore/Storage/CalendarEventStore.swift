@@ -98,6 +98,13 @@ public class CalendarEventStore {
         let existingEvents = loadEvents(in: workspace)
         guard !existingEvents.isEmpty else { return [:] }
 
+        // Fast path: every sync calls this, but after the first successful migration every
+        // event already has a 3-part ID + accountEmail. Skip the per-event work in that case.
+        let alreadyMigrated = existingEvents.allSatisfy { event in
+            event.accountEmail != nil && event.idComponents?.accountEmail != nil
+        }
+        if alreadyMigrated { return [:] }
+
         let fallbackAccountEmail = CalendarEvent.normalizedAccountEmail(activeAccountEmail)
         var rewrittenEvents: [CalendarEvent] = []
         var indexById: [String: Int] = [:]
@@ -296,9 +303,12 @@ public class CalendarEventStore {
     }
 
     private func rewriteEventIDs(in content: String, using idMapping: [String: String]) -> String {
+        // Most markdown files in a workspace contain zero event IDs. Skip the per-mapping
+        // regex compile + scan unless the content actually mentions one of the old IDs.
         let orderedMappings = idMapping
-            .filter { $0.key != $0.value }
+            .filter { $0.key != $0.value && content.contains($0.key) }
             .sorted { lhs, rhs in lhs.key.count > rhs.key.count }
+        if orderedMappings.isEmpty { return content }
 
         return orderedMappings.reduce(content) { partial, entry in
             let pattern = idRewritePattern(oldID: entry.key, newID: entry.value)

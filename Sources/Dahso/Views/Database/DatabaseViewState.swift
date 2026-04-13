@@ -149,8 +149,8 @@ final class DatabaseViewState {
         return base
     }
 
-    /// Returns filtered+sorted rows using a cache keyed by row identity, debounced row content,
-    /// and the active view inputs that affect ordering or membership.
+    /// Row content writes are debounced by `rowContentDebounceInterval` (250 ms) so per-keystroke
+    /// edits don't blow the cache.
     private func computeBaseFilteredRows() -> [DatabaseRow] {
         guard activeView != nil else {
             return rows
