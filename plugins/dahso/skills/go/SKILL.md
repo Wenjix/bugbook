@@ -622,7 +622,7 @@ Completed: N | Blocked: N | Failed (reverted): N
 
 ## Rules
 
-1. **Never stop to ask.** Make assumptions, record them, keep moving.
+1. **Never stop to ask. Never checkpoint.** The user started /go so they could step away. Asking "should I continue?", "which of these do you want?", "want me to keep going?" defeats the whole point. Make assumptions, record them in the friction log if non-obvious, and keep moving until the queue is empty or the time budget is exhausted. The only valid reasons to halt mid-run are: (a) the entire queue is complete, (b) a blocker that makes further autonomous work impossible (disk full, git in an unrecoverable state, codex unresponsive for >15 min), (c) the time budget has elapsed. Context pressure, long conversation length, or a tricky ticket are NOT reasons to stop — they're reasons to delegate harder to subagents and stay terse.
 2. **Never touch `main`.** All work lands on `dev`.
 3. **Clean stale worktrees first.** Start every run with the cleanup commands.
 4. **Load the friction log before dispatching.** Past incidents go into worker prompts so they don't repeat.
