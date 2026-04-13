@@ -7,7 +7,7 @@ private func prepareTestDirectory(at directoryURL: URL) throws {
 
     try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
 
-    try "hello from Dahso MCP spike\n"
+    try "hello from Dahso MCP\n"
         .write(to: directoryURL.appendingPathComponent("hello.txt"), atomically: true, encoding: .utf8)
 
     try FileManager.default.createDirectory(

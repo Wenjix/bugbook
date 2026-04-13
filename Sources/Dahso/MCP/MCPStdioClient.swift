@@ -18,7 +18,7 @@ enum MCPClientError: LocalizedError {
         case let .requestFailed(code, message):
             return "MCP request failed (\(code)): \(message)"
         case let .unsupportedToolCall(toolNames):
-            return "No supported spike tool found. Available tools: \(toolNames.joined(separator: ", "))"
+            return "No supported MCP tool found. Available tools: \(toolNames.joined(separator: ", "))"
         case let .responseEndedBeforeCompletion(id):
             return "The MCP server closed stdout before completing request \(id)."
         case let .requestTimedOut(method, seconds):
