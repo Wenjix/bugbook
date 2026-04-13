@@ -25,13 +25,16 @@ private actor SimulationEngine {
     private var nodes: [GraphNode] = []
     private var edges: [GraphEdge] = []
     private var settledFrames = 0
+    private var lowDisplacementFrames = 0
     private let settleThreshold: CGFloat = 0.3
+    private let displacementThresholdPerNode: CGFloat = 0.08
     private let maxSettledFrames = 60
 
     func setGraph(nodes: [GraphNode], edges: [GraphEdge]) {
         self.nodes = nodes
         self.edges = edges
         self.settledFrames = 0
+        self.lowDisplacementFrames = 0
     }
 
     /// Returns updated node positions, or nil if the simulation has settled and should stop.
@@ -93,6 +96,7 @@ private actor SimulationEngine {
 
         // Center gravity + apply velocity + damping
         var maxVel: CGFloat = 0
+        var totalDisplacement: CGFloat = 0
         for i in nodes.indices {
             nodes[i].velocity.x += (center.x - nodes[i].position.x) * centerGravity
             nodes[i].velocity.y += (center.y - nodes[i].position.y) * centerGravity
@@ -103,16 +107,25 @@ private actor SimulationEngine {
 
             let vel = sqrt(nodes[i].velocity.x * nodes[i].velocity.x + nodes[i].velocity.y * nodes[i].velocity.y)
             maxVel = max(maxVel, vel)
+            totalDisplacement += vel
         }
 
-        // Check if settled
+        // Preserve the existing max-velocity settle check and add a total-displacement exit.
         if maxVel < settleThreshold {
             settledFrames += 1
-            if settledFrames >= maxSettledFrames {
-                return nil // signal to stop
-            }
         } else {
             settledFrames = 0
+        }
+
+        let displacementThreshold = displacementThresholdPerNode * CGFloat(nodes.count)
+        if totalDisplacement < displacementThreshold {
+            lowDisplacementFrames += 1
+        } else {
+            lowDisplacementFrames = 0
+        }
+
+        if settledFrames >= maxSettledFrames || lowDisplacementFrames >= maxSettledFrames {
+            return nil // signal to stop
         }
 
         return nodes
@@ -125,27 +138,45 @@ private actor SimulationEngine {
 class ForceSimulation: ObservableObject {
     @Published var nodes: [GraphNode] = []
     @Published var edges: [GraphEdge] = []
+    @Published private(set) var isSimulating = false
 
     private let engine = SimulationEngine()
     private var simulationTask: Task<Void, Never>?
+    private let frameInterval: Duration = .nanoseconds(16_666_667)
 
     func start() {
         simulationTask?.cancel()
+        guard !nodes.isEmpty else {
+            isSimulating = false
+            return
+        }
+
         let engineRef = engine
-        Task { await engineRef.setGraph(nodes: nodes, edges: edges) }
-        simulationTask = Task { [weak self] in
+        let initialNodes = nodes
+        let initialEdges = edges
+        let frameInterval = self.frameInterval
+        isSimulating = true
+
+        simulationTask = Task { [weak self, initialNodes, initialEdges] in
+            let clock = ContinuousClock()
+            await engineRef.setGraph(nodes: initialNodes, edges: initialEdges)
+
             while !Task.isCancelled {
                 guard let self else { return }
+                let frameStart = clock.now
                 let updated = await engineRef.tick()
                 guard !Task.isCancelled else { return }
                 if let updated {
                     self.nodes = updated
                 } else {
-                    // Simulation settled
+                    self.isSimulating = false
                     return
                 }
-                // Yield to next frame (~60fps)
-                try? await Task.sleep(nanoseconds: 16_666_667)
+
+                let elapsed = frameStart.duration(to: clock.now)
+                if elapsed < frameInterval {
+                    try? await Task.sleep(for: frameInterval - elapsed)
+                }
             }
         }
     }
@@ -153,6 +184,7 @@ class ForceSimulation: ObservableObject {
     func stop() {
         simulationTask?.cancel()
         simulationTask = nil
+        isSimulating = false
     }
 }
 
