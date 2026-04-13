@@ -39,10 +39,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .build
-          key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-${{ hashFiles('Package.resolved') }}
+          # v2 forces cache invalidation after the 2026-04-12 bugbook→dahso rename, which left
+          # stale absolute paths like /Users/runner/work/bugbook/bugbook/.build/... inside the
+          # cached Sparkle XCFramework Info.plist.
+          key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v2-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-
-            ${{ runner.os }}-spm-
+            ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v2-
+            ${{ runner.os }}-spm-v2-
 
       - name: Cache CEF runtime
         uses: actions/cache@v5
