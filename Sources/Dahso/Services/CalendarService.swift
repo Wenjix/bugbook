@@ -506,101 +506,63 @@ class CalendarService {
         calendarId: String = "primary",
         accountEmail: String? = nil
     ) async throws -> FetchResult {
-        var components = URLComponents(url: googleEventsURL(calendarId: calendarId), resolvingAgainstBaseURL: false)!
-        var queryItems: [URLQueryItem] = []
+        let baseURL = googleEventsURL(calendarId: calendarId)
+        var baseQueryItems: [URLQueryItem] = []
         if let syncToken {
-            queryItems.append(URLQueryItem(name: "syncToken", value: syncToken))
+            baseQueryItems.append(URLQueryItem(name: "syncToken", value: syncToken))
         } else {
-            queryItems.append(contentsOf: [
+            baseQueryItems.append(contentsOf: [
                 URLQueryItem(name: "singleEvents", value: "true"),
                 URLQueryItem(name: "orderBy", value: "startTime"),
                 URLQueryItem(name: "maxResults", value: "250"),
             ])
             let now = Date()
-            queryItems.append(URLQueryItem(name: "timeMin", value: CalendarFormatters.isoFallback.string(from: now.addingTimeInterval(-30 * 86400))))
-            queryItems.append(URLQueryItem(name: "timeMax", value: CalendarFormatters.isoFallback.string(from: now.addingTimeInterval(90 * 86400))))
+            baseQueryItems.append(URLQueryItem(name: "timeMin", value: CalendarFormatters.isoFallback.string(from: now.addingTimeInterval(-30 * 86400))))
+            baseQueryItems.append(URLQueryItem(name: "timeMax", value: CalendarFormatters.isoFallback.string(from: now.addingTimeInterval(90 * 86400))))
         }
-        components.queryItems = queryItems
+        var pageToken: String?
+        var events: [CalendarEvent] = []
+        var nextSyncToken: String?
 
-        var request = URLRequest(url: components.url!)
-        request.setValue("Bearer \(token.accessToken)", forHTTPHeaderField: "Authorization")
+        repeat {
+            var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+            var pageQueryItems = baseQueryItems
+            if let pageToken {
+                pageQueryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+            }
+            components.queryItems = pageQueryItems
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw CalendarError.apiError("No response from Google Calendar API")
-        }
+            var request = URLRequest(url: components.url!)
+            request.setValue("Bearer \(token.accessToken)", forHTTPHeaderField: "Authorization")
 
-        if http.statusCode == 410 {
-            return try await fetchGoogleEvents(token: token, syncToken: nil, calendarId: calendarId, accountEmail: accountEmail)
-        }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw CalendarError.apiError("No response from Google Calendar API")
+            }
 
-        guard http.statusCode == 200 else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw CalendarError.apiError("Google Calendar API error \(http.statusCode): \(body)")
-        }
+            if http.statusCode == 410 {
+                return try await fetchGoogleEvents(token: token, syncToken: nil, calendarId: calendarId, accountEmail: accountEmail)
+            }
 
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw CalendarError.apiError("Invalid JSON response")
-        }
+            guard http.statusCode == 200 else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                throw CalendarError.apiError("Google Calendar API error \(http.statusCode): \(body)")
+            }
 
-        let items = json["items"] as? [[String: Any]] ?? []
-        var events = items.compactMap { parseGoogleEvent($0, calendarId: calendarId, accountEmail: accountEmail) }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw CalendarError.apiError("Invalid JSON response")
+            }
 
-        if let nextPageToken = json["nextPageToken"] as? String {
-            var pageComponents = components
-            var pageQueryItems = queryItems
-            pageQueryItems.append(URLQueryItem(name: "pageToken", value: nextPageToken))
-            pageComponents.queryItems = pageQueryItems
-            let nextPage = try await fetchGoogleEventsPage(
-                url: pageComponents.url!,
-                token: token,
-                calendarId: calendarId,
-                accountEmail: accountEmail,
-                queryItems: pageQueryItems,
-                baseComponents: pageComponents
-            )
-            events.append(contentsOf: nextPage)
-        }
+            let items = json["items"] as? [[String: Any]] ?? []
+            events.append(contentsOf: items.compactMap { parseGoogleEvent($0, calendarId: calendarId, accountEmail: accountEmail) })
 
-        let nextSyncToken = json["nextSyncToken"] as? String
+            if let nextToken = json["nextSyncToken"] as? String {
+                nextSyncToken = nextToken
+            }
+            pageToken = json["nextPageToken"] as? String
+        } while pageToken != nil
+
         return FetchResult(events: events, nextSyncToken: nextSyncToken)
-    }
-
-    private func fetchGoogleEventsPage(
-        url: URL,
-        token: GoogleOAuthToken,
-        calendarId: String,
-        accountEmail: String?,
-        queryItems: [URLQueryItem],
-        baseComponents: URLComponents
-    ) async throws -> [CalendarEvent] {
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token.accessToken)", forHTTPHeaderField: "Authorization")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-
-        let items = json["items"] as? [[String: Any]] ?? []
-        var events = items.compactMap { parseGoogleEvent($0, calendarId: calendarId, accountEmail: accountEmail) }
-
-        if let nextPageToken = json["nextPageToken"] as? String {
-            var pageComponents = baseComponents
-            var pageQueryItems = queryItems.filter { $0.name != "pageToken" }
-            pageQueryItems.append(URLQueryItem(name: "pageToken", value: nextPageToken))
-            pageComponents.queryItems = pageQueryItems
-            let more = try await fetchGoogleEventsPage(
-                url: pageComponents.url!,
-                token: token,
-                calendarId: calendarId,
-                accountEmail: accountEmail,
-                queryItems: pageQueryItems,
-                baseComponents: pageComponents
-            )
-            events.append(contentsOf: more)
-        }
-
-        return events
     }
 
     private func fetchGoogleCalendarList(token: GoogleOAuthToken) async throws -> [CalendarSource] {
