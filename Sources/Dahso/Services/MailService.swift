@@ -17,6 +17,7 @@ final class MailService {
     var isSending = false
     var error: String?
     var lastSyncDate: Date?
+    var lastSyncDatesByAccount: [String: Date] = [:]
 
     @ObservationIgnored private let cacheStore: MailCacheStore
     @ObservationIgnored private var activeAccountEmail: String?
@@ -47,6 +48,7 @@ final class MailService {
         mailboxThreads = snapshot.mailboxThreads
         threadDetails = snapshot.threadDetails
         lastSyncDate = snapshot.savedAt
+        updateLastSyncDate(snapshot.savedAt, for: accountEmail)
         if selectedThreadID == nil {
             selectedThreadID = mailboxThreads[selectedMailbox]?.first?.id
         }
@@ -163,6 +165,26 @@ final class MailService {
 
     func refreshSelectedMailbox(token: GoogleOAuthToken) async {
         await loadMailbox(selectedMailbox, token: token, forceRefresh: true)
+    }
+
+    func refreshMailbox(
+        _ mailbox: MailMailbox,
+        for accountEmail: String,
+        token: GoogleOAuthToken,
+        forceRefresh: Bool = false
+    ) async {
+        let trimmedEmail = accountEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEmail.isEmpty else {
+            await loadMailbox(mailbox, token: token, forceRefresh: forceRefresh)
+            return
+        }
+
+        if normalizedAccountKey(activeAccountEmail) == normalizedAccountKey(trimmedEmail) {
+            await loadMailbox(mailbox, token: token, forceRefresh: forceRefresh)
+            return
+        }
+
+        await refreshCachedMailbox(mailbox, for: trimmedEmail, token: token, forceRefresh: forceRefresh)
     }
 
     func performSearch(query: String, token: GoogleOAuthToken) async {
@@ -358,6 +380,64 @@ final class MailService {
         )
         cacheStore.save(snapshot, accountEmail: activeAccountEmail)
         lastSyncDate = snapshot.savedAt
+        updateLastSyncDate(snapshot.savedAt, for: activeAccountEmail)
+    }
+
+    private func refreshCachedMailbox(
+        _ mailbox: MailMailbox,
+        for accountEmail: String,
+        token: GoogleOAuthToken,
+        forceRefresh: Bool
+    ) async {
+        let existingSnapshot = cacheStore.load(accountEmail: accountEmail)
+        if let existingSnapshot {
+            updateLastSyncDate(existingSnapshot.savedAt, for: accountEmail)
+            if !forceRefresh, let cached = existingSnapshot.mailboxThreads[mailbox], !cached.isEmpty {
+                return
+            }
+        }
+
+        do {
+            let threadIDs = try await GmailMailAPI.listThreadIDs(
+                labelIDs: mailbox.gmailLabelIDs,
+                query: nil,
+                token: token
+            )
+            let summaries = try await GmailMailAPI.fetchThreadSummaries(
+                ids: threadIDs,
+                mailbox: mailbox,
+                token: token
+            )
+
+            var snapshot = existingSnapshot ?? MailCacheSnapshot(
+                mailboxThreads: [:],
+                threadDetails: [:],
+                savedAt: Date()
+            )
+            snapshot.mailboxThreads[mailbox] = summaries.sorted(by: MailService.threadSort)
+            snapshot.savedAt = Date()
+            cacheStore.save(snapshot, accountEmail: accountEmail)
+            updateLastSyncDate(snapshot.savedAt, for: accountEmail)
+        } catch {
+            Log.mail.error(
+                "Failed to refresh cached \(mailbox.rawValue, privacy: .public) mailbox for \(accountEmail, privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func updateLastSyncDate(_ date: Date, for accountEmail: String) {
+        let key = normalizedAccountKey(accountEmail)
+        guard !key.isEmpty else { return }
+        lastSyncDatesByAccount[key] = date
+        if key == normalizedAccountKey(activeAccountEmail) {
+            lastSyncDate = date
+        }
+    }
+
+    private func normalizedAccountKey(_ accountEmail: String?) -> String {
+        accountEmail?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
     }
 
     private static func threadSort(lhs: MailThreadSummary, rhs: MailThreadSummary) -> Bool {

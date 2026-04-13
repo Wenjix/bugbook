@@ -58,13 +58,13 @@ struct MailPaneView: View {
             refreshSelectedMailbox(force: false)
         }
         .task {
-            // Auto-refresh inbox every 60 seconds while the mail pane is visible.
+            // Auto-refresh connected mail accounts every 60 seconds while the mail pane is visible.
             // SwiftUI cancels this task automatically when the view disappears.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { break }
                 guard appState.settings.googleConnected else { continue }
-                refreshSelectedMailbox(force: true)
+                await refreshConnectedMailboxes(force: true)
             }
         }
     }
@@ -751,6 +751,13 @@ struct MailPaneView: View {
         return value.isEmpty ? nil : value
     }
 
+    private var backgroundRefreshAccounts: [GoogleAccount] {
+        appState.settings.googleAccounts.filter { account in
+            let grantedScopes = Set(account.grantedScopes)
+            return account.isConnected && GoogleScopeSet.mail.allSatisfy { grantedScopes.contains($0) }
+        }
+    }
+
     private func submitSearch() {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -763,8 +770,38 @@ struct MailPaneView: View {
     }
 
     private func refreshSelectedMailbox(force: Bool) {
-        withMailToken { token in
-            await mailService.loadMailbox(mailService.selectedMailbox, token: token, forceRefresh: force)
+        let connectedEmail = appState.settings.googleConnectedEmail
+        withMailToken(for: connectedEmail) { token in
+            await mailService.refreshMailbox(
+                mailService.selectedMailbox,
+                for: connectedEmail,
+                token: token,
+                forceRefresh: force
+            )
+        }
+    }
+
+    private func refreshConnectedMailboxes(force: Bool) async {
+        for account in backgroundRefreshAccounts {
+            guard !Task.isCancelled else { return }
+
+            do {
+                _ = try await appState.withValidGoogleToken(
+                    for: account.email,
+                    scopes: GoogleScopeSet.mail
+                ) { token in
+                    await mailService.refreshMailbox(
+                        account.matches(email: appState.settings.googleConnectedEmail) ? mailService.selectedMailbox : .inbox,
+                        for: account.email,
+                        token: token,
+                        forceRefresh: force
+                    )
+                }
+            } catch {
+                if account.matches(email: appState.settings.googleConnectedEmail) {
+                    mailService.error = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -793,10 +830,13 @@ struct MailPaneView: View {
         }
     }
 
-    private func withMailToken(_ operation: @escaping (GoogleOAuthToken) async -> Void) {
+    private func withMailToken(
+        for accountEmail: String? = nil,
+        _ operation: @escaping (GoogleOAuthToken) async -> Void
+    ) {
         Task {
             do {
-                let connectedEmail = appState.settings.googleConnectedEmail
+                let connectedEmail = accountEmail ?? appState.settings.googleConnectedEmail
                 _ = try await appState.withValidGoogleToken(
                     for: connectedEmail,
                     scopes: GoogleScopeSet.mail
