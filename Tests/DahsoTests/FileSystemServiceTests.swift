@@ -10,6 +10,10 @@ final class FileSystemServiceTests: XCTestCase {
         return root.path
     }
 
+    private func setModificationDate(_ date: Date, at path: String) throws {
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: path)
+    }
+
     func testMovePageMovesDatabaseFolderAsSingleItem() throws {
         let service = FileSystemService()
         let workspace = try makeTemporaryDirectory()
@@ -106,5 +110,125 @@ final class FileSystemServiceTests: XCTestCase {
         XCTAssertTrue(names.contains("Museum Notes.md"))
         XCTAssertFalse(names.contains("Photo 2.03 PM.md"))
         XCTAssertFalse(names.contains("2026-04-05-photo.md"))
+    }
+
+    func testDetectLegacyWorkspacesFindsKnownLegacyRootsWithContent() throws {
+        let service = FileSystemService()
+        let homePath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: homePath) }
+
+        let homeURL = URL(fileURLWithPath: homePath, isDirectory: true)
+        let dahsoLegacy = homeURL
+            .appendingPathComponent("Library/Application Support/dahso", isDirectory: true)
+        let bugbookSupport = homeURL
+            .appendingPathComponent("Library/Application Support/com.bugbook.app", isDirectory: true)
+        let bugbookICloud = homeURL
+            .appendingPathComponent(
+                "Library/Mobile Documents/iCloud~com~bugbook~app/Documents/Bugbook 2",
+                isDirectory: true
+            )
+
+        try FileManager.default.createDirectory(at: dahsoLegacy, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bugbookSupport, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bugbookICloud, withIntermediateDirectories: true)
+
+        try "legacy".write(
+            to: dahsoLegacy.appendingPathComponent("Legacy.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "bugbook".write(
+            to: bugbookSupport.appendingPathComponent("Inbox.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "icloud".write(
+            to: bugbookICloud.appendingPathComponent("Workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let detected = service.detectLegacyWorkspaces(homeDirectory: homeURL)
+
+        XCTAssertEqual(
+            detected.map(\.kind),
+            [.applicationSupportDahso, .bugbookApplicationSupport, .bugbookICloud]
+        )
+        XCTAssertEqual(detected.map(\.path), [dahsoLegacy, bugbookSupport, bugbookICloud])
+    }
+
+    func testDetectLegacyWorkspacesIgnoresExcludedTopLevelCacheFolders() throws {
+        let service = FileSystemService()
+        let homePath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: homePath) }
+
+        let homeURL = URL(fileURLWithPath: homePath, isDirectory: true)
+        let dahsoLegacy = homeURL
+            .appendingPathComponent("Library/Application Support/dahso", isDirectory: true)
+        let cacheDirectory = dahsoLegacy.appendingPathComponent("MailCache", isDirectory: true)
+        try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        try "cache".write(
+            to: cacheDirectory.appendingPathComponent("state.db"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(service.detectLegacyWorkspaces(homeDirectory: homeURL).isEmpty)
+    }
+
+    func testMigrateLegacyWorkspaceCopiesMissingFilesAndPreservesNewerDestinationFiles() async throws {
+        let service = FileSystemService()
+        let legacyPath = try makeTemporaryDirectory()
+        let destinationPath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: legacyPath) }
+        defer { try? FileManager.default.removeItem(atPath: destinationPath) }
+
+        let legacyRoot = URL(fileURLWithPath: legacyPath, isDirectory: true)
+        let destinationRoot = URL(fileURLWithPath: destinationPath, isDirectory: true)
+        let legacyNotes = legacyRoot.appendingPathComponent("Notes", isDirectory: true)
+        let destinationNotes = destinationRoot.appendingPathComponent("Notes", isDirectory: true)
+        let legacyPlan = legacyNotes.appendingPathComponent("Plan.md")
+        let destinationPlan = destinationNotes.appendingPathComponent("Plan.md")
+        let legacyArchive = legacyRoot.appendingPathComponent("Archive.md")
+        let cacheFile = legacyRoot
+            .appendingPathComponent("MailCache", isDirectory: true)
+            .appendingPathComponent("cache.db")
+
+        try FileManager.default.createDirectory(at: legacyNotes, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destinationNotes, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: cacheFile.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        try "legacy plan".write(to: legacyPlan, atomically: true, encoding: .utf8)
+        try "current plan".write(to: destinationPlan, atomically: true, encoding: .utf8)
+        try "archive".write(to: legacyArchive, atomically: true, encoding: .utf8)
+        try "cache".write(to: cacheFile, atomically: true, encoding: .utf8)
+
+        let now = Date()
+        try setModificationDate(now.addingTimeInterval(-3600), at: legacyPlan.path)
+        try setModificationDate(now, at: destinationPlan.path)
+
+        let legacyWorkspace = FileSystemService.LegacyWorkspace(
+            path: legacyRoot,
+            kind: .applicationSupportDahso
+        )
+
+        try await service.migrateLegacyWorkspace(legacyWorkspace, into: destinationRoot)
+
+        XCTAssertEqual(
+            try String(contentsOf: destinationPlan, encoding: .utf8),
+            "current plan"
+        )
+        XCTAssertEqual(
+            try String(contentsOf: destinationRoot.appendingPathComponent("Archive.md"), encoding: .utf8),
+            "archive"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: destinationRoot.appendingPathComponent("MailCache/cache.db").path
+            )
+        )
     }
 }

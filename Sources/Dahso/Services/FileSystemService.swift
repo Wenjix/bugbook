@@ -7,8 +7,51 @@ import Sentry
 @MainActor
 @Observable
 class FileSystemService {
+    struct LegacyWorkspace: Identifiable, Hashable, Sendable {
+        enum Kind: String, CaseIterable, Sendable {
+            case applicationSupportDahso
+            case bugbookApplicationSupport
+            case bugbookICloud
+
+            var title: String {
+                switch self {
+                case .applicationSupportDahso:
+                    return "Old Dahso application support data"
+                case .bugbookApplicationSupport:
+                    return "Bugbook application support data"
+                case .bugbookICloud:
+                    return "Bugbook iCloud workspace"
+                }
+            }
+
+            var sortOrder: Int {
+                switch self {
+                case .applicationSupportDahso: return 0
+                case .bugbookApplicationSupport: return 1
+                case .bugbookICloud: return 2
+                }
+            }
+        }
+
+        let path: URL
+        let kind: Kind
+
+        var id: String { defaultsKey }
+
+        var defaultsKey: String {
+            "legacyWorkspaceDismissed.\(kind.rawValue).\(path.standardizedFileURL.path)"
+        }
+
+        var displayPath: String {
+            let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+            guard path.path.hasPrefix(homePath) else { return path.path }
+            return path.path.replacingOccurrences(of: homePath, with: "~", options: [.anchored])
+        }
+    }
+
     var workspacePath: String?
     var recentWorkspaces: [String] = []
+    private(set) var legacyWorkspaces: [LegacyWorkspace] = []
 
     private let fileManager = FileManager.default
     private let recentWorkspacesKey = "recentWorkspaces"
@@ -16,6 +59,9 @@ class FileSystemService {
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
     private let favoritesPrefix = "favorites_"
+    private let legacyMigrationExcludedTopLevelNames: Set<String> = [
+        ".dahso", "MailCache", "EditorDrafts", "drafts"
+    ]
     nonisolated private static let hiddenSidebarFolders: Set<String> = [
         "attachments", "inbox", "raw",
         "aithreads", "assets", "comparisons", "covers", "icons",
@@ -26,33 +72,216 @@ class FileSystemService {
 
     init() {
         loadRecentWorkspaces()
+        refreshLegacyWorkspaces()
         logLegacyWorkspaceIfPresent()
     }
 
-    /// One-time diagnostic: if the legacy `~/Library/Application Support/dahso/`
-    /// directory from earlier builds still holds real data AND the canonical iCloud
-    /// workspace is empty, print a warning pointing at the manual rsync command so
-    /// the user can migrate by hand. No automatic file operations — caches live in
-    /// the legacy dir that must not sync to iCloud.
-    private func logLegacyWorkspaceIfPresent() {
-        let fm = FileManager.default
-        let legacyPath = ("~/Library/Application Support/dahso" as NSString).expandingTildeInPath
-        guard fm.fileExists(atPath: legacyPath) else { return }
+    func refreshLegacyWorkspaces() {
+        legacyWorkspaces = detectLegacyWorkspaces()
+    }
 
+    func detectLegacyWorkspaces(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> [LegacyWorkspace] {
+        legacyWorkspaceCandidates(homeDirectory: homeDirectory)
+            .filter { containsMigratableContent(at: $0.path) }
+            .sorted { lhs, rhs in
+                if lhs.kind.sortOrder != rhs.kind.sortOrder {
+                    return lhs.kind.sortOrder < rhs.kind.sortOrder
+                }
+                return lhs.path.path.localizedCaseInsensitiveCompare(rhs.path.path) == .orderedAscending
+            }
+    }
+
+    func migrateLegacyWorkspace(
+        _ legacyWorkspace: LegacyWorkspace,
+        into destinationURL: URL
+    ) async throws {
+        let excludedTopLevelNames = legacyMigrationExcludedTopLevelNames
+        try await Task.detached(priority: .utility) {
+            try Self.copyLegacyWorkspaceContents(
+                from: legacyWorkspace.path,
+                to: destinationURL,
+                excludedTopLevelNames: excludedTopLevelNames
+            )
+        }.value
+    }
+
+    private func logLegacyWorkspaceIfPresent() {
+        guard !legacyWorkspaces.isEmpty else { return }
         let canonicalPath = WorkspaceResolver.defaultWorkspacePath(
             allowBlockingICloudLookup: false,
             createIfMissing: false
         )
-        let canonicalHasContent: Bool = {
-            guard let entries = try? fm.contentsOfDirectory(atPath: canonicalPath) else {
-                return false
-            }
-            return entries.contains { !$0.hasPrefix(".") }
-        }()
-        guard !canonicalHasContent else { return }
+        for legacyWorkspace in legacyWorkspaces {
+            Log.fileSystem.warning(
+                "Legacy workspace detected at \(legacyWorkspace.path.path). Review the in-app migration banner before copying into \(canonicalPath)."
+            )
+        }
+    }
 
-        Log.fileSystem.warning(
-            "Legacy workspace detected at \(legacyPath) but canonical \(canonicalPath) is empty. Migrate manually with: rsync -av --exclude '.dahso' --exclude 'MailCache' --exclude 'EditorDrafts' --exclude 'drafts' \"\(legacyPath)/\" \"\(canonicalPath)/\""
+    private func legacyWorkspaceCandidates(homeDirectory: URL) -> [LegacyWorkspace] {
+        [
+            LegacyWorkspace(
+                path: homeDirectory
+                    .appendingPathComponent("Library", isDirectory: true)
+                    .appendingPathComponent("Application Support", isDirectory: true)
+                    .appendingPathComponent("dahso", isDirectory: true),
+                kind: .applicationSupportDahso
+            ),
+            LegacyWorkspace(
+                path: homeDirectory
+                    .appendingPathComponent("Library", isDirectory: true)
+                    .appendingPathComponent("Application Support", isDirectory: true)
+                    .appendingPathComponent("com.bugbook.app", isDirectory: true),
+                kind: .bugbookApplicationSupport
+            ),
+            LegacyWorkspace(
+                path: homeDirectory
+                    .appendingPathComponent("Library", isDirectory: true)
+                    .appendingPathComponent("Mobile Documents", isDirectory: true)
+                    .appendingPathComponent("iCloud~com~bugbook~app", isDirectory: true)
+                    .appendingPathComponent("Documents", isDirectory: true)
+                    .appendingPathComponent("Bugbook 2", isDirectory: true),
+                kind: .bugbookICloud
+            )
+        ]
+    }
+
+    private func containsMigratableContent(at directoryURL: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return false
+        }
+
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+
+        return entries.contains { !legacyMigrationExcludedTopLevelNames.contains($0.lastPathComponent) }
+    }
+
+    nonisolated private static func copyLegacyWorkspaceContents(
+        from sourceRoot: URL,
+        to destinationRoot: URL,
+        excludedTopLevelNames: Set<String>
+    ) throws {
+        let fileManager = FileManager.default
+        var sourceIsDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: sourceRoot.path, isDirectory: &sourceIsDirectory),
+              sourceIsDirectory.boolValue else {
+            throw legacyMigrationError("The legacy workspace could not be found.")
+        }
+
+        var destinationIsDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: destinationRoot.path, isDirectory: &destinationIsDirectory) {
+            guard destinationIsDirectory.boolValue else {
+                throw legacyMigrationError("The active workspace path is not a folder.")
+            }
+        } else {
+            try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
+        }
+
+        let entries = try fileManager.contentsOfDirectory(
+            at: sourceRoot,
+            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
+            options: []
+        )
+        for entry in entries where !excludedTopLevelNames.contains(entry.lastPathComponent) {
+            let destination = destinationRoot.appendingPathComponent(entry.lastPathComponent)
+            try mergeLegacyItem(from: entry, to: destination, fileManager: fileManager)
+        }
+    }
+
+    nonisolated private static func mergeLegacyItem(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        fileManager: FileManager
+    ) throws {
+        let sourceValues = try sourceURL.resourceValues(
+            forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
+        )
+        let sourceIsDirectory = sourceValues.isDirectory ?? false
+        var destinationIsDirectory: ObjCBool = false
+
+        guard fileManager.fileExists(atPath: destinationURL.path, isDirectory: &destinationIsDirectory) else {
+            try ensureParentDirectoryExists(for: destinationURL, fileManager: fileManager)
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            return
+        }
+
+        if sourceIsDirectory && destinationIsDirectory.boolValue {
+            let children = try fileManager.contentsOfDirectory(
+                at: sourceURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
+                options: []
+            )
+            for child in children {
+                try mergeLegacyItem(
+                    from: child,
+                    to: destinationURL.appendingPathComponent(child.lastPathComponent),
+                    fileManager: fileManager
+                )
+            }
+            return
+        }
+
+        guard !sourceIsDirectory && !destinationIsDirectory.boolValue else {
+            return
+        }
+
+        if shouldReplaceLegacyDestination(
+            sourceURL: sourceURL,
+            destinationURL: destinationURL
+        ) {
+            try fileManager.removeItem(at: destinationURL)
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        }
+    }
+
+    nonisolated private static func ensureParentDirectoryExists(
+        for destinationURL: URL,
+        fileManager: FileManager
+    ) throws {
+        try fileManager.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+    }
+
+    nonisolated private static func shouldReplaceLegacyDestination(
+        sourceURL: URL,
+        destinationURL: URL
+    ) -> Bool {
+        let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+        let sourceValues = try? sourceURL.resourceValues(forKeys: resourceKeys)
+        let destinationValues = try? destinationURL.resourceValues(forKeys: resourceKeys)
+
+        guard let sourceDate = sourceValues?.contentModificationDate,
+              let destinationDate = destinationValues?.contentModificationDate else {
+            return false
+        }
+
+        if sourceDate > destinationDate { return true }
+        if sourceDate < destinationDate { return false }
+
+        guard let sourceSize = sourceValues?.fileSize,
+              let destinationSize = destinationValues?.fileSize else {
+            return false
+        }
+        return sourceSize != destinationSize
+    }
+
+    nonisolated private static func legacyMigrationError(_ description: String) -> NSError {
+        NSError(
+            domain: NSCocoaErrorDomain,
+            code: NSFileWriteUnknownError,
+            userInfo: [NSLocalizedDescriptionKey: description]
         )
     }
 

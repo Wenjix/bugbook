@@ -1227,6 +1227,10 @@ struct ContentView: View {
                 .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
 
+            if !appState.legacyWorkspacesNeedingAttention.isEmpty {
+                legacyWorkspaceBanners
+            }
+
             // Content card with grout padding
             ZStack(alignment: .trailing) {
                 VStack(spacing: 0) {
@@ -1270,6 +1274,24 @@ struct ContentView: View {
             .padding(.bottom, Container.groutGap)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var legacyWorkspaceBanners: some View {
+        VStack(spacing: Container.groutGap) {
+            ForEach(appState.legacyWorkspacesNeedingAttention) { legacyWorkspace in
+                LegacyWorkspaceMigrationBanner(
+                    legacyWorkspace: legacyWorkspace,
+                    isMigrating: appState.isMigratingLegacyWorkspace(legacyWorkspace),
+                    errorMessage: appState.legacyWorkspaceErrorMessage(for: legacyWorkspace),
+                    onMigrate: { migrateLegacyWorkspace(legacyWorkspace) },
+                    onRevealInFinder: { appState.revealLegacyWorkspace(legacyWorkspace) },
+                    onDismiss: { appState.dismissLegacyWorkspace(legacyWorkspace) }
+                )
+            }
+        }
+        .padding(.leading, appState.sidebarVisible ? 0 : Container.groutGap)
+        .padding(.trailing, Container.groutGap)
+        .padding(.bottom, Container.groutGap)
     }
 
     private var activeTabLeadingPadding: CGFloat {
@@ -2717,6 +2739,12 @@ struct ContentView: View {
         browserManager.configureExtensions(appState.settings.browserExtensionPaths)
     }
 
+    private func migrateLegacyWorkspace(_ legacyWorkspace: FileSystemService.LegacyWorkspace) {
+        Task { @MainActor in
+            await appState.migrateLegacyWorkspace(legacyWorkspace, using: fileSystem)
+        }
+    }
+
     private func initializeWorkspace() {
         // Use the full iCloud-aware path (scans siblings to pick richest workspace)
         let workspacePath = WorkspaceResolver.defaultWorkspacePath(allowBlockingICloudLookup: true)
@@ -2726,11 +2754,13 @@ struct ContentView: View {
         fileSystem.setWorkspace(workspacePath)
         scheduleTrashPurgeIfNeeded(for: workspacePath)
         appState.workspacePath = workspacePath
+        appState.refreshLegacyWorkspaces(using: fileSystem)
 
         // Upgrade to the canonical iCloud workspace in the background if available.
         Task { @MainActor in
             if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
                 appState.workspacePath = iCloudPath
+                appState.refreshLegacyWorkspaces(using: fileSystem)
                 scheduleTrashPurgeIfNeeded(for: iCloudPath)
                 refreshFileTree()
                 startWorkspaceWatcher(path: iCloudPath)

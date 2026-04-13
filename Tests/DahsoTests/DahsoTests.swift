@@ -331,6 +331,12 @@ final class BlockDocumentTests: XCTestCase {
 
 @MainActor
 final class AppStateTests: XCTestCase {
+    private func makeUserDefaultsSuite() -> UserDefaults {
+        let suiteName = "AppStateTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
 
     private func makeEntry(
         name: String = "Test.md",
@@ -484,6 +490,25 @@ final class AppStateTests: XCTestCase {
         state.openGraphView()
         XCTAssertFalse(state.aiSidePanelOpen)
         XCTAssertEqual(state.currentView, .graphView)
+    }
+
+    func testDismissLegacyWorkspacePersistsAndFiltersBannerList() {
+        let defaults = makeUserDefaultsSuite()
+        let state = AppState(userDefaults: defaults)
+        let legacyWorkspace = FileSystemService.LegacyWorkspace(
+            path: URL(fileURLWithPath: "/tmp/legacy-workspace", isDirectory: true),
+            kind: .applicationSupportDahso
+        )
+
+        state.legacyWorkspaces = [legacyWorkspace]
+        XCTAssertEqual(state.legacyWorkspacesNeedingAttention, [legacyWorkspace])
+
+        state.dismissLegacyWorkspace(legacyWorkspace)
+
+        XCTAssertTrue(state.legacyWorkspacesNeedingAttention.isEmpty)
+
+        let reloadedState = AppState(userDefaults: defaults)
+        XCTAssertTrue(reloadedState.dismissedLegacyKeys.contains(legacyWorkspace.defaultsKey))
     }
 }
 

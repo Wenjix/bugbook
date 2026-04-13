@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 import Sentry
 
@@ -69,6 +70,8 @@ extension AppState {
 
 @MainActor
 @Observable class AppState {
+    private static let dismissedLegacyWorkspacesDefaultsKey = "dismissedLegacyWorkspaceKeys"
+
     var openTabs: [OpenFile] = []
     var activeTabIndex: Int = 0
 
@@ -103,11 +106,87 @@ extension AppState {
     var pendingAutoRecordPath: String?
     var flashcardReviewOpen: Bool = false
     var showShortcutOverlay: Bool = false
+    var dismissedLegacyKeys: Set<String> = []
+    var legacyWorkspaces: [FileSystemService.LegacyWorkspace] = []
+    var migratingLegacyWorkspaceKeys: Set<String> = []
+    var legacyWorkspaceErrorMessages: [String: String] = [:]
     @ObservationIgnored lazy var aiThreadStore = AiThreadStore()
+    @ObservationIgnored private let userDefaults: UserDefaults
 
     var activeTab: OpenFile? {
         guard activeTabIndex >= 0, activeTabIndex < openTabs.count else { return nil }
         return openTabs[activeTabIndex]
+    }
+
+    var legacyWorkspacesNeedingAttention: [FileSystemService.LegacyWorkspace] {
+        legacyWorkspaces.filter { !dismissedLegacyKeys.contains($0.defaultsKey) }
+    }
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        self.dismissedLegacyKeys = Set(
+            userDefaults.stringArray(forKey: Self.dismissedLegacyWorkspacesDefaultsKey) ?? []
+        )
+    }
+
+    func refreshLegacyWorkspaces(using fileSystem: FileSystemService) {
+        fileSystem.refreshLegacyWorkspaces()
+        legacyWorkspaces = fileSystem.legacyWorkspaces
+        legacyWorkspaceErrorMessages = legacyWorkspaceErrorMessages.filter { key, _ in
+            legacyWorkspaces.contains { $0.defaultsKey == key }
+        }
+    }
+
+    func dismissLegacyWorkspace(_ legacyWorkspace: FileSystemService.LegacyWorkspace) {
+        dismissedLegacyKeys.insert(legacyWorkspace.defaultsKey)
+        legacyWorkspaceErrorMessages.removeValue(forKey: legacyWorkspace.defaultsKey)
+        persistDismissedLegacyKeys()
+    }
+
+    func revealLegacyWorkspace(_ legacyWorkspace: FileSystemService.LegacyWorkspace) {
+        NSWorkspace.shared.activateFileViewerSelecting([legacyWorkspace.path])
+    }
+
+    func isMigratingLegacyWorkspace(_ legacyWorkspace: FileSystemService.LegacyWorkspace) -> Bool {
+        migratingLegacyWorkspaceKeys.contains(legacyWorkspace.defaultsKey)
+    }
+
+    func legacyWorkspaceErrorMessage(
+        for legacyWorkspace: FileSystemService.LegacyWorkspace
+    ) -> String? {
+        legacyWorkspaceErrorMessages[legacyWorkspace.defaultsKey]
+    }
+
+    func migrateLegacyWorkspace(
+        _ legacyWorkspace: FileSystemService.LegacyWorkspace,
+        using fileSystem: FileSystemService
+    ) async {
+        guard let workspacePath, !workspacePath.isEmpty else {
+            legacyWorkspaceErrorMessages[legacyWorkspace.defaultsKey] = "The active workspace is unavailable."
+            return
+        }
+
+        legacyWorkspaceErrorMessages.removeValue(forKey: legacyWorkspace.defaultsKey)
+        migratingLegacyWorkspaceKeys.insert(legacyWorkspace.defaultsKey)
+        defer { migratingLegacyWorkspaceKeys.remove(legacyWorkspace.defaultsKey) }
+
+        do {
+            try await fileSystem.migrateLegacyWorkspace(
+                legacyWorkspace,
+                into: URL(fileURLWithPath: workspacePath, isDirectory: true)
+            )
+            dismissLegacyWorkspace(legacyWorkspace)
+            refreshLegacyWorkspaces(using: fileSystem)
+        } catch {
+            legacyWorkspaceErrorMessages[legacyWorkspace.defaultsKey] = error.localizedDescription
+        }
+    }
+
+    private func persistDismissedLegacyKeys() {
+        userDefaults.set(
+            Array(dismissedLegacyKeys).sorted(),
+            forKey: Self.dismissedLegacyWorkspacesDefaultsKey
+        )
     }
 
     private func cleanDisplayName(_ name: String) -> String {
