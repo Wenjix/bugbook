@@ -796,10 +796,13 @@ struct MailPaneView: View {
     private func withMailToken(_ operation: @escaping (GoogleOAuthToken) async -> Void) {
         Task {
             do {
-                var settings = appState.settings
-                let token = try await GoogleAuthService.validToken(using: &settings, requiredScopes: GoogleScopeSet.mail)
-                appState.settings = settings
-                await operation(token)
+                let connectedEmail = appState.settings.googleConnectedEmail
+                _ = try await appState.withValidGoogleToken(
+                    for: connectedEmail,
+                    scopes: GoogleScopeSet.mail
+                ) { token in
+                    await operation(token)
+                }
             } catch {
                 mailService.error = error.localizedDescription
             }

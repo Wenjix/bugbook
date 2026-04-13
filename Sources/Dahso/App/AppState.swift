@@ -41,6 +41,32 @@ enum SidebarContextType: Equatable {
     }
 }
 
+extension AppState {
+    func withGoogleSettings<T>(
+        _ operation: (inout AppSettings) async throws -> T
+    ) async rethrows -> T {
+        var updatedSettings = settings
+        defer { settings = updatedSettings }
+        return try await operation(&updatedSettings)
+    }
+
+    func withValidGoogleToken<T>(
+        for email: String,
+        scopes: [String],
+        _ body: (GoogleOAuthToken) async throws -> T
+    ) async throws -> T {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await withGoogleSettings { settings in
+            let token = try await GoogleAuthService.validToken(
+                using: &settings,
+                forAccount: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                requiredScopes: scopes
+            )
+            return try await body(token)
+        }
+    }
+}
+
 @MainActor
 @Observable class AppState {
     var openTabs: [OpenFile] = []

@@ -319,9 +319,9 @@ struct WorkspaceCalendarView: View {
     private func syncCalendar() {
         guard let workspace = appState.workspacePath else { return }
         Task {
-            var settings = appState.settings
-            await calendarService.syncAllGoogleAccounts(workspace: workspace, settings: &settings)
-            appState.settings = settings
+            await appState.withGoogleSettings { settings in
+                await calendarService.syncAllGoogleAccounts(workspace: workspace, settings: &settings)
+            }
             await calendarService.loadDatabaseOverlayItems(workspace: workspace)
         }
     }
@@ -366,19 +366,17 @@ struct WorkspaceCalendarView: View {
             defer { isCreatingEvent = false }
 
             do {
-                var settings = appState.settings
-                let token = try await GoogleAuthService.validToken(
-                    using: &settings,
-                    forAccount: accountEmail,
-                    requiredScopes: GoogleScopeSet.calendar
-                )
-                let createdEvent = try await calendarService.createGoogleEvent(
-                    workspace: workspace,
-                    accountEmail: accountEmail,
-                    token: token,
-                    draft: createEventDraft
-                )
-                appState.settings = settings
+                let createdEvent = try await appState.withValidGoogleToken(
+                    for: accountEmail,
+                    scopes: GoogleScopeSet.calendar
+                ) { token in
+                    try await calendarService.createGoogleEvent(
+                        workspace: workspace,
+                        accountEmail: accountEmail,
+                        token: token,
+                        draft: createEventDraft
+                    )
+                }
                 calendarVM.selectedDate = createdEvent.startDate
                 createEventDraft = makeCreateEventDraft()
                 showCreateEventSheet = false
