@@ -61,6 +61,28 @@ if [ "$WT_COUNT" -gt 5 ]; then
 fi
 ```
 
+### Load the friction log
+
+Past runs leave lessons. Before dispatching any worker, read `.go/friction-log.md` if it exists. The file contains short entries describing regressions, unauthorized actions, merge conflicts, and unwired-UI incidents from prior runs. Do not treat it as optional background — the worker prompts below embed recent entries so implementers don't repeat the same mistakes.
+
+```bash
+FRICTION_LOG=".go/friction-log.md"
+if [ ! -f "$FRICTION_LOG" ]; then
+  cat > "$FRICTION_LOG" <<'INIT'
+# Friction Log
+
+Append-only record of incidents from /go and /dispatch runs. Each entry: date, ticket, category, what happened, how to avoid.
+
+Categories: regression | unauthorized-action | merge-conflict | unwired-ui | duplicated-logic | scope-creep | other
+INIT
+fi
+
+# Grab the most recent 20 entries for worker prompts
+RECENT_FRICTION=$(tail -200 "$FRICTION_LOG")
+```
+
+When an incident occurs later in the run, append to this file (see "Incident logging" in The Loop).
+
 ### Clean stale worktrees
 ```bash
 rm -rf .claude/worktrees/agent-*
@@ -352,6 +374,56 @@ If empty, note `no changes produced`, append iteration context, and move on or r
 6. If issues are small, fix directly on `dev`.
 7. If issues need another implementation pass, re-dispatch with explicit iteration context.
 
+### 5a. Reviewer pass (mandatory before verification)
+
+After the inline review and build pass, spawn an independent reviewer subagent. The reviewer has not seen the implementation conversation and reads only the diff + ticket + friction log. Its job is to catch the specific failure modes the inline review tends to miss.
+
+```
+Agent(
+  description: "Review diff for ticket <row_id>",
+  subagent_type: "feature-dev:code-reviewer",
+  prompt: <reviewer prompt below>,
+  mode: "default"
+)
+```
+
+**Reviewer prompt:**
+
+```
+You are reviewing an autonomous ticket implementation. You have not seen the conversation that produced it — only the inputs below.
+
+## Ticket
+<full ticket body, including eval>
+
+## Diff
+<output of git diff dev..HEAD or git diff on the worktree>
+
+## Recent friction patterns (do not repeat)
+<paste the most recent 10 entries from .go/friction-log.md>
+
+## Check for these specifically
+1. Regression — does this break any existing behavior the diff doesn't mean to touch?
+2. Duplicated logic — is there similar code elsewhere in the repo that this should have reused or replaced?
+3. Unwired code paths — for UI work, is the new view actually reachable from real navigation (sidebar, toolbar, command palette, shortcut)?
+4. Scope creep — does the diff change anything the ticket did not ask for? A UI polish beyond what was specified, a "while I'm here" refactor, an unrequested new feature — all count.
+5. Unauthorized status transitions — does the diff include a ticket status change to "Done"? Only the user does that.
+6. Hand-edits to generated files — project.pbxproj, generated resources, Package.resolved — these belong in their generating tool.
+
+## Output
+Return a review with exactly these sections, even if empty:
+- REGRESSIONS: <list or "none">
+- DUPLICATED LOGIC: <list or "none">
+- UNWIRED UI: <list or "none, or N/A for backend">
+- SCOPE CREEP: <list or "none">
+- UNAUTHORIZED ACTIONS: <list or "none">
+- OTHER CONCERNS: <list or "none">
+- VERDICT: pass | fail | fix-inline
+```
+
+On `pass` → continue to Verification.
+On `fix-inline` → apply the small fix directly, re-run the build, re-run the reviewer.
+On `fail` → revert the change, append a friction-log entry with the reviewer's verdict, and either re-dispatch with the reviewer notes as iteration context or mark the ticket blocked.
+
 **Codex commit on `dev`:**
 ```bash
 git checkout dev
@@ -410,7 +482,9 @@ fi
 
 If the build failure is small and obvious (e.g., missing import), fix it directly on `dev` during the retry loop rather than burning an attempt.
 
-### 6. Verify the change
+### 6. Verify the change (hard gate)
+
+Verification is a gate, not a step. No ticket moves to `Status=Review` without a passing verification. If verification fails and cannot be fixed in ≤3 attempts, the ticket reverts and stays as `To Do` with an iteration-context note — it does not advance.
 
 Verification depth must match the change.
 
@@ -440,8 +514,31 @@ swift test 2>&1 | tail -20
 
 **Pass / fail**
 - PASS → continue to step 7. Move ticket to `Review` status only. Never mark a ticket as Done without explicit user approval.
-- FAIL → append iteration context and error details, then either fix directly or redispatch.
-- Max 3 total attempts per ticket. After 3 failures, revert all changes for that ticket, mark it as blocked (set `Status=Review` with error details in the body), and move to the next ticket.
+- FAIL → append iteration context and error details, log a friction entry (see below), then either fix directly or redispatch. Ticket stays `To Do`, not `Review`.
+- Max 3 total attempts per ticket. After 3 failures, revert all changes for that ticket, mark it as blocked (set `Status=Review` with error details in the body), log the friction incident, and move to the next ticket.
+
+**Incident logging (on any failure above):**
+
+Any of these events gets appended to `.go/friction-log.md` immediately, before moving on:
+- Build failure not fixable in 3 attempts
+- Eval failure (UI or CLI)
+- Reviewer verdict of `fail`
+- Merge conflict (let /dispatch's merge protocol handle cleanup, but log it)
+- Any unauthorized action the reviewer flagged
+
+Format:
+```bash
+cat >> .go/friction-log.md <<ENTRY
+
+## $(date '+%Y-%m-%d %H:%M') — <ticket title>
+**Category:** <regression | unauthorized-action | merge-conflict | unwired-ui | duplicated-logic | scope-creep | other>
+**What happened:** <one sentence>
+**Root cause:** <one sentence>
+**How to avoid:** <one actionable rule for future runs>
+ENTRY
+```
+
+Keep entries terse. The log should stay readable at 200 entries — if it grows too big, the oldest entries stop fitting in worker prompts.
 
 ### 7. Update status and log
 
@@ -528,15 +625,18 @@ Completed: N | Blocked: N | Failed (reverted): N
 1. **Never stop to ask.** Make assumptions, record them, keep moving.
 2. **Never touch `main`.** All work lands on `dev`.
 3. **Clean stale worktrees first.** Start every run with the cleanup commands.
-4. **No eval, no worker.** Write the eval before dispatch.
-5. **Codex first.** Use Claude agents only when the worker-selection rules say Codex is the wrong tool.
-6. **Parallel is optional, not default.** Only run two tickets when file separation is truly clean.
-7. **Claude verifies everything.** Codex never self-verifies via MCP or Dahso.
-8. **UI must be navigable.** New UI is not done until it is reachable from real app navigation.
-9. **Review before merge.** Claude reviews Codex and Claude-agent diffs before merging.
-10. **Never auto-close.** Never mark a ticket as Done without explicit user approval. Move completed tickets to Review status only.
-11. **Try everything.** No skipping without a real external blocker.
-12. **Keep going.** Re-query after each ticket until the queue or time budget is exhausted.
+4. **Load the friction log before dispatching.** Past incidents go into worker prompts so they don't repeat.
+5. **No eval, no worker.** Write the eval before dispatch.
+6. **Codex first.** Use Claude agents only when the worker-selection rules say Codex is the wrong tool.
+7. **Parallel is optional, not default.** Only run two tickets when file separation is truly clean. For wider parallelism, use `/dispatch`.
+8. **Claude verifies everything.** Codex never self-verifies via MCP or Dahso.
+9. **Independent reviewer before verify.** A fresh-context reviewer subagent must pass the diff before verification runs.
+10. **Verification is a hard gate.** No `Status=Review` transition without a green build + passing eval.
+11. **UI must be navigable.** New UI is not done until it is reachable from real app navigation.
+12. **Never auto-close.** Never mark a ticket as Done without explicit user approval. Move completed tickets to Review status only.
+13. **Every failure logs friction.** Append an entry to `.go/friction-log.md` before moving on.
+14. **Try everything.** No skipping without a real external blocker.
+15. **Keep going.** Re-query after each ticket until the queue or time budget is exhausted.
 
 ---
 
