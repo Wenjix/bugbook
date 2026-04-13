@@ -49,6 +49,36 @@ class FileSystemService {
         }
     }
 
+    enum MigrationItemKind: String, Equatable, Sendable {
+        case file
+        case directory
+    }
+
+    enum MigrationError: LocalizedError, Equatable, Sendable {
+        case legacyWorkspaceNotFound
+        case activeWorkspaceNotFolder
+        case typeMismatch(
+            sourcePath: String,
+            destPath: String,
+            sourceKind: MigrationItemKind,
+            destKind: MigrationItemKind
+        )
+
+        var errorDescription: String? {
+            switch self {
+            case .legacyWorkspaceNotFound:
+                return "The legacy workspace could not be found."
+            case .activeWorkspaceNotFolder:
+                return "The active workspace path is not a folder."
+            case let .typeMismatch(sourcePath, destPath, sourceKind, destKind):
+                return """
+                Cannot migrate \(sourcePath) into \(destPath) because the source is a \
+                \(sourceKind.rawValue) and the destination is a \(destKind.rawValue).
+                """
+            }
+        }
+    }
+
     var workspacePath: String?
     var recentWorkspaces: [String] = []
     private(set) var legacyWorkspaces: [LegacyWorkspace] = []
@@ -59,8 +89,11 @@ class FileSystemService {
     private let customOrderPrefix = "sidebarOrder_"
     private let sidebarReferencePrefix = "sidebarReference_"
     private let favoritesPrefix = "favorites_"
-    private let legacyMigrationExcludedTopLevelNames: Set<String> = [
+    nonisolated private static let legacyMigrationExcludedTopLevelNames: Set<String> = [
         ".dahso", "MailCache", "EditorDrafts", "drafts"
+    ]
+    nonisolated private static let legacyMigrationExcludedEntryNames: Set<String> = [
+        ".git", ".build", ".DS_Store", "node_modules", ".venv", "__pycache__", ".swiftpm"
     ]
     nonisolated private static let hiddenSidebarFolders: Set<String> = [
         "attachments", "inbox", "raw",
@@ -97,12 +130,10 @@ class FileSystemService {
         _ legacyWorkspace: LegacyWorkspace,
         into destinationURL: URL
     ) async throws {
-        let excludedTopLevelNames = legacyMigrationExcludedTopLevelNames
         try await Task.detached(priority: .utility) {
             try Self.copyLegacyWorkspaceContents(
                 from: legacyWorkspace.path,
-                to: destinationURL,
-                excludedTopLevelNames: excludedTopLevelNames
+                to: destinationURL
             )
         }.value
     }
@@ -149,6 +180,59 @@ class FileSystemService {
     }
 
     private func containsMigratableContent(at directoryURL: URL) -> Bool {
+        Self.containsMigratableContent(
+            at: directoryURL,
+            fileManager: fileManager,
+            isTopLevel: true
+        )
+    }
+
+    nonisolated private static func copyLegacyWorkspaceContents(
+        from sourceRoot: URL,
+        to destinationRoot: URL
+    ) throws {
+        let fileManager = FileManager.default
+        var sourceIsDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: sourceRoot.path, isDirectory: &sourceIsDirectory),
+              sourceIsDirectory.boolValue else {
+            throw MigrationError.legacyWorkspaceNotFound
+        }
+
+        var destinationIsDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: destinationRoot.path, isDirectory: &destinationIsDirectory) {
+            guard destinationIsDirectory.boolValue else {
+                throw MigrationError.activeWorkspaceNotFolder
+            }
+        } else {
+            try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
+        }
+
+        let entries = try fileManager.contentsOfDirectory(
+            at: sourceRoot,
+            includingPropertiesForKeys: [
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+                .contentModificationDateKey,
+                .fileSizeKey
+            ],
+            options: []
+        )
+        for entry in entries {
+            let destination = destinationRoot.appendingPathComponent(entry.lastPathComponent)
+            try mergeLegacyItem(
+                from: entry,
+                to: destination,
+                fileManager: fileManager,
+                isTopLevel: true
+            )
+        }
+    }
+
+    nonisolated private static func containsMigratableContent(
+        at directoryURL: URL,
+        fileManager: FileManager,
+        isTopLevel: Bool
+    ) -> Bool {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
@@ -157,55 +241,71 @@ class FileSystemService {
 
         guard let entries = try? fileManager.contentsOfDirectory(
             at: directoryURL,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: []
         ) else {
             return false
         }
 
-        return entries.contains { !legacyMigrationExcludedTopLevelNames.contains($0.lastPathComponent) }
+        for entry in entries {
+            if shouldSkipLegacyEntry(named: entry.lastPathComponent, isTopLevel: isTopLevel) {
+                continue
+            }
+
+            let resourceValues = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            if resourceValues?.isSymbolicLink == true {
+                continue
+            }
+
+            if resourceValues?.isDirectory == true {
+                if containsMigratableContent(
+                    at: entry,
+                    fileManager: fileManager,
+                    isTopLevel: false
+                ) {
+                    return true
+                }
+                continue
+            }
+
+            return true
+        }
+
+        return false
     }
 
-    nonisolated private static func copyLegacyWorkspaceContents(
-        from sourceRoot: URL,
-        to destinationRoot: URL,
-        excludedTopLevelNames: Set<String>
-    ) throws {
-        let fileManager = FileManager.default
-        var sourceIsDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: sourceRoot.path, isDirectory: &sourceIsDirectory),
-              sourceIsDirectory.boolValue else {
-            throw legacyMigrationError("The legacy workspace could not be found.")
+    nonisolated private static func shouldSkipLegacyEntry(
+        named name: String,
+        isTopLevel: Bool
+    ) -> Bool {
+        if isTopLevel && legacyMigrationExcludedTopLevelNames.contains(name) {
+            return true
         }
-
-        var destinationIsDirectory: ObjCBool = false
-        if fileManager.fileExists(atPath: destinationRoot.path, isDirectory: &destinationIsDirectory) {
-            guard destinationIsDirectory.boolValue else {
-                throw legacyMigrationError("The active workspace path is not a folder.")
-            }
-        } else {
-            try fileManager.createDirectory(at: destinationRoot, withIntermediateDirectories: true)
-        }
-
-        let entries = try fileManager.contentsOfDirectory(
-            at: sourceRoot,
-            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
-            options: []
-        )
-        for entry in entries where !excludedTopLevelNames.contains(entry.lastPathComponent) {
-            let destination = destinationRoot.appendingPathComponent(entry.lastPathComponent)
-            try mergeLegacyItem(from: entry, to: destination, fileManager: fileManager)
-        }
+        return legacyMigrationExcludedEntryNames.contains(name)
     }
 
     nonisolated private static func mergeLegacyItem(
         from sourceURL: URL,
         to destinationURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        isTopLevel: Bool
     ) throws {
+        guard !shouldSkipLegacyEntry(named: sourceURL.lastPathComponent, isTopLevel: isTopLevel) else {
+            return
+        }
+
         let sourceValues = try sourceURL.resourceValues(
-            forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
+            forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
         )
+        // v1 skips symlinks entirely. Resolving them could copy unrelated data or recurse
+        // back into the workspace through external links.
+        if sourceValues.isSymbolicLink == true {
+            Log.fileSystem.warning(
+                "Skipping symbolic link during legacy workspace migration: \(sourceURL.path)"
+            )
+            return
+        }
+
         let sourceIsDirectory = sourceValues.isDirectory ?? false
         var destinationIsDirectory: ObjCBool = false
 
@@ -218,29 +318,43 @@ class FileSystemService {
         if sourceIsDirectory && destinationIsDirectory.boolValue {
             let children = try fileManager.contentsOfDirectory(
                 at: sourceURL,
-                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
+                includingPropertiesForKeys: [
+                    .isDirectoryKey,
+                    .isSymbolicLinkKey,
+                    .contentModificationDateKey,
+                    .fileSizeKey
+                ],
                 options: []
             )
             for child in children {
                 try mergeLegacyItem(
                     from: child,
                     to: destinationURL.appendingPathComponent(child.lastPathComponent),
-                    fileManager: fileManager
+                    fileManager: fileManager,
+                    isTopLevel: false
                 )
             }
             return
         }
 
         guard !sourceIsDirectory && !destinationIsDirectory.boolValue else {
-            return
+            throw MigrationError.typeMismatch(
+                sourcePath: sourceURL.path,
+                destPath: destinationURL.path,
+                sourceKind: migrationItemKind(isDirectory: sourceIsDirectory),
+                destKind: migrationItemKind(isDirectory: destinationIsDirectory.boolValue)
+            )
         }
 
         if shouldReplaceLegacyDestination(
             sourceURL: sourceURL,
             destinationURL: destinationURL
         ) {
-            try fileManager.removeItem(at: destinationURL)
-            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            try replaceDestinationFileAtomically(
+                from: sourceURL,
+                to: destinationURL,
+                fileManager: fileManager
+            )
         }
     }
 
@@ -262,27 +376,119 @@ class FileSystemService {
         let sourceValues = try? sourceURL.resourceValues(forKeys: resourceKeys)
         let destinationValues = try? destinationURL.resourceValues(forKeys: resourceKeys)
 
-        guard let sourceDate = sourceValues?.contentModificationDate,
-              let destinationDate = destinationValues?.contentModificationDate else {
+        guard let destinationDate = destinationValues?.contentModificationDate else {
+            return true
+        }
+
+        guard let sourceDate = sourceValues?.contentModificationDate else {
             return false
         }
 
         if sourceDate > destinationDate { return true }
-        if sourceDate < destinationDate { return false }
-
-        guard let sourceSize = sourceValues?.fileSize,
-              let destinationSize = destinationValues?.fileSize else {
+        if destinationDate >= sourceDate {
+            if destinationDate == sourceDate,
+               let sourceSize = sourceValues?.fileSize,
+               let destinationSize = destinationValues?.fileSize,
+               sourceSize != destinationSize {
+                Log.fileSystem.debug(
+                    """
+                    Skipping legacy migration overwrite for equal mtime conflict at \
+                    \(destinationURL.path); sizes differ between source and destination.
+                    """
+                )
+            }
             return false
         }
-        return sourceSize != destinationSize
+
+        return false
     }
 
-    nonisolated private static func legacyMigrationError(_ description: String) -> NSError {
-        NSError(
-            domain: NSCocoaErrorDomain,
-            code: NSFileWriteUnknownError,
-            userInfo: [NSLocalizedDescriptionKey: description]
+    nonisolated private static func replaceDestinationFileAtomically(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        fileManager: FileManager
+    ) throws {
+        if #available(macOS 10.6, *) {
+            let tempURL = temporarySiblingURL(
+                for: destinationURL,
+                marker: "dahso-migrate-tmp"
+            )
+            let backupName = "\(destinationURL.lastPathComponent).dahso-backup-\(UUID().uuidString)"
+            let backupURL = destinationURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(backupName)
+
+            do {
+                try fileManager.copyItem(at: sourceURL, to: tempURL)
+                _ = try fileManager.replaceItemAt(
+                    destinationURL,
+                    withItemAt: tempURL,
+                    backupItemName: backupName,
+                    options: []
+                )
+                if fileManager.fileExists(atPath: backupURL.path) {
+                    try fileManager.removeItem(at: backupURL)
+                }
+            } catch {
+                if fileManager.fileExists(atPath: tempURL.path) {
+                    try? fileManager.removeItem(at: tempURL)
+                }
+                if !fileManager.fileExists(atPath: destinationURL.path),
+                   fileManager.fileExists(atPath: backupURL.path) {
+                    try? fileManager.moveItem(at: backupURL, to: destinationURL)
+                } else if fileManager.fileExists(atPath: backupURL.path) {
+                    try? fileManager.removeItem(at: backupURL)
+                }
+                throw error
+            }
+            return
+        }
+
+        try replaceDestinationFileUsingBackupFallback(
+            from: sourceURL,
+            to: destinationURL,
+            fileManager: fileManager
         )
+    }
+
+    nonisolated private static func replaceDestinationFileUsingBackupFallback(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        fileManager: FileManager
+    ) throws {
+        let backupURL = temporarySiblingURL(for: destinationURL, marker: "dahso-backup")
+        try fileManager.moveItem(at: destinationURL, to: backupURL)
+
+        do {
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            try fileManager.removeItem(at: backupURL)
+        } catch {
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try? fileManager.removeItem(at: destinationURL)
+            }
+            if fileManager.fileExists(atPath: backupURL.path),
+               !fileManager.fileExists(atPath: destinationURL.path) {
+                try? fileManager.moveItem(at: backupURL, to: destinationURL)
+            }
+            throw error
+        }
+    }
+
+    nonisolated private static func temporarySiblingURL(
+        for destinationURL: URL,
+        marker: String
+    ) -> URL {
+        destinationURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "\(destinationURL.lastPathComponent).\(marker)-\(UUID().uuidString)"
+            )
+    }
+
+    nonisolated private static func migrationItemKind(
+        isDirectory: Bool
+    ) -> MigrationItemKind {
+        isDirectory ? .directory : .file
     }
 
     // MARK: - Workspace Management

@@ -14,6 +14,18 @@ final class FileSystemServiceTests: XCTestCase {
         try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: path)
     }
 
+    private func inodeNumber(at path: String) throws -> NSNumber {
+        let attributes = try FileManager.default.attributesOfItem(atPath: path)
+        guard let inode = attributes[.systemFileNumber] as? NSNumber else {
+            throw XCTSkip("systemFileNumber was unavailable for \(path)")
+        }
+        return inode
+    }
+
+    private func subpaths(in path: String) throws -> [String] {
+        try FileManager.default.subpathsOfDirectory(atPath: path)
+    }
+
     func testMovePageMovesDatabaseFolderAsSingleItem() throws {
         let service = FileSystemService()
         let workspace = try makeTemporaryDirectory()
@@ -176,6 +188,260 @@ final class FileSystemServiceTests: XCTestCase {
         XCTAssertTrue(service.detectLegacyWorkspaces(homeDirectory: homeURL).isEmpty)
     }
 
+    func testDetectLegacyWorkspacesCountsHiddenWorkspaceMarkers() throws {
+        let service = FileSystemService()
+        let homePath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: homePath) }
+
+        let homeURL = URL(fileURLWithPath: homePath, isDirectory: true)
+        let dahsoLegacy = homeURL
+            .appendingPathComponent("Library/Application Support/dahso", isDirectory: true)
+        try FileManager.default.createDirectory(at: dahsoLegacy, withIntermediateDirectories: true)
+        try "workspace".write(
+            to: dahsoLegacy.appendingPathComponent(".qmd-context-marker"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let detected = service.detectLegacyWorkspaces(homeDirectory: homeURL)
+
+        XCTAssertEqual(detected.map(\.kind), [.applicationSupportDahso])
+        XCTAssertEqual(detected.map(\.path), [dahsoLegacy])
+    }
+
+    func testMigrateLegacyWorkspaceSkipsEqualMtimeConflicts() async throws {
+        let service = FileSystemService()
+        let legacyPath = try makeTemporaryDirectory()
+        let destinationPath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: legacyPath) }
+        defer { try? FileManager.default.removeItem(atPath: destinationPath) }
+
+        let legacyRoot = URL(fileURLWithPath: legacyPath, isDirectory: true)
+        let destinationRoot = URL(fileURLWithPath: destinationPath, isDirectory: true)
+        let legacyFile = legacyRoot.appendingPathComponent("a.txt")
+        let destinationFile = destinationRoot.appendingPathComponent("a.txt")
+        let sharedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try "legacy-content".write(to: legacyFile, atomically: true, encoding: .utf8)
+        try "current".write(to: destinationFile, atomically: true, encoding: .utf8)
+        try setModificationDate(sharedDate, at: legacyFile.path)
+        try setModificationDate(sharedDate, at: destinationFile.path)
+
+        let legacyWorkspace = FileSystemService.LegacyWorkspace(
+            path: legacyRoot,
+            kind: .applicationSupportDahso
+        )
+
+        try await service.migrateLegacyWorkspace(legacyWorkspace, into: destinationRoot)
+
+        XCTAssertEqual(
+            try String(contentsOf: destinationFile, encoding: .utf8),
+            "current"
+        )
+    }
+
+    func testMigrateLegacyWorkspaceUsesAtomicReplaceWithoutLeavingArtifacts() async throws {
+        let service = FileSystemService()
+        let legacyPath = try makeTemporaryDirectory()
+        let destinationPath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: legacyPath) }
+        defer { try? FileManager.default.removeItem(atPath: destinationPath) }
+
+        let legacyRoot = URL(fileURLWithPath: legacyPath, isDirectory: true)
+        let destinationRoot = URL(fileURLWithPath: destinationPath, isDirectory: true)
+        let legacyFile = legacyRoot.appendingPathComponent("a.txt")
+        let destinationFile = destinationRoot.appendingPathComponent("a.txt")
+
+        try "legacy replacement".write(to: legacyFile, atomically: true, encoding: .utf8)
+        try "current".write(to: destinationFile, atomically: true, encoding: .utf8)
+
+        let now = Date()
+        try setModificationDate(now, at: legacyFile.path)
+        try setModificationDate(now.addingTimeInterval(-3600), at: destinationFile.path)
+
+        let sourceInode = try inodeNumber(at: legacyFile.path)
+        let originalDestinationInode = try inodeNumber(at: destinationFile.path)
+        let legacyWorkspace = FileSystemService.LegacyWorkspace(
+            path: legacyRoot,
+            kind: .applicationSupportDahso
+        )
+
+        try await service.migrateLegacyWorkspace(legacyWorkspace, into: destinationRoot)
+
+        XCTAssertEqual(
+            try String(contentsOf: destinationFile, encoding: .utf8),
+            "legacy replacement"
+        )
+        XCTAssertNotEqual(try inodeNumber(at: destinationFile.path), sourceInode)
+        XCTAssertNotEqual(try inodeNumber(at: destinationFile.path), originalDestinationInode)
+        XCTAssertFalse(
+            try subpaths(in: destinationPath).contains { path in
+                path.contains(".dahso-migrate-tmp-") || path.contains(".dahso-backup-")
+            }
+        )
+    }
+
+    func testMigrateLegacyWorkspaceCopiesAllowedHiddenFilesAndSkipsKnownToolingState() async throws {
+        let service = FileSystemService()
+        let legacyPath = try makeTemporaryDirectory()
+        let destinationPath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: legacyPath) }
+        defer { try? FileManager.default.removeItem(atPath: destinationPath) }
+
+        let legacyRoot = URL(fileURLWithPath: legacyPath, isDirectory: true)
+        let destinationRoot = URL(fileURLWithPath: destinationPath, isDirectory: true)
+        let gitDirectory = legacyRoot.appendingPathComponent(".git", isDirectory: true)
+        let notesDirectory = legacyRoot.appendingPathComponent("notes", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: gitDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        try "ref: refs/heads/main".write(
+            to: gitDirectory.appendingPathComponent("HEAD"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "finder noise".write(
+            to: legacyRoot.appendingPathComponent(".DS_Store"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "workspace".write(
+            to: legacyRoot.appendingPathComponent(".qmd-context-marker"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "secret".write(
+            to: notesDirectory.appendingPathComponent(".secret"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let legacyWorkspace = FileSystemService.LegacyWorkspace(
+            path: legacyRoot,
+            kind: .applicationSupportDahso
+        )
+
+        try await service.migrateLegacyWorkspace(legacyWorkspace, into: destinationRoot)
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: destinationRoot.appendingPathComponent(".qmd-context-marker").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: destinationRoot.appendingPathComponent("notes/.secret").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: destinationRoot.appendingPathComponent(".git/HEAD").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: destinationRoot.appendingPathComponent(".DS_Store").path
+            )
+        )
+    }
+
+    func testMigrateLegacyWorkspaceSkipsSymbolicLinks() async throws {
+        let service = FileSystemService()
+        let legacyPath = try makeTemporaryDirectory()
+        let destinationPath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: legacyPath) }
+        defer { try? FileManager.default.removeItem(atPath: destinationPath) }
+
+        let legacyRoot = URL(fileURLWithPath: legacyPath, isDirectory: true)
+        let destinationRoot = URL(fileURLWithPath: destinationPath, isDirectory: true)
+        let realFile = legacyRoot.appendingPathComponent("real.txt")
+        let linkFile = legacyRoot.appendingPathComponent("link.txt")
+
+        try "real".write(to: realFile, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: linkFile, withDestinationURL: realFile)
+
+        let legacyWorkspace = FileSystemService.LegacyWorkspace(
+            path: legacyRoot,
+            kind: .applicationSupportDahso
+        )
+
+        try await service.migrateLegacyWorkspace(legacyWorkspace, into: destinationRoot)
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: destinationRoot.appendingPathComponent("real.txt").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: destinationRoot.appendingPathComponent("link.txt").path
+            )
+        )
+    }
+
+    func testMigrateLegacyWorkspaceThrowsTypeMismatchAndAppStateSurfacesIt() async throws {
+        let service = FileSystemService()
+        let legacyPath = try makeTemporaryDirectory()
+        let destinationPath = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: legacyPath) }
+        defer { try? FileManager.default.removeItem(atPath: destinationPath) }
+
+        let legacyRoot = URL(fileURLWithPath: legacyPath, isDirectory: true)
+        let destinationRoot = URL(fileURLWithPath: destinationPath, isDirectory: true)
+        let sourceFile = legacyRoot.appendingPathComponent("foo")
+        let destinationDirectory = destinationRoot.appendingPathComponent("foo", isDirectory: true)
+
+        try "legacy".write(to: sourceFile, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
+        let legacyWorkspace = FileSystemService.LegacyWorkspace(
+            path: legacyRoot,
+            kind: .applicationSupportDahso
+        )
+        let expectedSourcePath = sourceFile.resolvingSymlinksInPath().path
+        let expectedDestinationPath = destinationDirectory.resolvingSymlinksInPath().path
+        var caughtError: FileSystemService.MigrationError?
+
+        do {
+            try await service.migrateLegacyWorkspace(legacyWorkspace, into: destinationRoot)
+            XCTFail("Expected a type mismatch error")
+        } catch let error as FileSystemService.MigrationError {
+            caughtError = error
+            guard case let .typeMismatch(sourcePath, destPath, sourceKind, destKind) = error else {
+                return XCTFail("Expected a type mismatch error, got \(error)")
+            }
+            XCTAssertEqual(
+                URL(fileURLWithPath: sourcePath).resolvingSymlinksInPath().path,
+                expectedSourcePath
+            )
+            XCTAssertEqual(
+                URL(fileURLWithPath: destPath).resolvingSymlinksInPath().path,
+                expectedDestinationPath
+            )
+            XCTAssertEqual(sourceKind, .file)
+            XCTAssertEqual(destKind, .directory)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let appState = AppState()
+        appState.workspacePath = destinationPath
+        appState.legacyWorkspaces = [legacyWorkspace]
+
+        await appState.migrateLegacyWorkspace(legacyWorkspace, using: service)
+
+        let expectedDescription = try XCTUnwrap(caughtError?.localizedDescription)
+
+        XCTAssertEqual(
+            appState.legacyWorkspaceErrorMessage(for: legacyWorkspace),
+            expectedDescription
+        )
+        XCTAssertEqual(
+            appState.aggregatedLegacyMigrationError,
+            expectedDescription
+        )
+    }
+
     func testMigrateLegacyWorkspaceCopiesMissingFilesAndPreservesNewerDestinationFiles() async throws {
         let service = FileSystemService()
         let legacyPath = try makeTemporaryDirectory()
@@ -230,5 +496,9 @@ final class FileSystemServiceTests: XCTestCase {
                 atPath: destinationRoot.appendingPathComponent("MailCache/cache.db").path
             )
         )
+        XCTAssertEqual(try String(contentsOf: legacyPlan, encoding: .utf8), "legacy plan")
+        XCTAssertEqual(try String(contentsOf: legacyArchive, encoding: .utf8), "archive")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyPlan.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyArchive.path))
     }
 }
