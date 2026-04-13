@@ -185,6 +185,34 @@ extension AppState {
         }
     }
 
+    /// Migrate every detected legacy workspace, sequentially. Errors are surfaced via
+    /// `aggregatedLegacyMigrationError`; sources that succeed get dismissed individually
+    /// so the banner can shrink to only those that still need attention.
+    func migrateAllLegacyWorkspaces(using fileSystem: FileSystemService) async {
+        let workspaces = legacyWorkspacesNeedingAttention
+        guard !workspaces.isEmpty else { return }
+        for ws in workspaces {
+            await migrateLegacyWorkspace(ws, using: fileSystem)
+        }
+    }
+
+    func dismissAllLegacyWorkspaces() {
+        for ws in legacyWorkspacesNeedingAttention {
+            dismissLegacyWorkspace(ws)
+        }
+    }
+
+    var isMigratingAnyLegacyWorkspace: Bool {
+        !migratingLegacyWorkspaceKeys.isEmpty
+    }
+
+    var aggregatedLegacyMigrationError: String? {
+        let errors = legacyWorkspacesNeedingAttention
+            .compactMap { legacyWorkspaceErrorMessages[$0.defaultsKey] }
+        guard !errors.isEmpty else { return nil }
+        return errors.joined(separator: " · ")
+    }
+
     private func persistDismissedLegacyKeys() {
         userDefaults.set(
             Array(dismissedLegacyKeys).sorted(),

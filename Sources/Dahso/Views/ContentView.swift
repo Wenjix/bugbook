@@ -1277,21 +1277,23 @@ struct ContentView: View {
     }
 
     private var legacyWorkspaceBanners: some View {
-        VStack(spacing: Container.groutGap) {
-            ForEach(appState.legacyWorkspacesNeedingAttention) { legacyWorkspace in
+        Group {
+            if !appState.legacyWorkspacesNeedingAttention.isEmpty {
                 LegacyWorkspaceMigrationBanner(
-                    legacyWorkspace: legacyWorkspace,
-                    isMigrating: appState.isMigratingLegacyWorkspace(legacyWorkspace),
-                    errorMessage: appState.legacyWorkspaceErrorMessage(for: legacyWorkspace),
-                    onMigrate: { migrateLegacyWorkspace(legacyWorkspace) },
-                    onRevealInFinder: { appState.revealLegacyWorkspace(legacyWorkspace) },
-                    onDismiss: { appState.dismissLegacyWorkspace(legacyWorkspace) }
+                    legacyWorkspaces: appState.legacyWorkspacesNeedingAttention,
+                    isMigrating: appState.isMigratingAnyLegacyWorkspace,
+                    errorMessage: appState.aggregatedLegacyMigrationError,
+                    onMigrateAll: {
+                        Task { await appState.migrateAllLegacyWorkspaces(using: fileSystem) }
+                    },
+                    onRevealInFinder: { appState.revealLegacyWorkspace($0) },
+                    onDismissAll: { appState.dismissAllLegacyWorkspaces() }
                 )
+                .padding(.leading, appState.sidebarVisible ? 0 : Container.groutGap)
+                .padding(.trailing, Container.groutGap)
+                .padding(.bottom, Container.groutGap)
             }
         }
-        .padding(.leading, appState.sidebarVisible ? 0 : Container.groutGap)
-        .padding(.trailing, Container.groutGap)
-        .padding(.bottom, Container.groutGap)
     }
 
     private var activeTabLeadingPadding: CGFloat {
@@ -1667,9 +1669,14 @@ struct ContentView: View {
     @ViewBuilder
     private func paneContentRouting(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
         if file.isEmptyTab {
-            WelcomeView(
-                onNewNote: { createNewFile() },
-                onOpenFolder: { Task { await openWorkspace() } }
+            // New tabs default to Home — gives the user orientation (time-aware state, recent
+            // activity, pinned databases) instead of a blank New Note / Open Folder dead-end.
+            // Those actions are still in the sidebar, the command palette, and Home itself.
+            HomeView(
+                appState: appState,
+                workspacePath: appState.workspacePath,
+                mailService: mailService,
+                onNavigateToFile: { path in navigateToFilePath(path) }
             )
             .onAppear { openDefaultPageIfConfigured() }
         } else if file.isDatabaseRow, let dbPath = file.databasePath, let rowId = file.databaseRowId {
