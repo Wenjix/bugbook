@@ -24,6 +24,7 @@ struct PaneContentView: View {
     @State private var findQuery = ""
     @State private var findCurrentIndex: Int?
     @State private var findMatchCache: [BlockFindSelection] = []
+    @State private var findAutoExpandedToggleIds: Set<UUID> = []
     @FocusState private var findFieldFocused: Bool
 
     private var isFocusedPane: Bool {
@@ -66,7 +67,7 @@ struct PaneContentView: View {
         searchBlocks(doc.blocks)
         findMatchCache = results
         if let findCurrentIndex, findCurrentIndex < results.count {
-            doc.findSelectedMatch = results[findCurrentIndex]
+            selectFindMatch(at: findCurrentIndex, in: results, shouldScroll: false)
         } else {
             doc.findSelectedMatch = nil
         }
@@ -307,22 +308,41 @@ struct PaneContentView: View {
         } else {
             nextIndex = forward ? 0 : (matches.count - 1)
         }
-        findCurrentIndex = nextIndex
-        if let doc = activeBlockDocument {
-            doc.findSelectedMatch = matches[nextIndex]
-            doc.scrollToBlockId = matches[nextIndex].blockId
+        selectFindMatch(at: nextIndex, in: matches)
+    }
+
+    private func selectFindMatch(
+        at index: Int,
+        in matches: [BlockFindSelection]? = nil,
+        shouldScroll: Bool = true
+    ) {
+        let matches = matches ?? findMatchCache
+        guard matches.indices.contains(index),
+              let doc = activeBlockDocument else { return }
+        let match = matches[index]
+        findCurrentIndex = index
+        findAutoExpandedToggleIds.formUnion(doc.expandAncestorToggles(of: match.blockId))
+        doc.findSelectedMatch = match
+        if shouldScroll {
+            doc.scrollToBlockId = match.blockId
         }
     }
 
     private func closeFindBar() {
+        let doc = activeBlockDocument
+        let autoExpandedToggleIds = findAutoExpandedToggleIds
         withAnimation(.easeInOut(duration: 0.15)) {
             showFindBar = false
         }
-        activeBlockDocument?.findHighlightQuery = ""
-        activeBlockDocument?.findSelectedMatch = nil
+        doc?.findHighlightQuery = ""
+        doc?.findSelectedMatch = nil
+        for toggleId in autoExpandedToggleIds {
+            doc?.setToggleExpanded(id: toggleId, to: false)
+        }
         findQuery = ""
         findCurrentIndex = nil
         findMatchCache = []
+        findAutoExpandedToggleIds = []
         findFieldFocused = false
     }
 

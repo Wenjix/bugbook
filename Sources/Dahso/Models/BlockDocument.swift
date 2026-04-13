@@ -713,6 +713,28 @@ class BlockDocument {
         }
     }
 
+    /// Expands any collapsed toggle/headingToggle ancestors for the given block,
+    /// returning only the toggles whose state changed.
+    @discardableResult
+    func expandAncestorToggles(of blockId: UUID) -> [UUID] {
+        guard let path = blockPath(to: blockId), path.count > 1 else { return [] }
+        var expandedToggleIds: [UUID] = []
+        withAnimation(.easeInOut(duration: 0.12)) {
+            expandAncestorToggles(
+                along: path.dropLast(),
+                in: &blocks,
+                expandedToggleIds: &expandedToggleIds
+            )
+        }
+        return expandedToggleIds
+    }
+
+    func setToggleExpanded(id blockId: UUID, to isExpanded: Bool) {
+        withAnimation(.easeInOut(duration: 0.12)) {
+            _ = setToggleExpanded(id: blockId, to: isExpanded, in: &blocks)
+        }
+    }
+
     /// When converting a block to headingToggle, absorb subsequent sibling blocks
     /// until hitting a heading/headingToggle of equal or larger size (level number <= ours).
     /// Non-heading blocks are always absorbed.
@@ -1775,6 +1797,57 @@ class BlockDocument {
             }
         }
         return ordered
+    }
+
+    private func blockPath(to id: UUID, in blocks: [Block]? = nil) -> [Int]? {
+        blockPath(to: id, in: blocks ?? self.blocks, currentPath: [])
+    }
+
+    private func blockPath(to id: UUID, in blocks: [Block], currentPath: [Int]) -> [Int]? {
+        for (index, block) in blocks.enumerated() {
+            let nextPath = currentPath + [index]
+            if block.id == id {
+                return nextPath
+            }
+            if let nestedPath = blockPath(to: id, in: block.children, currentPath: nextPath) {
+                return nestedPath
+            }
+        }
+        return nil
+    }
+
+    private func expandAncestorToggles(
+        along path: ArraySlice<Int>,
+        in blocks: inout [Block],
+        expandedToggleIds: inout [UUID]
+    ) {
+        guard let index = path.first, blocks.indices.contains(index) else { return }
+        if blocks[index].type == .toggle || blocks[index].type == .headingToggle,
+           !blocks[index].isExpanded {
+            blocks[index].isExpanded = true
+            expandedToggleIds.append(blocks[index].id)
+        }
+        expandAncestorToggles(
+            along: path.dropFirst(),
+            in: &blocks[index].children,
+            expandedToggleIds: &expandedToggleIds
+        )
+    }
+
+    private func setToggleExpanded(id blockId: UUID, to isExpanded: Bool, in blocks: inout [Block]) -> Bool {
+        for index in blocks.indices {
+            if blocks[index].id == blockId {
+                guard blocks[index].type == .toggle || blocks[index].type == .headingToggle else {
+                    return false
+                }
+                blocks[index].isExpanded = isExpanded
+                return true
+            }
+            if setToggleExpanded(id: blockId, to: isExpanded, in: &blocks[index].children) {
+                return true
+            }
+        }
+        return false
     }
 
     private func unregisterFramesRecursively(for block: Block) {
