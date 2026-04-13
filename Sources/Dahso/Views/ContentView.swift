@@ -2420,15 +2420,27 @@ struct ContentView: View {
             if paneReplaceWarningId == focusedPaneId {
                 // Second press within timeout — proceed: close terminal, replace in place
                 clearPaneReplaceWarning()
-                cleanupPaneTabResources(paneId: focusedPaneId, tabId: focusedTabId)
-                // Fall through to replace the focused terminal pane directly
-                let file = makeOpenFile(for: entry, id: focusedTabId)
-                workspaceManager.updatePaneContent(
+
+                let willReuseExistingTab = workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
+                    leaf.tabs.compactMap(\.openFile).contains { $0.path == entry.path }
+                } == true
+
+                if !willReuseExistingTab {
+                    cleanupPaneTabResources(paneId: focusedPaneId, tabId: focusedTabId)
+                }
+
+                let handledWithoutLoad = appState.openFileReplacingCurrentTab(
+                    entry,
+                    workspaceManager: workspaceManager,
                     paneId: focusedPaneId,
-                    content: .document(openFile: file)
+                    pushHistory: true,
+                    preferExistingTab: true
                 )
-                workspaceManager.setFocusedPane(id: focusedPaneId)
-                loadFileContentForPane(entry: entry, tabId: focusedTabId)
+
+                if !handledWithoutLoad,
+                   let updatedTabId = workspaceManager.focusedPaneTabID {
+                    loadFileContentForPane(entry: entry, tabId: updatedTabId)
+                }
                 return
             } else {
                 // First press — show amber warning on the terminal pane
@@ -2447,16 +2459,27 @@ struct ContentView: View {
             targetPaneId = focusedPaneId
         }
 
-        // Update pane content
-        let targetTabId = workspaceManager.leaf(id: targetPaneId)?.activeTabID ?? UUID()
-        let file = makeOpenFile(for: entry, id: targetTabId)
-        cleanupPaneTabResources(paneId: targetPaneId, tabId: targetTabId)
-        workspaceManager.updatePaneContent(
+        let willReuseExistingTab = workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
+            leaf.tabs.compactMap(\.openFile).contains { $0.path == entry.path }
+        } == true
+
+        if !willReuseExistingTab,
+           let targetTabId = workspaceManager.leaf(id: targetPaneId)?.activeTabID {
+            cleanupPaneTabResources(paneId: targetPaneId, tabId: targetTabId)
+        }
+
+        let handledWithoutLoad = appState.openFileReplacingCurrentTab(
+            entry,
+            workspaceManager: workspaceManager,
             paneId: targetPaneId,
-            content: .document(openFile: file)
+            pushHistory: true,
+            preferExistingTab: true
         )
-        workspaceManager.setFocusedPane(id: targetPaneId)
-        loadFileContentForPane(entry: entry, tabId: targetTabId)
+
+        if !handledWithoutLoad,
+           let updatedTabId = workspaceManager.focusedPaneTabID {
+            loadFileContentForPane(entry: entry, tabId: updatedTabId)
+        }
     }
 
     /// Check if a pane has an active terminal session.

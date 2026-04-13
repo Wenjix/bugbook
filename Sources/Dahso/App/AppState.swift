@@ -132,6 +132,44 @@ extension AppState {
         )
     }
 
+    private func reidentified(_ tab: OpenFile, as id: UUID) -> OpenFile {
+        OpenFile(
+            id: id,
+            path: tab.path,
+            content: tab.content,
+            isDirty: tab.isDirty,
+            isEmptyTab: tab.isEmptyTab,
+            kind: tab.kind,
+            displayName: tab.displayName,
+            openerPagePath: tab.openerPagePath,
+            icon: tab.icon,
+            navigationHistory: tab.navigationHistory,
+            navigationHistoryIndex: tab.navigationHistoryIndex,
+            browserSavedRecordID: tab.browserSavedRecordID,
+            browserPageZoom: tab.browserPageZoom
+        )
+    }
+
+    private func applyingEntry(_ entry: FileEntry, to tab: OpenFile, pushHistory: Bool) -> OpenFile {
+        var updatedTab = tab
+        updatedTab.path = entry.path
+        updatedTab.content = ""
+        updatedTab.isDirty = false
+        updatedTab.isEmptyTab = entry.path.isEmpty
+        updatedTab.kind = entry.kind
+        updatedTab.displayName = cleanDisplayName(entry.name)
+        updatedTab.icon = entry.icon
+        updatedTab.openerPagePath = nil
+
+        if pushHistory {
+            pushHistoryPath(entry.path, into: &updatedTab)
+        } else {
+            syncHistoryCurrentPath(entry.path, into: &updatedTab)
+        }
+
+        return updatedTab
+    }
+
     func openFile(_ entry: FileEntry) {
         if let existingIndex = openTabs.firstIndex(where: { $0.path == entry.path }) {
             activeTabIndex = existingIndex
@@ -167,6 +205,41 @@ extension AppState {
         }
 
         applyEntry(entry, toTabAt: activeTabIndex, pushHistory: pushHistory)
+        return false
+    }
+
+    /// Pane-aware replacement path used by the unified pane/tab workspace model.
+    /// Returns true when caller should not load content because an existing pane tab
+    /// was focused, false when the active pane tab was replaced and needs loading.
+    @discardableResult
+    func openFileReplacingCurrentTab(
+        _ entry: FileEntry,
+        workspaceManager: WorkspaceManager,
+        paneId: UUID,
+        pushHistory: Bool = true,
+        preferExistingTab: Bool = true
+    ) -> Bool {
+        if preferExistingTab,
+           let workspace = workspaceManager.activeWorkspace {
+            for leaf in workspace.allLeaves {
+                if let existingFile = leaf.tabs.compactMap(\.openFile).first(where: { $0.path == entry.path }) {
+                    workspaceManager.selectPaneTab(paneId: leaf.id, tabId: existingFile.id)
+                    return true
+                }
+            }
+        }
+
+        guard let leaf = workspaceManager.leaf(id: paneId) else { return true }
+
+        let tabId = leaf.activeTabID
+        let baseTab = leaf.activeOpenFile.map { reidentified($0, as: tabId) } ?? makeTab(for: entry, id: tabId)
+        let updatedTab = applyingEntry(entry, to: baseTab, pushHistory: pushHistory)
+
+        workspaceManager.updatePaneContent(
+            paneId: paneId,
+            content: .document(openFile: updatedTab)
+        )
+        workspaceManager.setFocusedPane(id: paneId)
         return false
     }
 
@@ -216,23 +289,7 @@ extension AppState {
 
     private func applyEntry(_ entry: FileEntry, toTabAt tabIndex: Int, pushHistory: Bool) {
         guard tabIndex >= 0, tabIndex < openTabs.count else { return }
-        var tab = openTabs[tabIndex]
-        tab.path = entry.path
-        tab.content = ""
-        tab.isDirty = false
-        tab.isEmptyTab = entry.path.isEmpty
-        tab.kind = entry.kind
-        tab.displayName = cleanDisplayName(entry.name)
-        tab.icon = entry.icon
-        tab.openerPagePath = nil
-
-        if pushHistory {
-            pushHistoryPath(entry.path, into: &tab)
-        } else {
-            syncHistoryCurrentPath(entry.path, into: &tab)
-        }
-
-        openTabs[tabIndex] = tab
+        openTabs[tabIndex] = applyingEntry(entry, to: openTabs[tabIndex], pushHistory: pushHistory)
     }
 
     private func pushHistoryPath(_ path: String, into tab: inout OpenFile) {
