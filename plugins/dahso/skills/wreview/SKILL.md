@@ -56,7 +56,8 @@ Read `references/gather.md` for the full list of data source queries. Run all so
 - Git activity (commits, PRs across repos — last 7 days)
 - Gmail (inbox, sent mail for commitments, starred items)
 - Google Calendar (past 7 days + upcoming week)
-- iMCP if available (Apple Calendar, Messages, Reminders)
+- iMessage via mac-messages MCP — active 1:1 and group threads from the last 14 days. Pull unresponded 1:1s (last msg not from You), read group threads in parallel for catch-up highlights. See Phase 2a for the draft-and-confirm flow.
+- iMCP if available (Apple Calendar, Reminders)
 - Claude Code insights (`~/.claude/usage-data/facets/`)
 - Claude Code memory (`~/.claude/projects/-Users-maxforsey/memory/`)
 - Alignment Zone (personal project progress)
@@ -76,9 +77,11 @@ echo '<filled template>' | dahso create "Weekly Reviews" \
 Pre-fill these sections from gathered data:
 - **Observe > What happened this week** — tickets completed/stalled, git commits, email summary, calendar breakdown, commitments check, wins, blocked patterns
 - **Observe > Work** — detailed work summary
-- **Observe > Relationships** — people interacted with from email/calendar/messages
+- **Observe > Relationships** — people interacted with from email/calendar/messages. Include a tally of iMessage activity (direct threads, group threads) over the last 14 days.
 - **Orient > Project status** — pull from Dahso project pages
-- **Orient > Relationship pulse** — pending follow-ups
+- **Orient > Relationship pulse** — pending follow-ups. Include:
+  - Unresponded 1:1 iMessage threads with a suggested draft reply per thread (direct, warm, concise — match Max's tone). Mark `(draft skipped — needs your input)` when context is insufficient.
+  - 1-2 highlights per active group thread (newsletter-style): plans being made, questions directed at Max, decisions being discussed. Say "nothing relevant" when appropriate.
 - **Decide > Action items review** — open tickets from both databases
 - **Decide > Plan this week** — upcoming calendar events (but keep loose — the user will bring their own plan during the interactive phase)
 
@@ -118,7 +121,11 @@ Ask each, wait for response, update the page:
 2. "How did finances go?"
 3. "How did exercise go this week, and what's the plan for next week?" — covers both retrospective and forward-looking in one question. Show the scheduled gym sessions from calendar for context. No need to ask about workouts again in Decide.
 4. "How did spiritual progress go?"
-5. "How are relationships and social life?" (show the pre-filled interaction list for context)
+5. "How are relationships and social life?" (show the pre-filled interaction list for context). After Max answers, run the **message draft-and-confirm flow**:
+   - Present the pre-filled unresponded 1:1 drafts + group thread highlights as a single scannable block (same layout as /inbox-zero Step 6).
+   - Wait for "send" / "go" to send all drafts via `mcp__mac-messages__tool_send_message`, or for numbered overrides ("skip 3, rewrite 2 as X").
+   - Skip this sub-step cleanly if the mac-messages MCP is unavailable or no drafts exist.
+   - Note any recurring "draft skipped — needs your input" threads; they're candidates for the thought dump.
 6. "Any significant observations or issues?"
 
 ### 2b. Decide (Planning)
