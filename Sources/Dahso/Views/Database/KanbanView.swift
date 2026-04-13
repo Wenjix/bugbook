@@ -7,6 +7,7 @@ struct KanbanView: View {
     let schema: DatabaseSchema
     @Binding var rows: [DatabaseRow]
     let viewConfig: ViewConfig
+    var visibleRowsProvider: (() -> [DatabaseRow])? = nil
     var onOpenRow: (DatabaseRow) -> Void
     var onSave: (DatabaseRow) -> Void
     var onUpdateGroupBy: ((String) -> Void)?
@@ -35,6 +36,7 @@ struct KanbanView: View {
     @State private var dragTargetColumn: String? = nil
     @State private var cardFrames: [String: CGRect] = [:]
     @State private var reorderTarget: KanbanReorderTarget?
+    private var visibleRows: [DatabaseRow] { visibleRowsProvider?() ?? rows }
 
     private var selectProperties: [PropertyDefinition] {
         schema.properties.filter { $0.type == .select }
@@ -89,8 +91,8 @@ struct KanbanView: View {
     private var cardCornerRadius: CGFloat { DatabaseZoomMetrics.size(6) }
 
     private func rowsForColumn(_ columnId: String) -> [DatabaseRow] {
-        guard let prop = groupProperty else { return rows }
-        return rows.filter { row in
+        guard let prop = groupProperty else { return visibleRows }
+        return visibleRows.filter { row in
             guard let val = row.properties[prop.id] else { return columnId == "__none__" }
             if case .select(let s) = val {
                 return s == columnId
@@ -260,7 +262,7 @@ struct KanbanView: View {
                         .onPreferenceChange(KanbanCardFramePreferenceKey.self) { cardFrames = $0 }
                         .overlay {
                             if let dragId = draggingRowId,
-                               let row = rows.first(where: { $0.id == dragId }) {
+                               let row = visibleRows.first(where: { $0.id == dragId }) {
                                 let title = row.title(schema: schema)
                                 dragPreview(title)
                                     .position(dragLocation)
@@ -782,7 +784,7 @@ struct KanbanView: View {
 
     private func scrollToSelectedFindColumn(using proxy: ScrollViewProxy) {
         guard let selectedFindRowId,
-              let selectedRow = rows.first(where: { $0.id == selectedFindRowId }) else { return }
+              let selectedRow = visibleRows.first(where: { $0.id == selectedFindRowId }) else { return }
 
         let targetColumnId = columnId(for: selectedRow)
         DispatchQueue.main.async {
@@ -794,7 +796,7 @@ struct KanbanView: View {
 
     private func scrollToSelectedFindCard(in columnId: String, using proxy: ScrollViewProxy) {
         guard let selectedFindRowId,
-              let selectedRow = rows.first(where: { $0.id == selectedFindRowId }),
+              let selectedRow = visibleRows.first(where: { $0.id == selectedFindRowId }),
               self.columnId(for: selectedRow) == columnId else { return }
 
         DispatchQueue.main.async {
@@ -842,7 +844,7 @@ struct KanbanView: View {
 
         // Determine the target sub-group from the drop target row
         if subGroupProperty != nil, let target, let targetRowId = target.rowId,
-           let targetRow = rows.first(where: { $0.id == targetRowId }) {
+           let targetRow = visibleRows.first(where: { $0.id == targetRowId }) {
             let destSubGroup = subGroupKey(for: targetRow)
             if destSubGroup != sourceSubGroup {
                 moveCardSubGroup(row.id, toSubGroup: destSubGroup)
@@ -902,9 +904,9 @@ struct KanbanView: View {
     }
 
     private func nextVisibleRowId(after rowId: String) -> String? {
-        guard let index = rows.firstIndex(where: { $0.id == rowId }),
-              rows.indices.contains(index + 1) else { return nil }
-        return rows[index + 1].id
+        guard let index = visibleRows.firstIndex(where: { $0.id == rowId }),
+              visibleRows.indices.contains(index + 1) else { return nil }
+        return visibleRows[index + 1].id
     }
 
     private func colorForName(_ name: String) -> Color {

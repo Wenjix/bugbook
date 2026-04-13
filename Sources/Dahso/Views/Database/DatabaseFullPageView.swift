@@ -54,10 +54,6 @@ struct DatabaseFullPageView: View {
         _state = State(initialValue: DatabaseViewState(dbPath: dbPath, hostPaneId: hostPaneId))
     }
 
-    private var filteredAndSortedRows: [DatabaseRow] {
-        state.filteredAndSortedRows()
-    }
-
     private var nonTitleProperties: [PropertyDefinition] {
         state.schema?.properties.filter { $0.type != .title } ?? []
     }
@@ -770,9 +766,9 @@ struct DatabaseFullPageView: View {
 
     // MARK: - View Content
 
-    private func boundRows(filtered: [DatabaseRow]) -> Binding<[DatabaseRow]> {
+    private var filteredRowsBinding: Binding<[DatabaseRow]> {
         Binding(
-            get: { filtered },
+            get: { state.filteredAndSortedRows() },
             set: { newVal in
                 for updated in newVal {
                     if let idx = state.rows.firstIndex(where: { $0.id == updated.id }) {
@@ -787,18 +783,20 @@ struct DatabaseFullPageView: View {
 
     @ViewBuilder
     private func viewContent(schema: DatabaseSchema) -> some View {
-        let filtered = filteredAndSortedRows
-        let filteredIds = filtered.map(\.id)
-        let boundRows = boundRows(filtered: filtered)
+        let boundRows = filteredRowsBinding
+        let visibleRowsProvider = { state.filteredAndSortedRows() }
 
         switch state.activeView?.type ?? .table {
         case .table:
+            let filteredRows = visibleRowsProvider()
+            let filteredIds = filteredRows.map(\.id)
             ScrollViewReader { proxy in
                 ScrollView([.horizontal, .vertical]) {
                     TableView(
                         schema: schema,
                         rows: boundRows,
                         viewConfig: state.activeView ?? state.defaultViewConfig(),
+                        visibleRowsProvider: visibleRowsProvider,
                         onOpenRow: { row in openRow(row) },
                         onSave: { row in state.saveRow(row) },
                         onDelete: { row in state.deleteRow(row) },
@@ -825,7 +823,7 @@ struct DatabaseFullPageView: View {
                         onNewRow: { createNewRow() },
                         onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
                         onUpdateFormula: { propId, expr in state.updateFormulaExpression(propId, expression: expr) },
-                        calculationResults: state.calculationResults(for: filtered),
+                        calculationResults: state.calculationResults(for: filteredRows),
                         showVerticalLines: showVerticalLines,
                         usesInnerScroll: false,
                         containerWidth: 0,
@@ -841,10 +839,12 @@ struct DatabaseFullPageView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         case .kanban:
+            let filteredIds = visibleRowsProvider().map(\.id)
             KanbanView(
                 schema: schema,
                 rows: boundRows,
                 viewConfig: state.activeView ?? state.defaultViewConfig(),
+                visibleRowsProvider: visibleRowsProvider,
                 onOpenRow: { row in openRow(row) },
                 onSave: { row in state.saveRow(row) },
                 onUpdateGroupBy: { propId in state.updateGroupBy(propId) },

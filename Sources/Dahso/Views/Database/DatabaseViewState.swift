@@ -17,6 +17,83 @@ private final class WeakDatabaseViewState {
     }
 }
 
+private struct FilteredRowsCacheKey: Equatable {
+    let rowIdentityRevision: UInt64
+    let rowContentRevision: UInt64
+    let activeViewId: String
+    let viewConfigSignature: Int
+}
+
+private struct FilteredRowsCache {
+    private var key: FilteredRowsCacheKey?
+    private var orderedRowIds: [String] = []
+
+    mutating func resolveRows(
+        rows: [DatabaseRow],
+        schema: DatabaseSchema?,
+        view: ViewConfig?,
+        key: FilteredRowsCacheKey,
+        rowIndexById: [String: Int]
+    ) -> [DatabaseRow] {
+        let ids = resolveOrderedRowIds(rows: rows, schema: schema, view: view, key: key)
+        return ids.compactMap { rowId in
+            guard let index = rowIndexById[rowId], rows.indices.contains(index) else { return nil }
+            return rows[index]
+        }
+    }
+
+    private mutating func resolveOrderedRowIds(
+        rows: [DatabaseRow],
+        schema: DatabaseSchema?,
+        view: ViewConfig?,
+        key: FilteredRowsCacheKey
+    ) -> [String] {
+        if self.key == key {
+            return orderedRowIds
+        }
+
+        orderedRowIds = Self.buildOrderedRowIds(rows: rows, schema: schema, view: view)
+        self.key = key
+        return orderedRowIds
+    }
+
+    private static func buildOrderedRowIds(
+        rows: [DatabaseRow],
+        schema: DatabaseSchema?,
+        view: ViewConfig?
+    ) -> [String] {
+        guard let view else {
+            return rows.map(\.id)
+        }
+
+        var result = applyManualRowOrder(view.manualRowOrder, to: rows)
+
+        if let group = view.filterGroup, let schema {
+            result = result.filter { row in
+                matchesFilterGroup(row, group: group, schema: schema)
+            }
+        } else {
+            for filter in view.filters {
+                result = result.filter { row in
+                    let value = row.properties[filter.property] ?? .empty
+                    return matchesFilter(value, filter: filter)
+                }
+            }
+        }
+
+        for sort in view.sorts.reversed() {
+            result.sort { a, b in
+                let aValue = a.properties[sort.property] ?? .empty
+                let bValue = b.properties[sort.property] ?? .empty
+                let comparison = compareValues(aValue, bValue)
+                return sort.ascending ? comparison == .orderedAscending : comparison == .orderedDescending
+            }
+        }
+
+        return result.map(\.id)
+    }
+}
+
 @MainActor
 @Observable
 final class DatabaseViewState {
@@ -25,18 +102,20 @@ final class DatabaseViewState {
     let dbService = DatabaseService()
     let notificationOrigin = UUID().uuidString
 
-    var schema: DatabaseSchema? { didSet { _cacheVersion &+= 1; postFindContextDidChange() } }
-    var rows: [DatabaseRow] = [] { didSet { _cacheVersion &+= 1; postFindContextDidChange() } }
-    var activeViewId: String = "" { didSet { _cacheVersion &+= 1; postFindContextDidChange() } }
+    var schema: DatabaseSchema? { didSet { postFindContextDidChange() } }
+    var rows: [DatabaseRow] = [] { didSet { handleRowsChange(from: oldValue, to: rows) } }
+    var activeViewId: String = "" { didSet { postFindContextDidChange() } }
     var error: String?
     var editingTitle: String = ""
     var findMatchedRowIds: [String] = []
     var findSelectedRowId: String?
     var findScrollRequestToken: UInt64 = 0
 
-    @ObservationIgnored private var _cacheVersion: UInt64 = 0
-    @ObservationIgnored private var _cachedAtVersion: UInt64 = UInt64.max
-    @ObservationIgnored private var _cachedFilteredRows: [DatabaseRow] = []
+    @ObservationIgnored private var rowIdentityRevision: UInt64 = 0
+    @ObservationIgnored private var rowContentRevision: UInt64 = 0
+    @ObservationIgnored private var filteredRowsCache = FilteredRowsCache()
+    @ObservationIgnored private var rowIndexById: [String: Int] = [:]
+    @ObservationIgnored private var rowContentInvalidationTask: Task<Void, Never>?
 
     @ObservationIgnored private var titleSaveTask: Task<Void, Never>?
     @ObservationIgnored private var rowSaveTask: Task<Void, Never>?
@@ -62,8 +141,6 @@ final class DatabaseViewState {
     // MARK: - Filtered/Sorted Rows
 
     func filteredAndSortedRows(extraFilter: ((DatabaseRow) -> Bool)? = nil) -> [DatabaseRow] {
-        guard activeView != nil else { return rows }
-
         let base = computeBaseFilteredRows()
 
         if let extraFilter {
@@ -72,40 +149,21 @@ final class DatabaseViewState {
         return base
     }
 
-    /// Returns filtered+sorted rows using a cache that invalidates when rows, schema, or activeViewId change.
+    /// Returns filtered+sorted rows using a cache keyed by row identity, debounced row content,
+    /// and the active view inputs that affect ordering or membership.
     private func computeBaseFilteredRows() -> [DatabaseRow] {
-        if _cachedAtVersion == _cacheVersion {
-            return _cachedFilteredRows
+        guard activeView != nil else {
+            return rows
         }
 
-        guard let view = activeView else { return rows }
-        var result = applyManualRowOrder(view.manualRowOrder, to: rows)
-
-        if let group = view.filterGroup, let s = schema {
-            result = result.filter { row in
-                matchesFilterGroup(row, group: group, schema: s)
-            }
-        } else {
-            for filter in view.filters {
-                result = result.filter { row in
-                    let val = row.properties[filter.property] ?? .empty
-                    return matchesFilter(val, filter: filter)
-                }
-            }
-        }
-
-        for sort in view.sorts.reversed() {
-            result.sort { a, b in
-                let va = a.properties[sort.property] ?? .empty
-                let vb = b.properties[sort.property] ?? .empty
-                let cmp = compareValues(va, vb)
-                return sort.ascending ? cmp == .orderedAscending : cmp == .orderedDescending
-            }
-        }
-
-        _cachedFilteredRows = result
-        _cachedAtVersion = _cacheVersion
-        return result
+        let key = filteredRowsCacheKey(for: activeView)
+        return filteredRowsCache.resolveRows(
+            rows: rows,
+            schema: schema,
+            view: activeView,
+            key: key,
+            rowIndexById: rowIndexById
+        )
     }
 
     // MARK: - Find
@@ -1132,6 +1190,8 @@ final class DatabaseViewState {
         titleSaveTask = nil
         rowSaveTask?.cancel()
         rowSaveTask = nil
+        rowContentInvalidationTask?.cancel()
+        rowContentInvalidationTask = nil
         loadTask?.cancel()
         loadTask = nil
         isLoadInFlight = false
@@ -1157,5 +1217,129 @@ final class DatabaseViewState {
             dbPath: dbPath
         )
         return (currentSchema, datePropertyId)
+    }
+
+    private func handleRowsChange(from oldRows: [DatabaseRow], to newRows: [DatabaseRow]) {
+        guard oldRows != newRows else { return }
+
+        if rowCollectionIdentityChanged(from: oldRows, to: newRows) {
+            rowIdentityRevision &+= 1
+            rowContentInvalidationTask?.cancel()
+            rowContentInvalidationTask = nil
+            refreshRowIndexById()
+        } else {
+            scheduleRowContentInvalidation()
+        }
+
+        postFindContextDidChange()
+    }
+
+    private func rowCollectionIdentityChanged(from oldRows: [DatabaseRow], to newRows: [DatabaseRow]) -> Bool {
+        guard oldRows.count == newRows.count else { return true }
+        return zip(oldRows, newRows).contains { oldRow, newRow in
+            oldRow.id != newRow.id
+        }
+    }
+
+    private func refreshRowIndexById() {
+        var indexById: [String: Int] = [:]
+        indexById.reserveCapacity(rows.count)
+        for (index, row) in rows.enumerated() {
+            indexById[row.id] = index
+        }
+        rowIndexById = indexById
+    }
+
+    private func scheduleRowContentInvalidation() {
+        rowContentInvalidationTask?.cancel()
+        rowContentInvalidationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.rowContentRevision &+= 1
+            self.rowContentInvalidationTask = nil
+            self.postFindContextDidChange()
+        }
+    }
+
+    private func filteredRowsCacheKey(for view: ViewConfig?) -> FilteredRowsCacheKey {
+        FilteredRowsCacheKey(
+            rowIdentityRevision: rowIdentityRevision,
+            rowContentRevision: rowContentRevision,
+            activeViewId: activeViewId,
+            viewConfigSignature: viewConfigSignature(for: view)
+        )
+    }
+
+    private func viewConfigSignature(for view: ViewConfig?) -> Int {
+        guard let view else { return 0 }
+
+        var hasher = Hasher()
+        hasher.combine(view.id)
+        hasher.combine(view.type.rawValue)
+        hasher.combine(view.groupBy ?? "")
+        hasher.combine(view.subGroupBy ?? "")
+        hasher.combine(view.dateProperty ?? "")
+        hasher.combine(view.wrapCellText ?? false)
+        hasher.combine(view.hideTitle ?? false)
+
+        for hiddenColumn in view.hiddenColumns ?? [] {
+            hasher.combine(hiddenColumn)
+        }
+        for manualRowId in view.manualRowOrder ?? [] {
+            hasher.combine(manualRowId)
+        }
+        if let columnWidths = view.columnWidths {
+            for key in columnWidths.keys.sorted() {
+                hasher.combine(key)
+                hasher.combine(columnWidths[key] ?? 0)
+            }
+        }
+
+        hashFilters(view.filters, into: &hasher)
+        hashSorts(view.sorts, into: &hasher)
+        hashFilterGroup(view.filterGroup, into: &hasher)
+        return hasher.finalize()
+    }
+
+    private func hashFilters(_ filters: [FilterConfig], into hasher: inout Hasher) {
+        for filter in filters {
+            hasher.combine(filter.id)
+            hasher.combine(filter.property)
+            hasher.combine(filter.op)
+            hasher.combine(filter.value)
+        }
+    }
+
+    private func hashSorts(_ sorts: [SortConfig], into hasher: inout Hasher) {
+        for sort in sorts {
+            hasher.combine(sort.id)
+            hasher.combine(sort.property)
+            hasher.combine(sort.direction)
+        }
+    }
+
+    private func hashFilterGroup(_ group: FilterGroup?, into hasher: inout Hasher) {
+        guard let group else {
+            hasher.combine(false)
+            return
+        }
+
+        hasher.combine(true)
+        hasher.combine(group.id)
+        hasher.combine(group.conjunction.rawValue)
+
+        for condition in group.conditions {
+            switch condition {
+            case .filter(let filter):
+                hasher.combine("filter")
+                hasher.combine(filter.id)
+                hasher.combine(filter.property)
+                hasher.combine(filter.op)
+                hasher.combine(filter.value)
+            case .group(let nestedGroup):
+                hasher.combine("group")
+                hashFilterGroup(nestedGroup, into: &hasher)
+            }
+        }
     }
 }

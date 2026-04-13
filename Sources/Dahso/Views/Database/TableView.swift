@@ -12,6 +12,7 @@ struct TableView: View {
     let schema: DatabaseSchema
     @Binding var rows: [DatabaseRow]
     let viewConfig: ViewConfig
+    var visibleRowsProvider: (() -> [DatabaseRow])? = nil
     var onOpenRow: (DatabaseRow) -> Void
     var onSave: (DatabaseRow) -> Void
     var onDelete: ((DatabaseRow) -> Void)?
@@ -65,6 +66,7 @@ struct TableView: View {
     private let checkboxWidth: CGFloat = DatabaseZoomMetrics.size(14)
     private let rowControlsSpacing: CGFloat = DatabaseZoomMetrics.size(2)
     private var scaledRowControlsInset: CGFloat { DatabaseZoomMetrics.size(Self.rowControlsInset) }
+    private var visibleRows: [DatabaseRow] { visibleRowsProvider?() ?? rows }
 
     private var visibleProperties: [PropertyDefinition] {
         let hidden = Set(viewConfig.hiddenColumns ?? [])
@@ -102,11 +104,11 @@ struct TableView: View {
 
     private var draggingRow: DatabaseRow? {
         guard let draggingRowId else { return nil }
-        return rows.first(where: { $0.id == draggingRowId })
+        return visibleRows.first(where: { $0.id == draggingRowId })
     }
 
     private var visibleRowIds: [String] {
-        Array(rows.prefix(min(displayedRowCount, rows.count)).map(\.id))
+        Array(visibleRows.prefix(min(displayedRowCount, visibleRows.count)).map(\.id))
     }
 
     // MARK: - Grouping
@@ -123,7 +125,7 @@ struct TableView: View {
 
         // Bucket rows by their property value
         var buckets: [String: [DatabaseRow]] = [:]
-        for row in rows {
+        for row in visibleRows {
             let val = row.properties[prop.id] ?? .empty
             switch val {
             case .select(let optionId) where !optionId.isEmpty:
@@ -213,7 +215,7 @@ struct TableView: View {
             .buttonStyle(.plain)
 
             Button {
-                let toDelete = rows.filter { selectedRowIds.contains($0.id) }
+                let toDelete = visibleRows.filter { selectedRowIds.contains($0.id) }
                 selectedRowIds.removeAll()
                 toDelete.forEach { onDelete?($0) }
             } label: {
@@ -314,15 +316,15 @@ struct TableView: View {
 
     @ViewBuilder
     private var headerCheckbox: some View {
-        let visibleCount = min(displayedRowCount, rows.count)
-        let allSelected = !rows.isEmpty && selectedRowIds.count == visibleCount
+        let visibleCount = min(displayedRowCount, visibleRows.count)
+        let allSelected = !visibleRows.isEmpty && selectedRowIds.count == visibleCount
         let someSelected = !selectedRowIds.isEmpty && !allSelected
 
         Button {
             if allSelected {
                 selectedRowIds.removeAll()
             } else {
-                selectedRowIds = Set(rows.prefix(visibleCount).map(\.id))
+                selectedRowIds = Set(visibleRows.prefix(visibleCount).map(\.id))
             }
         } label: {
             Image(systemName: allSelected ? "checkmark.square.fill" : someSelected ? "minus.square.fill" : "square")
@@ -718,7 +720,7 @@ struct TableView: View {
                 ungroupedRows
             }
 
-            if rows.isEmpty {
+            if visibleRows.isEmpty {
                 // All empty rows are clickable; "+ New page" follows hover
                 emptyTableRow(index: 0)
                 tableDivider.opacity(0.5)
@@ -740,7 +742,7 @@ struct TableView: View {
 
     @ViewBuilder
     private var ungroupedRows: some View {
-        let totalCount = rows.count
+        let totalCount = visibleRows.count
         let visibleCount = min(displayedRowCount, totalCount)
 
         ForEach($rows.prefix(visibleCount)) { $row in
@@ -845,11 +847,11 @@ struct TableView: View {
     private func ensureVisibleRowIsRendered(_ rowId: String?) {
         guard groupProperty == nil,
               let rowId,
-              let rowIndex = rows.firstIndex(where: { $0.id == rowId }),
+              let rowIndex = visibleRows.firstIndex(where: { $0.id == rowId }),
               rowIndex >= displayedRowCount else { return }
 
         let nextPage = ((rowIndex / 20) + 1) * 20
-        displayedRowCount = min(rows.count, max(displayedRowCount, nextPage))
+        displayedRowCount = min(visibleRows.count, max(displayedRowCount, nextPage))
     }
 
     private var tableDivider: some View {
@@ -911,12 +913,12 @@ struct TableView: View {
     private func toggleSelection(for rowId: String) {
         if NSEvent.modifierFlags.contains(.shift),
            let lastId = lastSelectedRowId,
-           let lastIdx = rows.firstIndex(where: { $0.id == lastId }),
-           let currentIdx = rows.firstIndex(where: { $0.id == rowId }) {
+           let lastIdx = visibleRows.firstIndex(where: { $0.id == lastId }),
+           let currentIdx = visibleRows.firstIndex(where: { $0.id == rowId }) {
             let lo = min(lastIdx, currentIdx)
             let hi = max(lastIdx, currentIdx)
             for i in lo...hi {
-                selectedRowIds.insert(rows[i].id)
+                selectedRowIds.insert(visibleRows[i].id)
             }
             return
         }
@@ -1031,9 +1033,9 @@ struct TableView: View {
     }
 
     private func nextRowId(after rowId: String) -> String? {
-        guard let index = rows.firstIndex(where: { $0.id == rowId }),
-              rows.indices.contains(index + 1) else { return nil }
-        return rows[index + 1].id
+        guard let index = visibleRows.firstIndex(where: { $0.id == rowId }),
+              visibleRows.indices.contains(index + 1) else { return nil }
+        return visibleRows[index + 1].id
     }
 
     // MARK: - Calculations Footer
