@@ -18,6 +18,9 @@ struct KanbanView: View {
     var onRenameSelectOption: ((String, String, String) -> Void)?
     var onDeleteSelectOption: ((String, String) -> Void)?
     var onHideColumn: ((String, String) -> Void)?
+    var matchedRowIds: Set<String> = []
+    var selectedFindRowId: String? = nil
+    var findScrollRequestToken: UInt64 = 0
 
     @State private var newOptionName: String = ""
     @State private var addingOptionForColumn: Bool = false
@@ -94,6 +97,16 @@ struct KanbanView: View {
             }
             return columnId == "__none__"
         }
+    }
+
+    private func columnId(for row: DatabaseRow) -> String {
+        guard let prop = groupProperty,
+              let val = row.properties[prop.id],
+              case .select(let optionId) = val,
+              columns.contains(where: { $0.id == optionId }) else {
+            return "__none__"
+        }
+        return optionId
     }
 
     // MARK: - Sub-Grouping
@@ -228,32 +241,38 @@ struct KanbanView: View {
                 .padding(.vertical, DatabaseZoomMetrics.size(6))
             }
 
-            GeometryReader { geo in
-                ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: DatabaseZoomMetrics.size(12)) {
-                        ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
-                            kanbanColumn(column, index: index, availableHeight: geo.size.height - 24)
-                        }
+            ScrollViewReader { columnProxy in
+                GeometryReader { geo in
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: DatabaseZoomMetrics.size(12)) {
+                            ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
+                                kanbanColumn(column, index: index, availableHeight: geo.size.height - 24)
+                                    .id(column.id)
+                            }
 
-                        // Add new option column
-                        if groupProperty != nil {
-                            addOptionColumn
+                            // Add new option column
+                            if groupProperty != nil {
+                                addOptionColumn
+                            }
+                        }
+                        .padding(DatabaseZoomMetrics.size(12))
+                        .coordinateSpace(name: Self.coordinateSpaceName)
+                        .onPreferenceChange(KanbanCardFramePreferenceKey.self) { cardFrames = $0 }
+                        .overlay {
+                            if let dragId = draggingRowId,
+                               let row = rows.first(where: { $0.id == dragId }) {
+                                let title = row.title(schema: schema)
+                                dragPreview(title)
+                                    .position(dragLocation)
+                                    .allowsHitTesting(false)
+                            }
                         }
                     }
-                    .padding(DatabaseZoomMetrics.size(12))
-                    .coordinateSpace(name: Self.coordinateSpaceName)
-                    .onPreferenceChange(KanbanCardFramePreferenceKey.self) { cardFrames = $0 }
-                    .overlay {
-                        if let dragId = draggingRowId,
-                           let row = rows.first(where: { $0.id == dragId }) {
-                            let title = row.title(schema: schema)
-                            dragPreview(title)
-                                .position(dragLocation)
-                                .allowsHitTesting(false)
-                        }
+                    .scrollIndicators(.hidden)
+                    .onChange(of: findScrollRequestToken) { _, _ in
+                        scrollToSelectedFindColumn(using: columnProxy)
                     }
                 }
-                .scrollIndicators(.hidden)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -594,32 +613,37 @@ struct KanbanView: View {
             }
 
             // Cards — scroll vertically within column
-            ScrollView(.vertical) {
-                LazyVStack(spacing: DatabaseZoomMetrics.size(6)) {
-                    columnCardContent(columnId: column.id, columnColor: columnColor)
+            ScrollViewReader { cardProxy in
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: DatabaseZoomMetrics.size(6)) {
+                        columnCardContent(columnId: column.id, columnColor: columnColor)
 
-                    // + New page button at bottom, colored like Notion
-                    Button {
-                        addCardInColumn(column.id)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus")
-                            Text("New page")
+                        // + New page button at bottom, colored like Notion
+                        Button {
+                            addCardInColumn(column.id)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                Text("New page")
+                            }
+                            .font(DatabaseZoomMetrics.font(12))
+                            .foregroundStyle(columnColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, DatabaseZoomMetrics.size(10))
+                            .padding(.vertical, DatabaseZoomMetrics.size(8))
+                            .background(columnColor.opacity(0.08))
+                            .clipShape(.rect(cornerRadius: cardCornerRadius))
                         }
-                        .font(DatabaseZoomMetrics.font(12))
-                        .foregroundStyle(columnColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, DatabaseZoomMetrics.size(10))
-                        .padding(.vertical, DatabaseZoomMetrics.size(8))
-                        .background(columnColor.opacity(0.08))
-                        .clipShape(.rect(cornerRadius: cardCornerRadius))
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, DatabaseZoomMetrics.size(6))
                     }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, DatabaseZoomMetrics.size(6))
+                    .padding(.bottom, DatabaseZoomMetrics.size(8))
                 }
-                .padding(.bottom, DatabaseZoomMetrics.size(8))
+                .scrollIndicators(.automatic)
+                .onChange(of: findScrollRequestToken) { _, _ in
+                    scrollToSelectedFindCard(in: column.id, using: cardProxy)
+                }
             }
-            .scrollIndicators(.automatic)
         }
         .frame(width: columnWidth)
         .frame(maxHeight: availableHeight)
@@ -691,15 +715,32 @@ struct KanbanView: View {
     // MARK: - Kanban Card
 
     private func kanbanCard(_ row: DatabaseRow, title: String, columnColor: Color) -> some View {
-        Text(title.isEmpty ? "Untitled" : title)
+        let isMatchedFindRow = matchedRowIds.contains(row.id)
+        let isSelectedFindRow = selectedFindRowId == row.id
+        return Text(title.isEmpty ? "Untitled" : title)
             .font(DatabaseZoomMetrics.font(14))
             .fontWeight(.medium)
             .lineLimit(2)
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DatabaseZoomMetrics.size(10))
-            .background(columnColor.opacity(0.06))
-            .clipShape(.rect(cornerRadius: cardCornerRadius))
+            .background(
+                RoundedRectangle(cornerRadius: cardCornerRadius)
+                    .fill(
+                        isSelectedFindRow
+                            ? Color.accentColor.opacity(0.14)
+                            : isMatchedFindRow
+                                ? Color.accentColor.opacity(0.08)
+                                : columnColor.opacity(0.06)
+                    )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cardCornerRadius)
+                    .stroke(
+                        isSelectedFindRow ? Color.accentColor.opacity(0.45) : Color.clear,
+                        lineWidth: 1
+                    )
+            }
             .contentShape(Rectangle())
             .onTapGesture { onOpenRow(row) }
             .onNSRightClick {
@@ -716,6 +757,7 @@ struct KanbanView: View {
                 }
             }
             .padding(.horizontal, DatabaseZoomMetrics.size(6))
+            .id(row.id)
             .overlay(alignment: .topLeading) {
                 if showsInsertionIndicator(for: row.id, placement: .before) {
                     kanbanInsertionIndicator
@@ -737,6 +779,30 @@ struct KanbanView: View {
     }
 
     // MARK: - Helpers
+
+    private func scrollToSelectedFindColumn(using proxy: ScrollViewProxy) {
+        guard let selectedFindRowId,
+              let selectedRow = rows.first(where: { $0.id == selectedFindRowId }) else { return }
+
+        let targetColumnId = columnId(for: selectedRow)
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                proxy.scrollTo(targetColumnId, anchor: .center)
+            }
+        }
+    }
+
+    private func scrollToSelectedFindCard(in columnId: String, using proxy: ScrollViewProxy) {
+        guard let selectedFindRowId,
+              let selectedRow = rows.first(where: { $0.id == selectedFindRowId }),
+              self.columnId(for: selectedRow) == columnId else { return }
+
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                proxy.scrollTo(selectedFindRowId, anchor: .center)
+            }
+        }
+    }
 
     private var kanbanInsertionIndicator: some View {
         Rectangle()

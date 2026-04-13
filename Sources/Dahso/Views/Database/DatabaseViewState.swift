@@ -1,18 +1,38 @@
 import SwiftUI
 import DahsoCore
 
+extension Notification.Name {
+    static let databaseFindContextDidChange = Notification.Name("databaseFindContextDidChange")
+}
+
+enum DatabaseFindNotificationKey {
+    static let hostPaneId = "hostPaneId"
+}
+
+private final class WeakDatabaseViewState {
+    weak var value: DatabaseViewState?
+
+    init(_ value: DatabaseViewState) {
+        self.value = value
+    }
+}
+
 @MainActor
 @Observable
 final class DatabaseViewState {
     let dbPath: String
+    let hostPaneId: UUID?
     let dbService = DatabaseService()
     let notificationOrigin = UUID().uuidString
 
-    var schema: DatabaseSchema? { didSet { _cacheVersion &+= 1 } }
-    var rows: [DatabaseRow] = [] { didSet { _cacheVersion &+= 1 } }
-    var activeViewId: String = "" { didSet { _cacheVersion &+= 1 } }
+    var schema: DatabaseSchema? { didSet { _cacheVersion &+= 1; postFindContextDidChange() } }
+    var rows: [DatabaseRow] = [] { didSet { _cacheVersion &+= 1; postFindContextDidChange() } }
+    var activeViewId: String = "" { didSet { _cacheVersion &+= 1; postFindContextDidChange() } }
     var error: String?
     var editingTitle: String = ""
+    var findMatchedRowIds: [String] = []
+    var findSelectedRowId: String?
+    var findScrollRequestToken: UInt64 = 0
 
     @ObservationIgnored private var _cacheVersion: UInt64 = 0
     @ObservationIgnored private var _cachedAtVersion: UInt64 = UInt64.max
@@ -25,13 +45,18 @@ final class DatabaseViewState {
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var isLoadInFlight = false
     @ObservationIgnored private var reloadRequestedWhileLoading = false
+    @ObservationIgnored private static var hostRegistry: [UUID: WeakDatabaseViewState] = [:]
 
     var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
     }
 
-    init(dbPath: String) {
+    init(dbPath: String, hostPaneId: UUID? = nil) {
         self.dbPath = dbPath
+        self.hostPaneId = hostPaneId
+        if let hostPaneId {
+            Self.register(self, for: hostPaneId)
+        }
     }
 
     // MARK: - Filtered/Sorted Rows
@@ -81,6 +106,48 @@ final class DatabaseViewState {
         _cachedFilteredRows = result
         _cachedAtVersion = _cacheVersion
         return result
+    }
+
+    // MARK: - Find
+
+    static func state(for hostPaneId: UUID) -> DatabaseViewState? {
+        purgeDeadRegisteredHosts()
+        guard let state = hostRegistry[hostPaneId]?.value else {
+            hostRegistry.removeValue(forKey: hostPaneId)
+            return nil
+        }
+        return state
+    }
+
+    func matches(for query: String) -> [String] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty,
+              let schema,
+              let activeView else {
+            return []
+        }
+
+        let searchableProperties = searchableProperties(for: schema, view: activeView)
+        guard !searchableProperties.isEmpty else { return [] }
+
+        return filteredAndSortedRows().compactMap { row in
+            rowMatchesQuery(row, query: trimmedQuery, schema: schema, searchableProperties: searchableProperties)
+                ? row.id
+                : nil
+        }
+    }
+
+    func updateFindHighlights(matchingRowIds: [String], selectedRowId: String?, shouldScroll: Bool) {
+        findMatchedRowIds = matchingRowIds
+        findSelectedRowId = selectedRowId
+        if shouldScroll, selectedRowId != nil {
+            findScrollRequestToken &+= 1
+        }
+    }
+
+    func clearFindHighlights() {
+        findMatchedRowIds = []
+        findSelectedRowId = nil
     }
 
     // MARK: - Data Loading
@@ -259,6 +326,90 @@ final class DatabaseViewState {
         Task {
             try? dbService.addSelectOption(option, toProperty: propertyId, in: &s, at: dbPath)
             schema = s
+        }
+    }
+
+    // MARK: - Private Find Helpers
+
+    private static func register(_ state: DatabaseViewState, for hostPaneId: UUID) {
+        purgeDeadRegisteredHosts()
+        hostRegistry[hostPaneId] = WeakDatabaseViewState(state)
+    }
+
+    private static func purgeDeadRegisteredHosts() {
+        hostRegistry = hostRegistry.filter { $0.value.value != nil }
+    }
+
+    private func postFindContextDidChange() {
+        guard let hostPaneId else { return }
+        NotificationCenter.default.post(
+            name: .databaseFindContextDidChange,
+            object: nil,
+            userInfo: [DatabaseFindNotificationKey.hostPaneId: hostPaneId]
+        )
+    }
+
+    private func searchableProperties(for schema: DatabaseSchema, view: ViewConfig) -> [PropertyDefinition] {
+        guard view.type == .table || view.type == .kanban else { return [] }
+        let hiddenColumns = Set(view.hiddenColumns ?? [])
+        return schema.properties.filter { property in
+            guard isSearchableFindProperty(property.type) else { return false }
+            if view.type == .table, property.type != .title, hiddenColumns.contains(property.id) {
+                return false
+            }
+            return true
+        }
+    }
+
+    private func rowMatchesQuery(
+        _ row: DatabaseRow,
+        query: String,
+        schema: DatabaseSchema,
+        searchableProperties: [PropertyDefinition]
+    ) -> Bool {
+        searchableProperties.contains { property in
+            let value = row.properties[property.id] ?? .empty
+            let searchableText = searchableText(for: row, value: value, property: property, schema: schema)
+            guard !searchableText.isEmpty else { return false }
+            return searchableText.range(
+                of: query,
+                options: [.caseInsensitive, .diacriticInsensitive]
+            ) != nil
+        }
+    }
+
+    private func searchableText(
+        for row: DatabaseRow,
+        value: PropertyValue,
+        property: PropertyDefinition,
+        schema: DatabaseSchema
+    ) -> String {
+        switch property.type {
+        case .title:
+            return row.title(schema: schema)
+        case .text, .url, .email:
+            return stringFromValue(value)
+        case .select:
+            guard case .select(let optionId) = value, !optionId.isEmpty else { return "" }
+            return optionDisplayName(optionId, in: property)
+        case .multiSelect:
+            guard case .multiSelect(let optionIds) = value, !optionIds.isEmpty else { return "" }
+            return optionIds.map { optionDisplayName($0, in: property) }.joined(separator: ", ")
+        default:
+            return ""
+        }
+    }
+
+    private func optionDisplayName(_ optionId: String, in property: PropertyDefinition) -> String {
+        property.options?.first(where: { $0.id == optionId })?.name ?? optionId
+    }
+
+    private func isSearchableFindProperty(_ type: PropertyType) -> Bool {
+        switch type {
+        case .title, .text, .url, .email, .select, .multiSelect:
+            return true
+        default:
+            return false
         }
     }
 

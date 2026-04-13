@@ -39,6 +39,8 @@ struct TableView: View {
     var showVerticalLines: Bool = true
     var usesInnerScroll: Bool = true
     var containerWidth: CGFloat? = nil
+    var matchedRowIds: Set<String> = []
+    var selectedFindRowId: String? = nil
 
     @State private var dragWidths: [String: CGFloat] = [:]
     @State private var hoveredResizeKey: String?
@@ -183,6 +185,16 @@ struct TableView: View {
         .onPreferenceChange(TableRowFramePreferenceKey.self) { newFrames in
             // Only update during active row drag to avoid re-render loop on scroll
             if draggingRowId != nil { rowFrames = newFrames }
+        }
+        .onAppear {
+            ensureVisibleRowIsRendered(scrollToRowId)
+            ensureVisibleRowIsRendered(selectedFindRowId)
+        }
+        .onChange(of: scrollToRowId) { _, newValue in
+            ensureVisibleRowIsRendered(newValue)
+        }
+        .onChange(of: selectedFindRowId) { _, newValue in
+            ensureVisibleRowIsRendered(newValue)
         }
     }
 
@@ -373,7 +385,10 @@ struct TableView: View {
     // MARK: - Data Row
 
     private func dataRow(_ row: Binding<DatabaseRow>) -> some View {
-        let isSelected = selectedRowIds.contains(row.wrappedValue.id)
+        let rowId = row.wrappedValue.id
+        let isSelected = selectedRowIds.contains(rowId)
+        let isMatchedFindRow = matchedRowIds.contains(rowId)
+        let isSelectedFindRow = selectedFindRowId == rowId
         return HoverRow { isHovered in
             HStack(alignment: .center, spacing: 0) {
                 // Controls in gutter — no hover background
@@ -425,9 +440,20 @@ struct TableView: View {
                         .fill(
                             isSelected
                                 ? Color.accentColor.opacity(0.08)
+                                : isSelectedFindRow
+                                    ? Color.accentColor.opacity(0.16)
+                                    : isMatchedFindRow
+                                        ? Color.accentColor.opacity(0.09)
                                 : isHovered ? Color.primary.opacity(0.04) : Color.clear
                         )
                 )
+                .overlay {
+                    RoundedRectangle(cornerRadius: DatabaseZoomMetrics.size(4))
+                        .stroke(
+                            isSelectedFindRow ? Color.accentColor.opacity(0.45) : Color.clear,
+                            lineWidth: 1
+                        )
+                }
                 .overlay { columnDividers(offsets: columnDividerOffsets).allowsHitTesting(false) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -660,11 +686,13 @@ struct TableView: View {
                 .onAppear {
                     guard !didInitialScroll else { return }
                     didInitialScroll = true
+                    ensureVisibleRowIsRendered(scrollToRowId)
                     DispatchQueue.main.async {
                         scrollToCurrentTarget(using: proxy, animated: false)
                     }
                 }
                 .onChange(of: scrollToRowId) { _, _ in
+                    ensureVisibleRowIsRendered(scrollToRowId)
                     DispatchQueue.main.async {
                         scrollToCurrentTarget(using: proxy, animated: true)
                     }
@@ -812,6 +840,16 @@ struct TableView: View {
         } else {
             action()
         }
+    }
+
+    private func ensureVisibleRowIsRendered(_ rowId: String?) {
+        guard groupProperty == nil,
+              let rowId,
+              let rowIndex = rows.firstIndex(where: { $0.id == rowId }),
+              rowIndex >= displayedRowCount else { return }
+
+        let nextPage = ((rowIndex / 20) + 1) * 20
+        displayedRowCount = min(rows.count, max(displayedRowCount, nextPage))
     }
 
     private var tableDivider: some View {

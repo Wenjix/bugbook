@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+private enum PaneFindMatch: Equatable {
+    case block(BlockFindSelection)
+    case databaseRow(String)
+}
+
 /// Renders a single pane leaf: chrome bar (30px) + content below.
 ///
 /// Focus state is observed by PaneChromeBar and PaneFocusOverlay internally —
@@ -23,7 +28,7 @@ struct PaneContentView: View {
     @State private var showFindBar = false
     @State private var findQuery = ""
     @State private var findCurrentIndex: Int?
-    @State private var findMatchCache: [BlockFindSelection] = []
+    @State private var findMatchCache: [PaneFindMatch] = []
     @State private var findAutoExpandedToggleIds: Set<UUID> = []
     @FocusState private var findFieldFocused: Bool
 
@@ -36,12 +41,45 @@ struct PaneContentView: View {
         return blockDocumentLookup?(leaf.id)
     }
 
+    private var activeDatabaseFindState: DatabaseViewState? {
+        guard case .document(let file) = leaf.content,
+              file.isDatabase else { return nil }
+        return DatabaseViewState.state(for: leaf.id)
+    }
+
     private func recomputeFindMatches() {
-        guard !findQuery.isEmpty,
-              let doc = activeBlockDocument else {
+        guard !findQuery.isEmpty else {
             findMatchCache = []
+            activeDatabaseFindState?.clearFindHighlights()
             return
         }
+
+        if let doc = activeBlockDocument {
+            recomputeBlockFindMatches(in: doc)
+            activeDatabaseFindState?.clearFindHighlights()
+            return
+        }
+
+        if let databaseState = activeDatabaseFindState {
+            let rowIds = databaseState.matches(for: findQuery)
+            let results = rowIds.map(PaneFindMatch.databaseRow)
+            findMatchCache = results
+            if let findCurrentIndex, findCurrentIndex < results.count {
+                selectFindMatch(at: findCurrentIndex, in: results, shouldScroll: false)
+            } else {
+                databaseState.updateFindHighlights(
+                    matchingRowIds: rowIds,
+                    selectedRowId: nil,
+                    shouldScroll: false
+                )
+            }
+            return
+        }
+
+        findMatchCache = []
+    }
+
+    private func recomputeBlockFindMatches(in doc: BlockDocument) {
         var results: [BlockFindSelection] = []
         func searchBlocks(_ blocks: [Block]) {
             for block in blocks {
@@ -65,9 +103,13 @@ struct PaneContentView: View {
             }
         }
         searchBlocks(doc.blocks)
-        findMatchCache = results
+        findMatchCache = results.map(PaneFindMatch.block)
         if let findCurrentIndex, findCurrentIndex < results.count {
-            selectFindMatch(at: findCurrentIndex, in: results, shouldScroll: false)
+            selectFindMatch(
+                at: findCurrentIndex,
+                in: results.map(PaneFindMatch.block),
+                shouldScroll: false
+            )
         } else {
             doc.findSelectedMatch = nil
         }
@@ -136,11 +178,18 @@ struct PaneContentView: View {
         .onChange(of: findQuery) { _, newValue in
             activeBlockDocument?.findHighlightQuery = newValue
             activeBlockDocument?.findSelectedMatch = nil
+            activeDatabaseFindState?.clearFindHighlights()
             findCurrentIndex = nil
             recomputeFindMatches()
         }
         .onChange(of: activeBlockDocument?.contentVersion ?? 0) { _, _ in
             guard showFindBar else { return }
+            recomputeFindMatches()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .databaseFindContextDidChange)) { notification in
+            guard showFindBar,
+                  let hostPaneId = notification.userInfo?[DatabaseFindNotificationKey.hostPaneId] as? UUID,
+                  hostPaneId == leaf.id else { return }
             recomputeFindMatches()
         }
         .contextMenu {
@@ -313,29 +362,50 @@ struct PaneContentView: View {
 
     private func selectFindMatch(
         at index: Int,
-        in matches: [BlockFindSelection]? = nil,
+        in matches: [PaneFindMatch]? = nil,
         shouldScroll: Bool = true
     ) {
-        let matches = matches ?? findMatchCache
-        guard matches.indices.contains(index),
-              let doc = activeBlockDocument else { return }
-        let match = matches[index]
+        let resolvedMatches = matches ?? findMatchCache
+        guard resolvedMatches.indices.contains(index) else { return }
+        let match = resolvedMatches[index]
         findCurrentIndex = index
-        findAutoExpandedToggleIds.formUnion(doc.expandAncestorToggles(of: match.blockId))
-        doc.findSelectedMatch = match
-        if shouldScroll {
-            doc.scrollToBlockId = match.blockId
+
+        switch match {
+        case .block(let selection):
+            guard let doc = activeBlockDocument else { return }
+            findAutoExpandedToggleIds.formUnion(doc.expandAncestorToggles(of: selection.blockId))
+            doc.findSelectedMatch = selection
+            activeDatabaseFindState?.clearFindHighlights()
+            if shouldScroll {
+                doc.scrollToBlockId = selection.blockId
+            }
+        case .databaseRow(let rowId):
+            activeBlockDocument?.findSelectedMatch = nil
+            activeDatabaseFindState?.updateFindHighlights(
+                matchingRowIds: databaseRowIds(in: resolvedMatches),
+                selectedRowId: rowId,
+                shouldScroll: shouldScroll
+            )
+        }
+    }
+
+    private func databaseRowIds(in matches: [PaneFindMatch]) -> [String] {
+        matches.compactMap {
+            guard case .databaseRow(let rowId) = $0 else { return nil }
+            return rowId
         }
     }
 
     private func closeFindBar() {
         let doc = activeBlockDocument
+        let databaseState = activeDatabaseFindState
         let autoExpandedToggleIds = findAutoExpandedToggleIds
         withAnimation(.easeInOut(duration: 0.15)) {
             showFindBar = false
         }
         doc?.findHighlightQuery = ""
         doc?.findSelectedMatch = nil
+        databaseState?.clearFindHighlights()
         for toggleId in autoExpandedToggleIds {
             doc?.setToggleExpanded(id: toggleId, to: false)
         }

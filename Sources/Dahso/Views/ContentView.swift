@@ -1655,7 +1655,7 @@ struct ContentView: View {
                 }
             )
         } else if file.isDatabase {
-            DatabaseFullPageView(dbPath: file.path, initialRowId: dbInitialRowId)
+            DatabaseFullPageView(dbPath: file.path, hostPaneId: leaf.id, initialRowId: dbInitialRowId)
                 .id(leaf.id)
                 .onAppear { dbInitialRowId = nil }
         } else if let doc = blockDocuments[leaf.id], doc.isMeetingPage {
