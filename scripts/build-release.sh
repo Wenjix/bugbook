@@ -11,10 +11,10 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 BUILD_DIR="$REPO_ROOT/build"
-ARCHIVE_PATH="$BUILD_DIR/Bugbook.xcarchive"
+ARCHIVE_PATH="$BUILD_DIR/Dahso.xcarchive"
 EXPORT_DIR="$BUILD_DIR/export"
-APP_PATH="$EXPORT_DIR/Bugbook.app"
-DMG_PATH="$BUILD_DIR/Bugbook-${VERSION}.dmg"
+APP_PATH="$EXPORT_DIR/Dahso.app"
+DMG_PATH="$BUILD_DIR/Dahso-${VERSION}.dmg"
 SIGNING_IDENTITY="Developer ID Application: ($APPLE_TEAM_ID)"
 
 cleanup() {
@@ -30,10 +30,10 @@ echo "-- Generating Xcode project with xcodegen"
 (cd macos && xcodegen generate)
 
 # --- Archive ---
-echo "-- Archiving (scheme: BugbookApp, configuration: Release)"
+echo "-- Archiving (scheme: DahsoApp, configuration: Release)"
 xcodebuild archive \
-    -project macos/Bugbook.xcodeproj \
-    -scheme BugbookApp \
+    -project macos/Dahso.xcodeproj \
+    -scheme DahsoApp \
     -configuration Release \
     -archivePath "$ARCHIVE_PATH" \
     MARKETING_VERSION="$VERSION" \
@@ -60,7 +60,7 @@ codesign --force --deep --options runtime \
 # --- Create DMG ---
 echo "-- Creating DMG"
 hdiutil create \
-    -volname "Bugbook" \
+    -volname "Dahso" \
     -srcfolder "$APP_PATH" \
     -ov \
     -format UDZO \

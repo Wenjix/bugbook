@@ -4,11 +4,11 @@ This repo now supports a shared task/run/event workflow for coding agents and hu
 
 ## Files
 
-Workspace files (inside your selected Bugbook workspace):
+Workspace files (inside your selected Dahso workspace):
 
-- `.bugbook/agents/tasks.json`
-- `.bugbook/agents/runs.jsonl`
-- `.bugbook/agents/events.jsonl`
+- `.dahso/agents/tasks.json`
+- `.dahso/agents/runs.jsonl`
+- `.dahso/agents/events.jsonl`
 - `AGENTS.md` (optional instructions for agents)
 
 ## CLI
@@ -16,30 +16,30 @@ Workspace files (inside your selected Bugbook workspace):
 Initialize:
 
 ```bash
-bugbook agent init --workspace ~/Documents/Bugbook --write-agents-md
+dahso agent init --workspace ~/Documents/Dahso --write-agents-md
 ```
 
 Create and move tasks:
 
 ```bash
-bugbook agent task create --workspace ~/Documents/Bugbook --title "Implement agent dashboard" --status todo
-bugbook agent task list --workspace ~/Documents/Bugbook
-bugbook agent task update task_xxxxxxxx --workspace ~/Documents/Bugbook --status in_progress
-bugbook agent task update task_xxxxxxxx --workspace ~/Documents/Bugbook --status done
+dahso agent task create --workspace ~/Documents/Dahso --title "Implement agent dashboard" --status todo
+dahso agent task list --workspace ~/Documents/Dahso
+dahso agent task update task_xxxxxxxx --workspace ~/Documents/Dahso --status in_progress
+dahso agent task update task_xxxxxxxx --workspace ~/Documents/Dahso --status done
 ```
 
 Track runs:
 
 ```bash
-bugbook agent run start --workspace ~/Documents/Bugbook --task task_xxxxxxxx --agent codex --branch codex/agent-dashboard
-bugbook agent event log --workspace ~/Documents/Bugbook --run run_xxxxxxxx --level info --message "Implemented status cards"
-bugbook agent run finish run_xxxxxxxx --workspace ~/Documents/Bugbook --status succeeded --summary "Agent dashboard shipped" --commit abc1234
+dahso agent run start --workspace ~/Documents/Dahso --task task_xxxxxxxx --agent codex --branch codex/agent-dashboard
+dahso agent event log --workspace ~/Documents/Dahso --run run_xxxxxxxx --level info --message "Implemented status cards"
+dahso agent run finish run_xxxxxxxx --workspace ~/Documents/Dahso --status succeeded --summary "Agent dashboard shipped" --commit abc1234
 ```
 
 Dashboard JSON:
 
 ```bash
-bugbook agent dashboard --workspace ~/Documents/Bugbook
+dahso agent dashboard --workspace ~/Documents/Dahso
 ```
 
 ## Desktop App
@@ -50,7 +50,7 @@ bugbook agent dashboard --workspace ~/Documents/Bugbook
 
 ## iPhone App
 
-- Open `ios/BugbookMobile.xcodeproj`.
-- Run scheme `BugbookMobileApp`.
+- Open `ios/DahsoMobile.xcodeproj`.
+- Run scheme `DahsoMobileApp`.
 - `Notes` tab: create/open markdown notes.
 - `Agent Hub` tab: view task/run/event activity and update task statuses.

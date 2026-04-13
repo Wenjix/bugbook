@@ -1,0 +1,20 @@
+{
+  "name": "dahso",
+  "description": "Dahso workflow skills — orchestrate projects, manage tickets, run autonomous overnight execution, and keep your knowledge loop alive. Designed for use with the Dahso macOS app and its CLI.",
+  "version": "0.1.1",
+  "author": {
+    "name": "Max Forsey",
+    "email": "maxforsey@icloud.com"
+  },
+  "homepage": "https://github.com/max4c/dahso",
+  "repository": "https://github.com/max4c/dahso",
+  "license": "MIT",
+  "keywords": [
+    "dahso",
+    "workflow",
+    "tickets",
+    "pkm",
+    "autonomous-agents",
+    "project-management"
+  ]
+}

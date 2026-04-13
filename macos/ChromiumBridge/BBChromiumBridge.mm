@@ -2,6 +2,7 @@
 
 #import <dispatch/dispatch.h>
 #import <math.h>
+#import <objc/runtime.h>
 
 #include <atomic>
 #include <limits.h>
@@ -41,10 +42,10 @@
 @property(nonatomic, weak) BBChromiumPage *page;
 @end
 
-@interface BBChromiumApplication : NSApplication <CefAppProtocol> {
-@private
-    BOOL handlingSendEvent_;
-}
+@interface NSApplication (BBChromiumCefRuntime)
+- (BOOL)isHandlingSendEvent;
+- (void)setHandlingSendEvent:(BOOL)handlingSendEvent;
+- (void)bbchromium_cef_sendEvent:(NSEvent *)event;
 @end
 
 @interface BBChromiumMessagePumpEventHandler : NSObject
@@ -52,19 +53,27 @@
 - (void)timerTimeout:(NSTimer *)timer;
 @end
 
-@implementation BBChromiumApplication
+@implementation NSApplication (BBChromiumCefRuntime)
+
+static const void *BBChromiumHandlingSendEventKey = &BBChromiumHandlingSendEventKey;
 
 - (BOOL)isHandlingSendEvent {
-    return handlingSendEvent_;
+    NSNumber *value = objc_getAssociatedObject(self, BBChromiumHandlingSendEventKey);
+    return value.boolValue;
 }
 
 - (void)setHandlingSendEvent:(BOOL)handlingSendEvent {
-    handlingSendEvent_ = handlingSendEvent;
+    objc_setAssociatedObject(
+        self,
+        BBChromiumHandlingSendEventKey,
+        [NSNumber numberWithBool:handlingSendEvent],
+        OBJC_ASSOCIATION_RETAIN_NONATOMIC
+    );
 }
 
-- (void)sendEvent:(NSEvent *)event {
+- (void)bbchromium_cef_sendEvent:(NSEvent *)event {
     CefScopedSendingEvent sendingEventScoper;
-    [super sendEvent:event];
+    [self bbchromium_cef_sendEvent:event];
 }
 
 @end
@@ -97,6 +106,8 @@ static cef_request_context_t *BBChromiumSharedRequestContext = nullptr;
 static BOOL BBChromiumDidInitialize = NO;
 static BOOL BBChromiumMessagePumpActive = NO;
 static BOOL BBChromiumMessagePumpReentrancyDetected = NO;
+static Class BBChromiumHookedApplicationClass = Nil;
+static NSArray<NSString *> *BBChromiumConfiguredExtensionPaths = nil;
 static struct BBChromiumAppWrapper *BBChromiumApp = nullptr;
 static struct BBChromiumBrowserProcessHandlerWrapper *BBChromiumBrowserProcessHandler = nullptr;
 
@@ -109,6 +120,7 @@ static void BBChromiumInvalidateMessagePumpTimer(void);
 static void BBChromiumScheduleMessagePumpWork(int64_t delay_ms);
 static void BBChromiumPerformMessagePumpWork(void);
 static void BBChromiumEnsureApplicationHandlers(void);
+static void BBChromiumInstallApplicationHooks(void);
 
 static NSURL *BBChromiumFirstDirectoryURL(NSSearchPathDirectory searchPathDirectory) {
     NSURL *directoryURL = [[[NSFileManager defaultManager] URLsForDirectory:searchPathDirectory inDomains:NSUserDomainMask] firstObject];
@@ -161,7 +173,7 @@ static NSString *BBChromiumDownloadsDirectory(void) {
 
 static NSString *BBChromiumApplicationSupportPath(void) {
     NSURL *directory = BBChromiumFirstDirectoryURL(NSApplicationSupportDirectory);
-    return [[directory URLByAppendingPathComponent:@"Bugbook/Chromium" isDirectory:YES] path];
+    return [[directory URLByAppendingPathComponent:@"Dahso/Chromium" isDirectory:YES] path];
 }
 
 static NSString *BBChromiumRootCachePath(void) {
@@ -170,6 +182,69 @@ static NSString *BBChromiumRootCachePath(void) {
 
 static NSString *BBChromiumCachePath(void) {
     return [BBChromiumRootCachePath() stringByAppendingPathComponent:@"Default"];
+}
+
+static NSString *BBChromiumManifestPath(NSString *path) {
+    return [path stringByAppendingPathComponent:@"manifest.json"];
+}
+
+static BOOL BBChromiumHasExtensionManifest(NSString *path) {
+    return [[NSFileManager defaultManager] fileExistsAtPath:BBChromiumManifestPath(path)];
+}
+
+static NSString *BBChromiumPreferredExtensionCandidate(NSArray<NSString *> *candidates) {
+    if (candidates.count == 0) {
+        return nil;
+    }
+
+    return [candidates sortedArrayUsingComparator:^NSComparisonResult(NSString *lhs, NSString *rhs) {
+        NSString *lhsName = lhs.lastPathComponent;
+        NSString *rhsName = rhs.lastPathComponent;
+        return [rhsName compare:lhsName options:NSNumericSearch];
+    }].firstObject;
+}
+
+static NSString *BBChromiumResolvedExtensionPath(NSString *rawPath) {
+    NSString *trimmed = [rawPath stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (trimmed.length == 0) {
+        return nil;
+    }
+
+    NSString *standardizedPath = [[trimmed stringByExpandingTildeInPath] stringByStandardizingPath];
+    if (BBChromiumHasExtensionManifest(standardizedPath)) {
+        return standardizedPath;
+    }
+
+    NSArray<NSString *> *childNames = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:standardizedPath error:nil];
+    if (!childNames) {
+        return nil;
+    }
+
+    NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+    for (NSString *childName in childNames) {
+        NSString *candidate = [[standardizedPath stringByAppendingPathComponent:childName] stringByStandardizingPath];
+        if (BBChromiumHasExtensionManifest(candidate)) {
+            [candidates addObject:candidate];
+        }
+    }
+
+    return BBChromiumPreferredExtensionCandidate(candidates);
+}
+
+static NSArray<NSString *> *BBChromiumNormalizedExtensionPaths(NSArray<NSString *> *paths) {
+    NSMutableArray<NSString *> *normalized = [NSMutableArray array];
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+
+    for (NSString *path in paths) {
+        NSString *resolvedPath = BBChromiumResolvedExtensionPath(path);
+        if (!resolvedPath || [seen containsObject:resolvedPath]) {
+            continue;
+        }
+        [seen addObject:resolvedPath];
+        [normalized addObject:resolvedPath];
+    }
+
+    return normalized;
 }
 
 static BOOL BBChromiumEnvironmentFlagEnabled(NSString *name) {
@@ -186,29 +261,33 @@ static BOOL BBChromiumEnvironmentFlagEnabled(NSString *name) {
 }
 
 static NSArray<NSString *> *BBChromiumAdditionalArguments(void) {
-    static NSArray<NSString *> *arguments = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        if (BBChromiumEnvironmentFlagEnabled(@"BUGBOOK_CHROMIUM_AGGRESSIVE_GPU")) {
-            // Opt-in fast path for local benchmarking. This has proven unstable on
-            // some dev machines, so it should not be the default runtime mode.
-            arguments = @[
-                @"--use-gl=angle",
-                @"--use-angle=metal",
-                @"--enable-gpu-rasterization",
-                @"--enable-zero-copy",
-                @"--num-raster-threads=4",
-            ];
-            return;
-        }
+    NSMutableArray<NSString *> *arguments = [NSMutableArray array];
 
+    if (BBChromiumEnvironmentFlagEnabled(@"DAHSO_CHROMIUM_AGGRESSIVE_GPU")) {
+        // Opt-in fast path for local benchmarking. This has proven unstable on
+        // some dev machines, so it should not be the default runtime mode.
+        [arguments addObjectsFromArray:@[
+            @"--use-gl=angle",
+            @"--use-angle=metal",
+            @"--enable-gpu-rasterization",
+            @"--enable-zero-copy",
+            @"--num-raster-threads=4",
+        ]];
+    } else {
         // Stable default for dev use: keep Chromium on the software renderer so
         // browser tabs still work even when the GPU helper is not usable.
-        arguments = @[
+        [arguments addObjectsFromArray:@[
             @"--disable-gpu",
             @"--disable-gpu-compositing",
-        ];
-    });
+        ]];
+    }
+
+    NSArray<NSString *> *extensionPaths = BBChromiumNormalizedExtensionPaths(BBChromiumConfiguredExtensionPaths ?: @[]);
+    if (extensionPaths.count > 0) {
+        NSString *joinedPaths = [extensionPaths componentsJoinedByString:@","];
+        [arguments addObject:[NSString stringWithFormat:@"--load-extension=%@", joinedPaths]];
+    }
+
     return arguments;
 }
 
@@ -580,6 +659,14 @@ static void BBChromiumInvalidateMessagePumpTimer(void) {
     return [NSString stringWithFormat:@"CEF %s", CEF_VERSION];
 }
 
++ (void)configureExtensionPaths:(NSArray<NSString *> *)extensionPaths {
+    BBChromiumConfiguredExtensionPaths = BBChromiumNormalizedExtensionPaths(extensionPaths ?: @[]);
+
+    if (BBChromiumDidInitialize) {
+        NSLog(@"[ChromiumBridge] Extension changes will apply the next time Dahso launches.");
+    }
+}
+
 + (void)clearCookies {
     cef_request_context_t *context = [self sharedRequestContext];
     if (!context) {
@@ -693,6 +780,7 @@ static cef_browser_process_handler_t *CEF_CALLBACK BBChromiumGetBrowserProcessHa
 
 static void BBChromiumEnsureApplicationHandlers(void) {
     if (BBChromiumApp && BBChromiumBrowserProcessHandler) {
+        BBChromiumInstallApplicationHooks();
         return;
     }
 
@@ -704,6 +792,48 @@ static void BBChromiumEnsureApplicationHandlers(void) {
     BBChromiumInitializeBase<BBChromiumAppWrapper>(&BBChromiumApp->app);
     BBChromiumApp->app.get_browser_process_handler = BBChromiumGetBrowserProcessHandler;
     BBChromiumApp->browserProcessHandler = BBChromiumBrowserProcessHandler;
+
+    BBChromiumInstallApplicationHooks();
+}
+
+static void BBChromiumInstallApplicationHooks(void) {
+    NSApplication *application = NSApp ?: NSApplication.sharedApplication;
+    if (!application) {
+        return;
+    }
+
+    Class applicationClass = application.class;
+    if (!applicationClass || BBChromiumHookedApplicationClass == applicationClass) {
+        return;
+    }
+
+    SEL originalSelector = @selector(sendEvent:);
+    SEL swizzledSelector = @selector(bbchromium_cef_sendEvent:);
+    Method originalMethod = class_getInstanceMethod(applicationClass, originalSelector);
+    Method swizzledMethod = class_getInstanceMethod(NSApplication.class, swizzledSelector);
+    if (!originalMethod || !swizzledMethod) {
+        return;
+    }
+
+    BOOL didAddMethod = class_addMethod(
+        applicationClass,
+        originalSelector,
+        method_getImplementation(swizzledMethod),
+        method_getTypeEncoding(swizzledMethod)
+    );
+
+    if (didAddMethod) {
+        class_replaceMethod(
+            applicationClass,
+            swizzledSelector,
+            method_getImplementation(originalMethod),
+            method_getTypeEncoding(originalMethod)
+        );
+    } else {
+        method_exchangeImplementations(originalMethod, swizzledMethod);
+    }
+
+    BBChromiumHookedApplicationClass = applicationClass;
 }
 
 static cef_display_handler_t *CEF_CALLBACK BBChromiumGetDisplayHandler(cef_client_t *client) {

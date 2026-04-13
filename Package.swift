@@ -3,31 +3,31 @@
 import PackageDescription
 
 let package = Package(
-    name: "Bugbook",
+    name: "Dahso",
     platforms: [
         .macOS(.v14),
         .iOS(.v17)
     ],
     products: [
         .library(
-            name: "BugbookCore",
-            targets: ["BugbookCore"]
+            name: "DahsoCore",
+            targets: ["DahsoCore"]
         ),
         .executable(
-            name: "BugbookCLI",
-            targets: ["BugbookCLI"]
+            name: "DahsoCLI",
+            targets: ["DahsoCLI"]
         ),
         .executable(
-            name: "Bugbook",
-            targets: ["Bugbook"]
+            name: "Dahso",
+            targets: ["Dahso"]
         ),
         .executable(
-            name: "BugbookMobile",
-            targets: ["BugbookMobile"]
+            name: "DahsoMobile",
+            targets: ["DahsoMobile"]
         ),
         .executable(
-            name: "BugbookMCPSpike",
-            targets: ["BugbookMCPSpike"]
+            name: "DahsoMCPSpike",
+            targets: ["DahsoMCPSpike"]
         ),
     ],
     dependencies: [
@@ -41,33 +41,33 @@ let package = Package(
     targets: [
         // Shared library — models, storage, engines
         .target(
-            name: "BugbookCore",
-            path: "Sources/BugbookCore"
+            name: "DahsoCore",
+            path: "Sources/DahsoCore"
         ),
         // CLI executable
         .executableTarget(
-            name: "BugbookCLI",
+            name: "DahsoCLI",
             dependencies: [
-                "BugbookCore",
+                "DahsoCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Yams", package: "Yams"),
             ],
-            path: "Sources/BugbookCLI"
+            path: "Sources/DahsoCLI"
         ),
         // SwiftUI app
         .executableTarget(
-            name: "Bugbook",
+            name: "Dahso",
             dependencies: [
-                "BugbookCore",
+                "DahsoCore",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
                 "GhosttyKit",
             ],
-            path: "Sources/Bugbook",
+            path: "Sources/Dahso",
             exclude: ["MCP"],
             swiftSettings: [
-                .define("BUGBOOK_BROWSER_CHROMIUM")
+                .define("DAHSO_BROWSER_CHROMIUM")
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
@@ -86,37 +86,37 @@ let package = Package(
         ),
         // iPhone-friendly SwiftUI app
         .executableTarget(
-            name: "BugbookMobile",
-            dependencies: ["BugbookCore"],
-            path: "Sources/BugbookMobile"
+            name: "DahsoMobile",
+            dependencies: ["DahsoCore"],
+            path: "Sources/DahsoMobile"
         ),
         .executableTarget(
-            name: "BugbookMCPSpike",
-            path: "Sources/Bugbook/MCP"
+            name: "DahsoMCPSpike",
+            path: "Sources/Dahso/MCP"
         ),
-        // Unit tests for BugbookCore
+        // Unit tests for DahsoCore
         .testTarget(
-            name: "BugbookCoreTests",
-            dependencies: ["BugbookCore"],
-            path: "Tests/BugbookCoreTests"
+            name: "DahsoCoreTests",
+            dependencies: ["DahsoCore"],
+            path: "Tests/DahsoCoreTests"
         ),
-        // Integration tests for Bugbook app layer (models, state)
+        // Integration tests for Dahso app layer (models, state)
         .testTarget(
-            name: "BugbookTests",
+            name: "DahsoTests",
             dependencies: [
-                "Bugbook",
-                "BugbookCore",
+                "Dahso",
+                "DahsoCore",
             ],
-            path: "Tests/BugbookTests",
+            path: "Tests/DahsoTests",
             exclude: ["perf_baseline.tsv"]
         ),
         .testTarget(
-            name: "BugbookCLITests",
+            name: "DahsoCLITests",
             dependencies: [
-                "BugbookCLI",
-                "BugbookCore",
+                "DahsoCLI",
+                "DahsoCore",
             ],
-            path: "Tests/BugbookCLITests"
+            path: "Tests/DahsoCLITests"
         ),
         // GhosttyKit static library (Metal-backed terminal engine)
         .binaryTarget(

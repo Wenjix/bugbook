@@ -1,4 +1,4 @@
-# Bugbook Launch Polish — Progress Tracker
+# Dahso Launch Polish — Progress Tracker
 
 ## Status: COMPLETE
 
@@ -16,11 +16,11 @@
 - [x] 7. Fix highlight on drag bar click (highPriorityGesture stops propagation)
 - [x] 8. Template system — auto-creates folder, save-as-template button, better empty state
 - [x] 9. Agent Hub — cleaned up header, better empty states
-- [x] 10. Reference file / chat — shows note titles not paths, BugbookLogo branding
+- [x] 10. Reference file / chat — shows note titles not paths, DahsoLogo branding
 - [x] 11. Canvas — dot grid, empty state, scroll zoom, undo/redo, multi-select, auto-save
 
 ## Phase 3 — Testing & Quality
-- [x] 12. Unit tests for BugbookCore (115 tests, all passing)
+- [x] 12. Unit tests for DahsoCore (115 tests, all passing)
 - [x] 13. App model tests — 75 tests: CanvasDocument (31), BlockDocument (20), AppState (13), models (11)
 - [x] 14. Keyboard shortcut coverage via block type change tests in BlockDocumentTests
 - [x] 15. Edge case tests (53 new tests — unicode, boundaries, special chars, large data)
@@ -33,7 +33,7 @@
 - [x] 20. Code signing/notarization in CI (job added, needs secrets config)
 
 ## Phase 5 — Final Verification
-- [x] 21. All tests passing (243/243 — BugbookCore: 168, BugbookTests: 75)
+- [x] 21. All tests passing (243/243 — DahsoCore: 168, DahsoTests: 75)
 - [x] 22. Manual smoke test checklist created (.claude/smoke-test-checklist.md)
 - [x] 23. Performance profiling — OSSignposter intervals on buildFileTree, loadFileContent
 - [x] 24. Verify all fixes — build clean, 243 tests pass, all changes reviewed

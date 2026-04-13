@@ -154,7 +154,7 @@ jobs:
       - name: Build macOS app target
         run: |
           xcodebuild \
-            -project /Users/runner/work/bugbook/bugbook/macos/Bugbook.xcodeproj \
-            -scheme BugbookApp \
+            -project /Users/runner/work/dahso/dahso/macos/Dahso.xcodeproj \
+            -scheme DahsoApp \
             -configuration Debug \
             build

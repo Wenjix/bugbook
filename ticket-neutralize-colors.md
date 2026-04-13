@@ -13,9 +13,9 @@ The app currently uses blue (`#2383e2`) as the primary accent color for all inte
 Replace `Color.fallbackAccent` / `appAccent` (`#2383e2` / `#528bcc`) with a neutral dark tone across all interactive elements.
 
 **Files to change:**
-- `Sources/Bugbook/Extensions/Color+Theme.swift` — Redefine `fallbackAccent` and `fallbackAccentLight` to neutral values (e.g., dark charcoal `#2d2d2d` light / soft gray `#b0b0b0` dark mode)
-- `Sources/Bugbook/Extensions/DesignTokens.swift` — Update `StatusColor.info` and `StatusColor.active` away from blue
-- `BugbookApp.swift` — Review the `.tint(Color.fallbackAccent)` modifier
+- `Sources/Dahso/Extensions/Color+Theme.swift` — Redefine `fallbackAccent` and `fallbackAccentLight` to neutral values (e.g., dark charcoal `#2d2d2d` light / soft gray `#b0b0b0` dark mode)
+- `Sources/Dahso/Extensions/DesignTokens.swift` — Update `StatusColor.info` and `StatusColor.active` away from blue
+- `DahsoApp.swift` — Review the `.tint(Color.fallbackAccent)` modifier
 - `macos/App/Assets.xcassets/AccentColor.colorset/Contents.json` — Update the macOS system accent color asset (currently `#D43D32`)
 
 **UI areas affected (~162 usages of accentColor):**
@@ -36,7 +36,7 @@ Replace `Color.fallbackAccent` / `appAccent` (`#2383e2` / `#528bcc`) with a neut
 Ensure `Brand.primary` (`#e8453c`) is only used for the app icon/logo and not in UI chrome.
 
 **Files to change:**
-- `Sources/Bugbook/Extensions/DesignTokens.swift` — Keep `Brand.primary` defined but audit all usage
+- `Sources/Dahso/Extensions/DesignTokens.swift` — Keep `Brand.primary` defined but audit all usage
 - Any views currently using `Brand.primary` or `Brand.subtle` for non-logo purposes (e.g., `AiSidePanelView.swift` uses `Brand.primary` for the AI send button, `BlockCellView.swift` uses `Brand.subtle` as a background)
 - Replace these usages with neutral alternatives
 

@@ -1,8 +1,8 @@
-# Bugbook
+# Dahso
 
 A local-first personal workspace for notes, databases, terminal, mail, calendar, and AI — in one window.
 
-Bugbook replaces the tab sprawl of separate apps with a single pane-based workspace where everything lives together. Notes link to database rows, calendar events spawn meeting notes, terminal output sits next to the doc you're working on, and AI agents operate on the same data you do.
+Dahso replaces the tab sprawl of separate apps with a single pane-based workspace where everything lives together. Notes link to database rows, calendar events spawn meeting notes, terminal output sits next to the doc you're working on, and AI agents operate on the same data you do.
 
 ## What's in the workspace
 
@@ -32,50 +32,50 @@ A launcher (Cmd+K or the chrome bar split button) searches pages, databases, and
 
 ## Targets
 
-- **Bugbook** — macOS desktop app (SwiftUI + AppKit, macOS 14+)
-- **BugbookCLI** — command-line interface for agent and automation workflows
-- **BugbookCore** — shared models, storage engine, query/mutation engines
-- **BugbookMobile** — iOS app target (iOS 17+)
+- **Dahso** — macOS desktop app (SwiftUI + AppKit, macOS 14+)
+- **DahsoCLI** — command-line interface for agent and automation workflows
+- **DahsoCore** — shared models, storage engine, query/mutation engines
+- **DahsoMobile** — iOS app target (iOS 17+)
 
 ## CLI
 
 The CLI is designed for coding agents (Claude, Codex, etc.) to read and write the same workspace data the desktop app uses. Core commands:
 
 ```
-bugbook page list / get / create / update / delete
-bugbook db list / query / row create / row update
-bugbook board create / add-card / move-card
-bugbook agent task create / update / list
-bugbook agent run start / finish
-bugbook agent event log
-bugbook agent dashboard
-bugbook skill list / get / create
-bugbook backlinks <page>
+dahso page list / get / create / update / delete
+dahso db list / query / row create / row update
+dahso board create / add-card / move-card
+dahso agent task create / update / list
+dahso agent run start / finish
+dahso agent event log
+dahso agent dashboard
+dahso skill list / get / create
+dahso backlinks <page>
 ```
 
 Install locally:
 
 ```bash
 swift build
-swift run BugbookCLI install --force
+swift run DahsoCLI install --force
 ```
 
 ## Build and run
 
 ```bash
 # macOS app (SwiftPM/WebKit fallback path)
-swift run Bugbook
+swift run Dahso
 
 # macOS app bundle (Xcode/Chromium path)
 bash scripts/fetch-cef.sh
 cd macos && xcodegen generate
-xcodebuild -project /Users/maxforsey/Code/bugbook/macos/Bugbook.xcodeproj -scheme BugbookApp -configuration Debug build
+xcodebuild -project /Users/maxforsey/Code/dahso/macos/Dahso.xcodeproj -scheme DahsoApp -configuration Debug build
 
 # CLI
-swift build && swift run BugbookCLI --help
+swift build && swift run DahsoCLI --help
 
-# iOS (open in Xcode, select BugbookMobileApp scheme)
-open ios/BugbookMobile.xcodeproj
+# iOS (open in Xcode, select DahsoMobileApp scheme)
+open ios/DahsoMobile.xcodeproj
 ```
 
 ## Dependencies

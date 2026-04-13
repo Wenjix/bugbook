@@ -1,4 +1,4 @@
-# SwiftLint configuration for Bugbook
+# SwiftLint configuration for Dahso
 # Thresholds set to pass existing codebase. Tighten as code is refactored.
 
 excluded:
