@@ -745,6 +745,22 @@ struct BlockTextView: NSViewRepresentable {
             }
         }
 
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            let linkString: String?
+            if let string = link as? String {
+                linkString = string
+            } else if let url = link as? URL {
+                linkString = url.absoluteString
+            } else {
+                linkString = nil
+            }
+
+            guard let linkString else { return false }
+            guard let url = URL(string: linkString) else { return false }
+            NSWorkspace.shared.open(url)
+            return true
+        }
+
         func textView(
             _ textView: NSTextView,
             shouldChangeTextIn affectedCharRange: NSRange,
@@ -1503,7 +1519,9 @@ class BlockNSTextView: NSTextView {
             }
         }
 
-        super.paste(sender)
+        // Paste as plain text so the block's typing attributes (font, size, color)
+        // apply instead of whatever styling the source had.
+        pasteAsPlainText(sender)
     }
 
     // MARK: - Cross-Block Selection

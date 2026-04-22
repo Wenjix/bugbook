@@ -13,6 +13,19 @@ struct ContentViewBootstrap {
     var layoutPersistenceEnabled: Bool = true
 }
 
+private struct ShellTopChromeUnderlapModifier: ViewModifier {
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.ignoresSafeArea(.container, edges: .top)
+        } else {
+            content
+        }
+    }
+}
+
 // swiftlint:disable:next type_body_length
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -847,6 +860,9 @@ struct ContentView: View {
     private func handleNavItemTap(_ item: ShellNavItem, inNewTab: Bool) {
         appState.currentView = .editor
         appState.showSettings = false
+        if item.id != "search" {
+            appState.commandPaletteOpen = false
+        }
 
         // Modal / file actions don't have pane semantics — fall back to notifications.
         switch item.id {
@@ -1233,30 +1249,9 @@ struct ContentView: View {
 
             // Content card with grout padding
             ZStack(alignment: .trailing) {
-                VStack(spacing: 0) {
-                    if appState.showSettings {
-                        SettingsView(appState: appState, browserManager: browserManager)
-                            .background(Container.cardBg)
-                            .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
-                    } else if appState.currentView == .graphView {
-                        if let workspace = appState.workspacePath {
-                            GraphView(
-                                backlinkService: backlinkService,
-                                workspacePath: workspace,
-                                currentPagePath: appState.activeTab?.path,
-                                onNavigateToFile: { path in
-                                    navigateToFilePath(path)
-                                }
-                            )
-                            .background(Container.cardBg)
-                            .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
-                        }
-                    } else {
-                        paneTreeContent
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .ignoresSafeArea(.container, edges: .top)
+                contentCardBody
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .modifier(ShellTopChromeUnderlapModifier(enabled: shellUsesTopChromeUnderlap))
 
                 if appState.aiSidePanelOpen && appState.currentView == .editor {
                     AiSidePanelView(
@@ -1269,11 +1264,35 @@ struct ContentView: View {
                     .zIndex(2)
                 }
             }
-            .padding(.leading, appState.sidebarVisible ? 0 : Container.groutGap)
-            .padding(.trailing, Container.groutGap)
-            .padding(.bottom, Container.groutGap)
+            .padding(.leading, mainContentLeadingPadding)
+            .padding(.trailing, mainContentTrailingPadding)
+            .padding(.bottom, mainContentBottomPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var contentCardBody: some View {
+        if appState.showSettings {
+            SettingsView(appState: appState, browserManager: browserManager)
+                .background(Container.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
+        } else if appState.currentView == .graphView {
+            if let workspace = appState.workspacePath {
+                GraphView(
+                    backlinkService: backlinkService,
+                    workspacePath: workspace,
+                    currentPagePath: appState.activeTab?.path,
+                    onNavigateToFile: { path in
+                        navigateToFilePath(path)
+                    }
+                )
+                .background(Container.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
+            }
+        } else {
+            paneTreeContent
+        }
     }
 
     private var legacyWorkspaceBanners: some View {
@@ -1303,45 +1322,33 @@ struct ContentView: View {
         return usesImmersivePaneLayout(activeTab) ? 0 : ShellZoomMetrics.size(8)
     }
 
+    private let shellUsesTopChromeUnderlap = false
+    private let usesFullBleedShellLayout = false
+
+    private var mainContentLeadingPadding: CGFloat {
+        if usesFullBleedShellLayout {
+            return 0
+        }
+        return appState.sidebarVisible ? 0 : Container.groutGap
+    }
+
+    private var mainContentTrailingPadding: CGFloat {
+        usesFullBleedShellLayout ? 0 : Container.groutGap
+    }
+
+    private var mainContentBottomPadding: CGFloat {
+        usesFullBleedShellLayout ? 0 : Container.groutGap
+    }
+
     @ViewBuilder
     private var paneTreeContent: some View {
         Group {
             if let ws = workspaceManager.activeWorkspace {
-                PaneTreeView(
-                    node: ws.root,
-                    workspaceManager: workspaceManager,
-                    hasMultiplePanes: ws.hasMultiplePanes,
-                    fileTree: appState.fileTree,
-                    documentContentBuilder: { leaf, file in
-                        AnyView(self.paneDocumentContent(leaf: leaf, file: file))
-                    },
-                    terminalContentBuilder: { leaf, _ in
-                        AnyView(self.paneTerminalContent(leaf: leaf))
-                    },
-                    breadcrumbProvider: { file in
-                        self.breadcrumbs(for: file)
-                    },
-                    onBreadcrumbNavigate: { item in
-                        self.navigateToBreadcrumb(item)
-                    },
-                    blockDocumentLookup: { tabId in
-                        self.blockDocuments[tabId]
-                    },
-                    onCreatePaneTab: { leaf in
-                        self.createPaneTab(in: leaf)
-                    },
-                    onClosePaneTab: { leaf, tabId in
-                        self.closePaneTab(in: leaf, tabId: tabId)
-                    },
-                    onClosePane: { leaf in
-                        self.closePane(leaf)
-                    }
-                )
-                .environment(\.paneReplaceWarningId, paneReplaceWarningId)
+                paneTreeView(for: ws)
             }
         }
         .environment(\.workspacePath, appState.workspacePath)
-        .ignoresSafeArea(.container, edges: .top)
+        .modifier(ShellTopChromeUnderlapModifier(enabled: shellUsesTopChromeUnderlap))
         .overlay(alignment: .trailing) {
             if let peek = peekTarget {
                 HStack(spacing: 0) {
@@ -1416,6 +1423,40 @@ struct ContentView: View {
             closePeekPanel()
             modalTarget = RowTarget(dbPath: dbPath, rowId: rowId, autoFocusTitle: notification.databaseAutoFocusTitle)
         }
+    }
+
+    private func paneTreeView(for workspace: Workspace) -> some View {
+        PaneTreeView(
+            node: workspace.root,
+            workspaceManager: workspaceManager,
+            hasMultiplePanes: workspace.hasMultiplePanes,
+            fileTree: appState.fileTree,
+            documentContentBuilder: { leaf, file in
+                AnyView(self.paneDocumentContent(leaf: leaf, file: file))
+            },
+            terminalContentBuilder: { leaf, _ in
+                AnyView(self.paneTerminalContent(leaf: leaf))
+            },
+            breadcrumbProvider: { file in
+                self.breadcrumbs(for: file)
+            },
+            onBreadcrumbNavigate: { item in
+                self.navigateToBreadcrumb(item)
+            },
+            blockDocumentLookup: { tabId in
+                self.blockDocuments[tabId]
+            },
+            onCreatePaneTab: { leaf in
+                self.createPaneTab(in: leaf)
+            },
+            onClosePaneTab: { leaf, tabId in
+                self.closePaneTab(in: leaf, tabId: tabId)
+            },
+            onClosePane: { leaf in
+                self.closePane(leaf)
+            }
+        )
+        .environment(\.paneReplaceWarningId, paneReplaceWarningId)
     }
 
     // MARK: - Pane Document Content
@@ -1992,7 +2033,7 @@ struct ContentView: View {
         )
     }
 
-    private func wireUpDocumentCallbacks(_ doc: BlockDocument) {
+    private func wireUpDocumentCallbacks(_ doc: BlockDocument, tabId: UUID) {
         doc.onCreateDatabase = { [weak appState] name in
             guard appState?.workspacePath != nil else { return nil }
             let path = try? createDatabasePath(name: name, parentPagePath: doc.filePath)
@@ -2005,24 +2046,24 @@ struct ContentView: View {
             if path != nil { refreshFileTree() }
             return path
         }
-        doc.onCreateSubPage = { [weak appState] name in
-            guard let tab = appState?.activeTab else { return nil }
-            let path = try? fileSystem.createSubPage(under: tab.path, name: name)
+        doc.onCreateSubPage = { [weak doc] name in
+            guard let parentPath = doc?.filePath else { return nil }
+            let path = try? fileSystem.createSubPage(under: parentPath, name: name)
             if path != nil { refreshFileTree() }
             return path
         }
-        doc.onDeleteSubPage = { [weak appState] pageName in
-            guard let tab = appState?.activeTab,
+        doc.onDeleteSubPage = { [weak appState, weak doc] pageName in
+            guard let doc,
+                  let tabPath = doc.filePath,
                   let workspace = appState?.workspacePath else { return }
             // Companion folder is the .md path with extension stripped
-            let tabPath = tab.path
             let parentDir = tabPath.hasSuffix(".md") ? String(tabPath.dropLast(3)) : tabPath
             let childPath = (parentDir as NSString).appendingPathComponent("\(pageName).md")
             guard FileManager.default.fileExists(atPath: childPath) else { return }
             try? fileSystem.trashFile(at: childPath, workspace: workspace)
             NotificationCenter.default.post(name: .fileDeleted, object: childPath)
             // Immediately save the parent page so the deleted block doesn't reappear on reload
-            performSave(tabId: tab.id)
+            performSave(tabId: tabId)
             refreshFileTree()
         }
         doc.onToggleFavorite = { path in
@@ -2465,6 +2506,7 @@ struct ContentView: View {
                     pushHistory: true,
                     preferExistingTab: true
                 )
+                updateSidebarContextType()
 
                 if !handledWithoutLoad,
                    let updatedTabId = workspaceManager.focusedPaneTabID {
@@ -2504,6 +2546,7 @@ struct ContentView: View {
             pushHistory: true,
             preferExistingTab: true
         )
+        updateSidebarContextType()
 
         if !handledWithoutLoad,
            let updatedTabId = workspaceManager.focusedPaneTabID {
@@ -2593,7 +2636,7 @@ struct ContentView: View {
 
             let doc = BlockDocument(markdown: content)
             doc.filePath = entry.path
-            wireUpDocumentCallbacks(doc)
+            wireUpDocumentCallbacks(doc, tabId: tabId)
             injectChildPageLinks(into: doc, from: entry)
 
             blockDocuments[tabId] = doc
@@ -2753,8 +2796,8 @@ struct ContentView: View {
     }
 
     private func initializeWorkspace() {
-        // Use the full iCloud-aware path (scans siblings to pick richest workspace)
-        let workspacePath = WorkspaceResolver.defaultWorkspacePath(allowBlockingICloudLookup: true)
+        // Start with the fast local path so the initial window can appear immediately.
+        let workspacePath = fileSystem.defaultWorkspacePath()
         if !FileManager.default.fileExists(atPath: workspacePath) {
             try? FileManager.default.createDirectory(atPath: workspacePath, withIntermediateDirectories: true)
         }
@@ -2762,34 +2805,20 @@ struct ContentView: View {
         scheduleTrashPurgeIfNeeded(for: workspacePath)
         appState.workspacePath = workspacePath
         appState.refreshLegacyWorkspaces(using: fileSystem)
+        refreshFileTree()
 
         // Upgrade to the canonical iCloud workspace in the background if available.
         Task { @MainActor in
-            if let iCloudPath = await fileSystem.upgradeDefaultToICloudIfAvailable() {
-                appState.workspacePath = iCloudPath
+            let resolvedWorkspacePath = await fileSystem.upgradeDefaultToICloudIfAvailable() ?? workspacePath
+            if resolvedWorkspacePath != appState.workspacePath {
+                appState.workspacePath = resolvedWorkspacePath
                 appState.refreshLegacyWorkspaces(using: fileSystem)
-                scheduleTrashPurgeIfNeeded(for: iCloudPath)
+                scheduleTrashPurgeIfNeeded(for: resolvedWorkspacePath)
                 refreshFileTree()
-                startWorkspaceWatcher(path: iCloudPath)
+                startWorkspaceWatcher(path: resolvedWorkspacePath)
             }
-        }
 
-        // Register workspace as a qmd collection in the background (no-op if qmd not installed)
-        QmdService.registerCollectionInBackground(workspace: workspacePath)
-
-        // Create onboarding file for empty workspaces before building the file tree
-        if let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: workspacePath) {
-            refreshFileTree()
-            let entry = FileEntry(
-                id: onboardingPath,
-                name: (onboardingPath as NSString).lastPathComponent,
-                path: onboardingPath,
-                isDirectory: false
-            )
-            appState.openFile(entry)
-            loadFileContent(for: entry)
-        } else {
-            refreshFileTree()
+            finalizeResolvedWorkspaceStartup(for: resolvedWorkspacePath)
         }
 
         // Always ensure at least one tab is open
@@ -2833,6 +2862,42 @@ struct ContentView: View {
         meetingNotificationService.startPolling(calendarService: calendarService)
     }
 
+    private func finalizeResolvedWorkspaceStartup(for workspacePath: String) {
+        QmdService.registerCollectionInBackground(workspace: workspacePath)
+
+        guard shouldAutoOpenOnboarding,
+              let onboardingPath = OnboardingService.ensureOnboarding(workspacePath: workspacePath) else {
+            refreshFileTree()
+            return
+        }
+
+        refreshFileTree()
+        navigateToEntryInPane(
+            FileEntry(
+                id: onboardingPath,
+                name: (onboardingPath as NSString).lastPathComponent,
+                path: onboardingPath,
+                isDirectory: false
+            )
+        )
+    }
+
+    private var shouldAutoOpenOnboarding: Bool {
+        let workspaceHasMeaningfulContent = workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
+            leaf.tabs.contains { content in
+                switch content {
+                case .terminal:
+                    return true
+                case .document(let file):
+                    return !file.isEmptyTab
+                }
+            }
+        } ?? false
+
+        guard !workspaceHasMeaningfulContent else { return false }
+        return appState.openTabs.allSatisfy(\.isEmptyTab)
+    }
+
     private func restoreWorkspaceDocumentsIfNeeded() {
         guard !restoredWorkspaceDocuments else { return }
 
@@ -2847,7 +2912,7 @@ struct ContentView: View {
 
             let doc = BlockDocument(markdown: loadedPage.content)
             doc.filePath = entry.path
-            wireUpDocumentCallbacks(doc)
+            wireUpDocumentCallbacks(doc, tabId: file.id)
             injectChildPageLinks(into: doc, from: entry)
             blockDocuments[file.id] = doc
 
@@ -3096,7 +3161,7 @@ struct ContentView: View {
                 appState.openTabs[index].isDirty = loadedPage.isRestoredDraft
                 let doc = BlockDocument(markdown: content)
                 doc.filePath = entry.path
-                wireUpDocumentCallbacks(doc)
+                wireUpDocumentCallbacks(doc, tabId: appState.openTabs[index].id)
                 injectChildPageLinks(into: doc, from: entry)
 
                 blockDocuments[appState.openTabs[index].id] = doc

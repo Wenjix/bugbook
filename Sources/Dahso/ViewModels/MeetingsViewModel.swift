@@ -147,7 +147,7 @@ final class MeetingsViewModel {
         displayParent: String,
         filePath: String
     ) -> DiscoveredMeeting? {
-        let (yaml, _) = MarkdownBlockParser.stripYAMLFrontmatter(content)
+        let (yaml, body) = MarkdownBlockParser.stripYAMLFrontmatter(content)
         guard !yaml.isEmpty,
               MarkdownBlockParser.yamlValue(for: "type", in: yaml) == "meeting" else {
             return nil
@@ -156,7 +156,12 @@ final class MeetingsViewModel {
         let titleField = MarkdownBlockParser.yamlValue(for: "title", in: yaml)
         let dateField = MarkdownBlockParser.yamlValue(for: "date", in: yaml)
 
-        let title = (titleField?.isEmpty == false) ? titleField! : pageName
+        // Prefer the live H1 heading so AI-generated / user-edited titles flow through
+        // to the meetings list. Fall back to the YAML field (set at creation) and
+        // finally the filename.
+        let title = extractFirstHeading(from: body)
+            ?? titleField.flatMap { $0.isEmpty ? nil : $0 }
+            ?? pageName
         let timestamp = dateField.flatMap { MeetingNoteService.isoDateFormatter.date(from: $0) } ?? fileModDate(filePath)
 
         return DiscoveredMeeting(
@@ -213,23 +218,25 @@ final class MeetingsViewModel {
     // MARK: - Helpers
 
     private nonisolated static func extractFirstHeading(from text: String) -> String? {
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+        var found: String?
+        text.enumerateLines { line, stop in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("#") {
-                // Strip leading #s and space
-                var level = 0
-                for ch in trimmed {
-                    if ch == "#" { level += 1 } else { break }
-                }
-                guard level <= 6, trimmed.count > level else { continue }
-                let idx = trimmed.index(trimmed.startIndex, offsetBy: level)
-                if trimmed[idx] == " " {
-                    let heading = String(trimmed[trimmed.index(after: idx)...]).trimmingCharacters(in: .whitespaces)
-                    if !heading.isEmpty { return heading }
-                }
+            guard trimmed.hasPrefix("#") else { return }
+            var level = 0
+            for ch in trimmed {
+                if ch == "#" { level += 1 } else { break }
+            }
+            guard level <= 6, trimmed.count > level else { return }
+            let idx = trimmed.index(trimmed.startIndex, offsetBy: level)
+            guard trimmed[idx] == " " else { return }
+            let heading = String(trimmed[trimmed.index(after: idx)...])
+                .trimmingCharacters(in: .whitespaces)
+            if !heading.isEmpty {
+                found = heading
+                stop = true
             }
         }
-        return nil
+        return found
     }
 
     private nonisolated static let legacyLongDateFormatter: DateFormatter = {

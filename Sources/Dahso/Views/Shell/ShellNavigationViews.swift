@@ -162,6 +162,11 @@ struct HarborSidebarView<ContextualContent: View>: View {
         .frame(maxHeight: .infinity)
         .background(Container.groutBg)
         .clipped()
+        .onChange(of: contextualLabel) { _, _ in
+            // Auto-expand when switching areas so the new context is visible.
+            // A user-driven collapse only sticks within the same area.
+            if !contextualExpanded { contextualExpanded = true }
+        }
     }
 }
 
