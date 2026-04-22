@@ -24,19 +24,13 @@ struct WorkspaceTabBar: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            // Sidebar toggle — only visible in tab bar when sidebar is closed
+            // Sidebar toggle — only in the tab bar when the sidebar is closed.
+            // When open, the toggle lives in the sidebar's own top band.
             if !sidebarOpen {
-                Button {
-                    NotificationCenter.default.post(name: .toggleSidebar, object: nil)
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(ShellZoomMetrics.font(13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: ShellZoomMetrics.size(30), height: ShellZoomMetrics.size(30))
-                }
-                .buttonStyle(.plain)
-                .help("Toggle Sidebar")
-                .padding(.leading, ShellZoomMetrics.size(70))
+                SidebarToggleButton()
+                    .padding(.leading, ShellZoomMetrics.size(78))
+                    .padding(.trailing, ShellZoomMetrics.size(4))
+                    .padding(.bottom, ShellZoomMetrics.size(2))
             }
 
             HStack(alignment: .bottom, spacing: -ShellZoomMetrics.size(8)) {

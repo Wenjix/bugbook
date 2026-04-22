@@ -6,7 +6,7 @@ enum ShellSidebarMetrics {
     static var defaultWidth: CGFloat { 200 }
     static var minWidth: CGFloat { 150 }
     static var maxWidth: CGFloat { 300 }
-    static var windowChromeTopInset: CGFloat { ShellZoomMetrics.size(32) }
+    static var windowChromeTopInset: CGFloat { ShellZoomMetrics.size(56) }
 
     static var titleTopPadding: CGFloat { ShellZoomMetrics.size(14) }
     static var titleBottomPadding: CGFloat { ShellZoomMetrics.size(10) }
@@ -35,8 +35,11 @@ struct HarborSidebarView<ContextualContent: View>: View {
 
     // All sidebar content shares one horizontal inset so everything aligns.
     private var inset: CGFloat { ShellSidebarMetrics.sectionHorizontalPadding }
+    // Matches WorkspaceTabBar height so the sidebar toggle aligns with the tabs row.
+    private var windowChromeBandHeight: CGFloat { ShellZoomMetrics.size(36) }
 
     @AppStorage("sidebar_favorites_expanded") private var favoritesExpanded = true
+    @AppStorage("sidebar_contextual_expanded") private var contextualExpanded = true
     @State private var expandedFolders: Set<String> = {
         let stored = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
         return Set(stored)
@@ -45,15 +48,16 @@ struct HarborSidebarView<ContextualContent: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Sidebar toggle — in the title bar band, aligned with tabs
-            HStack {
+            // Top band — sits next to the traffic lights and holds the sidebar toggle.
+            // Leading padding clears the traffic lights so the toggle anchors in the
+            // same spot whether the sidebar is open or closed.
+            HStack(spacing: 0) {
+                SidebarToggleButton()
                 Spacer(minLength: 0)
-                fixedIconButton("sidebar.left", help: "Toggle Sidebar") {
-                    NotificationCenter.default.post(name: .toggleSidebar, object: nil)
-                }
             }
-            .padding(.top, ShellZoomMetrics.size(6))
-            .padding(.trailing, inset)
+            .padding(.top, ShellZoomMetrics.size(1))
+            .padding(.leading, ShellZoomMetrics.size(78))
+            .padding(.bottom, ShellZoomMetrics.size(8))
 
             // ── Fixed Zone ──────────────────────────────────
             // Vertical navigation list. Click replaces focused pane; Cmd+click opens new workspace tab.
@@ -101,15 +105,14 @@ struct HarborSidebarView<ContextualContent: View>: View {
 
             // ── Contextual Zone ─────────────────────────────
             if let label = contextualLabel {
-                Text(label.uppercased())
-                    .font(ShellZoomMetrics.font(Typography.caption, weight: .medium))
-                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                ShellSidebarSectionHeaderView(title: label.uppercased(), isExpanded: $contextualExpanded)
                     .padding(.horizontal, inset)
                     .padding(.top, ShellZoomMetrics.size(8))
-                    .padding(.bottom, ShellZoomMetrics.size(4))
 
-                contextualContent()
-                    .transition(.opacity.animation(.easeInOut(duration: 0.15)))
+                if contextualExpanded {
+                    contextualContent()
+                        .transition(.opacity.animation(.easeInOut(duration: 0.15)))
+                }
             }
 
             Spacer(minLength: 0)
@@ -160,17 +163,29 @@ struct HarborSidebarView<ContextualContent: View>: View {
         .background(Container.groutBg)
         .clipped()
     }
+}
 
-    private func fixedIconButton(_ icon: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
+// MARK: - Sidebar Toggle Button
+
+struct SidebarToggleButton: View {
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            NotificationCenter.default.post(name: .toggleSidebar, object: nil)
+        } label: {
+            Image(systemName: "sidebar.left")
                 .font(ShellZoomMetrics.font(13, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
-                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
+                        .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+                )
         }
         .buttonStyle(.plain)
-        .help(help)
+        .help("Toggle Sidebar")
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -253,6 +268,12 @@ private struct ShellSidebarSectionHeaderView: View {
                     .opacity(isHovering ? 1 : 0)
                 Spacer()
             }
+            .padding(.horizontal, ShellZoomMetrics.size(4))
+            .padding(.vertical, ShellZoomMetrics.size(3))
+            .background(
+                RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
+                    .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
