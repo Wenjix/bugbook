@@ -1,7 +1,7 @@
 {
   "name": "dahso",
   "description": "Dahso workflow skills — orchestrate projects, manage tickets, run autonomous overnight execution, and keep your knowledge loop alive. Designed for use with the Dahso macOS app and its CLI.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": {
     "name": "Max Forsey",
     "email": "maxforsey@icloud.com"

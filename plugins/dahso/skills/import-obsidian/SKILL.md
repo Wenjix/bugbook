@@ -52,6 +52,50 @@ If the destination already has `.md` files, confirm with the user before proceed
 find "$DEST" -maxdepth 2 -name "*.md" -not -path "*/\.*" | head -5
 ```
 
+### iCloud file availability
+
+If the source vault is in iCloud (paths under `iCloud~md~obsidian/` or `com~apple~CloudDocs/`), confirm files are downloaded locally before attempting to read content. `.icloud` stub files are placeholders that trigger slow downloads or timeouts during bulk reads.
+
+```bash
+stub_count=$(find "$SOURCE" -type f -name "*.icloud" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$stub_count" -gt 0 ]; then
+  echo "⚠️  $stub_count .icloud stub files detected — content not downloaded locally."
+  echo "   In Finder: right-click the vault folder → Download Now, then retry."
+  exit 1
+fi
+```
+
+Hard-fail rather than push through; downstream content reads will stall for tens of minutes on a large vault if the files aren't local.
+
+### Cross-workspace collision scan
+
+Intra-Obsidian collisions aren't the only risk. Scan source filenames against existing destination filenames — anything in common will cause wikilinks in imported pages to potentially resolve to the wrong target.
+
+```bash
+# Find source filenames that already exist somewhere in $DEST (excluding Dahso system dirs)
+python3 << 'PY'
+from pathlib import Path
+src = Path("$SOURCE")
+dst = Path("$DEST")
+skip_prefixes = ("Agent Flow/", "Bugbook Context/", "logseq/", "Settings/",
+                 "WorkspaceLayouts/", "_assets/", "covers/", "icons/",
+                 "journals/", "pages/", "whiteboards/", ".trash", ".git")
+existing = set()
+for md in dst.rglob("*.md"):
+    rel = str(md.relative_to(dst))
+    if any(rel.startswith(p) for p in skip_prefixes):
+        continue
+    existing.add(md.name)
+incoming = set(md.name for md in src.rglob("*.md") if "/.obsidian/" not in str(md) and "/.trash/" not in str(md))
+cross = sorted(existing & incoming)
+print(f"Cross-workspace collisions: {len(cross)}")
+for c in cross[:20]:
+    print(f"  {c}")
+PY
+```
+
+For each cross-collision, the import rewrites the inbound page with a parent-folder suffix (same treatment as intra-Obsidian collisions). Report the list to the user in Phase 3.
+
 ---
 
 ## Phase 2: Inventory (read-only)
@@ -125,6 +169,28 @@ done | head -20
 
 Count the full set, don't just print first 20.
 
+### Empty source files
+
+0-byte or whitespace-only source files create fake collisions with destination scaffolding (e.g. Obsidian's `Untitled.md` vs Dahso's `QA Slash Blocks/Untitled.md`) and add noise to the index. Count them so the Phase 3 summary is honest about what's actually being imported.
+
+```bash
+find "$SOURCE" -type f -name "*.md" -not -path "*/\.obsidian/*" -not -path "*/\.trash/*" -size 0 | wc -l
+```
+
+Phase 4 will skip files under ~10 bytes (empty after frontmatter stripping also counts).
+
+### Inline wikilink scan (known rendering caveat)
+
+Obsidian content heavily uses inline `[[Page Name]]` wikilinks inside bullets and paragraphs (e.g. `- [[Foo]]` or `See [[Foo]] for context`). Dahso's current parser only resolves `[[Page Name]]` when *the line is exactly `[[Page Name]]`* — tracked in app-side ticket `row_dwjb9w`. Inline wikilinks render as literal `[[...]]` text in the app until that ships.
+
+Count inline wikilinks so the user can choose a mode in Phase 3:
+
+```bash
+# Any line where [[Name]] is not the only content on the line
+grep -rE '.[[].+[]]|^.*[[][^]]+[]].+' "$SOURCE" --include="*.md" \
+  -l 2>/dev/null | wc -l
+```
+
 ---
 
 ## Phase 3: Transform plan (approval gate)
@@ -160,9 +226,20 @@ Transform rules (see references/transforms.md):
   - rewrite image embed syntax to standard markdown
   - strip YAML frontmatter
   - synthesize H1 from filename when missing
-  - rename collision files with parent-folder suffix
+  - rename intra-Obsidian and cross-workspace collision files with parent-folder suffix
   - rewrite inbound wikilinks for renamed files
+  - skip 0-byte / empty source files
 ```
+
+### Wikilink rendering mode (user choice)
+
+If the inline-wikilink scan found any, ask the user to choose:
+
+**A) Leave wikilinks as-is** (recommended default). Inline `[[Name]]` will render as literal `[[brackets]]` in Dahso until the parser fix (`row_dwjb9w`) lands. Standalone-line `[[Name]]` wikilinks render as clickable links today. Best option for preserving original authored structure.
+
+**B) Rewrite inline wikilinks to standalone-line form** (workaround mode). The transform extracts inline wikilinks onto their own lines (bullet `- [[Foo]] — note` becomes `[[Foo]]` on one line + `note` on the next). All wikilinks become clickable in current Dahso, at the cost of changing the original bullet-list layout. Reversible when the parser fix ships.
+
+Both modes are deterministic; pick based on user preference. Record the choice for Phase 4.
 
 **Wait for user approval before proceeding to Phase 4.** Do not write any files in Phases 1–3.
 
@@ -184,16 +261,18 @@ Use `rsync -av` (not `cp -r`) so subsequent runs are idempotent and progress is 
 
 ### Walk the markdown tree
 
-For each `.md` file under `$SOURCE` (excluding `.obsidian/`, `.trash/`, the Images folder, and any `*.excalidraw.md`):
+For each `.md` file under `$SOURCE` (excluding `.obsidian/`, `.trash/`, the Images folder, any `*.excalidraw.md`, and any file under ~10 bytes after frontmatter stripping):
 
 1. Compute the relative path and create the destination folder if needed.
 2. Read the file.
 3. Apply transforms (see `references/transforms.md`):
    - Strip YAML frontmatter block at file start.
+   - Skip file entirely if post-frontmatter body is empty or whitespace-only.
    - If there's no `# H1` within the first 20 lines, synthesize one from the filename.
    - Rewrite every `![[image.png]]` embed as `![](Images/image.png)`. If the embedded file is not an image, leave a `<!-- TODO: embedded file not migrated: image.png -->` comment and continue.
-   - Leave `[[Page Name]]` wikilinks as-is.
-   - If this filename is in the collision list, rename it with the parent-folder suffix and record the rename.
+   - **If wikilink mode B was chosen in Phase 3**: for each line where `[[Name]]` is embedded with other content, extract the wikilink onto its own line — split before and after so surrounding text stays on separate lines. Skip this transform if mode A.
+   - Leave standalone-line `[[Page Name]]` wikilinks as-is.
+   - If this filename is in the intra-Obsidian or cross-workspace collision list, rename it with the parent-folder suffix and record the rename.
 4. Write the transformed content to the destination path.
 
 Implement this in one pass — read, transform, write — via a small script (bash, python, or inline heredoc). Do not use subagents for this phase; it's a single deterministic loop.
@@ -230,13 +309,21 @@ dahso page get "<some-page>" --raw | head -40
 dahso backlinks "<some-page>"
 ```
 
-### Macbook app
+### Relaunch the Dahso app (required)
 
-Tell the user to open the macOS Dahso app and spot-check:
-- Index/file tree shows the imported folder hierarchy
+**This is not optional.** Dahso's in-memory page index does not rebuild on external bulk file changes. After a 100+ page import, the app's sidebar, search, and wikilink resolver will be stale until the app fully restarts.
+
+Tell the user explicitly: **quit Dahso (Cmd+Q) and relaunch** before the next check. If running from Xcode, Stop (⌘.) and Run (⌘R).
+
+### macOS app spot-check (post-restart)
+
+After the user has restarted the app, ask them to spot-check:
+- Sidebar shows the imported top-level folders
 - A sample page opens with correct H1 title + body
 - An image in a page loads (if `Images/` was present)
-- A wikilink resolves to its target page
+- A wikilink on a standalone line resolves to its target
+
+Inline wikilinks (not on their own line) will display as literal `[[brackets]]` — this is tracked by app-side ticket `row_dwjb9w` and the user will have been warned at Phase 3. If mode B was chosen, all wikilinks should be clickable.
 
 ---
 
@@ -256,13 +343,17 @@ Do not close the loop automatically — leave that to the user.
 
 ## Known edge cases
 
-- **Trailing space in vault path.** Max's Muse vault is literally `Muse /` with a trailing space. Quote every path.
-- **iCloud sync latency.** Files written to `$DEST` propagate to iCloud asynchronously. If the user expects them on their phone immediately, note that sync may take seconds to minutes.
+- **Trailing space in vault path.** Quote every path. Some iCloud-synced vaults have a trailing space in the folder name (e.g. `Muse /`) that breaks unquoted shell expansion.
+- **iCloud sync latency and stubs.** Pre-flight catches `.icloud` stub files. Files written to `$DEST` also propagate to iCloud asynchronously — sync to other devices may take seconds to minutes.
 - **Non-image embeds.** Obsidian supports `![[file.pdf]]` and `![[audio.mp3]]` — leave a TODO comment rather than trying to migrate.
-- **Frontmatter-only pages.** Some pages are just metadata — after stripping frontmatter they're empty. Synthesize an H1 from the filename and leave the body empty; don't skip them.
+- **Frontmatter-only pages.** After frontmatter stripping, some pages are empty or whitespace-only. Skip these rather than writing empty H1-only files that pollute the index.
 - **Excalidraw files.** Skip `*.excalidraw.md` entirely — they're JSON drawings, not markdown content.
 - **`.trash/` and `.obsidian/`.** Never import these directories.
-- **Dahso won't see the workspace until it's open.** If the CLI and macOS app disagree on what's in the workspace, re-launch the macOS app after the import completes.
+- **0-byte source files.** Skip entirely. They create fake collisions with destination system files (notably `Untitled.md`) and add no content.
+- **Inline wikilinks render as raw `[[brackets]]` in current Dahso.** Tracked in app ticket `row_dwjb9w`. The user chose mode A (leave as-is) or mode B (rewrite to standalone-line) at Phase 3. Reversible once the parser fix ships.
+- **Absolute-path database embeds.** Some Obsidian pages carry `<!-- database: /absolute/path -->` comments that break silently when workspace is renamed or moved. Tracked in app ticket `row_r8pk0p`. Import leaves them intact; user should eyeball any page that renders blank post-restart.
+- **Dahso `Page.md` + `Page/` folder pairs.** Dahso's convention pairs a markdown page with a sibling folder for embedded database content. The import doesn't create these, but downstream `/compile` runs that move files must move the pair together — orphaned pair folders cause silent data loss. Flag for `/compile` authors.
+- **Dahso app requires relaunch after bulk import.** Not "usually" — always. The app's in-memory index doesn't rebuild on external file changes. Already called out in Phase 5 as a required step.
 
 ## Known non-goals
 
