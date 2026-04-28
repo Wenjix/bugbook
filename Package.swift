@@ -71,7 +71,9 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("AudioToolbox"),
                 .linkedFramework("Carbon"),
+                .linkedFramework("CoreAudio"),
                 .linkedFramework("CoreFoundation"),
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("CoreText"),

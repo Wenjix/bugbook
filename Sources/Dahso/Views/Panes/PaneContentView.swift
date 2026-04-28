@@ -21,9 +21,7 @@ struct PaneContentView: View {
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
     var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
-    var onCreatePaneTab: ((PaneNode.Leaf) -> Void)? = nil
-    var onClosePaneTab: ((PaneNode.Leaf, UUID) -> Void)? = nil
-    var onClosePane: ((PaneNode.Leaf) -> Void)? = nil
+    let paneActions: PaneActions
 
     @State private var isDropTarget = false
 
@@ -33,6 +31,7 @@ struct PaneContentView: View {
     @State private var findCurrentIndex: Int?
     @State private var findMatchCache: [PaneFindMatch] = []
     @State private var findAutoExpandedToggleIds: Set<UUID> = []
+    @State private var databaseFindState: DatabaseViewState?
     @FocusState private var findFieldFocused: Bool
 
     private var isFocusedPane: Bool {
@@ -47,7 +46,11 @@ struct PaneContentView: View {
     private var activeDatabaseFindState: DatabaseViewState? {
         guard case .document(let file) = leaf.content,
               file.isDatabase else { return nil }
-        return DatabaseViewState.state(for: leaf.id)
+        return databaseFindState
+    }
+
+    private var activeDatabaseFindContextRevision: UInt64 {
+        activeDatabaseFindState?.findContextRevision ?? 0
     }
 
     private func recomputeFindMatches() {
@@ -129,15 +132,13 @@ struct PaneContentView: View {
                         fileTree: fileTree,
                         breadcrumbs: chromeBreadcrumbs,
                         onBreadcrumbNavigate: onBreadcrumbNavigate,
-                        onCreatePaneTab: onCreatePaneTab,
-                        onClosePaneTab: onClosePaneTab,
-                        onClosePane: onClosePane
+                        paneActions: paneActions
                     )
                 }
 
                 if showFindBar {
                     editorFindBar
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
                 contentForLeaf
@@ -192,23 +193,24 @@ struct PaneContentView: View {
             guard showFindBar else { return }
             recomputeFindMatches()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .databaseFindContextDidChange)) { notification in
-            guard showFindBar,
-                  let hostPaneId = notification.userInfo?[DatabaseFindNotificationKey.hostPaneId] as? UUID,
-                  hostPaneId == leaf.id else { return }
+        .onPreferenceChange(DatabaseViewStatePreferenceKey.self) { newValue in
+            databaseFindState = newValue.state
+            guard showFindBar else { return }
+            recomputeFindMatches()
+        }
+        .onChange(of: activeDatabaseFindContextRevision) { _, _ in
+            guard showFindBar else { return }
             recomputeFindMatches()
         }
         .contextMenu {
             Menu("Split Right") {
                 paneTypeMenu { content in
-                    workspaceManager.setFocusedPane(id: leaf.id)
-                    _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content)
+                    splitPane(axis: .horizontal, content: content)
                 }
             }
             Menu("Split Down") {
                 paneTypeMenu { content in
-                    workspaceManager.setFocusedPane(id: leaf.id)
-                    _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: content)
+                    splitPane(axis: .vertical, content: content)
                 }
             }
             Divider()
@@ -218,60 +220,65 @@ struct PaneContentView: View {
                 }
             }
             if leaf.activeContent.defaultNewPaneTab() != nil {
-                Button("New Tab") {
-                    onCreatePaneTab?(leaf)
+                Button("New Pane Item") {
+                    paneActions.createPaneTab(leaf)
                 }
             }
             if showFocusBorder {
+                Button("Unsplit") {
+                    paneActions.closeOtherPanes(leaf)
+                }
+                Button("Close Other Panes") {
+                    paneActions.closeOtherPanes(leaf)
+                }
                 Button("Pop Out to Tab") {
                     workspaceManager.popOutPane(id: leaf.id)
                 }
             }
             Divider()
             Button("Close Pane") {
-                if let onClosePane {
-                    onClosePane(leaf)
-                } else {
-                    workspaceManager.closePane(id: leaf.id)
-                }
+                paneActions.closePane(leaf)
             }
         }
+    }
+
+    private func splitPane(axis: PaneNode.Split.Axis, content: PaneContent) {
+        workspaceManager.setFocusedPane(id: leaf.id)
+        _ = workspaceManager.splitFocusedPane(axis: axis, newContent: content)
     }
 
     @ViewBuilder
     private func paneTypeMenu(action: @escaping (PaneContent) -> Void) -> some View {
         Button("Browser") { action(.browserDocument()) }
         Button("Terminal") { action(.terminal()) }
-        Button("Empty Page") { action(.emptyDocument()) }
+        Button("Home") { action(.emptyDocument()) }
         Button("Mail") { action(.mailDocument()) }
         Button("Calendar") { action(.calendarDocument()) }
         Button("Meetings") { action(.meetingsDocument()) }
         Button("Graph View") { action(.graphDocument()) }
-        Button("Home") { action(.gatewayDocument()) }
+        Button("Gateway") { action(.gatewayDocument()) }
     }
 
     private var chromeBreadcrumbs: [BreadcrumbItem] {
-        guard let provider = breadcrumbProvider else { return [] }
-        switch leaf.content {
-        case .document(let file):
-            if file.isEmptyTab || file.isMail || file.isCalendar || file.isMeetings || file.isGateway || file.isChat || file.isGraphView || file.isBrowser { return [] }
-            return provider(file)
-        case .terminal:
+        guard let provider = breadcrumbProvider,
+              case .document(let file) = leaf.content,
+              isPlainDocumentPage(file) else {
             return []
         }
+        return provider(file)
     }
 
     private var shouldShowChromeBar: Bool {
-        guard case .document(let file) = leaf.content else { return true }
-        if showFocusBorder {
-            return true
-        }
-        return !(file.isMail || file.isCalendar)
+        showFocusBorder || leaf.hasMultipleTabs
     }
 
     private var supportsInlineFindBar: Bool {
         guard case .document(let file) = leaf.content else { return false }
-        return !file.isEmptyTab
+        return isPlainDocumentPage(file)
+    }
+
+    private func isPlainDocumentPage(_ file: OpenFile) -> Bool {
+        !file.isEmptyTab
             && !file.isMail
             && !file.isCalendar
             && !file.isMeetings

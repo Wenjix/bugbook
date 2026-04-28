@@ -1,6 +1,85 @@
 import XCTest
 @testable import Dahso
 
+// MARK: - AttributedString Converter Tests
+
+final class AttributedStringConverterTests: XCTestCase {
+    func testBareWikiLinkBecomesClickableSpanAndRoundTrips() {
+        let markdown = "See [[Values]] for more."
+        let attributed = AttributedStringConverter.attributedString(from: markdown)
+        let linkRange = (attributed.string as NSString).range(of: "Values")
+
+        XCTAssertEqual(attributed.string, "See Values for more.")
+        XCTAssertEqual(
+            attributed.attribute(AttributedStringConverter.wikiLinkPageNameKey, at: linkRange.location, effectiveRange: nil) as? String,
+            "Values"
+        )
+        XCTAssertEqual(
+            attributed.attribute(AttributedStringConverter.markdownSourceKey, at: linkRange.location, effectiveRange: nil) as? String,
+            "[[Values]]"
+        )
+        XCTAssertEqual(AttributedStringConverter.markdown(from: attributed), markdown)
+    }
+
+    func testBareWikiLinkWorksInsideBulletText() {
+        let markdown = "[[Values]] test"
+        let attributed = AttributedStringConverter.attributedString(from: markdown)
+        let linkRange = (attributed.string as NSString).range(of: "Values")
+
+        XCTAssertEqual(attributed.string, "Values test")
+        XCTAssertEqual(
+            attributed.attribute(AttributedStringConverter.wikiLinkPageNameKey, at: linkRange.location, effectiveRange: nil) as? String,
+            "Values"
+        )
+    }
+
+    func testWikiLinkAliasDisplaysAliasAndKeepsTarget() {
+        let markdown = "See [[Values|core values]]."
+        let attributed = AttributedStringConverter.attributedString(from: markdown)
+        let linkRange = (attributed.string as NSString).range(of: "core values")
+
+        XCTAssertEqual(attributed.string, "See core values.")
+        XCTAssertEqual(
+            attributed.attribute(AttributedStringConverter.wikiLinkPageNameKey, at: linkRange.location, effectiveRange: nil) as? String,
+            "Values"
+        )
+        XCTAssertEqual(AttributedStringConverter.markdown(from: attributed), markdown)
+    }
+
+    func testMentionSyntaxStillUsesMentionSpanAndRoundTrips() {
+        let markdown = "Ask @[[Values]] about it."
+        let attributed = AttributedStringConverter.attributedString(from: markdown)
+        let mentionRange = (attributed.string as NSString).range(of: "Values")
+
+        XCTAssertEqual(attributed.string, "Ask Values about it.")
+        XCTAssertEqual(
+            attributed.attribute(AttributedStringConverter.mentionPageNameKey, at: mentionRange.location, effectiveRange: nil) as? String,
+            "Values"
+        )
+        XCTAssertNil(attributed.attribute(AttributedStringConverter.wikiLinkPageNameKey, at: mentionRange.location, effectiveRange: nil))
+        XCTAssertEqual(AttributedStringConverter.markdown(from: attributed), markdown)
+    }
+}
+
+// MARK: - Live Transcription Audio Source Tests
+
+final class LiveTranscriptionAudioSourceTests: XCTestCase {
+    func testTranscriptLabelsDistinguishMicAndSystemAudio() {
+        XCTAssertEqual(
+            LiveTranscriptionAudioSource.microphone.labeledTranscript(" hello "),
+            "Me: hello"
+        )
+        XCTAssertEqual(
+            LiveTranscriptionAudioSource.system.labeledTranscript("remote voice"),
+            "Other: remote voice"
+        )
+    }
+
+    func testTranscriptLabelsSkipEmptyText() {
+        XCTAssertEqual(LiveTranscriptionAudioSource.microphone.labeledTranscript("  "), "")
+        XCTAssertEqual(LiveTranscriptionAudioSource.system.labeledTranscript("\n"), "")
+    }
+}
 
 // MARK: - BlockDocument Tests
 

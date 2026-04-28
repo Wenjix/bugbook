@@ -86,6 +86,9 @@ struct CalendarDayView: View {
                 Button(action: { onEventTapped(event) }) {
                     HStack(spacing: 6) {
                         Circle().fill(color).frame(width: 6, height: 6)
+                        if let blockProfile = event.blockProfile {
+                            CalendarBlockIndicator(profile: blockProfile)
+                        }
                         Text(event.title)
                             .font(.system(size: Typography.caption, weight: .medium))
                             .lineLimit(1)
@@ -282,6 +285,9 @@ struct CalendarDayView: View {
                     Text(event.title)
                         .font(.system(size: Typography.body, weight: .medium))
                         .lineLimit(3)
+                    if let blockProfile = event.blockProfile {
+                        CalendarBlockIndicator(profile: blockProfile, showsText: h > hourHeight * 0.75)
+                    }
                     if event.linkedPagePath != nil {
                         Image(systemName: "waveform")
                             .font(.system(size: 9))
@@ -395,4 +401,29 @@ struct CalendarDayView: View {
         return Color.accentColor
     }
 
+}
+
+struct CalendarBlockIndicator: View {
+    let profile: CalendarBlockProfile
+    var showsText = true
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 8, weight: .semibold))
+            if showsText {
+                Text(profile.name)
+                    .font(.system(size: Typography.caption2, weight: .semibold))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, showsText ? 4 : 0)
+        .padding(.vertical, showsText ? 1 : 0)
+        .background {
+            if showsText {
+                Capsule().fill(Color.primary.opacity(0.08))
+            }
+        }
+        .help(profile.name)
+    }
 }

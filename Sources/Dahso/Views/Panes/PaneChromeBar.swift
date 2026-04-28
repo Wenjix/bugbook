@@ -11,9 +11,7 @@ struct PaneChromeBar: View {
     let fileTree: [FileEntry]
     var breadcrumbs: [BreadcrumbItem] = []
     var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
-    var onCreatePaneTab: ((PaneNode.Leaf) -> Void)? = nil
-    var onClosePaneTab: ((PaneNode.Leaf, UUID) -> Void)? = nil
-    var onClosePane: ((PaneNode.Leaf) -> Void)? = nil
+    let paneActions: PaneActions
 
     @State private var isHovered = false
     @State private var showSplitPopover = false
@@ -35,14 +33,14 @@ struct PaneChromeBar: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                labelArea
+                dragHandleArea
 
                 Spacer(minLength: 0)
 
                 actionButtons
             }
-            .frame(height: 28)
-            .padding(.horizontal, 10)
+            .frame(height: 20)
+            .padding(.horizontal, 6)
             .contentShape(Rectangle())
             .onDrag {
                 NSItemProvider(object: leaf.id.uuidString as NSString)
@@ -81,75 +79,37 @@ struct PaneChromeBar: View {
         .animation(.easeInOut(duration: 0.2), value: isReplaceWarning)
     }
 
-    // MARK: - Label Area
+    // MARK: - Pane Controls
 
-    private var labelArea: some View {
-        let info = chromeLabel(for: leaf.content)
-        let labelColor = isFocused && !isOnlyPane ? steelBlueLight : Color.primary.opacity(0.4)
-        let mutedColor = Color.primary.opacity(0.2)
-
-        return HStack(spacing: 0) {
-            // Grip indicator (visible on hover)
-            VStack(spacing: 2) {
-                ForEach(0..<3, id: \.self) { _ in
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 4, height: 1)
-                        .cornerRadius(0.5)
-                }
-            }
-            .opacity(isHovered ? 1 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isHovered)
-            .frame(width: 12)
-
-            // Pane icon
-            chromeIconView(info.icon)
-                .foregroundStyle(labelColor)
-                .frame(width: 14, height: 14)
-                .padding(.trailing, 5)
-
-            // Breadcrumb path or simple label
-            if breadcrumbs.count > 1, let onNav = onBreadcrumbNavigate {
-                // Show parent breadcrumbs (all except last) as clickable, then current page as label
-                ForEach(breadcrumbs.dropLast()) { crumb in
-                    Text(crumb.name)
-                        .font(.system(size: 11))
-                        .foregroundStyle(mutedColor)
-                        .lineLimit(1)
-                        .padding(.vertical, 2)
-                        .contentShape(Rectangle())
-                        .onTapGesture { onNav(crumb) }
-                        .appCursor(.pointingHand)
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(mutedColor)
-                        .padding(.horizontal, 2)
-                }
-                // Current page (last breadcrumb)
-                Text(breadcrumbs.last?.name ?? info.label)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(labelColor)
-                    .lineLimit(1)
-            } else {
-                Text(info.label)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(labelColor)
-                    .lineLimit(1)
+    private var dragHandleArea: some View {
+        // Pane identity belongs to the tab strip and the content surface. This row is
+        // intentionally just pane chrome: drag affordance plus controls.
+        VStack(spacing: 2) {
+            ForEach(0..<3, id: \.self) { _ in
+                Rectangle()
+                    .fill((isFocused ? steelBlue : Color.primary).opacity(0.25))
+                    .frame(width: 5, height: 1)
+                    .cornerRadius(0.5)
             }
         }
+        .opacity(isHovered || isFocused ? 1 : 0)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .animation(.easeInOut(duration: 0.15), value: isFocused)
+        .frame(width: 16, height: 18)
+        .accessibilityHidden(true)
+        .help("Drag pane")
     }
 
     private var tabStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 ForEach(Array(leaf.tabs.enumerated()), id: \.element.id) { index, content in
                     paneTabPill(content: content, isSelected: index == leaf.selectedTabIndex)
                 }
 
                 if leaf.activeContent.defaultNewPaneTab() != nil {
                     Button {
-                        onCreatePaneTab?(leaf)
+                        paneActions.createPaneTab(leaf)
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 10, weight: .semibold))
@@ -159,8 +119,8 @@ struct PaneChromeBar: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
         }
         .background(Color.fallbackTabBarBg)
         .overlay(alignment: .top) {
@@ -171,46 +131,49 @@ struct PaneChromeBar: View {
     }
 
     private func paneTabPill(content: PaneContent, isSelected: Bool) -> some View {
-        let info = chromeLabel(for: content)
+        let selectedFill = isFocused ? steelBlue.opacity(0.12) : Color.primary.opacity(0.08)
+        let selectedStroke = isFocused ? steelBlue.opacity(0.45) : Color.primary.opacity(0.1)
+        let selectedForeground = isFocused ? steelBlue : Color.primary
 
-        return HStack(spacing: 6) {
+        return HStack(spacing: 4) {
             Button {
                 workspaceManager.selectPaneTab(paneId: leaf.id, tabId: content.id)
             } label: {
-                HStack(spacing: 6) {
-                    chromeIconView(info.icon)
-                        .frame(width: 12, height: 12)
-                    Text(info.label)
-                        .font(.system(size: 11, weight: .medium))
+                HStack(spacing: 5) {
+                    chromeIconView(content.paneItemIcon)
+                        .frame(width: 11, height: 11)
+                    Text(content.paneItemTitle)
+                        .font(.system(size: 10.5, weight: .medium))
                         .lineLimit(1)
                 }
-                .padding(.horizontal, 10)
-                .frame(height: 24)
+                .foregroundStyle(isSelected ? selectedForeground : Color.primary.opacity(0.65))
+                .padding(.horizontal, 8)
+                .frame(height: 22)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
 
             if leaf.tabs.count > 1 {
                 Button {
-                    onClosePaneTab?(leaf, content.id)
+                    paneActions.closePaneTab(leaf, content.id)
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 14, height: 14)
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 6)
+                .padding(.trailing, 5)
             }
         }
-        .frame(minWidth: 110, maxWidth: 190)
+        .frame(minWidth: 96, maxWidth: 168)
         .background(
             RoundedRectangle(cornerRadius: 7)
-                .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
+                .fill(isSelected ? selectedFill : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(isSelected ? Color.primary.opacity(0.1) : Color.clear, lineWidth: 0.5)
+                .strokeBorder(isSelected ? selectedStroke : Color.clear, lineWidth: 0.5)
         )
     }
 
@@ -218,71 +181,101 @@ struct PaneChromeBar: View {
 
     @ViewBuilder
     private var actionButtons: some View {
-        let showButtons = isFocused || isHovered
-
         HStack(spacing: 2) {
-            // Split — always visible on single pane, otherwise follows hover/focus
-            if isOnlyPane || showButtons {
-                Button { showSplitPopover.toggle() } label: {
-                    Image(systemName: "rectangle.split.2x1")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(buttonColor)
-                        .frame(width: 26, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(PaneActionButtonStyle(isDestructive: false))
-                .help("Split pane")
-                .floatingPopover(isPresented: $showSplitPopover, arrowEdge: .top) {
-                    PaneLauncher(
-                        variant: .compact,
-                        fileTree: fileTree,
-                        onSelect: { content, direction in
-                            showSplitPopover = false
-                            handleSelection(content: content, direction: direction)
-                        },
-                        onDismiss: { showSplitPopover = false }
-                    )
-                    .popoverSurface()
-                }
-            }
-
-            if !isOnlyPane && showButtons {
-                // Pop out
-                Button {
-                    workspaceManager.popOutPane(id: leaf.id)
-                } label: {
-                    Image(systemName: "arrow.up.forward.square")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(buttonColor)
-                        .frame(width: 26, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(PaneActionButtonStyle(isDestructive: false))
-                .help("Pop out to tab")
-
-                // Close
-                Button {
-                    if let onClosePane {
-                        onClosePane(leaf)
-                    } else {
-                        workspaceManager.closePane(id: leaf.id)
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(buttonColor)
-                        .frame(width: 26, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(PaneActionButtonStyle(isDestructive: true))
-                .help("Close pane")
-            }
+            splitButton
+            moreMenuButton
+            closePaneButton
         }
-        .animation(.easeInOut(duration: 0.2), value: showButtons)
+        .opacity(controlOpacity)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .animation(.easeInOut(duration: 0.15), value: isFocused)
+    }
+
+    private var splitButton: some View {
+        Button { showSplitPopover.toggle() } label: {
+            Image(systemName: "rectangle.split.2x1")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(buttonColor)
+                .frame(width: 22, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PaneActionButtonStyle(isDestructive: false))
+        .help("Split pane")
+        .floatingPopover(isPresented: $showSplitPopover, arrowEdge: .top) {
+            PaneLauncher(
+                variant: .compact,
+                fileTree: fileTree,
+                onSelect: { content, direction in
+                    showSplitPopover = false
+                    handleSelection(content: content, direction: direction)
+                },
+                onDismiss: { showSplitPopover = false }
+            )
+            .popoverSurface()
+        }
+    }
+
+    private var moreMenuButton: some View {
+        Menu {
+            Button("Split Right") {
+                splitPane(axis: .horizontal, content: .emptyDocument())
+            }
+            Button("Split Down") {
+                splitPane(axis: .vertical, content: .emptyDocument())
+            }
+            Divider()
+            Button("Unsplit") {
+                paneActions.closeOtherPanes(leaf)
+            }
+            Button("Close Other Panes") {
+                paneActions.closeOtherPanes(leaf)
+            }
+            if !isOnlyPane {
+                Button("Pop Out to Workspace") {
+                    workspaceManager.popOutPane(id: leaf.id)
+                }
+            }
+            Divider()
+            Button("Close Pane", role: .destructive) {
+                paneActions.closePane(leaf)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(buttonColor)
+                .frame(width: 22, height: 20)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Pane actions")
+    }
+
+    private var closePaneButton: some View {
+        Button {
+            paneActions.closePane(leaf)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(buttonColor)
+                .frame(width: 22, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PaneActionButtonStyle(isDestructive: true))
+        .help("Close pane")
     }
 
     private var buttonColor: Color {
-        isFocused ? steelBlueLight : Color.primary.opacity(0.3)
+        if isFocused {
+            return steelBlueLight
+        }
+        return Color.primary.opacity(isHovered ? 0.55 : 0.32)
+    }
+
+    private var controlOpacity: Double {
+        if isFocused { return 1.0 }
+        if isHovered { return 0.72 }
+        return 0.34
     }
 
     // MARK: - Selection Handler
@@ -290,14 +283,17 @@ struct PaneChromeBar: View {
     private func handleSelection(content: PaneContent, direction: PaneLauncher.Direction) {
         switch direction {
         case .right:
-            workspaceManager.setFocusedPane(id: leaf.id)
-            _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content)
+            splitPane(axis: .horizontal, content: content)
         case .down:
-            workspaceManager.setFocusedPane(id: leaf.id)
-            _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: content)
+            splitPane(axis: .vertical, content: content)
         case .newTab:
             workspaceManager.addWorkspaceWith(content: content)
         }
+    }
+
+    private func splitPane(axis: PaneNode.Split.Axis, content: PaneContent) {
+        workspaceManager.setFocusedPane(id: leaf.id)
+        _ = workspaceManager.splitFocusedPane(axis: axis, newContent: content)
     }
 
     // MARK: - Icon Rendering
@@ -315,42 +311,4 @@ struct PaneChromeBar: View {
         }
     }
 
-    // MARK: - Label Derivation
-
-    private func chromeLabel(for content: PaneContent) -> (icon: String, label: String, context: String?) {
-        switch content {
-        case .terminal:
-            return ("terminal", "Terminal", nil)
-        case .document(let file):
-            if file.isEmptyTab { return ("doc", "New Tab", nil) }
-            if file.isGateway { return ("house", "Home", nil) }
-            if file.isMail { return ("envelope", "Mail", nil) }
-            if file.isCalendar { return ("calendar.badge.clock", "Calendar", nil) }
-            if file.isBrowser {
-                let browserLabel: String
-                if let displayName = file.displayName, !displayName.isEmpty {
-                    browserLabel = displayName
-                } else if let host = URL(string: file.path)?.host, !host.isEmpty {
-                    browserLabel = host
-                } else {
-                    browserLabel = "New Tab"
-                }
-                return ("globe", browserLabel, nil)
-            }
-            if file.isMeetings { return ("person.2", "Meetings", nil) }
-            if file.isChat { return ("bubble.left.and.bubble.right", "Chat", nil) }
-            if file.isGraphView { return ("point.3.connected.trianglepath.dotted", "Graph View", nil) }
-
-            // Regular page/database/skill — derive from file metadata
-            let name: String
-            if let displayName = file.displayName, !displayName.isEmpty {
-                name = displayName
-            } else {
-                let filename = (file.path as NSString).lastPathComponent
-                name = filename.hasSuffix(".md") ? String(filename.dropLast(3)) : (filename.isEmpty ? "Untitled" : filename)
-            }
-            let icon = file.icon ?? (file.isDatabase ? "tablecells" : "doc.text")
-            return (icon, name, nil)
-        }
-    }
 }

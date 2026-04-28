@@ -29,8 +29,9 @@ struct ShortcutsSettingsView: View {
                 shortcutRow("Quick Open", "Cmd + K / Cmd + P")
                 shortcutRow("Toggle Sidebar", "Cmd + .")
                 shortcutRow("Toggle Chat Drawer", "Cmd + Shift + C")
-                shortcutRow("New Tab", "Cmd + T")
-                shortcutRow("Close Tab", "Cmd + W")
+                shortcutRow("New Workspace", "Cmd + T")
+                shortcutRow("New Pane Item", "Cmd + Opt + T")
+                shortcutRow("Close Item / Pane", "Cmd + W")
                 shortcutRow("Focus URL Bar", "Cmd + L")
                 shortcutRow("Save Browser Page", "Cmd + S")
             }

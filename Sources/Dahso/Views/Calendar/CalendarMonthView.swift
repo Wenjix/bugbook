@@ -91,6 +91,9 @@ struct CalendarMonthView: View {
                             if !event.isAllDay {
                                 Circle().fill(color).frame(width: 5, height: 5)
                             }
+                            if let blockProfile = event.blockProfile {
+                                CalendarBlockIndicator(profile: blockProfile, showsText: false)
+                            }
                             Text(event.isAllDay ? event.title : "\(calendarVM.timeString(for: event.startDate)) \(event.title)")
                                 .font(.system(size: Typography.caption2))
                                 .lineLimit(1)

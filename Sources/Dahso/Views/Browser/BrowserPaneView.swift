@@ -127,6 +127,9 @@ struct BrowserPaneView: View {
             refreshSearchableEntries()
             refreshSelectedTabDisplay(force: true)
             refreshSuggestions()
+            if let selectedTabID {
+                browserManager.cancelInactivePageDiscard(for: selectedTabID, in: paneID)
+            }
             DispatchQueue.main.async {
                 if activeTab?.urlString.isEmpty != false {
                     newTabSearchFocused = true
@@ -135,9 +138,18 @@ struct BrowserPaneView: View {
                 }
             }
         }
-        .onChange(of: leaf.activeTabID) { _, _ in
+        .onChange(of: leaf.activeTabID) { oldValue, newValue in
+            if oldValue != newValue {
+                browserManager.scheduleInactivePageDiscard(for: oldValue, in: paneID)
+                browserManager.cancelInactivePageDiscard(for: newValue, in: paneID)
+            }
             refreshSelectedTabDisplay(force: true)
             refreshSuggestions()
+        }
+        .onDisappear {
+            if let selectedTabID {
+                browserManager.scheduleInactivePageDiscard(for: selectedTabID, in: paneID)
+            }
         }
         .onChange(of: leaf.tabs) { _, _ in
             syncDisplayedText()
@@ -229,14 +241,6 @@ struct BrowserPaneView: View {
             guard shouldHandleBrowserCommand(notification) else { return }
             browserManager.setPageZoom(BrowserPageState.defaultPageZoom, in: paneID)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .browserPreviousTab)) { notification in
-            guard shouldHandleBrowserCommand(notification) else { return }
-            selectAdjacentTab(step: -1)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .browserNextTab)) { notification in
-            guard shouldHandleBrowserCommand(notification) else { return }
-            selectAdjacentTab(step: 1)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .browserOpenCleanup)) { notification in
             guard let targetPaneID = notification.object as? UUID,
                   targetPaneID == paneID else { return }
@@ -260,8 +264,15 @@ struct BrowserPaneView: View {
 
     private func refreshSelectedTabDisplay(force: Bool = false) {
         syncDisplayedText(force: force)
-        guard let tabID = selectedTabID else { return }
+        guard let tabID = selectedTabID,
+              let activeTab,
+              isRenderableBrowserURL(activeTab.urlString) else { return }
         _ = browserManager.ensurePage(for: paneID, tabID: tabID)
+    }
+
+    private func isRenderableBrowserURL(_ urlString: String) -> Bool {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed != "dahso://browser"
     }
 
     private var chromeBar: some View {
@@ -525,10 +536,10 @@ struct BrowserPaneView: View {
 
             Divider()
 
-            Button("New Tab") {
+            Button("New Browser Page") {
                 createNewTab()
             }
-            Button("Clean Tabs") {
+            Button("Clean Browser Pages") {
                 prepareCleanup()
             }
             Button(activeTab?.isLoading == true ? "Stop Loading" : "Reload") {
@@ -614,7 +625,7 @@ struct BrowserPaneView: View {
 
     @ViewBuilder
     private var browserContent: some View {
-        if let activeTab, !activeTab.urlString.isEmpty {
+        if let activeTab, isRenderableBrowserURL(activeTab.urlString) {
             if let hostView = browserManager.activeHostView(for: paneID) {
                 BrowserHostViewContainer(hostView: hostView)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -622,22 +633,10 @@ struct BrowserPaneView: View {
                 Color.fallbackEditorBg
                     .onAppear {
                         _ = browserManager.ensurePage(for: paneID, tabID: activeTab.id)
-                    }
+                }
             }
         } else {
-            ZStack {
-                if let hostView = browserManager.activeHostView(for: paneID) {
-                    // Keep the Chromium host mounted so the first real navigation
-                    // doesn't also have to pay browser creation cost.
-                    BrowserHostViewContainer(hostView: hostView)
-                        .frame(width: 1, height: 1)
-                        .opacity(0.001)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-
-                newTabPage
-            }
+            newTabPage
         }
     }
 
@@ -811,7 +810,7 @@ struct BrowserPaneView: View {
 
     private var cleanupSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Clean Tabs")
+            Text("Clean Browser Pages")
                 .font(.system(size: 18, weight: .semibold))
 
             ScrollView {
@@ -884,7 +883,7 @@ struct BrowserPaneView: View {
 
     private func createNewTab() {
         workspaceManager.setFocusedPane(id: paneID)
-        let content = PaneContent.browserDocument(urlString: "dahso://browser", title: "New Tab")
+        let content = PaneContent.browserDocument(urlString: "dahso://browser", title: "Browser")
         _ = workspaceManager.addPaneTab(to: paneID, content: content)
         _ = browserManager.ensurePage(for: paneID, tabID: content.id)
         newTabSearchText = ""
@@ -1189,13 +1188,6 @@ struct BrowserPaneView: View {
         browserManager.setPageZoom(nextZoom, in: paneID)
     }
 
-    private func selectAdjacentTab(step: Int) {
-        guard !browserTabs.isEmpty else { return }
-        let currentIndex = browserTabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
-        let nextIndex = (currentIndex + step + browserTabs.count) % browserTabs.count
-        session.selectTab(browserTabs[nextIndex].id)
-    }
-
     func prepareCleanup() {
         cleanupProposals = agentService.proposeCleanup(
             for: paneID,
@@ -1231,7 +1223,7 @@ struct BrowserPaneView: View {
     }
 }
 
-private struct BrowserSuggestionItem: Identifiable {
+struct BrowserSuggestionItem: Identifiable {
     enum Destination {
         case url(URL?)
         case entry(FileEntry)
@@ -1306,7 +1298,7 @@ private final class BrowserWebContainerView: NSView {
     }
 }
 
-private struct FlowLayout<Content: View>: View {
+struct FlowLayout<Content: View>: View {
     let spacing: CGFloat
     @ViewBuilder let content: Content
 

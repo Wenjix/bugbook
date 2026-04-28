@@ -1,5 +1,22 @@
 import SwiftUI
 
+private enum MeetingSummaryGenerationError: LocalizedError {
+    case commandFailed(String)
+    case emptyOutput
+    case missingSummary
+
+    var errorDescription: String? {
+        switch self {
+        case .commandFailed(let message):
+            return message.isEmpty ? "Summary generation failed." : message
+        case .emptyOutput:
+            return "Summary generation returned no text."
+        case .missingSummary:
+            return "Summary generation did not return a usable summary."
+        }
+    }
+}
+
 /// Dedicated meeting page layout.
 /// Standard page header + title + database-style property pills + block editor body.
 /// Recording controls live in the property pill row.
@@ -18,6 +35,9 @@ struct MeetingPageView: View {
     @State private var transcriptSearch = ""
     @State private var copyConfirmation = false
     @State private var isGeneratingSummary = false
+    @State private var summaryError: String?
+    @State private var recordingNotice: String?
+    @State private var recordingNoticeTask: Task<Void, Never>?
 
     /// Cached YAML-derived values, refreshed only when frontmatter changes.
     /// Avoids re-parsing on every view body invalidation (which fires 10x/sec during recording).
@@ -85,6 +105,7 @@ struct MeetingPageView: View {
                             }
 
                             propertyPills
+                            summaryGenerationPanel
                         }
                         .padding(.horizontal, Self.columnHorizontalPadding)
                         .padding(.top, 8)
@@ -111,7 +132,12 @@ struct MeetingPageView: View {
             // Header is always visible; tap to expand the body upward as an overlay.
             if isRecordingThisPage || !transcript.entries.isEmpty {
                 columnAligned {
-                    transcriptWidget
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let recordingNotice {
+                            recordingNoticeToast(recordingNotice)
+                        }
+                        transcriptWidget
+                    }
                         .padding(.horizontal, Self.columnHorizontalPadding)
                         .padding(.bottom, 16)
                 }
@@ -137,6 +163,10 @@ struct MeetingPageView: View {
             if isRecordingThisPage {
                 stopRecording()
             }
+        }
+        .onDisappear {
+            recordingNoticeTask?.cancel()
+            recordingNoticeTask = nil
         }
     }
 
@@ -243,6 +273,31 @@ struct MeetingPageView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func recordingNoticeToast(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(StatusColor.warning)
+            Text(message)
+                .font(.system(size: Typography.caption))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.fallbackCardBg)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(StatusColor.warning.opacity(0.45), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
     }
 
     private var transcriptControls: some View {
@@ -353,6 +408,78 @@ struct MeetingPageView: View {
             if !cachedParticipants.isEmpty {
                 participantsPill
             }
+            if shouldShowManualSummaryButton {
+                manualSummaryButton
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var summaryGenerationPanel: some View {
+        if isGeneratingSummary {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Generating summary...")
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 4)
+        } else if let summaryError {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(StatusColor.warning)
+                Text(summaryError)
+                    .font(.system(size: Typography.caption))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Button(action: retrySummaryGeneration) {
+                    Text("Retry")
+                        .font(.system(size: Typography.caption, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(Opacity.subtle))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private var manualSummaryButton: some View {
+        Button(action: retrySummaryGeneration) {
+            HStack(spacing: 4) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11))
+                Text(hasSummaryContent ? "Regenerate Summary" : "Generate Summary")
+                    .font(.system(size: Typography.caption, weight: .medium))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(Opacity.subtle))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xs))
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private var shouldShowManualSummaryButton: Bool {
+        !isRecordingThisPage && !isGeneratingSummary && summaryError == nil
+    }
+
+    private var hasSummaryContent: Bool {
+        if !transcript.summary.isEmpty || !transcript.actionItems.isEmpty {
+            return true
+        }
+        let generatedIds = Set(transcript.generatedBlockIds)
+        if document.blocks.contains(where: { generatedIds.contains($0.id) }) {
+            return true
+        }
+        return document.blocks.contains { block in
+            guard block.type == .heading else { return false }
+            let text = block.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return text == "summary" || text == "action items"
         }
     }
 
@@ -448,6 +575,7 @@ struct MeetingPageView: View {
             var lastSegmentCount = 0
             var lastVolatile = ""
             var lastLevel: Float = -1
+            var lastNotice = ""
             while transcriptionService.isRecording {
                 let level = transcriptionService.audioLevel
                 if level != lastLevel {
@@ -467,12 +595,22 @@ struct MeetingPageView: View {
                     session.volatileText = volatile
                 }
 
+                let notice = transcriptionService.error ?? ""
+                if !notice.isEmpty, notice != lastNotice {
+                    lastNotice = notice
+                    showRecordingNotice(notice)
+                }
+
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
     }
 
     private func stopRecording() {
+        recordingNoticeTask?.cancel()
+        recordingNoticeTask = nil
+        recordingNotice = nil
+
         let fullText = transcriptionService.stopRecording()
         appState.isRecording = false
 
@@ -509,12 +647,60 @@ struct MeetingPageView: View {
 
         // Auto-generate summary in the background
         if !fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            isGeneratingSummary = true
-            Task {
-                await generateSummary(transcript: fullText)
-                isGeneratingSummary = false
-            }
+            startSummaryGeneration(with: fullText)
         }
+    }
+
+    private func showRecordingNotice(_ message: String) {
+        recordingNotice = message
+        recordingNoticeTask?.cancel()
+        recordingNoticeTask = Task {
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            recordingNotice = nil
+        }
+    }
+
+    private func retrySummaryGeneration() {
+        startSummaryGeneration(with: summaryInputText)
+    }
+
+    private func startSummaryGeneration(with input: String) {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            summaryError = "Add a transcript or notes before generating a summary."
+            return
+        }
+
+        summaryError = nil
+        isGeneratingSummary = true
+        Task {
+            do {
+                try await generateSummary(transcript: trimmed)
+                summaryError = nil
+            } catch {
+                summaryError = error.localizedDescription
+            }
+            isGeneratingSummary = false
+        }
+    }
+
+    private var summaryInputText: String {
+        let transcriptText = transcript.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !transcriptText.isEmpty {
+            return transcriptText
+        }
+
+        let titleID = document.titleBlock?.id
+        let generatedIDs = Set(transcript.generatedBlockIds)
+        return document.blocks
+            .filter { block in
+                block.id != titleID && !generatedIDs.contains(block.id)
+            }
+            .map(\.text)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
     }
 
     private func updateFrontmatterDuration(_ seconds: Int) {
@@ -532,7 +718,7 @@ struct MeetingPageView: View {
         document.yamlFrontmatter = yaml
     }
 
-    private func generateSummary(transcript: String) async {
+    private func generateSummary(transcript: String) async throws {
         let prompt = """
         Summarize this meeting transcript. Output in this exact format with no preamble:
 
@@ -559,16 +745,17 @@ struct MeetingPageView: View {
 
         // Run the CLI process off the main thread to avoid blocking the UI.
         // Use a login shell so the user's PATH (including ~/.local/bin) is loaded.
-        let output: String? = try? await Task.detached(priority: .userInitiated) {
+        let output: String = try await Task.detached(priority: .userInitiated) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-l", "-c", "claude --model haiku -p"]
 
             let inputPipe = Pipe()
             let outputPipe = Pipe()
+            let errorPipe = Pipe()
             process.standardInput = inputPipe
             process.standardOutput = outputPipe
-            process.standardError = Pipe()
+            process.standardError = errorPipe
 
             try process.run()
 
@@ -580,26 +767,38 @@ struct MeetingPageView: View {
             process.waitUntilExit()
 
             let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            if process.terminationStatus != 0 {
+                let message = String(data: errorData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                throw MeetingSummaryGenerationError.commandFailed(message)
+            }
+
+            guard let output = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !output.isEmpty else {
+                throw MeetingSummaryGenerationError.emptyOutput
+            }
+            return output
         }.value
 
-        let parsed = parseSummaryOutput(output ?? "")
+        let parsed = parseSummaryOutput(output)
+        guard parsed.sawSummarySection, !parsed.summary.isEmpty else {
+            throw MeetingSummaryGenerationError.missingSummary
+        }
 
         // Persist on the transcript sidecar for future reference
-        if parsed.sawSummarySection {
-            self.transcript.summary = parsed.summary
-        } else {
-            self.transcript.summary = ["Summary generation failed"]
-        }
+        self.transcript.summary = parsed.summary
         self.transcript.actionItems = parsed.actionItems
+
+        // Apply title to the empty H1 title block, and inject summary + action items as document blocks
+        applyGeneratedTitle(parsed.title)
+        injectSummaryAndActionsBlocks(summary: parsed.summary, actionItems: parsed.actionItems)
 
         if let id = cachedMeetingId, let workspace = appState.workspacePath {
             transcriptStore.save(self.transcript, meetingId: id, workspace: workspace)
         }
 
-        // Apply title to the empty H1 title block, and inject summary + action items as document blocks
-        applyGeneratedTitle(parsed.title)
-        injectSummaryAndActionsBlocks(summary: parsed.summary, actionItems: parsed.actionItems)
         onTextChange()
     }
 

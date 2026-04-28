@@ -30,7 +30,7 @@ struct BrowserAgentService {
     func listTabs(browserManager: BrowserManager) -> [BrowserTabState] {
         browserManager.sessions.values
             .flatMap { browserManager.tabs(in: $0.paneID) }
-            .filter { !$0.urlString.isEmpty || $0.title != "New Tab" }
+            .filter { !$0.urlString.isEmpty || $0.title != "Browser" }
     }
 
     func listReadLater(in workspacePath: String) -> [SavedWebPageRecord] {

@@ -27,6 +27,8 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
     /// Email of the Google account that owns this event. Nil for legacy cached events from
     /// before multi-account support — those are treated as belonging to the primary account.
     public var accountEmail: String?
+    /// Optional local block profile consumed by scheduled screen-time/blocking integrations.
+    public var blockProfile: CalendarBlockProfile?
 
     public init(
         id: String,
@@ -41,7 +43,8 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
         conferenceURL: String? = nil,
         htmlLink: String? = nil,
         linkedPagePath: String? = nil,
-        accountEmail: String? = nil
+        accountEmail: String? = nil,
+        blockProfile: CalendarBlockProfile? = nil
     ) {
         self.id = id
         self.title = title
@@ -56,6 +59,7 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
         self.htmlLink = htmlLink
         self.linkedPagePath = linkedPagePath
         self.accountEmail = Self.normalizedAccountEmail(accountEmail) ?? Self.idComponents(for: id)?.accountEmail
+        self.blockProfile = blockProfile
     }
 
     public static let idSeparator = "::"
@@ -100,7 +104,7 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, startDate, endDate, isAllDay, location, notes
-        case calendarId, attendees, conferenceURL, htmlLink, linkedPagePath, accountEmail
+        case calendarId, attendees, conferenceURL, htmlLink, linkedPagePath, accountEmail, blockProfile
     }
 
     // Custom decoder so legacy cached events without `accountEmail` still decode cleanly.
@@ -121,6 +125,102 @@ public struct CalendarEvent: Identifiable, Codable, Sendable, Hashable {
         accountEmail = Self.normalizedAccountEmail(
             try container.decodeIfPresent(String.self, forKey: .accountEmail)
         ) ?? Self.idComponents(for: id)?.accountEmail
+        blockProfile = try container.decodeIfPresent(CalendarBlockProfile.self, forKey: .blockProfile)
+    }
+}
+
+// MARK: - Calendar Block Profile
+
+/// Block metadata attached to a calendar event and exported for local blocking tools.
+public struct CalendarBlockProfile: Codable, Sendable, Hashable {
+    public var name: String
+    public var identifier: String
+
+    public init(name: String, identifier: String? = nil) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = trimmedName.isEmpty ? "Block" : trimmedName
+        self.name = displayName
+        self.identifier = Self.normalizedIdentifier(identifier) ?? Self.generatedIdentifier(from: displayName)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case identifier
+    }
+
+    public init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let name = try? singleValue.decode(String.self) {
+            self.init(name: name)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Block"
+        let identifier = try container.decodeIfPresent(String.self, forKey: .identifier)
+        self.init(name: name, identifier: identifier)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(identifier, forKey: .identifier)
+    }
+
+    private static func normalizedIdentifier(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func generatedIdentifier(from name: String) -> String {
+        let parts = name
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? "block" : parts.joined(separator: "-")
+    }
+}
+
+// MARK: - Calendar Block Window
+
+/// Stable JSON contract exported to `.dahso/calendar/block_windows.json`.
+public struct CalendarBlockWindow: Identifiable, Codable, Sendable, Hashable {
+    public let id: String
+    public let eventId: String
+    public let title: String
+    public let startDate: Date
+    public let endDate: Date
+    public let profile: String
+    public let profileIdentifier: String
+    public let calendarId: String
+    public let accountEmail: String?
+    public let isAllDay: Bool
+
+    public init(event: CalendarEvent, profile: CalendarBlockProfile) {
+        self.id = event.id
+        self.eventId = event.id
+        self.title = event.title
+        self.startDate = event.startDate
+        self.endDate = event.endDate
+        self.profile = profile.name
+        self.profileIdentifier = profile.identifier
+        self.calendarId = event.calendarId
+        self.accountEmail = event.accountEmail
+        self.isAllDay = event.isAllDay
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case eventId
+        case title
+        case startDate = "start"
+        case endDate = "end"
+        case profile
+        case profileIdentifier
+        case calendarId
+        case accountEmail
+        case isAllDay
     }
 }
 

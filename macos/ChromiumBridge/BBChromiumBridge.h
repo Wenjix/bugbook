@@ -24,6 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface BBChromiumRuntime : NSObject
 + (void)startIfNeeded;
++ (BOOL)isInitialized;
 + (NSString *)runtimeDescription;
 + (void)configureExtensionPaths:(NSArray<NSString *> *)extensionPaths;
 + (void)clearCookies;

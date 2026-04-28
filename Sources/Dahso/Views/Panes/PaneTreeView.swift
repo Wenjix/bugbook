@@ -1,5 +1,12 @@
 import SwiftUI
 
+struct PaneActions {
+    var createPaneTab: (PaneNode.Leaf) -> Void
+    var closePaneTab: (PaneNode.Leaf, UUID) -> Void
+    var closePane: (PaneNode.Leaf) -> Void
+    var closeOtherPanes: (PaneNode.Leaf) -> Void
+}
+
 /// Recursively renders a PaneNode tree as a tiling layout.
 /// Splits become nested HStack/VStack with draggable dividers.
 /// Leaves render PaneContentView.
@@ -18,9 +25,7 @@ struct PaneTreeView: View {
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
     var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
-    var onCreatePaneTab: ((PaneNode.Leaf) -> Void)? = nil
-    var onClosePaneTab: ((PaneNode.Leaf, UUID) -> Void)? = nil
-    var onClosePane: ((PaneNode.Leaf) -> Void)? = nil
+    let paneActions: PaneActions
 
     var body: some View {
         switch node {
@@ -35,9 +40,7 @@ struct PaneTreeView: View {
                 breadcrumbProvider: breadcrumbProvider,
                 onBreadcrumbNavigate: onBreadcrumbNavigate,
                 blockDocumentLookup: blockDocumentLookup,
-                onCreatePaneTab: onCreatePaneTab,
-                onClosePaneTab: onClosePaneTab,
-                onClosePane: onClosePane
+                paneActions: paneActions
             )
         case .split(let split):
             splitView(split)
@@ -56,76 +59,39 @@ struct PaneTreeView: View {
 
             if split.axis == .horizontal {
                 HStack(spacing: 0) {
-                    PaneTreeView(
-                        node: split.first,
-                        workspaceManager: workspaceManager,
-                        hasMultiplePanes: hasMultiplePanes,
-                        fileTree: fileTree,
-                        documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder,
-                        breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate,
-                        blockDocumentLookup: blockDocumentLookup,
-                        onCreatePaneTab: onCreatePaneTab,
-                        onClosePaneTab: onClosePaneTab,
-                        onClosePane: onClosePane
-                    )
+                    childTree(split.first)
                     .frame(width: firstSize(total: totalSize, ratio: split.ratio))
 
                     SplitDividerView(axis: split.axis, ratio: ratioBinding, totalSize: totalSize)
 
-                    PaneTreeView(
-                        node: split.second,
-                        workspaceManager: workspaceManager,
-                        hasMultiplePanes: hasMultiplePanes,
-                        fileTree: fileTree,
-                        documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder,
-                        breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate,
-                        blockDocumentLookup: blockDocumentLookup,
-                        onCreatePaneTab: onCreatePaneTab,
-                        onClosePaneTab: onClosePaneTab,
-                        onClosePane: onClosePane
-                    )
+                    childTree(split.second)
                 }
             } else {
                 VStack(spacing: 0) {
-                    PaneTreeView(
-                        node: split.first,
-                        workspaceManager: workspaceManager,
-                        hasMultiplePanes: hasMultiplePanes,
-                        fileTree: fileTree,
-                        documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder,
-                        breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate,
-                        blockDocumentLookup: blockDocumentLookup,
-                        onCreatePaneTab: onCreatePaneTab,
-                        onClosePaneTab: onClosePaneTab,
-                        onClosePane: onClosePane
-                    )
+                    childTree(split.first)
                     .frame(height: firstSize(total: totalSize, ratio: split.ratio))
 
                     SplitDividerView(axis: split.axis, ratio: ratioBinding, totalSize: totalSize)
 
-                    PaneTreeView(
-                        node: split.second,
-                        workspaceManager: workspaceManager,
-                        hasMultiplePanes: hasMultiplePanes,
-                        fileTree: fileTree,
-                        documentContentBuilder: documentContentBuilder,
-                        terminalContentBuilder: terminalContentBuilder,
-                        breadcrumbProvider: breadcrumbProvider,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate,
-                        blockDocumentLookup: blockDocumentLookup,
-                        onCreatePaneTab: onCreatePaneTab,
-                        onClosePaneTab: onClosePaneTab,
-                        onClosePane: onClosePane
-                    )
+                    childTree(split.second)
                 }
             }
         }
+    }
+
+    private func childTree(_ child: PaneNode) -> PaneTreeView {
+        PaneTreeView(
+            node: child,
+            workspaceManager: workspaceManager,
+            hasMultiplePanes: hasMultiplePanes,
+            fileTree: fileTree,
+            documentContentBuilder: documentContentBuilder,
+            terminalContentBuilder: terminalContentBuilder,
+            breadcrumbProvider: breadcrumbProvider,
+            onBreadcrumbNavigate: onBreadcrumbNavigate,
+            blockDocumentLookup: blockDocumentLookup,
+            paneActions: paneActions
+        )
     }
 
     private func firstSize(total: CGFloat, ratio: Double) -> CGFloat {

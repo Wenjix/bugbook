@@ -1533,11 +1533,15 @@ class BlockNSTextView: NSTextView {
         }
         let localPoint = convert(event.locationInWindow, from: nil)
 
-        // Check if click landed on a mention span — navigate instead of editing
+        // Check if click landed on a page-link span — navigate instead of editing
         if let handler = onMentionClick, let storage = textStorage {
             let charIndex = characterIndexForInsertion(at: localPoint)
             if charIndex >= 0, charIndex < storage.length {
                 let pageName = storage.attribute(
+                    AttributedStringConverter.wikiLinkPageNameKey,
+                    at: charIndex,
+                    effectiveRange: nil
+                ) as? String ?? storage.attribute(
                     AttributedStringConverter.mentionPageNameKey,
                     at: charIndex,
                     effectiveRange: nil

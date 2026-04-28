@@ -1,6 +1,41 @@
 import Foundation
 import DahsoCore
 
+struct DatabaseEmbedPathResolution: Equatable {
+    let renderPath: String
+    let unresolvedStoredPath: String?
+
+    var isResolved: Bool {
+        unresolvedStoredPath == nil
+    }
+}
+
+func resolveDatabaseEmbedPathForRendering(
+    _ storedPath: String,
+    pagePath: String?,
+    workspacePath: String?,
+    fileManager: FileManager = .default
+) -> DatabaseEmbedPathResolution? {
+    let normalizedStoredPath = (storedPath as NSString).standardizingPath
+    guard !normalizedStoredPath.isEmpty else { return nil }
+
+    if let pagePath,
+       let resolvedPath = resolveDatabaseEmbedPath(
+        normalizedStoredPath,
+        pagePath: pagePath,
+        workspacePath: workspacePath,
+        fileManager: fileManager
+       ) {
+        return DatabaseEmbedPathResolution(renderPath: resolvedPath, unresolvedStoredPath: nil)
+    }
+
+    if pagePath == nil, isDatabaseFolderPath(normalizedStoredPath, fileManager: fileManager) {
+        return DatabaseEmbedPathResolution(renderPath: normalizedStoredPath, unresolvedStoredPath: nil)
+    }
+
+    return DatabaseEmbedPathResolution(renderPath: normalizedStoredPath, unresolvedStoredPath: normalizedStoredPath)
+}
+
 func resolveDatabaseEmbedPath(
     _ storedPath: String,
     pagePath: String,

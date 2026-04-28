@@ -27,7 +27,7 @@ struct BrowserTabSnapshot: Codable, Equatable, Identifiable {
 
     init(
         id: UUID = UUID(),
-        title: String = "New Tab",
+        title: String = "Browser",
         urlString: String = "",
         savedRecordID: UUID? = nil,
         pageZoom: Double = BrowserPageState.defaultPageZoom
@@ -103,7 +103,7 @@ struct BrowserTabState: Identifiable, Equatable {
 
     init(
         id: UUID = UUID(),
-        title: String = "New Tab",
+        title: String = "Browser",
         urlString: String = "",
         isLoading: Bool = false,
         estimatedProgress: Double = 0,
@@ -137,7 +137,7 @@ struct BrowserTabState: Identifiable, Equatable {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
         if !host.isEmpty { return host }
-        return "New Tab"
+        return "Browser"
     }
 
     var displayURL: String {

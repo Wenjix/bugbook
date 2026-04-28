@@ -200,14 +200,17 @@ struct BlockCellView: View {
         return SidebarReferenceDragPayload.page(path: entry.path)
     }
 
-    private var resolvedDatabasePath: String? {
-        guard !block.databasePath.isEmpty else { return nil }
-        guard let pagePath = document.filePath else { return block.databasePath }
-        return resolveDatabaseEmbedPath(
+    private var databasePathResolution: DatabaseEmbedPathResolution? {
+        resolveDatabaseEmbedPathForRendering(
             block.databasePath,
-            pagePath: pagePath,
+            pagePath: document.filePath,
             workspacePath: document.workspacePath
-        ) ?? block.databasePath
+        )
+    }
+
+    private var resolvedDatabasePath: String? {
+        guard let databasePathResolution, databasePathResolution.isResolved else { return nil }
+        return databasePathResolution.renderPath
     }
 
     private var databaseSidebarReferencePayload: SidebarReferenceDragPayload? {
@@ -268,7 +271,8 @@ struct BlockCellView: View {
 
         case .databaseEmbed:
             DatabaseEmbedBlockView(
-                dbPath: resolvedDatabasePath ?? block.databasePath,
+                dbPath: databasePathResolution?.renderPath ?? block.databasePath,
+                unresolvedStoredPath: databasePathResolution?.unresolvedStoredPath,
                 onOpenDatabaseTab: document.onOpenDatabaseTab,
                 sidebarReferencePayload: databaseSidebarReferencePayload
             )

@@ -31,15 +31,15 @@ struct DahsoApp: App {
                 }
                 .keyboardShortcut("n")
 
-                Button("New Pane Tab") {
+                Button("New Pane Item") {
                     NotificationCenter.default.post(name: .newPaneTab, object: nil)
                 }
-                .keyboardShortcut("t")
+                .keyboardShortcut("t", modifiers: [.command, .option])
 
                 Button("New Workspace") {
                     NotificationCenter.default.post(name: .quickOpenNewTab, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .keyboardShortcut("t")
 
                 Divider()
 
@@ -89,15 +89,19 @@ struct DahsoApp: App {
                 }
                 .keyboardShortcut("p")
 
-                Button("Previous Browser Tab") {
-                    NotificationCenter.default.post(name: .browserPreviousTab, object: nil)
+                Button("Previous Pane Item") {
+                    NotificationCenter.default.post(name: .cyclePaneTabsBackward, object: nil)
                 }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
 
-                Button("Next Browser Tab") {
-                    NotificationCenter.default.post(name: .browserNextTab, object: nil)
+                Button("Next Pane Item") {
+                    NotificationCenter.default.post(name: .cyclePaneTabsForward, object: nil)
                 }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
+
+                Button("Reopen Closed Item") {
+                    NotificationCenter.default.post(name: .reopenClosedItem, object: nil)
+                }
 
                 Button("Quick Open") {
                     NotificationCenter.default.post(name: .quickOpen, object: nil)
@@ -175,7 +179,7 @@ struct DahsoApp: App {
                 Button("Split Pane Down") {
                     NotificationCenter.default.post(name: .splitPaneDown, object: nil)
                 }
-                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .keyboardShortcut("d", modifiers: [.command, .control])
 
                 Button("Close Workspace") {
                     NotificationCenter.default.post(name: .closeWorkspace, object: nil)
@@ -631,6 +635,7 @@ extension Notification.Name {
     static let focusPaneByIndex = Notification.Name("focusPaneByIndex")
     static let cyclePaneTabsForward = Notification.Name("cyclePaneTabsForward")
     static let cyclePaneTabsBackward = Notification.Name("cyclePaneTabsBackward")
+    static let reopenClosedItem = Notification.Name("reopenClosedItem")
 
     static let browserFocusAddressBar = Notification.Name("browserFocusAddressBar")
     static let browserNewTab = Notification.Name("browserNewTab")
@@ -643,7 +648,5 @@ extension Notification.Name {
     static let browserZoomIn = Notification.Name("browserZoomIn")
     static let browserZoomOut = Notification.Name("browserZoomOut")
     static let browserZoomReset = Notification.Name("browserZoomReset")
-    static let browserPreviousTab = Notification.Name("browserPreviousTab")
-    static let browserNextTab = Notification.Name("browserNextTab")
     static let browserOpenCleanup = Notification.Name("browserOpenCleanup")
 }

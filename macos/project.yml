@@ -249,6 +249,8 @@ targets:
       - framework: ../Frameworks/GhosttyKit.xcframework
         embed: false
       - sdk: Carbon.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudio.framework
       - sdk: Metal.framework
       - sdk: CoreGraphics.framework
       - sdk: CoreText.framework
@@ -283,6 +285,7 @@ targets:
               - public.data
             UTTypeTagSpecification: {}
         NSMicrophoneUsageDescription: Dahso needs microphone access to record meeting audio for live transcription.
+        NSAudioCaptureUsageDescription: Dahso records system audio during meetings so transcripts include remote participants alongside your own voice.
     entitlements:
       path: App/Dahso.entitlements
       properties:

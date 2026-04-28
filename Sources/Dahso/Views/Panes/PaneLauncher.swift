@@ -65,7 +65,7 @@ struct PaneLauncher: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: fontSize == 14 ? 13 : 11))
                 .foregroundStyle(.tertiary)
-            TextField("Search panes and pages...", text: $search)
+            TextField(variant == .compact ? "Open in right pane..." : "Open or split...", text: $search)
                 .textFieldStyle(.plain)
                 .font(.system(size: fontSize))
                 .focused($searchFocused)
@@ -83,18 +83,18 @@ struct PaneLauncher: View {
             directionPill(.right, label: "Right", icon: .right)
             directionPill(.down, label: "Down", icon: .down)
 
-            // Visual separator before New Tab
+            // Visual separator before the pane-item option.
             Rectangle()
                 .fill(Color.fallbackDividerColor)
                 .frame(width: 1, height: 16)
                 .padding(.horizontal, 2)
 
-            // New Tab pill
+            // New pane item pill.
             Button { direction = .newTab } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus.square")
                         .font(.system(size: 10))
-                    Text(variant == .compact ? "Tab" : "New Tab")
+                    Text(variant == .compact ? "Tab" : "New Item")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .frame(maxWidth: .infinity)
@@ -181,11 +181,11 @@ struct PaneLauncher: View {
     static let builtInPanes: [(label: String, icon: String, content: PaneContent)] = [
         ("Browser", "globe", .browserDocument()),
         ("Terminal", "terminal", .terminal()),
-        ("Empty Page", "doc", .emptyDocument()),
+        ("Home", "house", .emptyDocument()),
         ("Mail", "envelope", .mailDocument()),
         ("Calendar", "calendar", .calendarDocument()),
         ("Meetings", "person.2", .meetingsDocument()),
-        ("Home", "house", .gatewayDocument()),
+        ("Gateway", "square.grid.2x2", .gatewayDocument()),
     ]
 
     enum Result: Identifiable {
@@ -283,7 +283,7 @@ struct PaneLauncher: View {
             ("Open Here", "arrow.right.square", "1"),
             ("Split Right", "rectangle.split.2x1", "2"),
             ("Split Down", "rectangle.split.1x2", "3"),
-            ("New Tab", "plus.square", "4"),
+            ("New Item", "plus.square", "4"),
         ]
         if onNavigateInPlace == nil {
             // Remove "Open Here" if no navigate-in-place handler

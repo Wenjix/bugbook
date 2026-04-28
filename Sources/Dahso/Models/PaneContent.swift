@@ -104,12 +104,7 @@ enum PaneContent: Codable, Equatable {
     }
 
     var supportsPaneTabs: Bool {
-        switch self {
-        case .terminal:
-            return true
-        case .document(let file):
-            return !(file.isMail || file.isCalendar)
-        }
+        true
     }
 
     var isBrowser: Bool {
@@ -151,11 +146,8 @@ enum PaneContent: Codable, Equatable {
         case .terminal:
             return .terminal()
         case .document(let file):
-            if file.isMail || file.isCalendar {
-                return nil
-            }
             if file.isBrowser {
-                return .browserDocument(urlString: "dahso://browser", title: "New Tab")
+                return .browserDocument(urlString: "dahso://browser", title: "Browser")
             }
             return .emptyDocument()
         }
@@ -195,5 +187,85 @@ enum PaneContent: Codable, Equatable {
             try container.encode(ContentType.terminal, forKey: .type)
             try container.encode(sessionID, forKey: .sessionID)
         }
+    }
+}
+
+extension PaneContent {
+    var paneItemTitle: String {
+        switch self {
+        case .terminal:
+            return "Terminal"
+        case .document(let file):
+            return file.paneItemTitle
+        }
+    }
+
+    var paneItemIcon: String {
+        switch self {
+        case .terminal:
+            return "sf:terminal"
+        case .document(let file):
+            return file.paneItemIcon
+        }
+    }
+}
+
+extension OpenFile {
+    var paneItemTitle: String {
+        if isEmptyTab { return "Home" }
+        if isGateway { return "Home" }
+        if isMail { return "Mail" }
+        if isCalendar { return "Calendar" }
+        if isBrowser { return browserPaneItemTitle }
+        if isMeetings { return "Meetings" }
+        if isChat { return "Chat" }
+        if isGraphView { return "Graph View" }
+
+        if let displayName, !displayName.isEmpty {
+            return displayName
+        }
+
+        let filename = (path as NSString).lastPathComponent
+        if filename.hasSuffix(".md") {
+            return String(filename.dropLast(3))
+        }
+        return filename.isEmpty ? "Untitled" : filename
+    }
+
+    var paneItemIcon: String {
+        if isEmptyTab { return "sf:house" }
+        if isGateway { return "sf:house" }
+        if isMail { return "sf:envelope" }
+        if isCalendar { return "sf:calendar.badge.clock" }
+        if isBrowser { return "sf:globe" }
+        if isMeetings { return "sf:person.2" }
+        if isChat { return "sf:bubble.left.and.bubble.right" }
+        if isGraphView { return "sf:point.3.connected.trianglepath.dotted" }
+
+        if let icon, !icon.isEmpty {
+            return OpenFile.normalizedPaneIcon(icon)
+        }
+        return isDatabase ? "sf:tablecells" : "sf:doc.text"
+    }
+
+    private var browserPaneItemTitle: String {
+        if path == "dahso://browser" {
+            let trimmed = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty || trimmed == "New Tab" ? "Browser" : trimmed
+        }
+        if let displayName, !displayName.isEmpty {
+            return displayName
+        }
+        if let host = URL(string: path)?.host, !host.isEmpty {
+            return host
+        }
+        return "Browser"
+    }
+
+    private static func normalizedPaneIcon(_ icon: String) -> String {
+        if icon.hasPrefix("sf:") || icon.unicodeScalars.first?.properties.isEmoji == true {
+            return icon
+        }
+        return "sf:\(icon)"
     }
 }

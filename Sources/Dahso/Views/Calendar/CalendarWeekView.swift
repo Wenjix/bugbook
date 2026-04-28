@@ -115,6 +115,9 @@ struct CalendarWeekView: View {
         return Button(action: { onEventTapped(event) }) {
             HStack(spacing: 4) {
                 Circle().fill(color).frame(width: 6, height: 6)
+                if let blockProfile = event.blockProfile {
+                    CalendarBlockIndicator(profile: blockProfile, showsText: false)
+                }
                 Text(event.title)
                     .font(.system(size: Typography.caption2, weight: .medium))
                     .lineLimit(1)
@@ -354,7 +357,10 @@ struct CalendarWeekView: View {
             VStack(alignment: .leading, spacing: 1) {
                 // Short events: "Title 9 AM" inline. Tall events: title + time range
                 if h <= hourHeight * 0.5 {
-                    HStack(spacing: 0) {
+                    HStack(spacing: 3) {
+                        if let blockProfile = event.blockProfile {
+                            CalendarBlockIndicator(profile: blockProfile, showsText: false)
+                        }
                         Text(event.title)
                             .font(.system(size: 11, weight: .medium))
                             .lineLimit(1)
@@ -367,6 +373,9 @@ struct CalendarWeekView: View {
                         Text(event.title)
                             .font(.system(size: 11, weight: .medium))
                             .lineLimit(h > hourHeight ? 3 : 1)
+                        if let blockProfile = event.blockProfile {
+                            CalendarBlockIndicator(profile: blockProfile, showsText: h > hourHeight * 0.9)
+                        }
                         if event.linkedPagePath != nil {
                             Image(systemName: "waveform")
                                 .font(.system(size: 8))

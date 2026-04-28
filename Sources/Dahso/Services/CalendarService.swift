@@ -87,6 +87,7 @@ struct CalendarEventDraft: Equatable {
     var notes: String
     var calendarId: String
     var recurrence: RecurrenceRule
+    var blockProfile: CalendarBlockProfile?
 
     init(
         title: String = "",
@@ -96,7 +97,8 @@ struct CalendarEventDraft: Equatable {
         location: String = "",
         notes: String = "",
         calendarId: String = "primary",
-        recurrence: RecurrenceRule = .none
+        recurrence: RecurrenceRule = .none,
+        blockProfile: CalendarBlockProfile? = nil
     ) {
         self.title = title
         self.startDate = startDate
@@ -106,6 +108,7 @@ struct CalendarEventDraft: Equatable {
         self.notes = notes
         self.calendarId = calendarId
         self.recurrence = recurrence
+        self.blockProfile = blockProfile
     }
 
     func normalized(calendar: Calendar = .current) -> CalendarEventDraft {
@@ -124,7 +127,8 @@ struct CalendarEventDraft: Equatable {
                 location: trimmedLocation,
                 notes: trimmedNotes,
                 calendarId: calendarId,
-                recurrence: recurrence
+                recurrence: recurrence,
+                blockProfile: blockProfile
             )
         }
 
@@ -137,7 +141,8 @@ struct CalendarEventDraft: Equatable {
             location: trimmedLocation,
             notes: trimmedNotes,
             calendarId: calendarId,
-            recurrence: recurrence
+            recurrence: recurrence,
+            blockProfile: blockProfile
         )
     }
 }
@@ -158,6 +163,9 @@ enum GoogleCalendarEventRequestEncoder {
         }
         if let rrule = normalized.recurrence.rruleString(for: normalized.startDate) {
             payload["recurrence"] = [rrule]
+        }
+        if let blockProfile = normalized.blockProfile {
+            payload["extendedProperties"] = CalendarBlockProfileGoogleCodec.extendedPropertiesPayload(for: blockProfile)
         }
 
         if normalized.isAllDay {
@@ -180,6 +188,37 @@ enum GoogleCalendarEventRequestEncoder {
         }
 
         return try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+    }
+}
+
+private enum CalendarBlockProfileGoogleCodec {
+    static let profileNameKey = "dahso.blockProfile.name"
+    static let profileIdentifierKey = "dahso.blockProfile.identifier"
+
+    static func extendedPropertiesPayload(for profile: CalendarBlockProfile) -> [String: Any] {
+        [
+            "private": [
+                profileNameKey: profile.name,
+                profileIdentifierKey: profile.identifier,
+            ],
+        ]
+    }
+
+    static func blockProfile(from eventJSON: [String: Any]) -> CalendarBlockProfile? {
+        guard let extendedProperties = eventJSON["extendedProperties"] as? [String: Any] else {
+            return nil
+        }
+        let privateProperties = extendedProperties["private"] as? [String: Any] ?? [:]
+        let sharedProperties = extendedProperties["shared"] as? [String: Any] ?? [:]
+        let name = privateProperties[profileNameKey] as? String
+            ?? sharedProperties[profileNameKey] as? String
+        let identifier = privateProperties[profileIdentifierKey] as? String
+            ?? sharedProperties[profileIdentifierKey] as? String
+
+        guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return CalendarBlockProfile(name: name, identifier: identifier)
     }
 }
 
@@ -401,8 +440,11 @@ class CalendarService {
             throw CalendarError.apiError("Google Calendar create error \(http.statusCode): \(body)")
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let event = parseGoogleEvent(json, calendarId: normalizedDraft.calendarId, accountEmail: accountEmail) else {
+              var event = parseGoogleEvent(json, calendarId: normalizedDraft.calendarId, accountEmail: accountEmail) else {
             throw CalendarError.apiError("Google Calendar returned an unreadable event response.")
+        }
+        if event.blockProfile == nil {
+            event.blockProfile = normalizedDraft.blockProfile
         }
 
         try store.upsertEvents([event], in: workspace)
@@ -713,7 +755,8 @@ class CalendarService {
             attendees: attendees,
             conferenceURL: conferenceURL,
             htmlLink: json["htmlLink"] as? String,
-            accountEmail: accountEmail
+            accountEmail: accountEmail,
+            blockProfile: CalendarBlockProfileGoogleCodec.blockProfile(from: json)
         )
     }
 }

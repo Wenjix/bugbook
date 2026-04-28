@@ -177,6 +177,98 @@ final class BrowserFeatureTests: XCTestCase {
         XCTAssertEqual(session.selectedTabID, secondTabID)
     }
 
+    func testPaneContentAllowsMailAndCalendarInMixedPaneStacks() {
+        let paneID = UUID()
+        var leaf = PaneNode.Leaf(id: paneID, tabs: [.browserDocument(id: paneID)])
+
+        XCTAssertTrue(leaf.appendTab(.mailDocument()))
+        XCTAssertTrue(leaf.appendTab(.calendarDocument()))
+        XCTAssertEqual(leaf.tabs.count, 3)
+        XCTAssertTrue(leaf.hasMultipleTabs)
+    }
+
+    func testPaneItemTitlesUseResolvedContentNames() throws {
+        XCTAssertEqual(PaneContent.mailDocument().paneItemTitle, "Mail")
+        XCTAssertEqual(PaneContent.calendarDocument().paneItemTitle, "Calendar")
+        XCTAssertEqual(PaneContent.emptyDocument().paneItemTitle, "Home")
+        XCTAssertEqual(PaneContent.browserDocument(urlString: "dahso://browser", title: "New Tab").paneItemTitle, "Browser")
+
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+        manager.addWorkspaceWith(content: .mailDocument())
+
+        XCTAssertEqual(manager.activeWorkspace?.name, "Mail")
+        XCTAssertEqual(manager.activeWorkspace?.focusedLeaf?.activeContent.paneItemTitle, "Mail")
+    }
+
+    func testWorkspaceManagerReopensClosedItemIntoPreviousPane() throws {
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+        manager.addWorkspaceWith(content: .browserDocument(title: "First"))
+        let paneID = try XCTUnwrap(manager.focusedPane?.id)
+        let second = PaneContent.browserDocument(urlString: "https://example.com", title: "Example")
+        let secondID = second.id
+        manager.addPaneTab(to: paneID, content: second)
+
+        XCTAssertNotNil(manager.closePaneTab(paneId: paneID, tabId: secondID))
+        XCTAssertEqual(manager.recentlyClosedItems.first?.content.id, secondID)
+
+        let reopenedID = manager.reopenLastClosedItem()
+
+        XCTAssertEqual(reopenedID, secondID)
+        XCTAssertEqual(manager.leaf(id: paneID)?.activeTabID, secondID)
+        XCTAssertTrue(manager.recentlyClosedItems.isEmpty)
+    }
+
+    func testClosingSingleItemTabRemovesPaneNotWorkspace() throws {
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+        manager.addWorkspaceWith(content: .browserDocument(title: "First"))
+        let originalWorkspaceID = try XCTUnwrap(manager.activeWorkspace?.id)
+        let secondPaneID = try XCTUnwrap(
+            manager.splitFocusedPane(axis: .horizontal, newContent: .calendarDocument())
+        )
+        let secondTabID = try XCTUnwrap(manager.leaf(id: secondPaneID)?.activeTabID)
+
+        XCTAssertNotNil(manager.closeTab(tabId: secondTabID, closePaneWhenLastTab: true))
+
+        XCTAssertEqual(manager.workspaces.count, 1)
+        XCTAssertEqual(manager.activeWorkspace?.id, originalWorkspaceID)
+        XCTAssertNil(manager.leaf(id: secondPaneID))
+    }
+
+    func testClosingSidePaneExpandsSiblingPane() throws {
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+        manager.addWorkspaceWith(content: .browserDocument(title: "First"))
+        let firstPaneID = try XCTUnwrap(manager.focusedPane?.id)
+        let secondPaneID = try XCTUnwrap(
+            manager.splitFocusedPane(axis: .horizontal, newContent: .calendarDocument())
+        )
+
+        manager.closePane(id: secondPaneID)
+
+        XCTAssertEqual(manager.activeWorkspace?.allLeaves.map(\.id), [firstPaneID])
+        XCTAssertEqual(manager.activeWorkspace?.focusedPaneId, firstPaneID)
+        XCTAssertNil(manager.leaf(id: secondPaneID))
+    }
+
+    func testKeepOnlyPaneCollapsesOtherPanes() throws {
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+        manager.addWorkspaceWith(content: .browserDocument(title: "First"))
+        let firstPaneID = try XCTUnwrap(manager.focusedPane?.id)
+        let secondPaneID = try XCTUnwrap(
+            manager.splitFocusedPane(axis: .horizontal, newContent: .calendarDocument())
+        )
+
+        manager.keepOnlyPane(id: firstPaneID)
+
+        XCTAssertEqual(manager.activeWorkspace?.allLeaves.map(\.id), [firstPaneID])
+        XCTAssertEqual(manager.activeWorkspace?.focusedPaneId, firstPaneID)
+        XCTAssertNil(manager.leaf(id: secondPaneID))
+    }
+
     func testWorkspaceManagerDetachWorkspaceLeavesFallbackWorkspace() {
         let manager = WorkspaceManager()
         manager.layoutPersistenceEnabled = false

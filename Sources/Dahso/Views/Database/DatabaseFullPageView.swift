@@ -29,7 +29,6 @@ extension Notification {
 
 struct DatabaseFullPageView: View {
     let dbPath: String
-    let hostPaneId: UUID?
     var initialRowId: String? = nil
 
     @State private var state: DatabaseViewState
@@ -47,11 +46,10 @@ struct DatabaseFullPageView: View {
     @State private var editingTemplate: DatabaseTemplate? = nil
     @AppStorage("home.pinnedDatabasePaths") private var pinnedPathsJSON: String = "[]"
 
-    init(dbPath: String, hostPaneId: UUID? = nil, initialRowId: String? = nil) {
+    init(dbPath: String, initialRowId: String? = nil) {
         self.dbPath = dbPath
-        self.hostPaneId = hostPaneId
         self.initialRowId = initialRowId
-        _state = State(initialValue: DatabaseViewState(dbPath: dbPath, hostPaneId: hostPaneId))
+        _state = State(initialValue: DatabaseViewState(dbPath: dbPath))
     }
 
     private var nonTitleProperties: [PropertyDefinition] {
@@ -188,6 +186,7 @@ struct DatabaseFullPageView: View {
             guard notification.databaseOrigin != state.notificationOrigin else { return }
             state.loadData()
         }
+        .preference(key: DatabaseViewStatePreferenceKey.self, value: DatabaseViewStatePreferenceValue(state: state))
     }
 
     // MARK: - Header

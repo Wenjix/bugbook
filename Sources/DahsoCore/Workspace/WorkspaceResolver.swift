@@ -33,7 +33,10 @@ public enum WorkspaceResolver {
            let iCloudPath = resolveICloudWorkspacePath(createIfMissing: createIfMissing) {
             return iCloudPath
         }
-        return localFallbackWorkspacePath(createIfMissing: createIfMissing)
+        return localFallbackWorkspacePath(
+            createIfMissing: createIfMissing,
+            resolveRichestSibling: allowBlockingICloudLookup
+        )
     }
 
     /// Resolves the iCloud Dahso workspace path. Returns `nil` if iCloud is
@@ -98,23 +101,43 @@ public enum WorkspaceResolver {
     ///
     /// If the default path is a symlink into an iCloud container with richer
     /// sibling workspaces, picks the richest one (same logic as iCloud resolver).
-    public static func localFallbackWorkspacePath(createIfMissing: Bool = true) -> String {
+    public static func localFallbackWorkspacePath(
+        createIfMissing: Bool = true,
+        resolveRichestSibling: Bool = true
+    ) -> String {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return localFallbackWorkspacePath(
+            documentsURL: documents,
+            createIfMissing: createIfMissing,
+            resolveRichestSibling: resolveRichestSibling,
+            fileManager: fm
+        )
+    }
+
+    static func localFallbackWorkspacePath(
+        documentsURL: URL,
+        createIfMissing: Bool = true,
+        resolveRichestSibling: Bool = true,
+        fileManager fm: FileManager = .default
+    ) -> String {
+        let documents = documentsURL
         let defaultPath = documents.appendingPathComponent(defaultFolderName, isDirectory: true).path
 
         // Resolve symlink to check for sibling workspaces in the iCloud container
-        let resolved = (defaultPath as NSString).resolvingSymlinksInPath
-        let parentDir = (resolved as NSString).deletingLastPathComponent
-        if let siblings = try? fm.contentsOfDirectory(atPath: parentDir) {
-            let candidates = siblings
-                .filter { $0.hasPrefix(defaultFolderName) }
-                .map { (parentDir as NSString).appendingPathComponent($0) }
-                .map { (path: $0, count: mdFileCount(at: $0, fm: fm)) }
-                .sorted { $0.count > $1.count }
-            // swiftlint:disable:next empty_count
-            if let best = candidates.first, best.count > 0 {
-                return best.path
+        if resolveRichestSibling {
+            let resolved = (defaultPath as NSString).resolvingSymlinksInPath
+            let parentDir = (resolved as NSString).deletingLastPathComponent
+            if let siblings = try? fm.contentsOfDirectory(atPath: parentDir) {
+                let candidates = siblings
+                    .filter { $0.hasPrefix(defaultFolderName) }
+                    .map { (parentDir as NSString).appendingPathComponent($0) }
+                    .map { (path: $0, count: mdFileCount(at: $0, fm: fm)) }
+                    .sorted { $0.count > $1.count }
+                // swiftlint:disable:next empty_count
+                if let best = candidates.first, best.count > 0 {
+                    return best.path
+                }
             }
         }
 

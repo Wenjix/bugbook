@@ -659,6 +659,10 @@ static void BBChromiumInvalidateMessagePumpTimer(void) {
     return [NSString stringWithFormat:@"CEF %s", CEF_VERSION];
 }
 
++ (BOOL)isInitialized {
+    return BBChromiumDidInitialize;
+}
+
 + (void)configureExtensionPaths:(NSArray<NSString *> *)extensionPaths {
     BBChromiumConfiguredExtensionPaths = BBChromiumNormalizedExtensionPaths(extensionPaths ?: @[]);
 
@@ -1435,6 +1439,10 @@ static void CEF_CALLBACK BBChromiumOnDevToolsAgentDetached(cef_dev_tools_message
 
     self.browserCreationAttempted = YES;
     [BBChromiumRuntime startIfNeeded];
+    if (!BBChromiumDidInitialize) {
+        NSLog(@"[ChromiumBridge] Browser creation skipped because CEF runtime is unavailable.");
+        return;
+    }
 
     cef_window_info_t windowInfo = {};
     windowInfo.size = sizeof(windowInfo);

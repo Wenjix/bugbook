@@ -12,6 +12,9 @@ enum AttributedStringConverter {
     /// Stores the page name for @[[mention]] spans so clicks can navigate.
     static let mentionPageNameKey = NSAttributedString.Key("DahsoMentionPageName")
 
+    /// Stores the page name for bare [[wikilink]] spans so clicks can navigate.
+    static let wikiLinkPageNameKey = NSAttributedString.Key("DahsoWikiLinkPageName")
+
     // MARK: - Markdown -> NSAttributedString
 
     /// Parses inline markdown formatting into an attributed string.
@@ -115,6 +118,18 @@ enum AttributedStringConverter {
                 attrs[Self.markdownSourceKey] = "@[[\(name)]]"
                 attrs[Self.mentionPageNameKey] = name
                 result.append(NSAttributedString(string: name, attributes: attrs))
+                i = end
+                continue
+            }
+
+            // Wiki link: [[Page Name]] → styled inline page link
+            if let (target, displayText, source, end) = parseWikiLink(markdown, from: i) {
+                var attrs = baseAttributes
+                attrs[.foregroundColor] = NSColor.controlAccentColor
+                attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                attrs[Self.markdownSourceKey] = source
+                attrs[Self.wikiLinkPageNameKey] = target
+                result.append(NSAttributedString(string: displayText, attributes: attrs))
                 i = end
                 continue
             }
@@ -261,6 +276,36 @@ enum AttributedStringConverter {
         let name = String(str[nameStart..<closingRange.lowerBound])
         guard !name.isEmpty else { return nil }
         return (name, closingRange.upperBound)
+    }
+
+    /// Parse wiki link: [[Page Name]] or [[Page Name|Display Text]].
+    private static func parseWikiLink(
+        _ str: String,
+        from start: String.Index
+    ) -> (target: String, displayText: String, source: String, end: String.Index)? {
+        let prefix = "[["
+        guard str[start...].hasPrefix(prefix) else { return nil }
+        if start > str.startIndex {
+            let previous = str[str.index(before: start)]
+            guard previous != "@" && previous != "!" else { return nil }
+        }
+
+        let nameStart = str.index(start, offsetBy: prefix.count)
+        guard let closingRange = str[nameStart...].range(of: "]]") else { return nil }
+
+        let rawName = String(str[nameStart..<closingRange.lowerBound])
+        let parts = rawName.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        let target = String(parts.first ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayText: String
+        if parts.count > 1 {
+            displayText = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            displayText = target
+        }
+
+        guard !target.isEmpty, !displayText.isEmpty else { return nil }
+        let source = String(str[start..<closingRange.upperBound])
+        return (target, displayText, source, closingRange.upperBound)
     }
 
     /// Parse double-equals separator: " == " (with spaces on both sides)

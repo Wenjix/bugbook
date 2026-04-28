@@ -472,6 +472,14 @@ struct CalendarEventComposerSheet: View {
                 recurrencePicker
 
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("Block Profile")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    TextField("Work", text: blockProfileNameBinding)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Location")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -602,6 +610,18 @@ struct CalendarEventComposerSheet: View {
                         draft.recurrence = .preset(freq)
                     }
                 }
+            }
+        )
+    }
+
+    private var blockProfileNameBinding: Binding<String> {
+        Binding(
+            get: {
+                draft.blockProfile?.name ?? ""
+            },
+            set: { value in
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft.blockProfile = trimmed.isEmpty ? nil : CalendarBlockProfile(name: trimmed)
             }
         )
     }

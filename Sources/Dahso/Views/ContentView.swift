@@ -486,6 +486,9 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
                 closeFocusedPaneTabOrWorkspace()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .reopenClosedItem)) { _ in
+                reopenClosedPaneItem()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
                 if !postBrowserCommandIfFocused(.browserSavePage) {
                     forceSave()
@@ -499,7 +502,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
                 flushDirtyTabContent()
-                appState.commandPaletteMode = .splitLauncher
+                appState.commandPaletteMode = .search
                 appState.commandPaletteOpen.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .findInPage)) { _ in
@@ -723,43 +726,29 @@ struct ContentView: View {
                         Spacer()
                         CommandPaletteView(
                             appState: appState,
+                            workspaceManager: workspaceManager,
                             isPresented: $appState.commandPaletteOpen,
-                            onSelectFile: { entry in
+                            onSelectFile: { entry, destination in
                                 DispatchQueue.main.async {
-                                    navigateToEntryInPane(entry)
+                                    openLauncherFile(entry, destination: destination)
                                 }
                             },
-                            onSelectFileNewTab: { entry in
+                            onCreate: { kind, destination in
                                 DispatchQueue.main.async {
-                                    openEntryInNewWorkspaceTab(entry)
+                                    createLauncherItem(kind, destination: destination)
                                 }
                             },
-                            onCreateFile: { name in
-                                createNewFileWithName(name)
-                            },
-                            onSelectContentMatch: { entry, query in
-                                let newTab = appState.commandPaletteMode == .newTab
+                            onOpenPane: { reference, destination in
                                 DispatchQueue.main.async {
-                                    if newTab {
-                                        openEntryInNewWorkspaceTab(entry)
-                                    } else {
-                                        navigateToEntryInPane(entry)
-                                    }
-                                    if let query = query as String? {
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            guard let ws = workspaceManager.activeWorkspace,
-                                                  let focusedLeaf = ws.focusedLeaf,
-                                                  let doc = blockDocuments[focusedLeaf.activeTabID] else { return }
-                                            let lowerQuery = query.lowercased()
-                                            if let block = doc.blocks.first(where: {
-                                                $0.text.lowercased().contains(lowerQuery)
-                                            }) {
-                                                doc.focusedBlockId = block.id
-                                                doc.cursorPosition = 0
-                                            }
-                                        }
-                                    }
+                                    openLauncherPane(reference, destination: destination)
                                 }
+                            },
+                            onAskAI: { prompt in
+                                NotificationCenter.default.post(
+                                    name: .askAI,
+                                    object: nil,
+                                    userInfo: ["prompt": prompt]
+                                )
                             }
                         )
                         Spacer()
@@ -1238,7 +1227,12 @@ struct ContentView: View {
                     browserManager: browserManager,
                     sidebarOpen: shellShowsSidebarPanel,
                     currentView: appState.currentView,
-                    recordingPagePath: appState.activeMeetingSession?.meetingPagePath
+                    recordingPagePath: appState.activeMeetingSession?.meetingPagePath,
+                    onOpenNewTabLauncher: {
+                        flushDirtyTabContent()
+                        appState.commandPaletteMode = .newTab
+                        appState.commandPaletteOpen = true
+                    }
                 )
                 .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
@@ -1446,17 +1440,18 @@ struct ContentView: View {
             blockDocumentLookup: { tabId in
                 self.blockDocuments[tabId]
             },
-            onCreatePaneTab: { leaf in
-                self.createPaneTab(in: leaf)
-            },
-            onClosePaneTab: { leaf, tabId in
-                self.closePaneTab(in: leaf, tabId: tabId)
-            },
-            onClosePane: { leaf in
-                self.closePane(leaf)
-            }
+            paneActions: paneActions
         )
         .environment(\.paneReplaceWarningId, paneReplaceWarningId)
+    }
+
+    private var paneActions: PaneActions {
+        PaneActions(
+            createPaneTab: createPaneTab(in:),
+            closePaneTab: closePaneTab(in:tabId:),
+            closePane: closePane(_:),
+            closeOtherPanes: closeOtherPanes(keeping:)
+        )
     }
 
     // MARK: - Pane Document Content
@@ -1655,6 +1650,15 @@ struct ContentView: View {
         updateSidebarContextType()
     }
 
+    private func closeOtherPanes(keeping leaf: PaneNode.Leaf) {
+        guard let workspace = workspaceManager.activeWorkspace else { return }
+        for otherLeaf in workspace.allLeaves where otherLeaf.id != leaf.id {
+            cleanupPaneResources(otherLeaf.id)
+        }
+        workspaceManager.keepOnlyPane(id: leaf.id)
+        updateSidebarContextType()
+    }
+
     private func closeActiveWorkspace() {
         guard let workspace = workspaceManager.activeWorkspace else { return }
         for leaf in workspace.allLeaves {
@@ -1686,8 +1690,18 @@ struct ContentView: View {
         if leaf.tabs.count > 1 {
             closePaneTab(in: leaf, tabId: leaf.activeTabID)
         } else {
-            closeActiveWorkspace()
+            closePane(leaf)
         }
+    }
+
+    private func reopenClosedPaneItem() {
+        guard let reopenedTabID = workspaceManager.reopenLastClosedItem() else { return }
+        if let leaf = workspaceManager.leaf(containingTabId: reopenedTabID),
+           let file = leaf.tabs.first(where: { $0.id == reopenedTabID })?.openFile,
+           file.isBrowser {
+            _ = browserManager.ensurePage(for: leaf.id, tabID: reopenedTabID)
+        }
+        updateSidebarContextType()
     }
 
     private func cycleFocusedPaneTabs(step: Int) {
@@ -1813,7 +1827,7 @@ struct ContentView: View {
                 }
             )
         } else if file.isDatabase {
-            DatabaseFullPageView(dbPath: file.path, hostPaneId: leaf.id, initialRowId: dbInitialRowId)
+            DatabaseFullPageView(dbPath: file.path, initialRowId: dbInitialRowId)
                 .id(file.id)
                 .onAppear { dbInitialRowId = nil }
         } else if let doc = blockDocuments[file.id], doc.isMeetingPage {
@@ -2470,7 +2484,7 @@ struct ContentView: View {
 
     /// Navigate to a file entry in the appropriate pane.
     /// Uses the focused pane if it's a document pane, otherwise finds the nearest document pane.
-    private func navigateToEntryInPane(_ entry: FileEntry) {
+    private func navigateToEntryInPane(_ entry: FileEntry, preferExistingTab: Bool = true) {
         appState.currentView = .editor
         appState.showSettings = false
 
@@ -2504,7 +2518,7 @@ struct ContentView: View {
                     workspaceManager: workspaceManager,
                     paneId: focusedPaneId,
                     pushHistory: true,
-                    preferExistingTab: true
+                    preferExistingTab: preferExistingTab
                 )
                 updateSidebarContextType()
 
@@ -2544,7 +2558,7 @@ struct ContentView: View {
             workspaceManager: workspaceManager,
             paneId: targetPaneId,
             pushHistory: true,
-            preferExistingTab: true
+            preferExistingTab: preferExistingTab
         )
         updateSidebarContextType()
 
@@ -2587,6 +2601,80 @@ struct ContentView: View {
         workspaceManager.addWorkspaceWith(content: .document(openFile: file))
         if let actualTabId = workspaceManager.activeWorkspace?.focusedLeaf?.activeTabID {
             loadFileContentForPane(entry: entry, tabId: actualTabId)
+        }
+    }
+
+    private func openLauncherFile(_ entry: FileEntry, destination: CommandPaletteDestination) {
+        switch destination {
+        case .inPlace:
+            navigateToEntryInPane(entry, preferExistingTab: false)
+        case .newWorkspaceTab:
+            openEntryInNewWorkspaceTab(entry)
+        case .splitRight:
+            splitLauncherFileRight(entry)
+        }
+    }
+
+    private func createLauncherItem(_ kind: CommandPaletteCreateKind, destination: CommandPaletteDestination) {
+        if kind == .page {
+            createNewFile(destination: destination)
+            return
+        }
+
+        guard let content = kind.content else { return }
+        openLauncherContent(content, destination: destination)
+    }
+
+    private func openLauncherPane(
+        _ reference: CommandPaletteOpenPaneReference,
+        destination: CommandPaletteDestination
+    ) {
+        switch destination {
+        case .inPlace, .newWorkspaceTab:
+            workspaceManager.focusPaneTab(
+                workspaceIndex: reference.workspaceIndex,
+                paneID: reference.paneID,
+                tabID: reference.tabID
+            )
+            updateSidebarContextType()
+        case .splitRight:
+            _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: reference.content)
+            updateSidebarContextType()
+        }
+    }
+
+    private func openLauncherContent(_ content: PaneContent, destination: CommandPaletteDestination) {
+        switch destination {
+        case .inPlace:
+            openContentInFocusedPane(content)
+        case .newWorkspaceTab:
+            workspaceManager.addWorkspaceWith(content: content)
+        case .splitRight:
+            _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content)
+        }
+        updateSidebarContextType()
+    }
+
+    private func splitLauncherFileRight(_ entry: FileEntry) {
+        let tabId = UUID()
+        let content = PaneContent.document(openFile: makeOpenFile(for: entry, id: tabId))
+        guard let newLeafId = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content),
+              let insertedTabId = workspaceManager.leaf(id: newLeafId)?.activeTabID else {
+            return
+        }
+        loadFileContentForPane(entry: entry, tabId: insertedTabId)
+        updateSidebarContextType()
+    }
+
+    private func createNewFile(destination: CommandPaletteDestination) {
+        guard let workspace = appState.workspacePath else { return }
+        do {
+            let path = try fileSystem.createNewFile(in: workspace)
+            let entry = FileEntry(id: path, name: (path as NSString).lastPathComponent, path: path, isDirectory: false)
+            openLauncherFile(entry, destination: destination)
+            refreshFileTree()
+        } catch {
+            Log.fileSystem.error("Failed to create file: \(error.localizedDescription)")
         }
     }
 

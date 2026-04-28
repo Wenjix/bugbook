@@ -298,6 +298,8 @@ private struct ShellSidebarShortcutRow: View {
     var verticalPadding: CGFloat?
     var action: () -> Void
 
+    @State private var isHovering = false
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: ShellSidebarMetrics.rowSpacing) {
@@ -319,10 +321,17 @@ private struct ShellSidebarShortcutRow: View {
             .padding(.vertical, verticalPadding ?? ShellSidebarMetrics.rowVerticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                    .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+                    .fill(rowBackground)
             )
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return Color.accentColor.opacity(0.08) }
+        if isHovering { return Color.primary.opacity(0.07) }
+        return .clear
     }
 }
 
@@ -711,12 +720,12 @@ private struct MiniCalendarView: View {
                         selectedDate = day
                     } label: {
                         Text("\(calendar.component(.day, from: day))")
-                            .font(ShellZoomMetrics.font(11, weight: calendar.isDate(day, inSameDayAs: selectedDate) ? .semibold : .regular))
-                            .foregroundStyle(calendar.isDate(day, inSameDayAs: selectedDate) ? .white : (calendar.isDate(day, equalTo: selectedDate, toGranularity: .month) ? .primary : .secondary))
+                            .font(ShellZoomMetrics.font(11, weight: dayFontWeight(day)))
+                            .foregroundStyle(dayForeground(day))
                             .frame(maxWidth: .infinity, minHeight: ShellZoomMetrics.size(22))
                             .background(
                                 RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                                    .fill(calendar.isDate(day, inSameDayAs: selectedDate) ? Color.accentColor : Color.clear)
+                                    .fill(dayBackground(day))
                             )
                     }
                     .buttonStyle(.plain)
@@ -726,7 +735,29 @@ private struct MiniCalendarView: View {
         .padding(ShellZoomMetrics.size(10))
         .background(
             RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.md))
-                .fill(Color.primary.opacity(0.03))
+            .fill(Color.primary.opacity(0.03))
         )
+    }
+
+    private func isSelectedDay(_ day: Date) -> Bool {
+        calendar.isDate(day, inSameDayAs: selectedDate)
+    }
+
+    private func dayFontWeight(_ day: Date) -> Font.Weight {
+        isSelectedDay(day) ? .semibold : .regular
+    }
+
+    private func dayForeground(_ day: Date) -> Color {
+        if isSelectedDay(day) {
+            return .white
+        }
+        if calendar.isDate(day, equalTo: selectedDate, toGranularity: .month) {
+            return .primary
+        }
+        return .secondary
+    }
+
+    private func dayBackground(_ day: Date) -> Color {
+        isSelectedDay(day) ? Color.accentColor : Color.clear
     }
 }

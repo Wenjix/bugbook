@@ -5,6 +5,41 @@ import XCTest
 
 @MainActor
 final class BrowserEngineTests: XCTestCase {
+    func testBrowserEngineFactoryDefaultsToWebKit() {
+        let engine = BrowserEngineFactory.makeDefault(environment: [:])
+
+        XCTAssertTrue(engine is WebKitBrowserEngine)
+    }
+
+    func testBrowserEngineFactoryOnlyRequestsChromiumWhenExplicitlyOptedIn() {
+        XCTAssertEqual(BrowserEngineFactory.requestedEngine(from: [:]), .webKit)
+        XCTAssertEqual(
+            BrowserEngineFactory.requestedEngine(from: [BrowserEngineFactory.engineEnvironmentKey: "webkit"]),
+            .webKit
+        )
+        XCTAssertEqual(
+            BrowserEngineFactory.requestedEngine(from: [BrowserEngineFactory.engineEnvironmentKey: "chromium"]),
+            .chromium
+        )
+        XCTAssertEqual(
+            BrowserEngineFactory.requestedEngine(from: [BrowserEngineFactory.engineEnvironmentKey: " CEF "]),
+            .chromium
+        )
+    }
+
+    func testBrowserEngineFactoryRequiresUnsafeGateBeforeStartingChromium() {
+        let chromiumRequested = [BrowserEngineFactory.engineEnvironmentKey: "chromium"]
+        let engine = BrowserEngineFactory.makeDefault(environment: chromiumRequested)
+
+        XCTAssertTrue(engine is WebKitBrowserEngine)
+        XCTAssertFalse(BrowserEngineFactory.allowsUnsafeChromiumStart(from: chromiumRequested))
+        XCTAssertTrue(
+            BrowserEngineFactory.allowsUnsafeChromiumStart(
+                from: [BrowserEngineFactory.unsafeChromiumStartEnvironmentKey: " yes "]
+            )
+        )
+    }
+
     func testBrowserManagerSyncsTabStateFromEngineEvents() {
         let engine = FakeBrowserEngine()
         let snapshotStore = BrowserPaneSnapshotStore(directoryURL: temporaryDirectory())
@@ -80,16 +115,25 @@ final class BrowserEngineTests: XCTestCase {
         let directoryURL = temporaryDirectory()
         let snapshotStore = BrowserPaneSnapshotStore(directoryURL: directoryURL)
         let paneID = UUID()
+        let firstTabID = UUID()
+        let secondTabID = UUID()
         let snapshot = BrowserPaneSnapshot(
             paneID: paneID,
             tabs: [
                 BrowserTabSnapshot(
-                    id: UUID(),
+                    id: firstTabID,
                     title: "Restored",
                     urlString: "https://example.com/restored",
                     pageZoom: 1.4
+                ),
+                BrowserTabSnapshot(
+                    id: secondTabID,
+                    title: "Second",
+                    urlString: "https://example.com/second",
+                    pageZoom: 1.0
                 )
-            ]
+            ],
+            selectedTabID: secondTabID
         )
         snapshotStore.save(snapshot)
 
@@ -100,9 +144,29 @@ final class BrowserEngineTests: XCTestCase {
 
         let page = manager.ensurePage(for: paneID, tabID: tabID)
 
-        XCTAssertEqual(session.activeTab?.urlString, "https://example.com/restored")
-        XCTAssertEqual(page.state.url?.absoluteString, "https://example.com/restored")
-        XCTAssertEqual(page.state.pageZoom, 1.4, accuracy: 0.001)
+        XCTAssertEqual(session.tabs.map(\.id), [firstTabID, secondTabID])
+        XCTAssertEqual(tabID, secondTabID)
+        XCTAssertEqual(session.activeTab?.urlString, "https://example.com/second")
+        XCTAssertEqual(page.state.url?.absoluteString, "https://example.com/second")
+    }
+
+    func testBrowserManagerDiscardsInactiveBrowserPageAfterIdleTimeout() async throws {
+        let engine = FakeBrowserEngine()
+        let manager = BrowserManager(engine: engine, inactivePageDiscardDelayNanos: 1_000_000)
+        let paneID = UUID()
+        let session = manager.session(for: paneID)
+        let firstTabID = tryUnwrap(session.selectedTabID)
+        let secondTabID = session.openNewTab(url: URL(string: "https://example.com/second"))
+
+        _ = manager.ensurePage(for: paneID, tabID: firstTabID)
+        _ = manager.ensurePage(for: paneID, tabID: secondTabID)
+        session.selectTab(secondTabID)
+        manager.scheduleInactivePageDiscard(for: firstTabID, in: paneID)
+
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        XCTAssertFalse(manager.hasLivePage(for: firstTabID, in: paneID))
+        XCTAssertTrue(manager.hasLivePage(for: secondTabID, in: paneID))
     }
 
     func testBrowserAgentServiceSavesPageUsingEngineJavaScript() async throws {

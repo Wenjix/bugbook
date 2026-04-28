@@ -15,6 +15,8 @@ enum ChromiumRuntimeMetadata {
 
 @MainActor
 final class ChromiumBrowserEngine: BrowserEngine {
+    private let fallbackEngine = WebKitBrowserEngine()
+
     init() {}
 
     func makePage(
@@ -24,6 +26,15 @@ final class ChromiumBrowserEngine: BrowserEngine {
         eventHandler: @escaping BrowserPageEventHandler
     ) -> any BrowserPage {
         BBChromiumRuntime.startIfNeeded()
+        guard BBChromiumRuntime.isInitialized() else {
+            Log.app.error("Chromium runtime failed to initialize; using WebKit fallback for browser tab.")
+            return fallbackEngine.makePage(
+                for: paneID,
+                tabID: tabID,
+                initialURL: initialURL,
+                eventHandler: eventHandler
+            )
+        }
         return ChromiumBrowserPage(initialURL: initialURL, eventHandler: eventHandler)
     }
 
@@ -32,6 +43,11 @@ final class ChromiumBrowserEngine: BrowserEngine {
     }
 
     func clearCookies() async throws {
+        BBChromiumRuntime.startIfNeeded()
+        guard BBChromiumRuntime.isInitialized() else {
+            try await fallbackEngine.clearCookies()
+            return
+        }
         BBChromiumRuntime.clearCookies()
     }
 }

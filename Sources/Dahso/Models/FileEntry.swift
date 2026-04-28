@@ -1,6 +1,6 @@
 import Foundation
 
-enum TabKind: Equatable, Hashable, Codable {
+enum TabKind: Equatable, Hashable, Codable, Sendable {
     case page
     case database
     case mail
@@ -27,7 +27,7 @@ enum TabKind: Equatable, Hashable, Codable {
     var databaseRowId: String? { if case .databaseRow(_, let r) = self { return r }; return nil }
 }
 
-struct FileEntry: Identifiable, Hashable {
+struct FileEntry: Identifiable, Hashable, Sendable {
     let id: String
     var name: String
     var path: String

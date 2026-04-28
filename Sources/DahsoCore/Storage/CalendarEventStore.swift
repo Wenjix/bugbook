@@ -4,6 +4,8 @@ import Foundation
 /// Storage location: `<workspace>/.dahso/calendar/`
 public class CalendarEventStore {
     private let fm = FileManager.default
+    public static let blockWindowsFileName = "block_windows.json"
+    public static let defaultBlockWindowHorizon: TimeInterval = 14 * 24 * 60 * 60
 
     public init() {}
 
@@ -27,6 +29,14 @@ public class CalendarEventStore {
 
     private func syncStatePath(in workspace: String) -> String {
         (calendarDir(in: workspace) as NSString).appendingPathComponent("sync_state.json")
+    }
+
+    private func blockWindowsPath(in workspace: String) -> String {
+        (calendarDir(in: workspace) as NSString).appendingPathComponent(Self.blockWindowsFileName)
+    }
+
+    public func calendarBlockWindowsPath(in workspace: String) -> String {
+        blockWindowsPath(in: workspace)
     }
 
     private func ensureDirectory(in workspace: String) throws {
@@ -53,6 +63,7 @@ public class CalendarEventStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(events)
         try data.write(to: URL(fileURLWithPath: eventsPath(in: workspace)), options: .atomic)
+        try writeBlockWindowsContract(for: events, in: workspace)
     }
 
     /// Upsert events by ID — update existing, add new, keep others untouched.
@@ -73,6 +84,9 @@ public class CalendarEventStore {
                 if updated.accountEmail == nil {
                     updated.accountEmail = existing[idx].accountEmail
                 }
+                if updated.blockProfile == nil {
+                    updated.blockProfile = existing[idx].blockProfile
+                }
                 existing[idx] = updated
                 if previousID != updated.id {
                     indexById.removeValue(forKey: previousID)
@@ -91,6 +105,45 @@ public class CalendarEventStore {
         var events = loadEvents(in: workspace)
         events.removeAll { ids.contains($0.id) }
         try saveEvents(events, in: workspace)
+    }
+
+    public func blockWindows(
+        in workspace: String,
+        now: Date = Date(),
+        horizon: TimeInterval = CalendarEventStore.defaultBlockWindowHorizon
+    ) -> [CalendarBlockWindow] {
+        blockWindows(from: loadEvents(in: workspace), now: now, horizon: horizon)
+    }
+
+    public func blockWindows(
+        from events: [CalendarEvent],
+        now: Date = Date(),
+        horizon: TimeInterval = CalendarEventStore.defaultBlockWindowHorizon
+    ) -> [CalendarBlockWindow] {
+        let horizonEnd = now.addingTimeInterval(max(0, horizon))
+        return events
+            .compactMap { event -> CalendarBlockWindow? in
+                guard let profile = event.blockProfile else { return nil }
+                guard event.endDate > now, event.startDate < horizonEnd else { return nil }
+                return CalendarBlockWindow(event: event, profile: profile)
+            }
+            .sorted { lhs, rhs in
+                if lhs.startDate == rhs.startDate {
+                    return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                }
+                return lhs.startDate < rhs.startDate
+            }
+    }
+
+    @discardableResult
+    public func exportBlockWindowsContract(
+        in workspace: String,
+        now: Date = Date(),
+        horizon: TimeInterval = CalendarEventStore.defaultBlockWindowHorizon
+    ) throws -> [CalendarBlockWindow] {
+        let windows = blockWindows(in: workspace, now: now, horizon: horizon)
+        try writeBlockWindowsContract(windows, in: workspace)
+        return windows
     }
 
     @discardableResult
@@ -259,7 +312,8 @@ public class CalendarEventStore {
             conferenceURL: event.conferenceURL,
             htmlLink: event.htmlLink,
             linkedPagePath: event.linkedPagePath,
-            accountEmail: resolvedAccountEmail
+            accountEmail: resolvedAccountEmail,
+            blockProfile: event.blockProfile
         )
     }
 
@@ -275,6 +329,9 @@ public class CalendarEventStore {
         }
         if preferred.accountEmail == nil {
             preferred.accountEmail = fallback.accountEmail
+        }
+        if preferred.blockProfile == nil {
+            preferred.blockProfile = fallback.blockProfile
         }
 
         return preferred
@@ -334,6 +391,19 @@ public class CalendarEventStore {
         guard !prefix.isEmpty else { return escapedOldID }
         let escapedPrefix = NSRegularExpression.escapedPattern(for: prefix)
         return "(?<!\(escapedPrefix))\(escapedOldID)"
+    }
+
+    private func writeBlockWindowsContract(for events: [CalendarEvent], in workspace: String) throws {
+        try writeBlockWindowsContract(blockWindows(from: events), in: workspace)
+    }
+
+    private func writeBlockWindowsContract(_ windows: [CalendarBlockWindow], in workspace: String) throws {
+        try ensureDirectory(in: workspace)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(windows)
+        try data.write(to: URL(fileURLWithPath: blockWindowsPath(in: workspace)), options: .atomic)
     }
 }
 

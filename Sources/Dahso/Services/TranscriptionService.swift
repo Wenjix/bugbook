@@ -14,8 +14,26 @@ struct TranscriptSegment: Identifiable {
     let timestamp: TimeInterval // seconds from start
 }
 
+enum LiveTranscriptionAudioSource {
+    case microphone
+    case system
+
+    var transcriptLabel: String {
+        switch self {
+        case .microphone: return "Me"
+        case .system: return "Other"
+        }
+    }
+
+    func labeledTranscript(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return "\(transcriptLabel): \(trimmed)"
+    }
+}
+
 #if canImport(FluidAudio)
-private final class FluidAudioChunkRecorder {
+private final class FluidAudioChunkRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private let fileManager = FileManager.default
 
@@ -30,8 +48,24 @@ private final class FluidAudioChunkRecorder {
         lock.lock()
         defer { lock.unlock() }
 
-        resetLocked()
+        try startLocked(format: format)
+    }
 
+    func appendStartingIfNeeded(_ buffer: AVAudioPCMBuffer) throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if recordingFormat == nil {
+            try startLocked(format: buffer.format)
+        }
+
+        guard let currentChunkFile else { return }
+        try currentChunkFile.write(from: buffer)
+        currentChunkFrameCount += AVAudioFramePosition(buffer.frameLength)
+    }
+
+    private func startLocked(format: AVAudioFormat) throws {
+        resetLocked()
         let sessionDirectoryURL = fileManager.temporaryDirectory
             .appendingPathComponent("dahso-live-transcription-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: sessionDirectoryURL, withIntermediateDirectories: true)
@@ -138,7 +172,7 @@ class TranscriptionService {
     var currentTranscript: String = ""
     var confirmedSegments: [String] = []
 
-    private static func rmsLevel(from buffer: AVAudioPCMBuffer) -> Float {
+    private nonisolated static func rmsLevel(from buffer: AVAudioPCMBuffer) -> Float {
         guard let channelData = buffer.floatChannelData?[0] else { return 0 }
         let frameCount = Int(buffer.frameLength)
         var sum: Float = 0
@@ -155,8 +189,12 @@ class TranscriptionService {
     var progress: String = ""
 
     @ObservationIgnored private var audioEngine: AVAudioEngine?
+    @ObservationIgnored private var systemAudioCapture: Any?
+    @ObservationIgnored private var systemAudioCaptureTask: Task<Void, Never>?
+    @ObservationIgnored private var systemAudioFallbackNoticeShown = false
     #if canImport(FluidAudio)
     @ObservationIgnored private var fluidChunkRecorder = FluidAudioChunkRecorder()
+    @ObservationIgnored private var fluidSystemChunkRecorder = FluidAudioChunkRecorder()
     @ObservationIgnored private var fluidAsrManager: AsrManager?
     @ObservationIgnored private var fluidChunkTimer: Timer?
     @ObservationIgnored private var fluidPendingChunkTranscriptions = 0
@@ -219,6 +257,7 @@ class TranscriptionService {
             fluidChunkTimer?.invalidate()
             fluidChunkTimer = nil
             fluidCapturingAudio = false
+            stopSystemAudioCapture()
             audioEngine?.inputNode.removeTap(onBus: 0)
             audioEngine?.stop()
             audioEngine = nil
@@ -280,12 +319,16 @@ class TranscriptionService {
                 self?.audioLevel = normalized
             }
         }
+        startSystemAudioCapture { buffer in
+            request.append(buffer)
+        }
 
         do {
             engine.prepare()
             try engine.start()
         } catch {
             self.error = "Failed to start audio engine: \(error.localizedDescription)"
+            stopSystemAudioCapture()
             inputNode.removeTap(onBus: 0)
             recognitionRequest = nil
             recognitionTask?.cancel()
@@ -305,6 +348,7 @@ class TranscriptionService {
         fluidChunkTimer?.invalidate()
         fluidChunkTimer = nil
 
+        stopSystemAudioCapture()
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
@@ -319,6 +363,7 @@ class TranscriptionService {
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
+        stopSystemAudioCapture()
         isRecording = false
         audioLevel = 0
 
@@ -336,6 +381,57 @@ class TranscriptionService {
 
         #endif
         return currentTranscript
+    }
+
+    private func startSystemAudioCapture(
+        onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void
+    ) {
+        stopSystemAudioCapture()
+
+        guard #available(macOS 14.2, *) else {
+            reportSystemAudioFallback("System audio capture requires macOS 14.2 or newer. Recording microphone audio only.")
+            return
+        }
+
+        do {
+            let capture = SystemAudioCapture()
+            let stream = try capture.start()
+            systemAudioCapture = capture
+            systemAudioCaptureTask = Task.detached(priority: .userInitiated) { [weak self] in
+                for await buffer in stream {
+                    guard !Task.isCancelled else { break }
+                    onBuffer(buffer)
+
+                    let normalized = Self.rmsLevel(from: buffer)
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        self.audioLevel = max(self.audioLevel, normalized)
+                    }
+                }
+            }
+        } catch {
+            reportSystemAudioFallback(
+                "System audio was not captured. Enable System Audio Recording for Dahso in System Settings > Privacy & Security to include other meeting participants. Recording microphone audio only. (\(error.localizedDescription))"
+            )
+        }
+    }
+
+    private func stopSystemAudioCapture() {
+        systemAudioCaptureTask?.cancel()
+        systemAudioCaptureTask = nil
+
+        if #available(macOS 14.2, *),
+           let capture = systemAudioCapture as? SystemAudioCapture {
+            capture.stop()
+        }
+        systemAudioCapture = nil
+    }
+
+    private func reportSystemAudioFallback(_ message: String) {
+        Log.transcription.warning("\(message, privacy: .public)")
+        guard !systemAudioFallbackNoticeShown else { return }
+        systemAudioFallbackNoticeShown = true
+        error = message
     }
 
     // MARK: - Transcribe Audio File (FluidAudio batch)
@@ -399,6 +495,7 @@ extension TranscriptionService {
         fluidNextChunkIndexToCommit = 0
         fluidNextChunkSequence = 0
         fluidChunkRecorder.reset()
+        fluidSystemChunkRecorder.reset()
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
@@ -420,13 +517,24 @@ extension TranscriptionService {
                 self?.audioLevel = normalized
             }
         }
+        startSystemAudioCapture { [systemRecorder = fluidSystemChunkRecorder] buffer in
+            do {
+                try systemRecorder.appendStartingIfNeeded(buffer)
+            } catch {
+                Task { @MainActor [weak self] in
+                    self?.error = "Failed to write system audio chunk: \(error.localizedDescription)"
+                }
+            }
+        }
 
         do {
             engine.prepare()
             try engine.start()
         } catch {
             inputNode.removeTap(onBus: 0)
+            stopSystemAudioCapture()
             fluidChunkRecorder.reset()
+            fluidSystemChunkRecorder.reset()
             throw error
         }
 
@@ -459,16 +567,21 @@ extension TranscriptionService {
     }
 
     func flushFluidChunk(final: Bool) {
-        let sequence = fluidNextChunkSequence
-        let chunkURL: URL?
+        let chunks: [(url: URL, source: LiveTranscriptionAudioSource)]
 
         do {
-            chunkURL = final ? fluidChunkRecorder.finish() : try fluidChunkRecorder.rotateChunk()
+            let microphoneChunkURL = final ? fluidChunkRecorder.finish() : try fluidChunkRecorder.rotateChunk()
+            let systemChunkURL = final ? fluidSystemChunkRecorder.finish() : try fluidSystemChunkRecorder.rotateChunk()
+            chunks = [
+                microphoneChunkURL.map { ($0, .microphone) },
+                systemChunkURL.map { ($0, .system) }
+            ].compactMap { $0 }
         } catch {
             self.error = "Failed to finalize live audio chunk: \(error.localizedDescription)"
             if final {
                 isRecording = false
                 fluidChunkRecorder.reset()
+                fluidSystemChunkRecorder.reset()
             } else {
                 fluidChunkTimer?.invalidate()
                 fluidChunkTimer = nil
@@ -476,8 +589,15 @@ extension TranscriptionService {
             return
         }
 
-        guard let chunkURL else { return }
+        guard !chunks.isEmpty else { return }
 
+        for chunk in chunks {
+            enqueueFluidChunkTranscription(url: chunk.url, source: chunk.source)
+        }
+    }
+
+    private func enqueueFluidChunkTranscription(url chunkURL: URL, source: LiveTranscriptionAudioSource) {
+        let sequence = fluidNextChunkSequence
         fluidNextChunkSequence += 1
         fluidPendingChunkTranscriptions += 1
         let sessionID = liveRecordingSessionID
@@ -487,7 +607,7 @@ extension TranscriptionService {
 
             let outcome: FluidChunkOutcome
             do {
-                let text = try await self.transcribeLiveFluidChunk(at: chunkURL)
+                let text = try await self.transcribeLiveFluidChunk(at: chunkURL, source: source)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 outcome = text.isEmpty ? .empty : .text(text)
             } catch {
@@ -516,12 +636,21 @@ extension TranscriptionService {
         }
     }
 
-    func transcribeLiveFluidChunk(at url: URL) async throws -> String {
+    func transcribeLiveFluidChunk(
+        at url: URL,
+        source: LiveTranscriptionAudioSource = .microphone
+    ) async throws -> String {
         guard let fluidAsrManager else {
             throw TranscriptionError.transcriptionFailed("FluidAudio not initialized")
         }
-        let result = try await fluidAsrManager.transcribe(url, source: .microphone)
-        return result.text
+        let text: String
+        switch source {
+        case .microphone:
+            text = try await fluidAsrManager.transcribe(url, source: .microphone).text
+        case .system:
+            text = try await fluidAsrManager.transcribe(url, source: .system).text
+        }
+        return source.labeledTranscript(text)
     }
 
     func commitCompletedFluidChunks() {
@@ -540,6 +669,8 @@ extension TranscriptionService {
         isRecording = false
         fluidCompletedChunkOutcomes.removeAll()
         fluidChunkRecorder.reset()
+        fluidSystemChunkRecorder.reset()
+        stopSystemAudioCapture()
     }
 }
 #else

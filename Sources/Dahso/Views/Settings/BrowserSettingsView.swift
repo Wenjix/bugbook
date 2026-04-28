@@ -118,7 +118,7 @@ struct BrowserSettingsView: View {
                 Toggle("Show status bar on link hover", isOn: $appState.settings.browserChrome.showsStatusBar)
             }
 
-            SettingsSection("New Tab Page") {
+            SettingsSection("Browser Start Page") {
                 Toggle("Show greeting", isOn: $appState.settings.browserChrome.showsNewTabGreeting)
                 Toggle("Show quick launch", isOn: $appState.settings.browserChrome.showsNewTabQuickLaunch)
                 Toggle("Show recent visits", isOn: $appState.settings.browserChrome.showsNewTabRecentVisits)

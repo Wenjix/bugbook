@@ -292,6 +292,7 @@ struct ImageBlockView: View {
 /// Database embed block — wraps existing DatabaseInlineEmbedView.
 struct DatabaseEmbedBlockView: View {
     let dbPath: String
+    var unresolvedStoredPath: String?
     var onOpenDatabaseTab: ((String) -> Void)?
     var sidebarReferencePayload: SidebarReferenceDragPayload?
     @State private var isHovered = false
@@ -308,18 +309,27 @@ struct DatabaseEmbedBlockView: View {
         }
     }
 
+    @ViewBuilder
     private var databaseEmbedView: some View {
-        DatabaseInlineEmbedView(
-            dbPath: dbPath,
-            onOpenDatabase: { onOpenDatabaseTab?(dbPath) }
-        )
-        .padding(.vertical, 4)
-        .contextMenu {
-            if let sidebarReferencePayload {
-                Button {
-                    NotificationCenter.default.post(name: .addToSidebar, object: sidebarReferencePayload)
-                } label: {
-                    Label("Add to Sidebar", systemImage: "sidebar.left")
+        if let unresolvedStoredPath {
+            DatabaseEmbedMissingView(storedPath: unresolvedStoredPath)
+                .padding(.vertical, 4)
+                .onAppear {
+                    Log.editor.warning("Database embed path failed to resolve: \(unresolvedStoredPath, privacy: .public)")
+                }
+        } else {
+            DatabaseInlineEmbedView(
+                dbPath: dbPath,
+                onOpenDatabase: { onOpenDatabaseTab?(dbPath) }
+            )
+            .padding(.vertical, 4)
+            .contextMenu {
+                if let sidebarReferencePayload {
+                    Button {
+                        NotificationCenter.default.post(name: .addToSidebar, object: sidebarReferencePayload)
+                    } label: {
+                        Label("Add to Sidebar", systemImage: "sidebar.left")
+                    }
                 }
             }
         }
@@ -350,5 +360,38 @@ struct DatabaseEmbedBlockView: View {
             .appCursor(.openHand)
             .padding(6)
             .help("Drag to sidebar to pin")
+    }
+}
+
+private struct DatabaseEmbedMissingView: View {
+    let storedPath: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Database not found", systemImage: "exclamationmark.triangle")
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            Text("The embedded database path could not be resolved.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Text(storedPath)
+                .font(.callout.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .lineLimit(3)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.fallbackSurfaceSubtle)
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.fallbackChromeBorder, lineWidth: 1)
+        }
+        .clipShape(.rect(cornerRadius: 6))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Database not found")
+        .accessibilityValue(storedPath)
     }
 }

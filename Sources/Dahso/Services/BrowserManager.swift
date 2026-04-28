@@ -9,11 +9,18 @@ final class BrowserManager {
     private(set) var browsingHistory: [BrowserRecentVisit]
     var isHistoryEnabled = true
 
+    private struct BrowserPageIdentity: Hashable {
+        let paneID: UUID
+        let tabID: UUID
+    }
+
     @ObservationIgnored private let engine: any BrowserEngine
     @ObservationIgnored private let snapshotStore: BrowserPaneSnapshotStore
     @ObservationIgnored private let historyStore: BrowserHistoryStore
     @ObservationIgnored private let fallbackWorkspaceManager: WorkspaceManager
     @ObservationIgnored private var boundWorkspaceManager: WorkspaceManager?
+    @ObservationIgnored private let inactivePageDiscardDelayNanos: UInt64
+    @ObservationIgnored private var inactivePageDiscardTasks: [BrowserPageIdentity: Task<Void, Never>] = [:]
 
     fileprivate var workspaceManager: WorkspaceManager {
         boundWorkspaceManager ?? fallbackWorkspaceManager
@@ -22,7 +29,8 @@ final class BrowserManager {
     init(
         engine: (any BrowserEngine)? = nil,
         snapshotStore: BrowserPaneSnapshotStore = BrowserPaneSnapshotStore(),
-        historyStore: BrowserHistoryStore = BrowserHistoryStore()
+        historyStore: BrowserHistoryStore = BrowserHistoryStore(),
+        inactivePageDiscardDelayNanos: UInt64 = 30_000_000_000
     ) {
         let fallbackWorkspaceManager = WorkspaceManager()
         fallbackWorkspaceManager.layoutPersistenceEnabled = false
@@ -30,6 +38,7 @@ final class BrowserManager {
         self.snapshotStore = snapshotStore
         self.historyStore = historyStore
         self.fallbackWorkspaceManager = fallbackWorkspaceManager
+        self.inactivePageDiscardDelayNanos = inactivePageDiscardDelayNanos
         self.browsingHistory = historyStore.load()
     }
 
@@ -64,6 +73,7 @@ final class BrowserManager {
 
     func closeSession(_ paneID: UUID) {
         guard let session = sessions.removeValue(forKey: paneID) else { return }
+        cancelInactivePageDiscards(in: paneID)
         session.dispose()
         snapshotStore.removeSnapshot(for: paneID)
     }
@@ -123,6 +133,7 @@ final class BrowserManager {
     }
 
     func ensurePage(for paneID: UUID, tabID: UUID) -> any BrowserPage {
+        cancelInactivePageDiscard(for: tabID, in: paneID)
         let session = session(for: paneID)
         if let existing = session.pages[tabID] {
             return existing
@@ -155,7 +166,7 @@ final class BrowserManager {
         if newTab || activeBrowserTabID(in: paneID) == nil {
             let content = PaneContent.browserDocument(
                 urlString: url.absoluteString,
-                title: url.host ?? "New Tab"
+                title: url.host ?? "Browser"
             )
             tabID = content.id
             _ = workspaceManager.addPaneTab(to: paneID, content: content)
@@ -163,7 +174,7 @@ final class BrowserManager {
             tabID = selectedTabID
             workspaceManager.updateOpenFile(tabId: tabID, persist: false) { file in
                 file.path = url.absoluteString
-                file.displayName = url.host ?? "New Tab"
+                file.displayName = url.host ?? "Browser"
                 file.browserSavedRecordID = nil
             }
         } else {
@@ -277,8 +288,49 @@ final class BrowserManager {
 
     func discardTabResources(_ tabID: UUID, in paneID: UUID) {
         guard let session = sessions[paneID] else { return }
+        cancelInactivePageDiscard(for: tabID, in: paneID)
         session.discardResources(for: tabID)
         persistSession(paneID)
+    }
+
+    func scheduleInactivePageDiscard(for tabID: UUID, in paneID: UUID) {
+        guard activeBrowserTabID(in: paneID) != tabID else { return }
+        let key = BrowserPageIdentity(paneID: paneID, tabID: tabID)
+        inactivePageDiscardTasks[key]?.cancel()
+        let delayNanos = inactivePageDiscardDelayNanos
+        inactivePageDiscardTasks[key] = Task { [weak self] in
+            guard self != nil else { return }
+            try? await Task.sleep(nanoseconds: delayNanos)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard self.activeBrowserTabID(in: paneID) != tabID else {
+                    self.inactivePageDiscardTasks.removeValue(forKey: key)
+                    return
+                }
+                self.sessions[paneID]?.discardResources(for: tabID)
+                self.persistSession(paneID)
+                self.inactivePageDiscardTasks.removeValue(forKey: key)
+            }
+        }
+    }
+
+    func cancelInactivePageDiscard(for tabID: UUID, in paneID: UUID) {
+        let key = BrowserPageIdentity(paneID: paneID, tabID: tabID)
+        inactivePageDiscardTasks[key]?.cancel()
+        inactivePageDiscardTasks.removeValue(forKey: key)
+    }
+
+    func hasLivePage(for tabID: UUID, in paneID: UUID) -> Bool {
+        sessions[paneID]?.pages[tabID] != nil
+    }
+
+    private func cancelInactivePageDiscards(in paneID: UUID) {
+        let matchingKeys = inactivePageDiscardTasks.keys.filter { $0.paneID == paneID }
+        for key in matchingKeys {
+            inactivePageDiscardTasks[key]?.cancel()
+            inactivePageDiscardTasks.removeValue(forKey: key)
+        }
     }
 
     private func makeSession(for paneID: UUID) -> BrowserPaneSession {
@@ -344,6 +396,7 @@ final class BrowserManager {
         let session = session(for: paneID)
         let validTabIDs = Set(tabs.map(\.id))
         for tabID in Set(session.pages.keys).subtracting(validTabIDs) {
+            cancelInactivePageDiscard(for: tabID, in: paneID)
             session.discardResources(for: tabID)
         }
         for tab in tabs {
@@ -444,6 +497,7 @@ final class BrowserPaneSession {
     }
 
     func closeTab(_ tabID: UUID) {
+        manager?.cancelInactivePageDiscard(for: tabID, in: paneID)
         pages[tabID]?.dispose()
         pages.removeValue(forKey: tabID)
         pageStates.removeValue(forKey: tabID)
@@ -473,13 +527,11 @@ final class BrowserPaneSession {
     func openNewTab(url: URL? = nil, select: Bool = true) -> UUID {
         let content = PaneContent.browserDocument(
             urlString: url?.absoluteString ?? "dahso://browser",
-            title: url?.host ?? "New Tab"
+            title: url?.host ?? "Browser"
         )
         manager?.workspaceManager.addPaneTab(to: paneID, content: content, select: select)
         if let manager, let url {
             manager.ensurePage(for: paneID, tabID: content.id).load(URLRequest(url: url))
-        } else if let manager {
-            _ = manager.ensurePage(for: paneID, tabID: content.id)
         }
         manager?.persistSession(paneID)
         return content.id
@@ -531,7 +583,7 @@ final class BrowserPaneSession {
 
     private func browserTabState(for file: OpenFile) -> BrowserTabState {
         let state = pageStates[file.id] ?? pages[file.id]?.state ?? .empty
-        let title = file.displayName ?? state.title ?? "New Tab"
+        let title = file.displayName ?? state.title ?? "Browser"
         let urlString = state.url?.absoluteString ?? file.browserURLString
         let securityURL = state.url ?? URL(string: urlString)
         return BrowserTabState(

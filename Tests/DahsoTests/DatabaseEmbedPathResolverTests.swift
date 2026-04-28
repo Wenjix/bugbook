@@ -47,4 +47,43 @@ final class DatabaseEmbedPathResolverTests: XCTestCase {
 
         XCTAssertEqual(resolved, movedDatabasePath)
     }
+
+    func testResolveDatabaseEmbedPathForRenderingMarksMissingPathUnresolved() throws {
+        let workspace = try makeTemporaryWorkspace()
+        defer { try? FileManager.default.removeItem(atPath: workspace) }
+
+        let pagePath = (workspace as NSString).appendingPathComponent("Alignment Zone.md")
+        let stalePath = "/Users/maxforsey/Documents/Bugbook/Untitled Database"
+
+        let resolution = resolveDatabaseEmbedPathForRendering(
+            stalePath,
+            pagePath: pagePath,
+            workspacePath: workspace
+        )
+
+        XCTAssertEqual(resolution?.renderPath, stalePath)
+        XCTAssertEqual(resolution?.unresolvedStoredPath, stalePath)
+        XCTAssertEqual(resolution?.isResolved, false)
+    }
+
+    func testResolveDatabaseEmbedPathForRenderingKeepsResolvedPathResolved() throws {
+        let workspace = try makeTemporaryWorkspace()
+        defer { try? FileManager.default.removeItem(atPath: workspace) }
+
+        let pagePath = (workspace as NSString).appendingPathComponent("Alignment Zone.md")
+        let pageContainer = String(pagePath.dropLast(3))
+        let databasePath = (pageContainer as NSString).appendingPathComponent("Untitled Database")
+        try writeDatabase(at: databasePath, name: "Untitled Database")
+
+        let stalePath = "/Users/maxforsey/Documents/Bugbook/Untitled Database"
+        let resolution = resolveDatabaseEmbedPathForRendering(
+            stalePath,
+            pagePath: pagePath,
+            workspacePath: workspace
+        )
+
+        XCTAssertEqual(resolution?.renderPath, databasePath)
+        XCTAssertNil(resolution?.unresolvedStoredPath)
+        XCTAssertEqual(resolution?.isResolved, true)
+    }
 }

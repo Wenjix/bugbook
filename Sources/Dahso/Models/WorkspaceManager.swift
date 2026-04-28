@@ -7,8 +7,16 @@ private let log = Logger(subsystem: "com.dahso.app", category: "WorkspaceManager
 @MainActor
 @Observable
 class WorkspaceManager {
+    struct ClosedPaneItem: Equatable {
+        let workspaceID: UUID
+        let paneID: UUID
+        let content: PaneContent
+        let closedAt: Date
+    }
+
     var workspaces: [Workspace] = []
     var activeWorkspaceIndex: Int = 0
+    private(set) var recentlyClosedItems: [ClosedPaneItem] = []
     /// Set after each successful layout save; UI can observe this for a brief indicator.
     var lastSavedAt: Date?
     var layoutPersistenceEnabled = true
@@ -49,7 +57,7 @@ class WorkspaceManager {
     // MARK: - Workspace Lifecycle
 
     func addWorkspace(name: String? = nil) {
-        let ws = Workspace.makeDefault(name: name ?? "New Tab")
+        let ws = Workspace.makeDefault(name: name ?? "Home")
         workspaces.append(ws)
         activeWorkspaceIndex = workspaces.count - 1
         schedulePersist()
@@ -60,7 +68,7 @@ class WorkspaceManager {
         let adjustedContent = content.reidentified(as: paneId)
         let ws = Workspace(
             id: UUID(),
-            name: "New Tab",
+            name: adjustedContent.paneItemTitle,
             icon: nil,
             root: .leaf(.init(id: paneId, tabs: [adjustedContent])),
             focusedPaneId: paneId,
@@ -163,7 +171,7 @@ class WorkspaceManager {
         // Create new workspace with the popped-out pane
         let newWs = Workspace(
             id: UUID(),
-            name: "New Tab",
+            name: leaf.activeContent.paneItemTitle,
             icon: nil,
             root: .leaf(leaf),
             focusedPaneId: leaf.id,
@@ -179,11 +187,44 @@ class WorkspaceManager {
         closePane(id: id, inWorkspaceAt: activeWorkspaceIndex)
     }
 
+    /// Collapse the active workspace down to a single pane.
+    func keepOnlyPane(id: UUID) {
+        guard var workspace = activeWorkspace,
+              let leaf = workspace.root.findLeaf(id: id) else { return }
+
+        for otherLeaf in workspace.root.allLeaves where otherLeaf.id != id {
+            recordClosedItem(otherLeaf.activeContent, paneID: otherLeaf.id, workspaceID: workspace.id)
+        }
+
+        workspace.root = .leaf(leaf)
+        workspace.focusedPaneId = leaf.id
+        activeWorkspace = workspace
+        schedulePersist()
+    }
+
     func setFocusedPane(id: UUID) {
         guard var ws = activeWorkspace else { return }
         guard ws.focusedPaneId != id else { return }
         ws.focusedPaneId = id
         activeWorkspace = ws
+    }
+
+    func focusPaneTab(workspaceIndex: Int, paneID: UUID, tabID: UUID? = nil) {
+        guard workspaceIndex >= 0, workspaceIndex < workspaces.count else { return }
+        var workspace = workspaces[workspaceIndex]
+        guard workspace.root.findLeaf(id: paneID) != nil else { return }
+
+        if let tabID {
+            workspace.root = workspace.root.updatingLeaf(id: paneID) { leaf in
+                var updated = leaf
+                updated.selectTab(id: tabID)
+                return updated
+            }
+        }
+
+        workspace.focusedPaneId = paneID
+        workspaces[workspaceIndex] = workspace
+        activeWorkspaceIndex = workspaceIndex
     }
 
     func updateSplitRatio(splitId: UUID, ratio: Double) {
@@ -341,6 +382,21 @@ class WorkspaceManager {
         activeWorkspace = ws
     }
 
+    @discardableResult
+    func reopenLastClosedItem() -> UUID? {
+        while !recentlyClosedItems.isEmpty {
+            let item = recentlyClosedItems.removeFirst()
+            let content = paneContentWithUniqueID(from: item.content)
+            let targetWorkspaceIndex = workspaces.firstIndex { $0.id == item.workspaceID } ?? activeWorkspaceIndex
+
+            if let reopenedTabID = reopen(content, inWorkspaceAt: targetWorkspaceIndex, preferredPaneID: item.paneID) {
+                schedulePersist()
+                return reopenedTabID
+            }
+        }
+        return nil
+    }
+
     func movePaneTab(paneId: UUID, from sourceIndex: Int, to destinationIndex: Int) {
         guard var ws = activeWorkspace,
               let leaf = ws.root.findLeaf(id: paneId) else { return }
@@ -371,7 +427,7 @@ class WorkspaceManager {
 
         let workspace = Workspace(
             id: UUID(),
-            name: "New Tab",
+            name: normalizedTabs[selectedIndex].paneItemTitle,
             icon: nil,
             root: .leaf(.init(id: paneId, tabs: normalizedTabs, selectedTabIndex: selectedIndex)),
             focusedPaneId: paneId,
@@ -411,6 +467,9 @@ class WorkspaceManager {
         var updatedLeaf = leaf
         let removed = updatedLeaf.removeTab(id: tabId)
         guard removed != nil else { return nil }
+        if let removed {
+            recordClosedItem(removed, paneID: paneId, workspaceID: workspace.id)
+        }
 
         workspace.root = workspace.root.updatingLeaf(id: paneId) { _ in updatedLeaf }
         workspaces[workspaceIndex] = workspace
@@ -425,6 +484,8 @@ class WorkspaceManager {
         guard workspaceIndex >= 0, workspaceIndex < workspaces.count else { return }
 
         var workspace = workspaces[workspaceIndex]
+        guard let leaf = workspace.root.findLeaf(id: id) else { return }
+        recordClosedItem(leaf.activeContent, paneID: leaf.id, workspaceID: workspace.id)
 
         if case .leaf(let leaf) = workspace.root, leaf.id == id {
             closeWorkspace(at: workspaceIndex)
@@ -443,6 +504,64 @@ class WorkspaceManager {
             activeWorkspace = workspace
         }
         schedulePersist()
+    }
+
+    private func recordClosedItem(_ content: PaneContent, paneID: UUID, workspaceID: UUID) {
+        recentlyClosedItems.removeAll { $0.content.id == content.id }
+        recentlyClosedItems.insert(
+            ClosedPaneItem(workspaceID: workspaceID, paneID: paneID, content: content, closedAt: Date()),
+            at: 0
+        )
+        if recentlyClosedItems.count > 30 {
+            recentlyClosedItems = Array(recentlyClosedItems.prefix(30))
+        }
+    }
+
+    private func paneContentWithUniqueID(from content: PaneContent) -> PaneContent {
+        let existingIDs = Set(workspaces.flatMap { workspace in
+            workspace.allLeaves.flatMap { leaf in leaf.tabs.map(\.id) }
+        })
+        guard existingIDs.contains(content.id) else { return content }
+        return content.reidentified(as: UUID())
+    }
+
+    @discardableResult
+    private func reopen(_ content: PaneContent, inWorkspaceAt workspaceIndex: Int, preferredPaneID: UUID) -> UUID? {
+        guard workspaceIndex >= 0, workspaceIndex < workspaces.count else {
+            addWorkspaceWith(content: content)
+            return content.id
+        }
+
+        var workspace = workspaces[workspaceIndex]
+        let targetPaneID = workspace.root.findLeaf(id: preferredPaneID)?.id
+            ?? workspace.focusedLeaf?.id
+            ?? workspace.root.firstLeaf?.id
+
+        guard let targetPaneID else {
+            workspaces[workspaceIndex] = Workspace(
+                id: workspace.id,
+                name: workspace.name,
+                icon: workspace.icon,
+                root: .leaf(.init(id: preferredPaneID, tabs: [content])),
+                focusedPaneId: preferredPaneID,
+                createdAt: workspace.createdAt
+            )
+            activeWorkspaceIndex = workspaceIndex
+            return content.id
+        }
+
+        var didAppend = false
+        workspace.root = workspace.root.updatingLeaf(id: targetPaneID) { leaf in
+            var updatedLeaf = leaf
+            didAppend = updatedLeaf.appendTab(content, select: true)
+            return updatedLeaf
+        }
+        guard didAppend else { return nil }
+
+        workspace.focusedPaneId = targetPaneID
+        workspaces[workspaceIndex] = workspace
+        activeWorkspaceIndex = workspaceIndex
+        return content.id
     }
 
     private static var layoutFileURL: URL {

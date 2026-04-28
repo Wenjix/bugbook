@@ -1,19 +1,22 @@
 import SwiftUI
 import DahsoCore
 
-extension Notification.Name {
-    static let databaseFindContextDidChange = Notification.Name("databaseFindContextDidChange")
+struct DatabaseViewStatePreferenceValue: Equatable {
+    let state: DatabaseViewState?
+
+    static func == (lhs: DatabaseViewStatePreferenceValue, rhs: DatabaseViewStatePreferenceValue) -> Bool {
+        lhs.state === rhs.state
+    }
 }
 
-enum DatabaseFindNotificationKey {
-    static let hostPaneId = "hostPaneId"
-}
+struct DatabaseViewStatePreferenceKey: PreferenceKey {
+    static var defaultValue = DatabaseViewStatePreferenceValue(state: nil)
 
-private final class WeakDatabaseViewState {
-    weak var value: DatabaseViewState?
-
-    init(_ value: DatabaseViewState) {
-        self.value = value
+    static func reduce(value: inout DatabaseViewStatePreferenceValue, nextValue: () -> DatabaseViewStatePreferenceValue) {
+        let next = nextValue()
+        if next.state != nil {
+            value = next
+        }
     }
 }
 
@@ -98,15 +101,15 @@ private struct FilteredRowsCache {
 @Observable
 final class DatabaseViewState {
     let dbPath: String
-    let hostPaneId: UUID?
     let dbService = DatabaseService()
     let notificationOrigin = UUID().uuidString
 
-    var schema: DatabaseSchema? { didSet { postFindContextDidChange() } }
+    var schema: DatabaseSchema? { didSet { markFindContextChanged() } }
     var rows: [DatabaseRow] = [] { didSet { handleRowsChange(from: oldValue, to: rows) } }
-    var activeViewId: String = "" { didSet { postFindContextDidChange() } }
+    var activeViewId: String = "" { didSet { markFindContextChanged() } }
     var error: String?
     var editingTitle: String = ""
+    var findContextRevision: UInt64 = 0
     var findMatchedRowIds: [String] = []
     var findSelectedRowId: String?
     var findScrollRequestToken: UInt64 = 0
@@ -124,18 +127,13 @@ final class DatabaseViewState {
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var isLoadInFlight = false
     @ObservationIgnored private var reloadRequestedWhileLoading = false
-    @ObservationIgnored private static var hostRegistry: [UUID: WeakDatabaseViewState] = [:]
 
     var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
     }
 
-    init(dbPath: String, hostPaneId: UUID? = nil) {
+    init(dbPath: String) {
         self.dbPath = dbPath
-        self.hostPaneId = hostPaneId
-        if let hostPaneId {
-            Self.register(self, for: hostPaneId)
-        }
     }
 
     // MARK: - Filtered/Sorted Rows
@@ -167,15 +165,6 @@ final class DatabaseViewState {
     }
 
     // MARK: - Find
-
-    static func state(for hostPaneId: UUID) -> DatabaseViewState? {
-        purgeDeadRegisteredHosts()
-        guard let state = hostRegistry[hostPaneId]?.value else {
-            hostRegistry.removeValue(forKey: hostPaneId)
-            return nil
-        }
-        return state
-    }
 
     func matches(for query: String) -> [String] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -389,22 +378,8 @@ final class DatabaseViewState {
 
     // MARK: - Private Find Helpers
 
-    private static func register(_ state: DatabaseViewState, for hostPaneId: UUID) {
-        purgeDeadRegisteredHosts()
-        hostRegistry[hostPaneId] = WeakDatabaseViewState(state)
-    }
-
-    private static func purgeDeadRegisteredHosts() {
-        hostRegistry = hostRegistry.filter { $0.value.value != nil }
-    }
-
-    private func postFindContextDidChange() {
-        guard let hostPaneId else { return }
-        NotificationCenter.default.post(
-            name: .databaseFindContextDidChange,
-            object: nil,
-            userInfo: [DatabaseFindNotificationKey.hostPaneId: hostPaneId]
-        )
+    private func markFindContextChanged() {
+        findContextRevision &+= 1
     }
 
     private func searchableProperties(for schema: DatabaseSchema, view: ViewConfig) -> [PropertyDefinition] {
@@ -1231,7 +1206,7 @@ final class DatabaseViewState {
             scheduleRowContentInvalidation()
         }
 
-        postFindContextDidChange()
+        markFindContextChanged()
     }
 
     private func rowCollectionIdentityChanged(from oldRows: [DatabaseRow], to newRows: [DatabaseRow]) -> Bool {
@@ -1257,7 +1232,7 @@ final class DatabaseViewState {
             guard let self, !Task.isCancelled else { return }
             self.rowContentRevision &+= 1
             self.rowContentInvalidationTask = nil
-            self.postFindContextDidChange()
+            self.markFindContextChanged()
         }
     }
 

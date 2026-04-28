@@ -11,14 +11,15 @@ struct WorkspaceTabBar: View {
     var sidebarOpen: Bool
     var currentView: ViewMode = .editor
     var recordingPagePath: String?
+    var onOpenNewTabLauncher: () -> Void = {}
 
     @State private var dragOverIndex: Int?
     @State private var draggedWorkspaceID: UUID?
     @State private var draggedWorkspaceOffset: CGSize = .zero
     @State private var workspaceTabFrames: [UUID: CGRect] = [:]
-    @State private var showNewMenu = false
     @State private var showSavedIndicator = false
     @State private var savedIndicatorTask: Task<Void, Never>?
+    @State private var isAddWorkspaceHovered = false
 
     private let detachThreshold: CGFloat = 90
 
@@ -85,20 +86,21 @@ struct WorkspaceTabBar: View {
                         .padding(.vertical, ShellZoomMetrics.size(4))
                 }
 
-                // + button with content picker
-                Button { showNewMenu = true } label: {
+                Button { onOpenNewTabLauncher() } label: {
                     Image(systemName: "plus")
                         .font(ShellZoomMetrics.font(Typography.bodySmall))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(addWorkspaceForeground)
                         .frame(width: ShellZoomMetrics.size(28), height: ShellZoomMetrics.size(28))
+                        .background(
+                            RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
+                                .fill(addWorkspaceBackground)
+                        )
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, ShellZoomMetrics.size(8))
                 .padding(.bottom, ShellZoomMetrics.size(2))
-                .floatingPopover(isPresented: $showNewMenu) {
-                    NewPanePopover(workspaceManager: workspaceManager, dismiss: { showNewMenu = false })
-                        .popoverSurface()
-                }
+                .help("Open in new workspace")
+                .onHover { isAddWorkspaceHovered = $0 }
             }
             .padding(.leading, 0)
             Spacer(minLength: 0)
@@ -116,6 +118,20 @@ struct WorkspaceTabBar: View {
             }
         }
         .onPreferenceChange(WorkspaceTabFramePreferenceKey.self) { workspaceTabFrames = $0 }
+    }
+
+    private var addWorkspaceForeground: Color {
+        if isAddWorkspaceHovered {
+            return Color.primary.opacity(0.72)
+        }
+        return Color.secondary
+    }
+
+    private var addWorkspaceBackground: Color {
+        if isAddWorkspaceHovered {
+            return Color.primary.opacity(0.08)
+        }
+        return Color.clear
     }
 
     @ViewBuilder
@@ -139,25 +155,7 @@ struct WorkspaceTabBar: View {
         // In splits, prefer the first document pane over terminal for the tab title
         let leaf = ws.root.firstDocumentLeaf ?? ws.focusedLeaf
         if let leaf {
-            switch leaf.content {
-            case .document(let file):
-                if let name = file.displayName, !name.isEmpty { return name }
-                if file.isEmptyTab { return "New Tab" }
-                if file.isBrowser {
-                    if let host = URL(string: file.path)?.host, !host.isEmpty {
-                        return host
-                    }
-                    return "Browser"
-                }
-                if file.isCalendar { return "Calendar" }
-                if file.isMeetings { return "Meetings" }
-                if file.isGraphView { return "Graph" }
-                if file.isMail { return "Mail" }
-                let fileName = (file.path as NSString).lastPathComponent
-                return fileName.hasSuffix(".md") ? String(fileName.dropLast(3)) : fileName
-            case .terminal:
-                return "Terminal"
-            }
+            return leaf.content.paneItemTitle
         }
         return ws.name
     }
@@ -178,18 +176,7 @@ struct WorkspaceTabBar: View {
             if currentView == .calendar { return "sf:calendar" }
         }
         guard let leaf = ws.focusedLeaf else { return nil }
-        switch leaf.content {
-        case .document(let file):
-            if file.isGateway { return "sf:house" }
-            if file.isMail { return "sf:envelope" }
-            if file.isCalendar { return "sf:calendar" }
-            if file.isBrowser { return "sf:globe" }
-            if file.isMeetings { return "sf:waveform" }
-            if file.isGraphView { return "sf:point.3.connected.trianglepath.dotted" }
-            return file.icon
-        case .terminal:
-            return "sf:terminal"
-        }
+        return leaf.content.paneItemIcon
     }
 
     private func workspaceTabFrameReader(for workspaceID: UUID) -> some View {
@@ -290,91 +277,6 @@ struct WorkspaceTabBar: View {
     }
 }
 
-// MARK: - New Pane Popover
-
-/// Fast content picker shown when clicking the + button.
-private struct NewPanePopover: View {
-    let workspaceManager: WorkspaceManager
-    let dismiss: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("New Tab")
-                .font(.system(size: Typography.caption, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
-
-            contentRow(icon: "doc.text", label: "Page") {
-                workspaceManager.addWorkspace()
-                dismiss()
-            }
-            contentRow(icon: "terminal", label: "Terminal") {
-                workspaceManager.addWorkspaceWith(content: .terminal())
-                dismiss()
-            }
-            contentRow(icon: "globe", label: "Browser") {
-                workspaceManager.addWorkspaceWith(content: .browserDocument())
-                dismiss()
-            }
-            contentRow(icon: "envelope", label: "Mail") {
-                workspaceManager.addWorkspaceWith(content: .mailDocument())
-                dismiss()
-            }
-            contentRow(icon: "calendar", label: "Calendar") {
-                workspaceManager.addWorkspaceWith(content: .calendarDocument())
-                dismiss()
-            }
-            contentRow(icon: "person.2", label: "Meetings") {
-                workspaceManager.addWorkspaceWith(content: .meetingsDocument())
-                dismiss()
-            }
-            contentRow(icon: "house", label: "Home") {
-                workspaceManager.addWorkspaceWith(content: .gatewayDocument())
-                dismiss()
-            }
-
-            Divider().padding(.vertical, 4)
-
-            Text("Split Pane")
-                .font(.system(size: Typography.caption, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 4)
-
-            contentRow(icon: "rectangle.split.2x1", label: "Split Right") {
-                _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .terminal())
-                dismiss()
-            }
-            contentRow(icon: "rectangle.split.1x2", label: "Split Down") {
-                _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: .terminal())
-                dismiss()
-            }
-        }
-        .padding(.bottom, 8)
-        .frame(width: 180)
-    }
-
-    private func contentRow(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: Typography.caption))
-                    .frame(width: 16)
-                    .foregroundStyle(.secondary)
-                Text(label)
-                    .font(.system(size: Typography.bodySmall))
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Tab Item
 
 private struct TabItemView: View {
@@ -424,7 +326,7 @@ private struct TabItemView: View {
             .frame(height: ShellZoomMetrics.size(28))
             .background(
                 RoundedRectangle(cornerRadius: Container.pillRadius)
-                    .fill(isActive ? Container.pillActiveBg : (isHovered ? Color.primary.opacity(0.04) : Color.clear))
+                    .fill(tabBackground)
             )
             .padding(.horizontal, ShellZoomMetrics.size(2))
             .contentShape(RoundedRectangle(cornerRadius: Container.pillRadius))
@@ -436,6 +338,16 @@ private struct TabItemView: View {
                 onMoveToNewWindow()
             }
         }
+    }
+
+    private var tabBackground: Color {
+        if isActive {
+            return Container.pillActiveBg
+        }
+        if isHovered {
+            return Color.primary.opacity(0.04)
+        }
+        return Color.clear
     }
 
     @ViewBuilder

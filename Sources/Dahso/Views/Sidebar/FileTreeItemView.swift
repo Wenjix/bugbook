@@ -103,13 +103,19 @@ struct FileTreeItemView: View {
             }
             .padding(.vertical, ShellZoomMetrics.size(4))
             .padding(.horizontal, ShellZoomMetrics.size(12))
-            .background(isActive ? Color.fallbackAccent.opacity(0.15) : Color.clear)
+            .background(rowBackground)
             .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(Radius.xs)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("file-tree-item-\(displayName)")
         .onHover { hovering in isHovering = hovering }
+    }
+
+    private var rowBackground: Color {
+        if isActive { return Color.fallbackAccent.opacity(0.15) }
+        if isHovering { return Color.primary.opacity(0.07) }
+        return .clear
     }
 
     /// Path to load as a file-based icon, or nil if the icon is not a file path.
