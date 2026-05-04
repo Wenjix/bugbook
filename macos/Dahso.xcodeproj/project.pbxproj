@@ -147,7 +147,6 @@
 		93F363CD9FB982ED5717C535 /* BrowserManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07D3FB930F3F3FA52BA3FA1E /* BrowserManager.swift */; };
 		962806496BBFB5CB5BE79238 /* DatabaseRowNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5FDF85F178BFE2CC82D8C6 /* DatabaseRowNavigation.swift */; };
 		96CE97615E6D1CC74A2EAC71 /* ColumnBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1292A463EA0524CDD9C1ABB /* ColumnBlockView.swift */; };
-		970819B515C24D175E05B470 /* InlineStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13E53E9CF4A874C068E9419 /* InlineStyle.swift */; };
 		97A540ECB09AEA1B5FA23EFE /* AiService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692FB16FDA4AF9D6EE6504F9 /* AiService.swift */; };
 		97CA7C5C639E087823FBD1DD /* FloatingPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D41D121FD5A62686497ED6 /* FloatingPopover.swift */; };
 		99A7FE44572F9667BC45380F /* MeetingPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893E4C8FE2B2CE00E86605EF /* MeetingPageView.swift */; };
@@ -485,7 +484,6 @@
 		ACFC723962E22E8D76C751C4 /* Row.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Row.swift; sourceTree = "<group>"; };
 		ADDCC3670A22EAB96F36EE0A /* Query.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Query.swift; sourceTree = "<group>"; };
 		AE975E6522F7BC25E8A2F64A /* BrowserAgentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAgentService.swift; sourceTree = "<group>"; };
-		B13E53E9CF4A874C068E9419 /* InlineStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineStyle.swift; sourceTree = "<group>"; };
 		B2D6A6E60A094238251557A1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B5B627957F28D5F9380D1E0E /* Chromium Embedded Framework.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "Chromium Embedded Framework.framework"; path = "vendor/cef/current/Release/Chromium Embedded Framework.framework"; sourceTree = "<group>"; };
 		B5C65AE3AC2FE1987E96C053 /* BlockMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockMenuView.swift; sourceTree = "<group>"; };
@@ -1063,7 +1061,6 @@
 				9C94512BFA15DE21EBBCB529 /* ChatMessage.swift */,
 				CB5FDF85F178BFE2CC82D8C6 /* DatabaseRowNavigation.swift */,
 				2C8033A64FFEA898B487B277 /* FileEntry.swift */,
-				B13E53E9CF4A874C068E9419 /* InlineStyle.swift */,
 				12E156274022E2087FF8DDB0 /* MailIntelligenceModels.swift */,
 				EF7DE7C9599A54871662A4C9 /* MailModels.swift */,
 				0CA114C567F791622F764F50 /* OpenFile.swift */,
@@ -1604,7 +1601,6 @@
 				58A9A899DE4EE74D4A8235A8 /* HomeView.swift in Sources */,
 				ABBF2FDE331B66ACA3AED18B /* HomeViewModel.swift in Sources */,
 				8C0F106E50AE8D787E1521BC /* InlineRowPeekPanel.swift in Sources */,
-				970819B515C24D175E05B470 /* InlineStyle.swift in Sources */,
 				04A1BADA5FE90A7E04AFE0EC /* KanbanView.swift in Sources */,
 				24E574DC9E249E023A736553 /* KeyboardShortcutOverlay.swift in Sources */,
 				D2D5B3AAF2F643C78AD22B34 /* KeychainSecretStore.swift in Sources */,
