@@ -2484,6 +2484,212 @@ final class DahsoCLITests: XCTestCase {
         XCTAssertTrue(template.contains("dahso skill list"))
         XCTAssertTrue(template.contains("dahso agent task create"))
     }
+
+    func testBrowserCommandsReadPersistedDahsoBrowserState() throws {
+        let workspace = try makeWorkspace()
+        let appSupportURL = URL(fileURLWithPath: workspace).appendingPathComponent("AppSupport", isDirectory: true)
+        let noteURL = URL(fileURLWithPath: workspace)
+            .appendingPathComponent("Web Clippings", isDirectory: true)
+            .appendingPathComponent("Saved Example.md")
+        try FileManager.default.createDirectory(at: noteURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "# Saved Example\n\nPersisted page body.".write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let workspaceID = "11111111-1111-1111-1111-111111111111"
+        let paneID = "22222222-2222-2222-2222-222222222222"
+        let savedTabID = "33333333-3333-3333-3333-333333333333"
+        let unsavedTabID = "44444444-4444-4444-4444-444444444444"
+        let savedRecordID = "55555555-5555-5555-5555-555555555555"
+        let duplicateURLTabID = "77777777-7777-7777-7777-777777777777"
+
+        let layoutsURL = appSupportURL
+            .appendingPathComponent("WorkspaceLayouts", isDirectory: true)
+            .appendingPathComponent("layouts.json")
+        try FileManager.default.createDirectory(at: layoutsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        {
+          "version": 1,
+          "activeWorkspaceIndex": 0,
+          "workspaces": [
+            {
+              "id": "\(workspaceID)",
+              "name": "Research",
+              "createdAt": 799089441.741396,
+              "focusedPaneId": "\(paneID)",
+              "root": {
+                "type": "leaf",
+                "leaf": {
+                  "id": "\(paneID)",
+                  "selectedTabIndex": 0,
+                  "tabs": [
+                    {
+                      "type": "document",
+                      "openFile": {
+                        "id": "\(savedTabID)",
+                        "path": "https://example.com/saved",
+                        "content": "",
+                        "isDirty": false,
+                        "isEmptyTab": false,
+                        "kind": { "browser": {} },
+                        "displayName": "Saved Example",
+                        "navigationHistory": [],
+                        "navigationHistoryIndex": -1,
+                        "browserSavedRecordID": "\(savedRecordID)",
+                        "browserPageZoom": 0.9
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+        """.write(to: layoutsURL, atomically: true, encoding: .utf8)
+
+        let paneURL = appSupportURL
+            .appendingPathComponent("BrowserPanes", isDirectory: true)
+            .appendingPathComponent("\(paneID).json")
+        try FileManager.default.createDirectory(at: paneURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        {
+          "paneID": "\(paneID)",
+          "selectedTabID": "\(savedTabID)",
+          "isReadLaterDrawerOpen": false,
+          "recentVisits": [],
+          "tabs": [
+            {
+              "id": "\(savedTabID)",
+              "title": "Saved Example Snapshot",
+              "urlString": "https://example.com/saved",
+              "savedRecordID": "\(savedRecordID)",
+              "pageZoom": 0.9
+            },
+            {
+              "id": "\(unsavedTabID)",
+              "title": "Unsaved Live Tab",
+              "urlString": "https://example.com/live",
+              "pageZoom": 0.85
+            },
+            {
+              "id": "\(duplicateURLTabID)",
+              "title": "Duplicate URL Tab",
+              "urlString": "https://example.com/saved",
+              "pageZoom": 1.0
+            }
+          ]
+        }
+        """.write(to: paneURL, atomically: true, encoding: .utf8)
+
+        let historyURL = appSupportURL
+            .appendingPathComponent("BrowserHistory", isDirectory: true)
+            .appendingPathComponent("history.json")
+        try FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        [
+          {
+            "id": "66666666-6666-6666-6666-666666666666",
+            "title": "History Example",
+            "urlString": "https://example.com/history",
+            "visitedAt": "2026-05-04T16:00:00Z"
+          }
+        ]
+        """.write(to: historyURL, atomically: true, encoding: .utf8)
+
+        let savedURL = appSupportURL
+            .appendingPathComponent("SavedWebPages", isDirectory: true)
+            .appendingPathComponent(encodedWorkspacePathForTest(workspace) + ".json")
+        try FileManager.default.createDirectory(at: savedURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        [
+          {
+            "id": "\(savedRecordID)",
+            "title": "Saved Example",
+            "urlString": "https://example.com/saved",
+            "savedAt": "2026-05-04T16:01:00Z",
+            "folderPath": "\(noteURL.deletingLastPathComponent().path)",
+            "notePath": "\(noteURL.path)",
+            "status": "unread",
+            "summary": "Saved summary"
+          }
+        ]
+        """.write(to: savedURL, atomically: true, encoding: .utf8)
+
+        let tabs = try runJSON(
+            Browser.Tabs.parseAsRoot([
+                "--workspace", workspace,
+                "--app-support", appSupportURL.path
+            ])
+        )
+        XCTAssertEqual(tabs["total_count"] as? Int, 3)
+        let tabItems = try XCTUnwrap(tabs["tabs"] as? [[String: Any]])
+        let savedTab = try XCTUnwrap(tabItems.first { $0["id"] as? String == savedTabID })
+        XCTAssertEqual(savedTab["title"] as? String, "Saved Example")
+        XCTAssertEqual(savedTab["url"] as? String, "https://example.com/saved")
+        XCTAssertEqual(savedTab["workspace_name"] as? String, "Research")
+        XCTAssertEqual(savedTab["pane_id"] as? String, paneID)
+        XCTAssertEqual(savedTab["saved_record_id"] as? String, savedRecordID)
+        XCTAssertEqual(savedTab["is_selected"] as? Bool, true)
+        XCTAssertEqual(savedTab["is_focused_pane"] as? Bool, true)
+        XCTAssertEqual(savedTab["is_active_workspace"] as? Bool, true)
+        XCTAssertEqual(savedTab["is_active_tab"] as? Bool, true)
+        XCTAssertEqual(savedTab["sources"] as? [String], ["browser-pane-snapshot", "workspace-layout"])
+        let unsavedTab = try XCTUnwrap(tabItems.first { $0["id"] as? String == unsavedTabID })
+        XCTAssertEqual(unsavedTab["source"] as? String, "browser-pane-snapshot")
+        XCTAssertEqual(unsavedTab["workspace_name"] as? String, "Research")
+        XCTAssertEqual(unsavedTab["pane_id"] as? String, paneID)
+        XCTAssertEqual(unsavedTab["is_selected"] as? Bool, false)
+        XCTAssertEqual(unsavedTab["is_focused_pane"] as? Bool, true)
+        XCTAssertEqual(unsavedTab["is_active_workspace"] as? Bool, true)
+        XCTAssertEqual(unsavedTab["is_active_tab"] as? Bool, false)
+        let duplicateURLTab = try XCTUnwrap(tabItems.first { $0["id"] as? String == duplicateURLTabID })
+        XCTAssertEqual(duplicateURLTab["title"] as? String, "Duplicate URL Tab")
+        XCTAssertEqual(duplicateURLTab["url"] as? String, "https://example.com/saved")
+        XCTAssertEqual(duplicateURLTab["source"] as? String, "browser-pane-snapshot")
+
+        let history = try runJSON(
+            Browser.History.parseAsRoot([
+                "--workspace", workspace,
+                "--app-support", appSupportURL.path
+            ])
+        )
+        let historyItems = try XCTUnwrap(history["history"] as? [[String: Any]])
+        XCTAssertEqual(historyItems.first?["title"] as? String, "History Example")
+        XCTAssertEqual(historyItems.first?["url"] as? String, "https://example.com/history")
+        XCTAssertEqual(historyItems.first?["visited_at"] as? String, "2026-05-04T16:00:00Z")
+
+        let saved = try runJSON(
+            Browser.Saved.parseAsRoot([
+                "--workspace", workspace,
+                "--app-support", appSupportURL.path
+            ])
+        )
+        let savedItems = try XCTUnwrap(saved["saved"] as? [[String: Any]])
+        XCTAssertEqual(savedItems.first?["id"] as? String, savedRecordID)
+        XCTAssertEqual(savedItems.first?["note_path"] as? String, noteURL.path)
+        XCTAssertEqual(savedItems.first?["status"] as? String, "unread")
+        XCTAssertEqual(savedItems.first?["summary"] as? String, "Saved summary")
+
+        let savedContent = try runJSON(
+            Browser.Content.parseAsRoot([
+                "--workspace", workspace,
+                "--app-support", appSupportURL.path,
+                "https://example.com/saved"
+            ])
+        )
+        XCTAssertEqual(savedContent["id"] as? String, savedRecordID)
+        XCTAssertEqual(savedContent["source"] as? String, "saved-page-note")
+        XCTAssertTrue((savedContent["content"] as? String)?.contains("Persisted page body") == true)
+
+        let unsavedContent = try runJSON(
+            Browser.Content.parseAsRoot([
+                "--workspace", workspace,
+                "--app-support", appSupportURL.path,
+                unsavedTabID
+            ])
+        )
+        let error = try XCTUnwrap(unsavedContent["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? String, "live_content_unavailable")
+        XCTAssertEqual(error["requires_running_app_bridge"] as? Bool, true)
+    }
 }
 
 private func makeWorkspace() throws -> String {
@@ -2504,6 +2710,13 @@ private func writeTempJSONFile<T: Encodable>(in workspace: String, name: String,
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(value)
     return try writeTempFile(in: workspace, name: name, contents: String(decoding: data, as: UTF8.self))
+}
+
+private func encodedWorkspacePathForTest(_ workspacePath: String) -> String {
+    Data(workspacePath.utf8)
+        .base64EncodedString()
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "+", with: "-")
 }
 
 private func runJSON<C: ParsableCommand>(_ command: C) throws -> [String: Any] {
