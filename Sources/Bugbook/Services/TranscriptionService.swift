@@ -470,7 +470,9 @@ class TranscriptionService {
                 prompt.resume(returning: nil)
             }
 
+            Log.profileMarker("meetingMicPermissionRequestSubmitted")
             AVCaptureDevice.requestAccess(for: .audio) { granted in
+                Log.profileMarker(granted ? "meetingMicPermissionGranted" : "meetingMicPermissionDenied")
                 prompt.resume(returning: granted)
             }
         }

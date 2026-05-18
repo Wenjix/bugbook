@@ -23,7 +23,9 @@ com.maxforsey.Dahso.dev
 Current TCC query for `com.maxforsey.Dahso.dev` returns no rows after resetting
 the stale Debug-bundle grants. The reset removed older `auth_value=2` rows that
 were cdhash-scoped to a previous signed build and did not apply to the current
-Debug app CDHash `511467B3F88C1A0B4AD5A214FC465E5CFED95C6A`.
+Debug app. The latest short prompt diagnostic rebuilt the app with CDHash
+`A308CBA1F45E01DA9EF2FEF7029344C807838580`; TCC still has no current
+microphone, screen, or system-audio rows for that bundle.
 
 ## Completion Audit Snapshot
 
@@ -220,10 +222,13 @@ scripts/run-daily-driver-soak.sh prompt
 ```
 
 Latest prompt refresh ran after `scripts/run-daily-driver-soak.sh reset-tcc`,
-timed out waiting for `liveTranscriptionChunk` after Bugbook emitted
-`meetingMicPermissionPrompt`, and still did not create any TCC rows during the
-600-second wait. Diagnostic evidence:
-`.codex/perf/bugbook-meeting-soak-allocations-20260518T133752Z.md`.
+with shortened 90-second prompt/attach windows for diagnostics. It timed out
+waiting for `liveTranscriptionChunk` after Bugbook emitted both
+`meetingMicPermissionPrompt` and `meetingMicPermissionRequestSubmitted`, which
+confirms the app submitted the AVFoundation microphone permission request. No
+grant/deny callback marker arrived before timeout, and macOS still did not
+create any TCC rows. Diagnostic evidence:
+`.codex/perf/bugbook-meeting-soak-allocations-20260518T135225Z.md`.
 
 Observed markers:
 
@@ -233,11 +238,12 @@ Observed markers:
 - `appInitialLifecycleComplete`
 - `profileMeetingCreated`
 - `meetingMicPermissionPrompt`
+- `meetingMicPermissionRequestSubmitted`
 - `meetingNotePersist`
 
 The diagnostic TCC query still returned no microphone/screen/system-audio rows.
-The short non-live run sampled RSS from 110.1 MiB down to 73.1 MiB, with a
-110.5 MiB peak, but it does not cover the 60-minute live capture requirement.
+The short non-live run sampled RSS from 96.3 MiB down to 83.9 MiB, with a
+108.9 MiB peak, but it does not cover the 60-minute live capture requirement.
 The harness
 now defaults `BUGBOOK_PROFILE_ALLOW_PERMISSION_PROMPT=1` runs to a 180-second
 macOS prompt window and 240-second first-marker wait when no explicit attach
@@ -333,6 +339,8 @@ Latest observed results:
 - Targeted meeting persist-marker lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/Meetings/MeetingPageView.swift Sources/Bugbook/Services/MeetingTranscriptStore.swift` exit 0, 0 violations
 - Targeted meeting note persist-marker lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/ContentView.swift Sources/Bugbook/Views/Meetings/MeetingPageView.swift Sources/Bugbook/Services/MeetingTranscriptStore.swift` exit 0, 0 violations
 - Targeted raw audio capture and ScreenCaptureKit helper lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Services/SystemAudioCapture.swift Tests/BugbookTests/TranscriptionServiceTests.swift` exit 0, 0 violations
+- Targeted microphone-permission marker lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Services/TranscriptionService.swift` exit 0, 0 violations
+- Targeted microphone/transcription regression: `swift test --filter TranscriptionServiceTests` passed, 17 tests, 0 failures after adding request-submitted and grant/deny profile markers around `AVCaptureDevice.requestAccess`
 - Targeted first-party database lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/ContentView.swift Sources/Bugbook/Services/FirstPartyDatabaseIndexWorker.swift` exit 0, 0 violations
 - Targeted database-view lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/Database/DatabaseFullPageView.swift Sources/Bugbook/Views/Database/DatabaseInlineEmbedView.swift Sources/Bugbook/Views/Database/DatabaseSettingsPopover.swift Sources/Bugbook/Views/Database/DatabaseRowViewModel.swift Sources/Bugbook/Views/Database/KanbanView.swift Sources/Bugbook/Views/Database/PropertyEditorView.swift Sources/Bugbook/Views/Database/PropertyOptionRows.swift` exit 0, 0 violations
 - Targeted file-system branding lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Services/FileSystemService.swift Tests/BugbookTests/FileSystemServiceTests.swift` exit 0, 3 warning-only pre-existing file/type-size violations, 0 serious
