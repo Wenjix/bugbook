@@ -1,15 +1,15 @@
-# Dahso Swift — Database Architecture
+# Bugbook Swift — Database Architecture
 
 Local-first database engine. Agent-editable via CLI + skills. Human-readable files on disk. Notion-like database UI on the frontend.
 
 ## Project Structure
 
 ```
-dahso/
+bugbook/
   Package.swift
 
   Sources/
-    DahsoCore/              # shared library — everything depends on this
+    BugbookCore/              # shared library — everything depends on this
       Model/
         Schema.swift           # DatabaseSchema, PropertyDefinition, PropertyType
         Row.swift              # DatabaseRow, PropertyValue enum
@@ -30,7 +30,7 @@ dahso/
         RelationResolver.swift # cross-database relation lookups
         SchemaValidator.swift  # type-check values against property defs
 
-    DahsoCLI/               # executable
+    BugbookCLI/               # executable
       main.swift
       Commands/
         DBCommand.swift        # db list, db schema, db create
@@ -42,19 +42,19 @@ dahso/
         BatchCommand.swift     # batch <db> < operations.json
         AgentCommand.swift     # agent task/run/event/dashboard commands
 
-    Dahso/                  # macOS SwiftUI app (desktop)
+    Bugbook/                  # macOS SwiftUI app (desktop)
       App/
       Views/
       ViewModels/
 
-    DahsoMobile/            # lightweight iPhone-first SwiftUI app
+    BugbookMobile/            # lightweight iPhone-first SwiftUI app
       App/
       Views/
       ViewModels/
       Services/
 
   skills/
-    dahso.md               # skill prompt teaching agents the CLI
+    bugbook.md               # skill prompt teaching agents the CLI
 ```
 
 ---
@@ -62,10 +62,10 @@ dahso/
 ## On-Disk Format
 
 ```
-~/Dahso/                    # workspace root (configurable)
-  dahso.json                # workspace config: { "version": 1 }
+~/Bugbook/                    # workspace root (configurable)
+  bugbook.json                # workspace config: { "version": 1 }
   AGENTS.md                   # optional workspace instructions for coding agents
-  .dahso/
+  .bugbook/
     agents/
       tasks.json              # canonical task list (JSON)
       runs.jsonl              # run history (JSON Lines)
@@ -89,7 +89,7 @@ A folder is a database if and only if it contains `_schema.json`. No external re
 
 ## Agent Ops Layer
 
-Agent collaboration is persisted as plain files in `.dahso/agents`:
+Agent collaboration is persisted as plain files in `.bugbook/agents`:
 
 - `tasks.json` is the editable source of truth for agent tasks.
 - `runs.jsonl` tracks each execution run (`start`/`finish`).
@@ -97,15 +97,15 @@ Agent collaboration is persisted as plain files in `.dahso/agents`:
 
 CLI surface:
 
-- `dahso agent init` to bootstrap files.
-- `dahso agent task ...` for task lifecycle.
-- `dahso agent run ...` for run lifecycle.
-- `dahso agent event ...` for structured logs.
-- `dahso agent dashboard` for a unified status view.
+- `bugbook agent init` to bootstrap files.
+- `bugbook agent task ...` for task lifecycle.
+- `bugbook agent run ...` for run lifecycle.
+- `bugbook agent event ...` for structured logs.
+- `bugbook agent dashboard` for a unified status view.
 
 UI surface:
 
-- Desktop app has an **Agent Hub** page in the sidebar.
+- Desktop daily-driver mode hides **Agent Hub**; legacy mode restores it for development.
 - Mobile app has an **Agent Hub** tab for iPhone workflows.
 
 ### _schema.json
@@ -288,7 +288,7 @@ Relations store row IDs. Resolution (getting the related row's properties) happe
 
 ---
 
-## Core Library — DahsoCore
+## Core Library — BugbookCore
 
 ### DatabaseStore
 
@@ -437,9 +437,9 @@ class RelationResolver {
 Built with swift-argument-parser. All output is JSON to stdout. Errors to stderr with nonzero exit codes.
 
 ```
-dahso <command> [options]
+bugbook <command> [options]
 
-  --workspace <path>    workspace root (default: ~/Dahso)
+  --workspace <path>    workspace root (default: ~/Bugbook)
   --format <json|text>  output format (default: json)
 
 Commands:
@@ -489,31 +489,31 @@ property=_not_empty     is not empty
 
 ```bash
 # Active high-priority tasks
-dahso query tasks --filter "status=opt_doing" --filter "priority=opt_high"
+bugbook query tasks --filter "status=opt_doing" --filter "priority=opt_high"
 
 # Tasks due before March
-dahso query tasks --filter "due<2026-03-01" --sort "due:asc"
+bugbook query tasks --filter "due<2026-03-01" --sort "due:asc"
 
 # Tasks in a project
-dahso query tasks --filter "project~row_proj_001"
+bugbook query tasks --filter "project~row_proj_001"
 
 # Tasks blocking a specific task
-dahso query tasks --filter "blocks~row_xyz"
+bugbook query tasks --filter "blocks~row_xyz"
 
 # Create a task
-dahso create tasks \
+bugbook create tasks \
   --set "title=Deploy fix" \
   --set "status=opt_todo" \
   --set "priority=opt_urgent" \
   --set "project=row_proj_001"
 
 # Update status
-dahso update tasks row_a1b2c3 --set "status=opt_done"
+bugbook update tasks row_a1b2c3 --set "status=opt_done"
 
 # Batch: mark all Done tasks as completed
-dahso query tasks --filter "status=opt_done" --fields "id" \
+bugbook query tasks --filter "status=opt_done" --fields "id" \
   | jq -c '[.rows[] | {op:"update", id:.id, set:{done:true}}]' \
-  | dahso batch tasks
+  | bugbook batch tasks
 ```
 
 ### Batch Input Format
@@ -532,54 +532,54 @@ All operations validate first, execute together, update the index once.
 
 ## Skill
 
-`skills/dahso.md` — teaches agents the CLI:
+`skills/bugbook.md` — teaches agents the CLI:
 
 ```markdown
-You manage a local dahso workspace via the `dahso` CLI.
+You manage a local bugbook workspace via the `bugbook` CLI.
 All commands return JSON. Use jq to parse output when needed.
 
 ## Discovering what exists
 
-dahso db list                    # -> [{id, name, path, row_count}]
-dahso db schema <db_name>        # -> full schema with properties and options
+bugbook db list                    # -> [{id, name, path, row_count}]
+bugbook db schema <db_name>        # -> full schema with properties and options
 
 Always check the schema before querying to get correct property IDs and option IDs.
 
 ## Querying
 
-dahso query <db> [--filter "prop=val"] [--sort "prop:asc"] [--limit N]
+bugbook query <db> [--filter "prop=val"] [--sort "prop:asc"] [--limit N]
 
 Filter operators: = != > < ~ !~ =_empty =_not_empty
 Multiple --filter flags are ANDed.
 
 Common patterns:
-  dahso query tasks --filter "status=opt_doing"
-  dahso query tasks --filter "status!=opt_done" --sort "priority:asc"
-  dahso query tasks --filter "project~row_proj_001"
+  bugbook query tasks --filter "status=opt_doing"
+  bugbook query tasks --filter "status!=opt_done" --sort "priority:asc"
+  bugbook query tasks --filter "project~row_proj_001"
 
 ## Reading a row
 
-dahso get <db> <row_id> --body   # includes markdown body
+bugbook get <db> <row_id> --body   # includes markdown body
 
 ## Creating
 
-dahso create <db> --set "title=..." --set "status=opt_todo"
+bugbook create <db> --set "title=..." --set "status=opt_todo"
 
 Use option IDs for select/multi_select (e.g. opt_todo not "Todo").
 
 ## Updating
 
-dahso update <db> <row_id> --set "status=opt_done"
-dahso update <db> <row_id> --body-file -    # pipe body via stdin
+bugbook update <db> <row_id> --set "status=opt_done"
+bugbook update <db> <row_id> --body-file -    # pipe body via stdin
 
 ## Deleting
 
-dahso delete <db> <row_id>
+bugbook delete <db> <row_id>
 
 ## Batch operations
 
 Pipe JSON array to stdin:
-echo '[{"op":"update","id":"row_x","set":{"status":"opt_done"}}]' | dahso batch <db>
+echo '[{"op":"update","id":"row_x","set":{"status":"opt_done"}}]' | bugbook batch <db>
 
 ## Conventions
 
@@ -594,7 +594,7 @@ echo '[{"op":"update","id":"row_x","set":{"status":"opt_done"}}]' | dahso batch 
 
 ## SwiftUI Frontend
 
-The app imports DahsoCore. Views never touch files directly.
+The app imports BugbookCore. Views never touch files directly.
 
 ### DatabaseViewModel
 
@@ -675,5 +675,5 @@ Both the app and CLI can write to the same database. Use advisory file locks on 
 4. **Bodies are always lazy.** The index never stores body content. Bodies are read from row files only when explicitly requested.
 5. **Atomic writes everywhere.** Write to `.tmp`, then rename. Prevents corruption from crashes.
 6. **Schema validation on every write.** Both CLI and app go through SchemaValidator. Agents can't silently corrupt data.
-7. **One core library, two consumers.** DahsoCore is the single source of truth. CLI and SwiftUI app are thin wrappers.
+7. **One core library, two consumers.** BugbookCore is the single source of truth. CLI and SwiftUI app are thin wrappers.
 8. **Property IDs, not names.** All storage and queries use stable IDs (prop_status, opt_todo). Display names are for the UI only.

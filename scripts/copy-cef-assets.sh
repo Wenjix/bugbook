@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 /path/to/Dahso.app [/path/to/Dahso Helper.app ...]" >&2
+  echo "Usage: $0 /path/to/Bugbook.app [/path/to/Bugbook Helper.app ...]" >&2
   exit 1
 fi
 

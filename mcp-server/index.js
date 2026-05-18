@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-// Dahso MCP Server
+// Bugbook MCP Server
 //
 // MCP config (add to ~/.claude/mcp.json):
 //
 //   {
 //     "mcpServers": {
-//       "dahso": {
+//       "bugbook": {
 //         "command": "node",
-//         "args": ["/Users/maxforsey/Code/dahso/mcp-server/index.js"]
+//         "args": ["/Users/maxforsey/Code/bugbook/mcp-server/index.js"]
 //       }
 //     }
 //   }
@@ -22,12 +22,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const DAHSO = process.env.DAHSO_BIN || "dahso";
+const BUGBOOK = process.env.BUGBOOK_BIN || "bugbook";
 
-// Run a dahso CLI command and return stdout
+// Run a bugbook CLI command and return stdout
 function run(args) {
   return new Promise((resolve, reject) => {
-    execFile(DAHSO, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(BUGBOOK, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(stderr?.trim() || err.message));
       } else {
@@ -39,7 +39,7 @@ function run(args) {
 
 // Write content to a temp file, return its path
 async function writeTmp(content) {
-  const p = join(tmpdir(), `dahso-mcp-${randomUUID()}.md`);
+  const p = join(tmpdir(), `bugbook-mcp-${randomUUID()}.md`);
   await writeFile(p, content, "utf-8");
   return p;
 }
@@ -61,14 +61,14 @@ function fail(msg) {
 // -------------------------------------------------------------------
 
 const server = new McpServer({
-  name: "dahso",
+  name: "bugbook",
   version: "1.0.0",
 });
 
-// 1. dahso_page_list
+// 1. bugbook_page_list
 server.tool(
-  "dahso_page_list",
-  "List all pages in the Dahso workspace",
+  "bugbook_page_list",
+  "List all pages in the Bugbook workspace",
   {},
   async () => {
     try {
@@ -79,9 +79,9 @@ server.tool(
   }
 );
 
-// 2. dahso_page_get
+// 2. bugbook_page_get
 server.tool(
-  "dahso_page_get",
+  "bugbook_page_get",
   "Get a page's content by name",
   { name: z.string().describe("Page path, relative path, or page name") },
   async ({ name }) => {
@@ -93,9 +93,9 @@ server.tool(
   }
 );
 
-// 3. dahso_page_create
+// 3. bugbook_page_create
 server.tool(
-  "dahso_page_create",
+  "bugbook_page_create",
   "Create a new page",
   {
     name: z.string().describe("New page path or name"),
@@ -118,9 +118,9 @@ server.tool(
   }
 );
 
-// 4. dahso_page_update
+// 4. bugbook_page_update
 server.tool(
-  "dahso_page_update",
+  "bugbook_page_update",
   "Update an existing page's content",
   {
     name: z.string().describe("Page path, relative path, or page name"),
@@ -139,9 +139,9 @@ server.tool(
   }
 );
 
-// 5. dahso_db_list
+// 5. bugbook_db_list
 server.tool(
-  "dahso_db_list",
+  "bugbook_db_list",
   "List all databases in the workspace",
   {},
   async () => {
@@ -153,9 +153,9 @@ server.tool(
   }
 );
 
-// 6. dahso_db_schema
+// 6. bugbook_db_schema
 server.tool(
-  "dahso_db_schema",
+  "bugbook_db_schema",
   "Get the schema of a database",
   { name: z.string().describe("Database name or ID") },
   async ({ name }) => {
@@ -167,9 +167,9 @@ server.tool(
   }
 );
 
-// 7. dahso_query
+// 7. bugbook_query
 server.tool(
-  "dahso_query",
+  "bugbook_query",
   "Query rows from a database",
   {
     db: z.string().describe("Database name or ID"),
@@ -192,9 +192,9 @@ server.tool(
   }
 );
 
-// 8. dahso_row_create
+// 8. bugbook_row_create
 server.tool(
-  "dahso_row_create",
+  "bugbook_row_create",
   "Create a new row in a database",
   {
     db: z.string().describe("Database name or ID"),
@@ -221,9 +221,9 @@ server.tool(
   }
 );
 
-// 9. dahso_row_update
+// 9. bugbook_row_update
 server.tool(
-  "dahso_row_update",
+  "bugbook_row_update",
   "Update an existing row in a database",
   {
     db: z.string().describe("Database name or ID"),
@@ -253,9 +253,9 @@ server.tool(
   }
 );
 
-// 10. dahso_row_get
+// 10. bugbook_row_get
 server.tool(
-  "dahso_row_get",
+  "bugbook_row_get",
   "Get a single row by ID from a database",
   {
     db: z.string().describe("Database name or ID"),

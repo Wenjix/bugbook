@@ -19,7 +19,7 @@ trap 'rm -rf "$WS"' EXIT
 echo "[smoke] workspace: $WS"
 
 run_bb() {
-  swift run DahsoCLI "$@"
+  swift run BugbookCLI "$@"
 }
 
 INIT_JSON="$(run_bb agent init --workspace "$WS" --write-agents-md)"
@@ -27,7 +27,7 @@ echo "$INIT_JSON" | jq -e '.initialized == true' >/dev/null
 
 echo "[smoke] init: ok"
 
-TASK_JSON="$(run_bb agent task create --workspace "$WS" --title 'Smoke Task' --status todo --assignee codex --label smoke --path Sources/Dahso)"
+TASK_JSON="$(run_bb agent task create --workspace "$WS" --title 'Smoke Task' --status todo --assignee codex --label smoke --path Sources/Bugbook)"
 TASK_ID="$(echo "$TASK_JSON" | jq -r '.id')"
 [ -n "$TASK_ID" ] && [ "$TASK_ID" != "null" ]
 echo "[smoke] task create: ok ($TASK_ID)"
@@ -55,9 +55,9 @@ echo "$DASH_JSON" | jq -e '.recentEvents | length >= 1' >/dev/null
 echo "$DASH_JSON" | jq -e '.taskCounts.done == 1' >/dev/null
 echo "[smoke] dashboard: ok"
 
-[ -f "$WS/.dahso/agents/tasks.json" ]
-[ -f "$WS/.dahso/agents/runs.jsonl" ]
-[ -f "$WS/.dahso/agents/events.jsonl" ]
+[ -f "$WS/.bugbook/agents/tasks.json" ]
+[ -f "$WS/.bugbook/agents/runs.jsonl" ]
+[ -f "$WS/.bugbook/agents/events.jsonl" ]
 [ -f "$WS/AGENTS.md" ]
 echo "[smoke] files: ok"
 

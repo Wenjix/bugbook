@@ -1,10 +1,10 @@
-# Dahso Repo Instructions
+# Bugbook Repo Instructions
 
 This repo is often worked in a dirty tree. Keep changes narrowly scoped and do not bundle unrelated local work into a ticket commit.
 
 ## Before You Claim A Change Is Clean
 
-Run these from `/Users/maxforsey/Code/dahso`:
+Run these from `/Users/maxforsey/Code/bugbook`:
 
 ```bash
 swift build
@@ -16,7 +16,7 @@ If you touched the macOS app shell or AppKit integration, also run:
 
 ```bash
 cd macos && xcodegen generate
-xcodebuild -project /Users/maxforsey/Code/dahso/macos/Dahso.xcodeproj -scheme DahsoApp -configuration Debug build
+xcodebuild -project /Users/maxforsey/Code/bugbook/macos/Bugbook.xcodeproj -scheme BugbookApp -configuration Debug build
 ```
 
 Do not say "CI passed" unless the commit has been pushed and the GitHub Actions workflow finished successfully.
@@ -29,7 +29,7 @@ Do not say "CI passed" unless the commit has been pushed and the GitHub Actions 
 
 ## Xcode Project — Adding Swift Files
 
-The macOS app uses an Xcode project (`macos/Dahso.xcodeproj`). When you add a new `.swift` file under `Sources/Dahso/`, you MUST also add it to `project.pbxproj` (PBXFileReference, PBXBuildFile, the parent PBXGroup, and the Sources build phase). Files on disk but missing from the pbxproj will compile fine via `swift build` but fail in Xcode with "Cannot find type in scope" errors.
+The macOS app uses an Xcode project (`macos/Bugbook.xcodeproj`). When you add a new `.swift` file under `Sources/Bugbook/`, you MUST also add it to `project.pbxproj` (PBXFileReference, PBXBuildFile, the parent PBXGroup, and the Sources build phase). Files on disk but missing from the pbxproj will compile fine via `swift build` but fail in Xcode with "Cannot find type in scope" errors.
 
 ## CI Notes
 
@@ -37,12 +37,12 @@ The macOS app uses an Xcode project (`macos/Dahso.xcodeproj`). When you add a ne
 - The macOS Xcode project is generated from `macos/project.yml`.
 - If CI is being changed, prefer explicit SDK detection plus real failures over `|| echo` masking.
 
-## Dahso Ticket Notes
+## Bugbook Ticket Notes
 
 When reading an Agent Ticket body, do not use the raw JSON output directly. Extract only the markdown body:
 
 ```bash
-dahso get "Agent Tickets" <row_id> --body | jq -r '.body // ""'
+bugbook get "Agent Tickets" <row_id> --body | jq -r '.body // ""'
 ```
 
 This avoids writing serialized row JSON back into the ticket body.

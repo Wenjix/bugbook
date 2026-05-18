@@ -11,6 +11,6 @@ FRAMEWORK_SOURCE="$CEF_ROOT/Release/Chromium Embedded Framework.framework"
 
 if [ ! -d "$FRAMEWORK_SOURCE" ]; then
   echo "Missing CEF runtime at $FRAMEWORK_SOURCE" >&2
-  echo "Run scripts/fetch-cef.sh before building the Chromium-backed DahsoApp target." >&2
+  echo "Run scripts/fetch-cef.sh before building the Chromium-backed BugbookApp target." >&2
   exit 1
 fi

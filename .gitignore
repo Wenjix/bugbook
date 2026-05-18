@@ -3,10 +3,10 @@
 build/
 macos/build/
 *.xcodeproj/
-!ios/DahsoMobile.xcodeproj/
-!ios/DahsoMobile.xcodeproj/project.pbxproj
-!ios/DahsoMobile.xcodeproj/project.xcworkspace/
-!ios/DahsoMobile.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+!ios/BugbookMobile.xcodeproj/
+!ios/BugbookMobile.xcodeproj/project.pbxproj
+!ios/BugbookMobile.xcodeproj/project.xcworkspace/
+!ios/BugbookMobile.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 xcuserdata/
 DerivedData/
 .DS_Store
@@ -17,6 +17,7 @@ macos/vendor/cef/
 .agents/
 .claude/
 .codebuddy/
+.codex/
 .commandcode/
 .continue/
 .crush/

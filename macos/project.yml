@@ -1,4 +1,4 @@
-name: Dahso
+name: Bugbook
 options:
   minimumXcodeGenVersion: 2.40.0
 settings:
@@ -17,25 +17,25 @@ packages:
   # GhosttyKit: GPU-accelerated terminal engine (local XCFramework)
   # Linked via Frameworks/GhosttyKit.xcframework
 targets:
-  DahsoCore:
+  BugbookCore:
     type: framework
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: ../Sources/DahsoCore
+      - path: ../Sources/BugbookCore
     info:
-      path: App/DahsoCore-Info.plist
+      path: App/BugbookCore-Info.plist
       properties:
-        CFBundleIdentifier: com.maxforsey.DahsoCore
-        CFBundleName: DahsoCore
+        CFBundleIdentifier: com.maxforsey.BugbookCore
+        CFBundleName: BugbookCore
         CFBundlePackageType: FMWK
         CFBundleVersion: "1"
         CFBundleShortVersionString: "1.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.DahsoCore
-        PRODUCT_NAME: DahsoCore
-        PRODUCT_MODULE_NAME: DahsoCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.BugbookCore
+        PRODUCT_NAME: BugbookCore
+        PRODUCT_MODULE_NAME: BugbookCore
         DEFINES_MODULE: YES
   ChromiumBridge:
     type: framework
@@ -65,7 +65,7 @@ targets:
       configs:
         Debug:
           ONLY_ACTIVE_ARCH: YES
-  DahsoHelper:
+  BugbookHelper:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -75,12 +75,12 @@ targets:
       - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
         embed: false
     info:
-      path: App/DahsoHelper-Info.plist
+      path: App/BugbookHelper-Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper
-        PRODUCT_NAME: "Dahso Helper"
-        EXECUTABLE_NAME: "Dahso Helper"
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper
+        PRODUCT_NAME: "Bugbook Helper"
+        EXECUTABLE_NAME: "Bugbook Helper"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         HEADER_SEARCH_PATHS:
@@ -93,11 +93,11 @@ targets:
           - "@executable_path/../../../"
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.dev.helper
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper
           ONLY_ACTIVE_ARCH: YES
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper
-  DahsoHelperAlerts:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper
+  BugbookHelperAlerts:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -107,12 +107,12 @@ targets:
       - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
         embed: false
     info:
-      path: App/DahsoHelper-Info.plist
+      path: App/BugbookHelper-Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.alerts
-        PRODUCT_NAME: "Dahso Helper (Alerts)"
-        EXECUTABLE_NAME: "Dahso Helper (Alerts)"
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.alerts
+        PRODUCT_NAME: "Bugbook Helper (Alerts)"
+        EXECUTABLE_NAME: "Bugbook Helper (Alerts)"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         HEADER_SEARCH_PATHS:
@@ -125,11 +125,11 @@ targets:
           - "@executable_path/../../../"
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.dev.helper.alerts
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.alerts
           ONLY_ACTIVE_ARCH: YES
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.alerts
-  DahsoHelperGPU:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.alerts
+  BugbookHelperGPU:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -139,12 +139,12 @@ targets:
       - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
         embed: false
     info:
-      path: App/DahsoHelper-Info.plist
+      path: App/BugbookHelper-Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.gpu
-        PRODUCT_NAME: "Dahso Helper (GPU)"
-        EXECUTABLE_NAME: "Dahso Helper (GPU)"
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.gpu
+        PRODUCT_NAME: "Bugbook Helper (GPU)"
+        EXECUTABLE_NAME: "Bugbook Helper (GPU)"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         HEADER_SEARCH_PATHS:
@@ -157,11 +157,11 @@ targets:
           - "@executable_path/../../../"
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.dev.helper.gpu
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.gpu
           ONLY_ACTIVE_ARCH: YES
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.gpu
-  DahsoHelperPlugin:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.gpu
+  BugbookHelperPlugin:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -171,12 +171,12 @@ targets:
       - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
         embed: false
     info:
-      path: App/DahsoHelper-Info.plist
+      path: App/BugbookHelper-Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.plugin
-        PRODUCT_NAME: "Dahso Helper (Plugin)"
-        EXECUTABLE_NAME: "Dahso Helper (Plugin)"
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.plugin
+        PRODUCT_NAME: "Bugbook Helper (Plugin)"
+        EXECUTABLE_NAME: "Bugbook Helper (Plugin)"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         HEADER_SEARCH_PATHS:
@@ -189,11 +189,11 @@ targets:
           - "@executable_path/../../../"
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.dev.helper.plugin
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.plugin
           ONLY_ACTIVE_ARCH: YES
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.plugin
-  DahsoHelperRenderer:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.plugin
+  BugbookHelperRenderer:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -203,12 +203,12 @@ targets:
       - framework: vendor/cef/current/Release/Chromium Embedded Framework.framework
         embed: false
     info:
-      path: App/DahsoHelper-Info.plist
+      path: App/BugbookHelper-Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.renderer
-        PRODUCT_NAME: "Dahso Helper (Renderer)"
-        EXECUTABLE_NAME: "Dahso Helper (Renderer)"
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.renderer
+        PRODUCT_NAME: "Bugbook Helper (Renderer)"
+        EXECUTABLE_NAME: "Bugbook Helper (Renderer)"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         HEADER_SEARCH_PATHS:
@@ -221,27 +221,27 @@ targets:
           - "@executable_path/../../../"
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.dev.helper.renderer
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev.helper.renderer
           ONLY_ACTIVE_ARCH: YES
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.helper.renderer
-  DahsoApp:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.helper.renderer
+  BugbookApp:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: ../Sources/Dahso
+      - path: ../Sources/Bugbook
         excludes:
           - MCP
       - path: App/Assets.xcassets
     dependencies:
-      - target: DahsoCore
+      - target: BugbookCore
       - target: ChromiumBridge
-      - target: DahsoHelper
-      - target: DahsoHelperAlerts
-      - target: DahsoHelperGPU
-      - target: DahsoHelperPlugin
-      - target: DahsoHelperRenderer
+      - target: BugbookHelper
+      - target: BugbookHelperAlerts
+      - target: BugbookHelperGPU
+      - target: BugbookHelperPlugin
+      - target: BugbookHelperRenderer
       - package: Sparkle
       - package: SentryCocoa
         product: Sentry
@@ -255,6 +255,7 @@ targets:
       - sdk: CoreGraphics.framework
       - sdk: CoreText.framework
       - sdk: QuartzCore.framework
+      - sdk: ScreenCaptureKit.framework
       - sdk: IOSurface.framework
       - sdk: WebKit.framework
     postBuildScripts:
@@ -262,15 +263,15 @@ targets:
         script: |
           bash "$PROJECT_DIR/../scripts/copy-cef-assets.sh" \
             "$TARGET_BUILD_DIR/$WRAPPER_NAME" \
-            "$BUILT_PRODUCTS_DIR/Dahso Helper.app" \
-            "$BUILT_PRODUCTS_DIR/Dahso Helper (Alerts).app" \
-            "$BUILT_PRODUCTS_DIR/Dahso Helper (GPU).app" \
-            "$BUILT_PRODUCTS_DIR/Dahso Helper (Plugin).app" \
-            "$BUILT_PRODUCTS_DIR/Dahso Helper (Renderer).app"
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper.app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Alerts).app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (GPU).app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Plugin).app" \
+            "$BUILT_PRODUCTS_DIR/Bugbook Helper (Renderer).app"
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Dahso
+        CFBundleDisplayName: Bugbook
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
@@ -279,15 +280,15 @@ targets:
         SUFeedURL: ""
         SUPublicEDKey: ""
         UTExportedTypeDeclarations:
-          - UTTypeIdentifier: com.dahso.sidebar-reference
-            UTTypeDescription: Dahso Sidebar Reference
+          - UTTypeIdentifier: com.bugbook.sidebar-reference
+            UTTypeDescription: Bugbook Sidebar Reference
             UTTypeConformsTo:
               - public.data
             UTTypeTagSpecification: {}
-        NSMicrophoneUsageDescription: Dahso needs microphone access to record meeting audio for live transcription.
-        NSAudioCaptureUsageDescription: Dahso records system audio during meetings so transcripts include remote participants alongside your own voice.
+        NSMicrophoneUsageDescription: Bugbook needs microphone access to record meeting audio for live transcription.
+        NSAudioCaptureUsageDescription: Bugbook records system audio during meetings so transcripts include remote participants alongside your own voice.
     entitlements:
-      path: App/Dahso.entitlements
+      path: App/Bugbook.entitlements
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.cs.allow-jit: true
@@ -297,8 +298,8 @@ targets:
         com.apple.security.device.audio-input: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso
-        PRODUCT_NAME: Dahso
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook
+        PRODUCT_NAME: Bugbook
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -309,33 +310,33 @@ targets:
         OTHER_LDFLAGS: ["-lz", "-lc++"]
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso.dev
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook.dev
           ASSETCATALOG_COMPILER_APPICON_NAME: DevAppIcon
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DEBUG, DAHSO_DEV, DAHSO_BROWSER_CHROMIUM]
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DEBUG, BUGBOOK_DEV, BUGBOOK_BROWSER_CHROMIUM]
           ONLY_ACTIVE_ARCH: YES
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Dahso
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [DAHSO_BROWSER_CHROMIUM]
-  DahsoUITests:
+          PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.Bugbook
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: [BUGBOOK_BROWSER_CHROMIUM]
+  BugbookUITests:
     type: bundle.ui-testing
     platform: macOS
     deploymentTarget: "14.0"
     sources:
-      - path: ../Tests/DahsoUITests
+      - path: ../Tests/BugbookUITests
     dependencies:
-      - target: DahsoApp
+      - target: BugbookApp
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.DahsoUITests
-        TEST_TARGET_NAME: DahsoApp
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxforsey.BugbookUITests
+        TEST_TARGET_NAME: BugbookApp
         GENERATE_INFOPLIST_FILE: YES
 schemes:
-  DahsoApp:
+  BugbookApp:
     build:
       targets:
-        DahsoApp: all
-        DahsoCore: all
-        DahsoUITests: [test]
+        BugbookApp: all
+        BugbookCore: all
+        BugbookUITests: [test]
     run:
       config: Debug
       environmentVariables:
@@ -345,6 +346,6 @@ schemes:
     test:
       config: Debug
       targets:
-        - DahsoUITests
+        - BugbookUITests
     archive:
       config: Release

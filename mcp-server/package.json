@@ -1,7 +1,7 @@
 {
-  "name": "dahso-mcp-server",
+  "name": "bugbook-mcp-server",
   "version": "1.0.0",
-  "description": "MCP server wrapping the dahso CLI",
+  "description": "MCP server wrapping the bugbook CLI",
   "type": "module",
   "main": "index.js",
   "scripts": {

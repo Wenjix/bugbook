@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Dahso</string>
+	<string>Bugbook</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,11 +23,11 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Dahso records system audio during meetings so transcripts include remote participants alongside your own voice.</string>
+	<string>Bugbook records system audio during meetings so transcripts include remote participants alongside your own voice.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Dahso needs microphone access to record meeting audio for live transcription.</string>
+	<string>Bugbook needs microphone access to record meeting audio for live transcription.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>SUFeedURL</key>
@@ -42,9 +42,9 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Dahso Sidebar Reference</string>
+			<string>Bugbook Sidebar Reference</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.dahso.sidebar-reference</string>
+			<string>com.bugbook.sidebar-reference</string>
 			<key>UTTypeTagSpecification</key>
 			<dict/>
 		</dict>

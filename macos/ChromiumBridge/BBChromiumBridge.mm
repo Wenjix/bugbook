@@ -173,7 +173,7 @@ static NSString *BBChromiumDownloadsDirectory(void) {
 
 static NSString *BBChromiumApplicationSupportPath(void) {
     NSURL *directory = BBChromiumFirstDirectoryURL(NSApplicationSupportDirectory);
-    return [[directory URLByAppendingPathComponent:@"Dahso/Chromium" isDirectory:YES] path];
+    return [[directory URLByAppendingPathComponent:@"Bugbook/Chromium" isDirectory:YES] path];
 }
 
 static NSString *BBChromiumRootCachePath(void) {
@@ -263,7 +263,7 @@ static BOOL BBChromiumEnvironmentFlagEnabled(NSString *name) {
 static NSArray<NSString *> *BBChromiumAdditionalArguments(void) {
     NSMutableArray<NSString *> *arguments = [NSMutableArray array];
 
-    if (BBChromiumEnvironmentFlagEnabled(@"DAHSO_CHROMIUM_AGGRESSIVE_GPU")) {
+    if (BBChromiumEnvironmentFlagEnabled(@"BUGBOOK_CHROMIUM_AGGRESSIVE_GPU")) {
         // Opt-in fast path for local benchmarking. This has proven unstable on
         // some dev machines, so it should not be the default runtime mode.
         [arguments addObjectsFromArray:@[
@@ -667,7 +667,7 @@ static void BBChromiumInvalidateMessagePumpTimer(void) {
     BBChromiumConfiguredExtensionPaths = BBChromiumNormalizedExtensionPaths(extensionPaths ?: @[]);
 
     if (BBChromiumDidInitialize) {
-        NSLog(@"[ChromiumBridge] Extension changes will apply the next time Dahso launches.");
+        NSLog(@"[ChromiumBridge] Extension changes will apply the next time Bugbook launches.");
     }
 }
 

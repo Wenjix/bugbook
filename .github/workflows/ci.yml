@@ -39,7 +39,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .build
-          # v2 forces cache invalidation after the 2026-04-12 bugbook→dahso rename, which left
+          # v2 forces cache invalidation after the 2026-04-12 dahso-to-bugbook rename, which left
           # stale absolute paths like /Users/runner/work/bugbook/bugbook/.build/... inside the
           # cached Sparkle XCFramework Info.plist.
           key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v2-${{ hashFiles('Package.resolved') }}
@@ -157,7 +157,7 @@ jobs:
       - name: Build macOS app target
         run: |
           xcodebuild \
-            -project /Users/runner/work/dahso/dahso/macos/Dahso.xcodeproj \
-            -scheme DahsoApp \
+            -project /Users/runner/work/bugbook/bugbook/macos/Bugbook.xcodeproj \
+            -scheme BugbookApp \
             -configuration Debug \
             build

@@ -1,34 +1,34 @@
 # Bugbook
 
-A local-first personal workspace for notes, databases, terminal, mail, calendar, and AI — in one window.
+A local-first Notes + Meetings workspace for daily notes, meeting capture, and agent-readable markdown.
 
-Bugbook replaces the tab sprawl of separate apps with a single pane-based workspace where everything lives together. Notes link to database rows, calendar events spawn meeting notes, terminal output sits next to the doc you're working on, and AI agents operate on the same data you do.
+Bugbook keeps plain `.md` files on disk as the source of truth. The desktop app is optimized for human writing and meeting capture, while the CLI and future agent layers can read and write the same notes folder without a private sync layer.
 
 ## What's in the workspace
 
-**Notes and pages.** Rich markdown editor with blocks, toggles, columns, inline database embeds, backlinks, and a knowledge graph view.
+**Notes and pages.** Rich markdown editor with blocks, toggles, columns, tables, code blocks, callouts, wikilinks, embedded images, footnotes, and inline database embeds.
 
-**Databases.** Schema-based databases with table, kanban, calendar, list, and gallery views. Properties include selects, dates, numbers, checkboxes, relations, formulas, and rollups.
+**Daily notes.** A first-party Daily Notes database/hub is created in the notes folder and the daily note is the default first screen.
 
-**Terminal.** GPU-accelerated terminal (Ghostty Metal backend) running as a native pane — no separate app needed.
+**Meetings.** Meeting capture records mic plus system audio, shows live transcription, writes structured markdown with frontmatter, and opens the completed meeting note for editing.
 
-**Mail.** Gmail integration with thread view, search, compose, filters, and categories.
+**Databases.** Schema-based local databases back the Daily Notes and Meetings hubs. Database rows are still plain markdown files.
 
-**Calendar.** Google Calendar sync with day, week, and month views plus event creation.
+**Search.** The Search pane is hidden in daily-driver mode, but filename filtering and qmd-backed search infrastructure remain available for notes workflows.
 
-**Meetings.** Meeting notes linked to calendar events with audio transcription support.
-
-**AI.** Claude and Codex CLI detection, in-page chat sidebar, and writing assistance with workspace context.
-
-**Agent Hub.** Task and run tracking for coding agents — tasks, runs, events, and a dashboard view so you can see what your agents are doing.
-
-**Home.** A time-of-day adaptive dashboard with pinned databases, recent items, and quick access to tasks.
+**Legacy panes.** Home, Terminal, Browser, Mail, Calendar, Graph, AI side panel, and Agent Hub code remains in the tree, but is feature-flagged off by default and does not initialize at runtime unless legacy mode is enabled.
 
 ## Pane system
 
-The workspace is built on a multi-pane layout. Any combination of notes, terminal, mail, calendar, meetings, graph, or home can be arranged side by side with horizontal/vertical splits. Panes can be dragged to swap, split, or closed. Tabs let you save and switch between layouts.
+The default desktop workspace exposes only Notes and Meetings as first-class panes. Panes can be split, dragged, swapped, and closed; tabs let you save and switch between layouts.
 
-A launcher (Cmd+K or the chrome bar split button) searches pages, databases, and built-in panes, then lets you open them in place, split right, split down, or in a new tab.
+A launcher (Cmd+K or the chrome bar split button) searches pages, databases, and the enabled built-in panes, then lets you open them in place, split right, split down, or in a new tab.
+
+To temporarily restore the hidden legacy panes for development:
+
+```bash
+BUGBOOK_LEGACY_PANES=1 swift run Bugbook
+```
 
 ## Targets
 
@@ -80,6 +80,49 @@ bugbook --help
 open ios/BugbookMobile.xcodeproj
 ```
 
+## Performance checks
+
+```bash
+# Compare Swift performance baselines.
+scripts/perf-compare.sh
+
+# Capture a manual meeting-recording soak trace.
+# While it records, create/open a meeting, start recording, run the meeting, stop, and let finalization finish.
+# Writes the trace, stdout, and parsed Allocations/Leaks evidence under .codex/perf/.
+scripts/profile-meeting-soak.sh 65m Allocations
+
+# Check bundle privacy declarations and TCC authorization without launching Bugbook.
+scripts/run-daily-driver-soak.sh preflight
+
+# Open privacy panes and launch a one-minute recording attempt to create/refresh macOS permission prompts.
+scripts/run-daily-driver-soak.sh prompt
+
+# Print the effective wrapper defaults without building or launching Bugbook.
+BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1 scripts/run-daily-driver-soak.sh prompt
+
+# Check the current Debug bundle's macOS privacy authorization without building
+# or launching Bugbook. Exits nonzero until Microphone and Screen/System Audio
+# are approved.
+scripts/run-daily-driver-soak.sh status
+
+# Reset stale or denied TCC rows for the current Debug bundle, then rerun prompt.
+scripts/run-daily-driver-soak.sh reset-tcc
+
+# Enforced automated soak. Waits for live transcription before attaching Instruments.
+# Records for 60 minutes inside a 65-minute trace, leaving time for stop/finalize/save markers.
+# Fails if required meeting markers, Instruments summaries, or RSS targets fail.
+scripts/run-daily-driver-soak.sh
+
+# Verify a completed soak evidence note before treating the run as accepted.
+scripts/verify-daily-driver-soak-evidence.sh .codex/perf/bugbook-meeting-soak-allocations-<timestamp>.md
+
+# Or verify the newest generated evidence note directly.
+scripts/run-daily-driver-soak.sh verify-latest
+```
+
+See `BUGBOOK_DAILY_DRIVER_EVIDENCE.md` for the current Notes + Meetings
+daily-driver checklist, performance numbers, and live-soak gate.
+
 ## Dependencies
 
-Ghostty (terminal), Sparkle (auto-update), Sentry (error tracking), FluidAudio (transcription), Yams (YAML/frontmatter), Google OAuth (mail + calendar).
+Sparkle (auto-update), Sentry (error tracking), FluidAudio (transcription), Yams (YAML/frontmatter), qmd (search), and legacy-pane dependencies such as Ghostty and Google OAuth.
