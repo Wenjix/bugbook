@@ -232,6 +232,15 @@ Microphone TCC row, but still did not create a screen/system-audio row for the
 Debug bundle. Diagnostic evidence:
 `.codex/perf/bugbook-meeting-soak-allocations-20260518T143031Z.md`.
 
+After Microphone approval was recorded, a follow-up prompt run reached
+`liveTranscriptionChunk` and attached Allocations, proving live mic transcription
+is now unblocked. It still failed the meeting signpost gate because
+`meetingSystemAudioCapture` was missing, and ScreenCaptureKit continued to fail
+with `SCStreamErrorDomain -3801`. The short prompt trace ended early when the
+profile target exited/relaunched around finalization, so it is not live-soak
+evidence. Diagnostic evidence:
+`.codex/perf/bugbook-meeting-soak-allocations-20260518T143713Z.md`.
+
 Observed markers:
 
 - `appInitialLifecycleStart`
@@ -249,6 +258,10 @@ Observed markers:
 - `meetingMicPermissionRequestAPIAVAudioApplication`
 - `meetingNotePersist`
 - `meetingMicPermissionTimedOut`
+- Follow-up prompt also observed `meetingRecordingStart`,
+  `meetingRecordingActive`, `meetingMicAudioCapture`, `liveTranscriptionChunk`,
+  and `meetingRecordingStopFinalize`; it did not observe
+  `meetingSystemAudioCapture` or `meetingTranscriptPersist`.
 
 The latest status check reports Microphone authorization PASS and Screen/System
 Audio authorization FAIL.
@@ -374,6 +387,7 @@ Latest observed results:
 - Direct TCC recheck without rebuild: queried `~/Library/Application Support/com.apple.TCC/TCC.db`; after the latest reset and prompt attempts, `com.maxforsey.Dahso.dev` has a current unscoped Microphone row for the Debug app, but no AudioCapture or ScreenCapture row for CDHash `66573431DCF618765A1154C7FF705F0C98A9F343`
 - Wrapper help/usage check: `scripts/run-daily-driver-soak.sh --help` exits 0 and documents `soak`, `preflight`, `prompt`, `status`, `reset-tcc`, and `verify-latest`; invalid modes exit 2 with the same usage text
 - Wrapper privacy status check: `scripts/run-daily-driver-soak.sh status` does not build, launch Bugbook, or open System Settings; it reports the current Debug bundle path, bundle ID `com.maxforsey.Dahso.dev`, CDHash `66573431DCF618765A1154C7FF705F0C98A9F343`, current TCC rows, and whether cdhash-scoped rows are current or stale; it exits nonzero while Microphone or Screen/System Audio authorization is missing, denied, or stale
+- Wrapper missing-system-audio guidance: when Microphone passes but Screen/System Audio fails, `scripts/run-daily-driver-soak.sh status` now prints the exact Debug app path and instructs the user to approve Screen & System Audio Recording via Add if Bugbook is not listed
 - Wrapper TCC reset command: `scripts/run-daily-driver-soak.sh reset-tcc` resolves the current Debug bundle ID and runs the bundle-specific `tccutil reset` calls for Microphone, AudioCapture, and ScreenCapture, then prints the same status output without building or launching Bugbook; with `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1`, it prints the reset commands without executing them; latest real reset cleared the stale `com.maxforsey.Dahso.dev` rows, and the later prompt run recreated a current Microphone row
 - Wrapper dry-run support: `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1 scripts/run-daily-driver-soak.sh [mode]` prints shell-quoted `export` lines plus the delegated command without building, launching Bugbook, or opening System Settings; dry-run verified `soak` delegates to `65m Allocations` with `AUTO_STOP_RECORDING_AFTER_SECONDS=3600` and privacy panes enabled, `preflight` delegates to `10s Allocations` with `PREFLIGHT_ONLY=1` and privacy panes disabled, and `prompt` delegates to `1m Allocations` with a 30-second auto-stop and 10-second finalization buffer
 - Completed-soak evidence verifier: `scripts/verify-daily-driver-soak-evidence.sh` prints the selected evidence path, then checks the generated evidence note for the required 65-minute Allocations run shape, 60-minute auto-stop, live-transcription attach, required meeting markers, signpost validation, xctrace success, app-process survival after trace, enforced Instruments/RSS targets, and absence of failure markers; it accepts `latest`/`--latest` to pick the newest `.codex/perf/bugbook-meeting-soak-allocations-*.md` note, and `scripts/run-daily-driver-soak.sh verify-latest` delegates to that path; it passes a synthetic complete 65-minute evidence note including `App process alive after trace: PASS` and exits nonzero on the current short blocked prompt artifact, as expected

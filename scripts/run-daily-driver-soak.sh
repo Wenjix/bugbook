@@ -175,7 +175,13 @@ print_privacy_status() {
   if [[ "$microphone_status" == "PASS" && "$system_audio_status" == "PASS" ]]; then
     return 0
   fi
-  echo "- Next: run scripts/run-daily-driver-soak.sh prompt and approve Bugbook in macOS Privacy & Security."
+  if [[ "$microphone_status" == "PASS" && "$system_audio_status" != "PASS" ]]; then
+    echo "- Next: approve Screen & System Audio Recording for the Debug app:"
+    echo "  $app_path"
+    echo "- In System Settings > Privacy & Security > Screen & System Audio Recording, use Add if Bugbook is not listed, then enable it."
+  else
+    echo "- Next: run scripts/run-daily-driver-soak.sh prompt and approve Bugbook in macOS Privacy & Security."
+  fi
   echo "- If Bugbook is stale or denied there, run scripts/run-daily-driver-soak.sh reset-tcc first."
   return 1
 }
