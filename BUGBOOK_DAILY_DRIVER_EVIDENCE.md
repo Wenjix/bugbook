@@ -221,14 +221,14 @@ Recommended short permission-prompt refresh:
 scripts/run-daily-driver-soak.sh prompt
 ```
 
-Latest prompt refresh ran after `scripts/run-daily-driver-soak.sh reset-tcc`,
-with shortened 90-second prompt/attach windows for diagnostics. It timed out
+Latest standard prompt refresh ran after `scripts/run-daily-driver-soak.sh
+reset-tcc`, with the wrapper's 600-second prompt/attach window. It timed out
 waiting for `liveTranscriptionChunk` after Bugbook emitted both
 `meetingMicPermissionPrompt` and `meetingMicPermissionRequestSubmitted`, which
 confirms the app submitted the AVFoundation microphone permission request. No
 grant/deny callback marker arrived before timeout, and macOS still did not
 create any TCC rows. Diagnostic evidence:
-`.codex/perf/bugbook-meeting-soak-allocations-20260518T135225Z.md`.
+`.codex/perf/bugbook-meeting-soak-allocations-20260518T135656Z.md`.
 
 Observed markers:
 
@@ -242,8 +242,8 @@ Observed markers:
 - `meetingNotePersist`
 
 The diagnostic TCC query still returned no microphone/screen/system-audio rows.
-The short non-live run sampled RSS from 96.3 MiB down to 83.9 MiB, with a
-108.9 MiB peak, but it does not cover the 60-minute live capture requirement.
+The standard prompt run sampled RSS from 110.1 MiB down to 69.2 MiB, with a
+110.5 MiB peak, but it does not cover the 60-minute live capture requirement.
 The harness
 now defaults `BUGBOOK_PROFILE_ALLOW_PERMISSION_PROMPT=1` runs to a 180-second
 macOS prompt window and 240-second first-marker wait when no explicit attach
