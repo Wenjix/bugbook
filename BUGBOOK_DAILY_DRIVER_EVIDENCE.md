@@ -20,12 +20,13 @@ Current debug bundle ID:
 com.maxforsey.Dahso.dev
 ```
 
-Current TCC query for `com.maxforsey.Dahso.dev` returns no rows after resetting
+Current TCC query for `com.maxforsey.Dahso.dev` now shows Microphone approved
+for the current Debug bundle, after resetting
 the stale Debug-bundle grants. The reset removed older `auth_value=2` rows that
 were cdhash-scoped to a previous signed build and did not apply to the current
 Debug app. The latest short prompt diagnostic rebuilt the app with CDHash
-`66573431DCF618765A1154C7FF705F0C98A9F343`; TCC still has no current
-microphone, screen, or system-audio rows for that bundle.
+`66573431DCF618765A1154C7FF705F0C98A9F343`; TCC still has no current screen or
+system-audio row for that bundle.
 
 ## Completion Audit Snapshot
 
@@ -42,8 +43,9 @@ but the final live-soak numbers are not available yet.
 
 Remaining required gate:
 
-1. Approve Bugbook for Microphone and Screen/System Audio Recording in macOS
-   Privacy & Security.
+1. Approve Bugbook for Screen/System Audio Recording in macOS Privacy &
+   Security. Microphone is currently approved for the Debug bundle, but repeated
+   debug signing can require re-approval.
 2. Run the enforced 65-minute Allocations soak command in "Blocked Live Soak".
 3. Confirm the trace includes `meetingRecordingStart`, `meetingMicAudioCapture`,
    `meetingSystemAudioCapture`, `liveTranscriptionChunk`,
@@ -225,9 +227,9 @@ Latest prompt diagnostics now show the capture path reaches ScreenCaptureKit
 first, then fails with `SCStreamErrorDomain -3801`, which the macOS SDK defines
 as `SCStreamErrorUserDeclined`. Bugbook then falls back to the legacy microphone
 permission path, submits the AVFAudio app-level record-permission request, and
-times out without a grant/deny callback. macOS still does not create any
-microphone, screen, or system-audio TCC rows for the Debug bundle. Diagnostic
-evidence:
+times out in the app. After the run, macOS recorded a current unscoped
+Microphone TCC row, but still did not create a screen/system-audio row for the
+Debug bundle. Diagnostic evidence:
 `.codex/perf/bugbook-meeting-soak-allocations-20260518T143031Z.md`.
 
 Observed markers:
@@ -248,7 +250,8 @@ Observed markers:
 - `meetingNotePersist`
 - `meetingMicPermissionTimedOut`
 
-The diagnostic TCC query still returned no microphone/screen/system-audio rows.
+The latest status check reports Microphone authorization PASS and Screen/System
+Audio authorization FAIL.
 The latest short prompt run was diagnostic only and does not cover the 60-minute
 live capture requirement. Visual inspection of macOS Privacy & Security showed
 Bugbook is still not listed automatically in Microphone or Screen & System Audio
@@ -368,10 +371,10 @@ Latest observed results:
 - Stale evidence and touched-file trailing-whitespace scans: passed
 - `zsh -n scripts/profile-meeting-soak.sh` and `zsh -n scripts/run-daily-driver-soak.sh`: passed after tightening the interactive permission-prompt timeout defaults, adding the explicit privacy-pane opener flag, adding the optional TCC approval wait mode, adding the opt-in system-audio stimulus loop, enforcing a finalization buffer before trace end, making enforced runs fail on missing or over-target Instruments/RSS samples, adding the one-command required soak wrapper with `preflight` and `prompt` modes, and rejecting stale cdhash-scoped TCC rows for older Debug builds
 - Wrapper preflight check: `scripts/run-daily-driver-soak.sh preflight` builds with the wrapper defaults, keeps `Open privacy settings: 0`, writes preflight evidence, and fails on missing, denied, or stale TCC rows
-- Direct TCC recheck without rebuild: queried `~/Library/Application Support/com.apple.TCC/TCC.db`; after the latest reset and prompt attempts, `com.maxforsey.Dahso.dev` has no Microphone, AudioCapture, or ScreenCapture rows for the current Debug app CDHash `66573431DCF618765A1154C7FF705F0C98A9F343`
+- Direct TCC recheck without rebuild: queried `~/Library/Application Support/com.apple.TCC/TCC.db`; after the latest reset and prompt attempts, `com.maxforsey.Dahso.dev` has a current unscoped Microphone row for the Debug app, but no AudioCapture or ScreenCapture row for CDHash `66573431DCF618765A1154C7FF705F0C98A9F343`
 - Wrapper help/usage check: `scripts/run-daily-driver-soak.sh --help` exits 0 and documents `soak`, `preflight`, `prompt`, `status`, `reset-tcc`, and `verify-latest`; invalid modes exit 2 with the same usage text
 - Wrapper privacy status check: `scripts/run-daily-driver-soak.sh status` does not build, launch Bugbook, or open System Settings; it reports the current Debug bundle path, bundle ID `com.maxforsey.Dahso.dev`, CDHash `66573431DCF618765A1154C7FF705F0C98A9F343`, current TCC rows, and whether cdhash-scoped rows are current or stale; it exits nonzero while Microphone or Screen/System Audio authorization is missing, denied, or stale
-- Wrapper TCC reset command: `scripts/run-daily-driver-soak.sh reset-tcc` resolves the current Debug bundle ID and runs the bundle-specific `tccutil reset` calls for Microphone, AudioCapture, and ScreenCapture, then prints the same status output without building or launching Bugbook; with `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1`, it prints the reset commands without executing them; latest real reset cleared the stale `com.maxforsey.Dahso.dev` rows and status now reports no rows
+- Wrapper TCC reset command: `scripts/run-daily-driver-soak.sh reset-tcc` resolves the current Debug bundle ID and runs the bundle-specific `tccutil reset` calls for Microphone, AudioCapture, and ScreenCapture, then prints the same status output without building or launching Bugbook; with `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1`, it prints the reset commands without executing them; latest real reset cleared the stale `com.maxforsey.Dahso.dev` rows, and the later prompt run recreated a current Microphone row
 - Wrapper dry-run support: `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1 scripts/run-daily-driver-soak.sh [mode]` prints shell-quoted `export` lines plus the delegated command without building, launching Bugbook, or opening System Settings; dry-run verified `soak` delegates to `65m Allocations` with `AUTO_STOP_RECORDING_AFTER_SECONDS=3600` and privacy panes enabled, `preflight` delegates to `10s Allocations` with `PREFLIGHT_ONLY=1` and privacy panes disabled, and `prompt` delegates to `1m Allocations` with a 30-second auto-stop and 10-second finalization buffer
 - Completed-soak evidence verifier: `scripts/verify-daily-driver-soak-evidence.sh` prints the selected evidence path, then checks the generated evidence note for the required 65-minute Allocations run shape, 60-minute auto-stop, live-transcription attach, required meeting markers, signpost validation, xctrace success, app-process survival after trace, enforced Instruments/RSS targets, and absence of failure markers; it accepts `latest`/`--latest` to pick the newest `.codex/perf/bugbook-meeting-soak-allocations-*.md` note, and `scripts/run-daily-driver-soak.sh verify-latest` delegates to that path; it passes a synthetic complete 65-minute evidence note including `App process alive after trace: PASS` and exits nonzero on the current short blocked prompt artifact, as expected
 - Wrapper mode validation: `BUGBOOK_PROFILE_MEMORY_TARGET_RSS_KIB=0 scripts/run-daily-driver-soak.sh`, `BUGBOOK_PROFILE_MEMORY_TARGET_RSS_KIB=0 scripts/run-daily-driver-soak.sh preflight`, and `BUGBOOK_PROFILE_MEMORY_TARGET_RSS_KIB=0 scripts/run-daily-driver-soak.sh prompt` all fail fast before build with the memory-target validation error
