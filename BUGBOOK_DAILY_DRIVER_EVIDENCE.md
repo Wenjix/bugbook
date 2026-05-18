@@ -20,15 +20,10 @@ Current debug bundle ID:
 com.maxforsey.Dahso.dev
 ```
 
-Current TCC query for `com.maxforsey.Dahso.dev` returns allowed rows for:
-
-- `kTCCServiceMicrophone`
-- `kTCCServiceAudioCapture`
-
-Those rows are cdhash-scoped to an older Debug build and are stale for the
-current signed app, whose CDHash is
-`511467B3F88C1A0B4AD5A214FC465E5CFED95C6A`. The wrapper now treats those stale
-rows as unauthorized instead of accepting the raw `auth_value=2`.
+Current TCC query for `com.maxforsey.Dahso.dev` returns no rows after resetting
+the stale Debug-bundle grants. The reset removed older `auth_value=2` rows that
+were cdhash-scoped to a previous signed build and did not apply to the current
+Debug app CDHash `511467B3F88C1A0B4AD5A214FC465E5CFED95C6A`.
 
 ## Completion Audit Snapshot
 
@@ -224,11 +219,11 @@ Recommended short permission-prompt refresh:
 scripts/run-daily-driver-soak.sh prompt
 ```
 
-Latest prompt refresh timed out waiting for `liveTranscriptionChunk` after
-Bugbook emitted `meetingMicPermissionPrompt`; the prompt was not approved and
-macOS still did not create any TCC rows during the 600-second wait. Diagnostic
-evidence:
-`.codex/perf/bugbook-meeting-soak-allocations-20260518T130749Z.md`.
+Latest prompt refresh ran after `scripts/run-daily-driver-soak.sh reset-tcc`,
+timed out waiting for `liveTranscriptionChunk` after Bugbook emitted
+`meetingMicPermissionPrompt`, and still did not create any TCC rows during the
+600-second wait. Diagnostic evidence:
+`.codex/perf/bugbook-meeting-soak-allocations-20260518T133752Z.md`.
 
 Observed markers:
 
@@ -241,8 +236,8 @@ Observed markers:
 - `meetingNotePersist`
 
 The diagnostic TCC query still returned no microphone/screen/system-audio rows.
-The short non-live run sampled RSS from 109.4 MiB down to 68.4 MiB, with a
-109.8 MiB peak, but it does not cover the 60-minute live capture requirement.
+The short non-live run sampled RSS from 110.1 MiB down to 73.1 MiB, with a
+110.5 MiB peak, but it does not cover the 60-minute live capture requirement.
 The harness
 now defaults `BUGBOOK_PROFILE_ALLOW_PERMISSION_PROMPT=1` runs to a 180-second
 macOS prompt window and 240-second first-marker wait when no explicit attach
@@ -298,7 +293,10 @@ Current Debug bundle checks:
 - Signed entitlement `com.apple.security.device.audio-input`: present
 
 The app bundle has the required microphone/system-audio declarations. The
-remaining capture blocker is the stale TCC authorization state above. The
+remaining capture blocker is the empty post-reset TCC authorization state above.
+The previous stale Debug grants were reset with
+`scripts/run-daily-driver-soak.sh reset-tcc`; macOS still needs to record fresh
+Microphone and Screen/System Audio approvals for the current signed app. The
 foundation commit `4994142` includes the Bugbook rename/default-mode
 implementation, soak scripts, README updates, and automated performance
 evidence in one buildable slice. Follow-up doc/metadata/evidence commits are
@@ -354,7 +352,7 @@ Latest observed results:
 - Direct TCC recheck without rebuild: queried `~/Library/Application Support/com.apple.TCC/TCC.db`; `com.maxforsey.Dahso.dev` has old Microphone and AudioCapture rows with `auth_value=2`, but the wrapper marks both as stale because their cdhash-scoped `csreq` does not match the current Debug app CDHash `511467B3F88C1A0B4AD5A214FC465E5CFED95C6A`
 - Wrapper help/usage check: `scripts/run-daily-driver-soak.sh --help` exits 0 and documents `soak`, `preflight`, `prompt`, `status`, `reset-tcc`, and `verify-latest`; invalid modes exit 2 with the same usage text
 - Wrapper privacy status check: `scripts/run-daily-driver-soak.sh status` does not build, launch Bugbook, or open System Settings; it reports the current Debug bundle path, bundle ID `com.maxforsey.Dahso.dev`, CDHash `511467B3F88C1A0B4AD5A214FC465E5CFED95C6A`, current TCC rows, and whether cdhash-scoped rows are current or stale; it exits nonzero while Microphone or Screen/System Audio authorization is missing, denied, or stale
-- Wrapper TCC reset command: `scripts/run-daily-driver-soak.sh reset-tcc` resolves the current Debug bundle ID and runs the bundle-specific `tccutil reset` calls for Microphone, AudioCapture, and ScreenCapture, then prints the same status output without building or launching Bugbook; with `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1`, it prints the reset commands without executing them
+- Wrapper TCC reset command: `scripts/run-daily-driver-soak.sh reset-tcc` resolves the current Debug bundle ID and runs the bundle-specific `tccutil reset` calls for Microphone, AudioCapture, and ScreenCapture, then prints the same status output without building or launching Bugbook; with `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1`, it prints the reset commands without executing them; latest real reset cleared the stale `com.maxforsey.Dahso.dev` rows and status now reports no rows
 - Wrapper dry-run support: `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1 scripts/run-daily-driver-soak.sh [mode]` prints shell-quoted `export` lines plus the delegated command without building, launching Bugbook, or opening System Settings; dry-run verified `soak` delegates to `65m Allocations` with `AUTO_STOP_RECORDING_AFTER_SECONDS=3600` and privacy panes enabled, `preflight` delegates to `10s Allocations` with `PREFLIGHT_ONLY=1` and privacy panes disabled, and `prompt` delegates to `1m Allocations` with a 30-second auto-stop and 10-second finalization buffer
 - Completed-soak evidence verifier: `scripts/verify-daily-driver-soak-evidence.sh` prints the selected evidence path, then checks the generated evidence note for the required 65-minute Allocations run shape, 60-minute auto-stop, live-transcription attach, required meeting markers, signpost validation, xctrace success, app-process survival after trace, enforced Instruments/RSS targets, and absence of failure markers; it accepts `latest`/`--latest` to pick the newest `.codex/perf/bugbook-meeting-soak-allocations-*.md` note, and `scripts/run-daily-driver-soak.sh verify-latest` delegates to that path; it passes a synthetic complete 65-minute evidence note including `App process alive after trace: PASS` and exits nonzero on the current short blocked prompt artifact, as expected
 - Wrapper mode validation: `BUGBOOK_PROFILE_MEMORY_TARGET_RSS_KIB=0 scripts/run-daily-driver-soak.sh`, `BUGBOOK_PROFILE_MEMORY_TARGET_RSS_KIB=0 scripts/run-daily-driver-soak.sh preflight`, and `BUGBOOK_PROFILE_MEMORY_TARGET_RSS_KIB=0 scripts/run-daily-driver-soak.sh prompt` all fail fast before build with the memory-target validation error
