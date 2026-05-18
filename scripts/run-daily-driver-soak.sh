@@ -33,7 +33,9 @@ Modes:
              Allocations trace. Opens privacy panes, waits for approval, and
              enforces meeting markers plus Instruments/RSS memory targets.
   preflight  Build the signed Debug app and check bundle privacy/TCC state
-             without launching Bugbook or opening System Settings.
+             without launching Bugbook or opening System Settings. Microphone
+             is a hard TCC gate; Screen/System Audio is ultimately verified by
+             runtime capture markers when macOS exposes no readable TCC row.
   prompt     Open privacy panes and launch a one-minute recording attempt to
              create or refresh macOS Microphone and Screen/System Audio prompts.
   status     Print current Debug bundle and TCC authorization status without
@@ -106,6 +108,15 @@ has_current_authorized_tcc_row() {
   ' <<< "$rows"
 }
 
+has_tcc_row_for_service() {
+  local rows="$1"
+  local service="$2"
+  awk -F '\t' -v service="$service" '
+    $1 == service { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' <<< "$rows"
+}
+
 print_privacy_status() {
   local app_path bundle_id cdhash tcc_db rows related_rows microphone_status system_audio_status
   app_path="$(privacy_app_path)"
@@ -132,8 +143,11 @@ print_privacy_status() {
   if has_current_authorized_tcc_row "$rows" "kTCCServiceAudioCapture" "$cdhash" ||
      has_current_authorized_tcc_row "$rows" "kTCCServiceScreenCapture" "$cdhash"; then
     system_audio_status="PASS"
-  else
+  elif has_tcc_row_for_service "$rows" "kTCCServiceAudioCapture" ||
+       has_tcc_row_for_service "$rows" "kTCCServiceScreenCapture"; then
     system_audio_status="FAIL"
+  else
+    system_audio_status="UNKNOWN"
   fi
 
   echo "Bugbook privacy status"
@@ -141,7 +155,7 @@ print_privacy_status() {
   echo "- Bundle ID: $bundle_id"
   echo "- CDHash: ${cdhash:-unavailable}"
   echo "- Microphone authorization: $microphone_status"
-  echo "- Screen/System Audio authorization: $system_audio_status"
+  echo "- Screen/System Audio TCC DB proxy: $system_audio_status"
   echo "- TCC rows:"
   if [[ -n "$rows" ]]; then
     printf '%s\n' "$rows" | awk -F '\t' -v cdhash="$cdhash" '
@@ -172,11 +186,15 @@ print_privacy_status() {
     fi
   fi
 
-  if [[ "$microphone_status" == "PASS" && "$system_audio_status" == "PASS" ]]; then
+  if [[ "$system_audio_status" == "UNKNOWN" ]]; then
+    echo "- Screen/System Audio note: no readable user TCC row is visible; the enforced soak verifies real capture with meetingSystemAudioCapture."
+  fi
+
+  if [[ "$microphone_status" == "PASS" && "$system_audio_status" != "FAIL" ]]; then
     return 0
   fi
-  if [[ "$microphone_status" == "PASS" && "$system_audio_status" != "PASS" ]]; then
-    echo "- Next: approve Screen & System Audio Recording for the Debug app:"
+  if [[ "$microphone_status" == "PASS" && "$system_audio_status" == "FAIL" ]]; then
+    echo "- Next: resolve the denied or stale Screen & System Audio Recording row for the Debug app:"
     echo "  $app_path"
     echo "- In System Settings > Privacy & Security > Screen & System Audio Recording, use Add if Bugbook is not listed, then enable it."
   else

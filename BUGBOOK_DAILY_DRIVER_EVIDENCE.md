@@ -407,6 +407,32 @@ zsh -n scripts/verify-daily-driver-soak-evidence.sh
 
 ## Blocked Live Soak
 
+Latest privacy wrapper state after Screen & System Audio was visually enabled
+in System Settings: `scripts/run-daily-driver-soak.sh status` exits 0 with
+Microphone `PASS` and Screen/System Audio TCC DB proxy `UNKNOWN`. The user TCC
+database exposes only the current Microphone row, while a direct runtime probe
+has already emitted `meetingScreenCaptureKitAudioCaptureStartedWithMic`,
+`meetingSystemAudioCapture`, `meetingMicAudioCapture`, and
+`liveTranscriptionChunk`. The soak wrapper now treats the missing
+Screen/System Audio DB row as advisory unless macOS records an explicit denied
+or stale row; the enforced live-soak verifier remains authoritative via the
+required `meetingSystemAudioCapture` marker.
+
+Fresh wrapper preflight:
+
+- `scripts/run-daily-driver-soak.sh preflight`: passed, wrote
+  `.codex/perf/bugbook-meeting-soak-allocations-20260518T144723Z.md`, and
+  recorded bundle privacy declarations `PASS`, Microphone authorization `PASS`,
+  Screen/System Audio TCC DB proxy `UNKNOWN`, Screen/System Audio runtime gate
+  `meetingSystemAudioCapture required in enforced soak`, and overall preflight
+  `PASS`
+- `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1 scripts/run-daily-driver-soak.sh soak`:
+  passed and confirmed the required `65m Allocations` run with
+  `AUTO_STOP_RECORDING_AFTER_SECONDS=3600`,
+  `BUGBOOK_PROFILE_ATTACH_AFTER_MARKER=liveTranscriptionChunk`,
+  `BUGBOOK_REQUIRE_MEETING_SIGNPOSTS=1`, and
+  `BUGBOOK_REQUIRE_MEMORY_TARGETS=1`
+
 After approving Bugbook in macOS Privacy & Security for Microphone and Screen &
 System Audio Recording, rerun. The command records a 60-minute meeting inside a
 65-minute Allocations trace, leaving five minutes for stop/finalize/save

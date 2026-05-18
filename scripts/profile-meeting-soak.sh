@@ -43,8 +43,10 @@
 # user to the controls needed for the manual approval gate.
 #
 # Set BUGBOOK_PROFILE_WAIT_FOR_PRIVACY_APPROVAL=1 to poll TCC until Microphone
-# and Screen/System Audio are approved before launching Bugbook. Override the
-# wait with BUGBOOK_PROFILE_WAIT_FOR_PRIVACY_APPROVAL_SECONDS.
+# is approved before launching Bugbook. Screen/System Audio is still reported
+# from TCC when macOS exposes a row, but the enforced soak validates it through
+# the runtime meetingSystemAudioCapture marker because macOS may not expose a
+# readable user TCC row for ScreenCaptureKit audio grants.
 #
 # Set BUGBOOK_PROFILE_SYSTEM_AUDIO_STIMULUS=1 to play a short external system
 # sound loop after launch. This gives ScreenCaptureKit a concrete non-Bugbook
@@ -714,14 +716,32 @@ has_authorized_tcc_row() {
   ' <<< "$rows"
 }
 
+has_tcc_row_for_service() {
+  local rows="$1"
+  local service="$2"
+  awk -F '\t' -v service="$service" '
+    $1 == service { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' <<< "$rows"
+}
+
+system_audio_tcc_proxy_status() {
+  local rows="$1"
+  if has_authorized_tcc_row "$rows" "kTCCServiceAudioCapture" ||
+     has_authorized_tcc_row "$rows" "kTCCServiceScreenCapture"; then
+    echo "PASS"
+  elif has_tcc_row_for_service "$rows" "kTCCServiceAudioCapture" ||
+       has_tcc_row_for_service "$rows" "kTCCServiceScreenCapture"; then
+    echo "FAIL"
+  else
+    echo "UNKNOWN"
+  fi
+}
+
 required_tcc_approval_is_present() {
   local rows
   rows="$(tcc_rows_for_current_bundle)"
-  has_authorized_tcc_row "$rows" "kTCCServiceMicrophone" &&
-    {
-      has_authorized_tcc_row "$rows" "kTCCServiceAudioCapture" ||
-        has_authorized_tcc_row "$rows" "kTCCServiceScreenCapture"
-    }
+  has_authorized_tcc_row "$rows" "kTCCServiceMicrophone"
 }
 
 wait_for_privacy_approval_if_requested() {
@@ -733,7 +753,7 @@ wait_for_privacy_approval_if_requested() {
   initial_rows="$(tcc_rows_for_current_bundle)"
   if [[ -z "$initial_rows" ]]; then
     if is_truthy "$PREFLIGHT_ONLY"; then
-      echo "No current-bundle TCC rows yet; preflight cannot wait for approval before Bugbook creates the permission prompt/list entry."
+      echo "No current-bundle TCC rows yet; preflight cannot confirm Microphone approval before Bugbook creates the permission prompt/list entry."
     else
       echo "No current-bundle TCC rows yet; launching Bugbook so macOS can create the permission prompt/list entry."
     fi
@@ -742,27 +762,28 @@ wait_for_privacy_approval_if_requested() {
 
   if ! required_tcc_approval_is_present; then
     if is_truthy "$PREFLIGHT_ONLY"; then
-      echo "Current-bundle TCC rows are missing, denied, or stale for this signed build."
+      echo "Current-bundle Microphone TCC row is missing, denied, or stale for this signed build."
     else
-      echo "Current-bundle TCC rows are missing, denied, or stale; launching Bugbook so macOS can create or refresh the permission prompt/list entry."
+      echo "Current-bundle Microphone TCC row is missing, denied, or stale; launching Bugbook so macOS can create or refresh the permission prompt/list entry."
     fi
     return
   fi
 
   timeout_seconds="${WAIT_FOR_PRIVACY_APPROVAL_SECONDS:-300}"
   started_at="$(date +%s)"
-  echo "Waiting up to ${timeout_seconds}s for Microphone and Screen/System Audio approval..."
+  echo "Waiting up to ${timeout_seconds}s for Microphone approval..."
 
   while true; do
     if required_tcc_approval_is_present; then
-      echo "Observed required Bugbook privacy approvals."
+      echo "Observed required Bugbook Microphone approval."
+      echo "Screen/System Audio TCC rows are advisory; runtime capture is enforced by the meetingSystemAudioCapture marker."
       return
     fi
 
     now="$(date +%s)"
     elapsed=$(( now - started_at ))
     if (( elapsed >= timeout_seconds )); then
-      echo "Timed out waiting for Microphone and Screen/System Audio approval." >&2
+      echo "Timed out waiting for Microphone approval." >&2
       return 1
     fi
 
@@ -838,14 +859,9 @@ EOF
   else
     microphone_status="FAIL"
   fi
-  if has_authorized_tcc_row "$tcc_rows" "kTCCServiceAudioCapture" ||
-     has_authorized_tcc_row "$tcc_rows" "kTCCServiceScreenCapture"; then
-    system_audio_status="PASS"
-  else
-    system_audio_status="FAIL"
-  fi
+  system_audio_status="$(system_audio_tcc_proxy_status "$tcc_rows")"
 
-  if [[ "$bundle_status" == "PASS" && "$microphone_status" == "PASS" && "$system_audio_status" == "PASS" ]]; then
+  if [[ "$bundle_status" == "PASS" && "$microphone_status" == "PASS" && "$system_audio_status" != "FAIL" ]]; then
     overall_status="PASS"
   else
     overall_status="FAIL"
@@ -857,13 +873,17 @@ EOF
     echo ""
     echo "- Bundle privacy declarations: ${bundle_status}"
     echo "- Microphone authorization: ${microphone_status}"
-    echo "- Screen/System Audio authorization: ${system_audio_status}"
+    echo "- Screen/System Audio TCC DB proxy: ${system_audio_status}"
+    echo "- Screen/System Audio runtime gate: meetingSystemAudioCapture required in enforced soak"
+    if [[ "$system_audio_status" == "UNKNOWN" ]]; then
+      echo "- Screen/System Audio note: no readable user TCC row; macOS may grant ScreenCaptureKit audio without exposing one."
+    fi
     echo "- Overall preflight: ${overall_status}"
   } >> "$EVIDENCE_PATH"
 
   echo "Preflight evidence note written to $EVIDENCE_PATH"
   if [[ "$overall_status" != "PASS" ]]; then
-    echo "Preflight failed: approve Microphone and Screen/System Audio Recording for the Debug bundle, then rerun." >&2
+    echo "Preflight failed: approve Microphone and resolve denied or stale Screen/System Audio rows for the Debug bundle, then rerun." >&2
     return 1
   fi
 }
