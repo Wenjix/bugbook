@@ -4,57 +4,57 @@
 <dict>
 	<key>SchemeUserState</key>
 	<dict>
-		<key>Dahso-Package.xcscheme_^#shared#^_</key>
+		<key>Bugbook-Package.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>0</integer>
 		</dict>
-		<key>Dahso.xcscheme_^#shared#^_</key>
+		<key>Bugbook.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>2</integer>
 		</dict>
-		<key>DahsoCLI.xcscheme_^#shared#^_</key>
+		<key>BugbookCLI.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>3</integer>
 		</dict>
-		<key>DahsoCLITests.xcscheme_^#shared#^_</key>
+		<key>BugbookCLITests.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>3</integer>
 		</dict>
-		<key>DahsoCore.xcscheme_^#shared#^_</key>
+		<key>BugbookCore.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>1</integer>
 		</dict>
-		<key>DahsoCoreTests.xcscheme_^#shared#^_</key>
+		<key>BugbookCoreTests.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>4</integer>
 		</dict>
-		<key>DahsoMCPSpike.xcscheme_^#shared#^_</key>
+		<key>BugbookMCPSpike.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>1</integer>
 		</dict>
-		<key>DahsoMobile.xcscheme_^#shared#^_</key>
+		<key>BugbookMobile.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>4</integer>
 		</dict>
-		<key>DahsoSwift-Package.xcscheme_^#shared#^_</key>
+		<key>BugbookSwift-Package.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>0</integer>
 		</dict>
-		<key>DahsoSwift.xcscheme_^#shared#^_</key>
+		<key>BugbookSwift.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>4</integer>
 		</dict>
-		<key>DahsoTests.xcscheme_^#shared#^_</key>
+		<key>BugbookTests.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>2</integer>
@@ -62,27 +62,27 @@
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
-		<key>Dahso</key>
+		<key>Bugbook</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>DahsoCLI</key>
+		<key>BugbookCLI</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>DahsoCore</key>
+		<key>BugbookCore</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>DahsoMobile</key>
+		<key>BugbookMobile</key>
 		<dict>
 			<key>primary</key>
 			<true/>
 		</dict>
-		<key>DahsoSwift</key>
+		<key>BugbookSwift</key>
 		<dict>
 			<key>primary</key>
 			<true/>
