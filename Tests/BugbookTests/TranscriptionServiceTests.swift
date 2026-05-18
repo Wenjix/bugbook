@@ -45,31 +45,31 @@ final class TranscriptionServiceTests: XCTestCase {
 
     func testMicrophonePermissionPolicyAllowsAuthorizedCapture() {
         let decision = RecordingPermissionPolicy.microphoneDecision(
-            authorizationStatus: .authorized,
+            authorizationStatus: AVAuthorizationStatus.authorized,
             environment: ["BUGBOOK_PROFILE_AUTO_START_MEETING": "1"]
         )
 
-        XCTAssertEqual(decision, .granted)
+        XCTAssertEqual(decision, RecordingPermissionDecision.granted)
     }
 
     func testMicrophonePermissionPolicyPromptsDuringInteractiveStart() {
         let decision = RecordingPermissionPolicy.microphoneDecision(
-            authorizationStatus: .notDetermined,
+            authorizationStatus: AVAuthorizationStatus.notDetermined,
             environment: [:]
         )
 
-        XCTAssertEqual(decision, .requestSystemPrompt)
+        XCTAssertEqual(decision, RecordingPermissionDecision.requestSystemPrompt)
     }
 
     func testMicrophonePermissionPolicyFailsFastDuringUnattendedProfile() {
         let decision = RecordingPermissionPolicy.microphoneDecision(
-            authorizationStatus: .notDetermined,
+            authorizationStatus: AVAuthorizationStatus.notDetermined,
             environment: ["BUGBOOK_PROFILE_AUTO_START_MEETING": "1"]
         )
 
         XCTAssertEqual(
             decision,
-            .denied(
+            RecordingPermissionDecision.denied(
                 message: RecordingPermissionPolicy.microphoneUnattendedProfileMessage,
                 marker: "meetingMicPermissionUnavailable"
             )
@@ -78,13 +78,13 @@ final class TranscriptionServiceTests: XCTestCase {
 
     func testMicrophonePermissionPolicyRejectsDeniedAccess() {
         let decision = RecordingPermissionPolicy.microphoneDecision(
-            authorizationStatus: .denied,
+            authorizationStatus: AVAuthorizationStatus.denied,
             environment: [:]
         )
 
         XCTAssertEqual(
             decision,
-            .denied(
+            RecordingPermissionDecision.denied(
                 message: RecordingPermissionPolicy.microphoneDeniedMessage,
                 marker: "meetingMicPermissionDenied"
             )
@@ -93,14 +93,59 @@ final class TranscriptionServiceTests: XCTestCase {
 
     func testMicrophonePermissionPolicyCanAllowProfilePermissionPrompt() {
         let decision = RecordingPermissionPolicy.microphoneDecision(
-            authorizationStatus: .notDetermined,
+            authorizationStatus: AVAuthorizationStatus.notDetermined,
             environment: [
                 "BUGBOOK_PROFILE_AUTO_START_MEETING": "1",
                 "BUGBOOK_PROFILE_ALLOW_PERMISSION_PROMPT": "1"
             ]
         )
 
-        XCTAssertEqual(decision, .requestSystemPrompt)
+        XCTAssertEqual(decision, RecordingPermissionDecision.requestSystemPrompt)
+    }
+
+    func testMicrophonePermissionPolicySupportsAudioApplicationStatus() {
+        XCTAssertEqual(
+            RecordingPermissionPolicy.microphoneDecision(
+                authorizationStatus: MicrophonePermissionStatus.authorized,
+                environment: ["BUGBOOK_PROFILE_AUTO_START_MEETING": "1"]
+            ),
+            RecordingPermissionDecision.granted
+        )
+
+        XCTAssertEqual(
+            RecordingPermissionPolicy.microphoneDecision(
+                authorizationStatus: MicrophonePermissionStatus.notDetermined,
+                environment: [
+                    "BUGBOOK_PROFILE_AUTO_START_MEETING": "1",
+                    "BUGBOOK_PROFILE_ALLOW_PERMISSION_PROMPT": "1"
+                ]
+            ),
+            RecordingPermissionDecision.requestSystemPrompt
+        )
+    }
+
+    func testMicrophonePermissionPreflightSkipsScreenCaptureKitMicrophonePath() {
+        #if canImport(FluidAudio)
+        XCTAssertFalse(
+            TranscriptionService.shouldRequestMicrophonePermissionBeforeRecording(
+                screenCaptureKitMicrophoneAvailable: true
+            )
+        )
+        #else
+        XCTAssertTrue(
+            TranscriptionService.shouldRequestMicrophonePermissionBeforeRecording(
+                screenCaptureKitMicrophoneAvailable: true
+            )
+        )
+        #endif
+    }
+
+    func testMicrophonePermissionPreflightRunsForLegacyMicrophonePath() {
+        XCTAssertTrue(
+            TranscriptionService.shouldRequestMicrophonePermissionBeforeRecording(
+                screenCaptureKitMicrophoneAvailable: false
+            )
+        )
     }
 
     func testMicrophonePermissionPromptUsesShorterTimeoutForProfiles() {
@@ -120,6 +165,26 @@ final class TranscriptionServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(timeout, 3.5)
+    }
+
+    func testProfileMeetingAutoStartDelayOnlyAppliesToProfileRuns() {
+        XCTAssertEqual(ProfileMeetingAutoStartDelay.seconds(environment: [:]), 0)
+
+        XCTAssertEqual(
+            ProfileMeetingAutoStartDelay.seconds(environment: ["BUGBOOK_PROFILE_AUTO_START_MEETING": "1"]),
+            2
+        )
+    }
+
+    func testProfileMeetingAutoStartDelayCanBeOverridden() {
+        let delay = ProfileMeetingAutoStartDelay.seconds(
+            environment: [
+                "BUGBOOK_PROFILE_AUTO_START_MEETING": "1",
+                "BUGBOOK_PROFILE_AUTO_START_DELAY_SECONDS": "0.25"
+            ]
+        )
+
+        XCTAssertEqual(delay, 0.25)
     }
 
     func testLiveTranscriptionChunkSchedulerLimitsActiveWorkAndPreservesOrder() {

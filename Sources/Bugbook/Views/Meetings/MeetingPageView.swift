@@ -1,4 +1,30 @@
 import SwiftUI
+import AppKit
+
+enum ProfileMeetingAutoStartDelay {
+    private static let autoStartEnvironmentKey = "BUGBOOK_PROFILE_AUTO_START_MEETING"
+    private static let delayEnvironmentKey = "BUGBOOK_PROFILE_AUTO_START_DELAY_SECONDS"
+    private static let defaultDelaySeconds: TimeInterval = 2
+
+    static func seconds(environment: [String: String] = ProcessInfo.processInfo.environment) -> TimeInterval {
+        guard truthy(environment[autoStartEnvironmentKey]) else { return 0 }
+        guard let rawValue = environment[delayEnvironmentKey],
+              let delay = TimeInterval(rawValue),
+              delay >= 0 else {
+            return defaultDelaySeconds
+        }
+        return delay
+    }
+
+    private static func truthy(_ value: String?) -> Bool {
+        switch value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        default:
+            return false
+        }
+    }
+}
 
 /// Dedicated meeting page layout.
 /// Standard page header + title + database-style property pills + block editor body.
@@ -26,6 +52,7 @@ struct MeetingPageView: View {
     @State private var summaryError: String?
     @State private var recordingNotice: String?
     @State private var recordingNoticeTask: Task<Void, Never>?
+    @State private var profileAutoStartTask: Task<Void, Never>?
     @State private var profileAutoStopTask: Task<Void, Never>?
 
     /// Cached YAML-derived values, refreshed only when frontmatter changes.
@@ -125,7 +152,7 @@ struct MeetingPageView: View {
             if let pending = appState.pendingAutoRecordPath, pending == document.filePath {
                 appState.pendingAutoRecordPath = nil
                 if appState.activeMeetingSession == nil {
-                    startRecording()
+                    startProfileRecordingWhenReady()
                 }
             }
             stopPendingRecordingIfNeeded()
@@ -144,6 +171,8 @@ struct MeetingPageView: View {
         .onDisappear {
             recordingNoticeTask?.cancel()
             recordingNoticeTask = nil
+            profileAutoStartTask?.cancel()
+            profileAutoStartTask = nil
             profileAutoStopTask?.cancel()
             profileAutoStopTask = nil
         }
@@ -258,6 +287,26 @@ struct MeetingPageView: View {
     }
 
     // MARK: - Actions
+
+    private func startProfileRecordingWhenReady() {
+        let delaySeconds = ProfileMeetingAutoStartDelay.seconds()
+        guard delaySeconds > 0 else {
+            startRecording()
+            return
+        }
+
+        profileAutoStartTask?.cancel()
+        Log.profileMarker("profileMeetingAutoStartDelay")
+        profileAutoStartTask = Task { @MainActor in
+            let delayNanoseconds = UInt64(delaySeconds * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled else { return }
+            guard appState.activeMeetingSession == nil else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            Log.profileMarker("profileMeetingAutoStartDelayComplete")
+            startRecording()
+        }
+    }
 
     private func stopPendingRecordingIfNeeded() {
         guard let session = appState.activeMeetingSession,

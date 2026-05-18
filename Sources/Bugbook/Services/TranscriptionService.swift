@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AVFAudio
 #if canImport(FluidAudio)
 import FluidAudio
 #else
@@ -43,6 +44,28 @@ enum RecordingPermissionDecision: Equatable {
     case denied(message: String, marker: String)
 }
 
+enum MicrophonePermissionStatus: Equatable {
+    case authorized
+    case denied
+    case restricted
+    case notDetermined
+
+    init(authorizationStatus: AVAuthorizationStatus) {
+        switch authorizationStatus {
+        case .authorized:
+            self = .authorized
+        case .denied:
+            self = .denied
+        case .restricted:
+            self = .restricted
+        case .notDetermined:
+            self = .notDetermined
+        @unknown default:
+            self = .denied
+        }
+    }
+}
+
 enum RecordingPermissionPolicy {
     static let microphoneDeniedMessage =
         "Microphone access denied. Enable Bugbook in System Settings > Privacy & Security > Microphone."
@@ -62,6 +85,16 @@ enum RecordingPermissionPolicy {
 
     static func microphoneDecision(
         authorizationStatus: AVAuthorizationStatus,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> RecordingPermissionDecision {
+        microphoneDecision(
+            authorizationStatus: MicrophonePermissionStatus(authorizationStatus: authorizationStatus),
+            environment: environment
+        )
+    }
+
+    static func microphoneDecision(
+        authorizationStatus: MicrophonePermissionStatus,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> RecordingPermissionDecision {
         switch authorizationStatus {
@@ -432,7 +465,7 @@ class TranscriptionService {
 
     private func requestMicPermission() async -> Bool {
         let decision = RecordingPermissionPolicy.microphoneDecision(
-            authorizationStatus: AVCaptureDevice.authorizationStatus(for: .audio)
+            authorizationStatus: Self.currentMicrophonePermissionStatus()
         )
 
         switch decision {
@@ -460,6 +493,25 @@ class TranscriptionService {
         return granted
     }
 
+    private nonisolated static func currentMicrophonePermissionStatus() -> MicrophonePermissionStatus {
+        if #available(macOS 14.0, *) {
+            switch AVAudioApplication.shared.recordPermission {
+            case .granted:
+                return .authorized
+            case .denied:
+                return .denied
+            case .undetermined:
+                return .notDetermined
+            @unknown default:
+                return .denied
+            }
+        }
+
+        return MicrophonePermissionStatus(
+            authorizationStatus: AVCaptureDevice.authorizationStatus(for: .audio)
+        )
+    }
+
     private nonisolated static func requestMicrophoneAccess(timeoutSeconds: TimeInterval) async -> Bool? {
         await withCheckedContinuation { continuation in
             let prompt = SingleResumeContinuation<Bool?>(continuation)
@@ -471,11 +523,37 @@ class TranscriptionService {
             }
 
             Log.profileMarker("meetingMicPermissionRequestSubmitted")
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                Log.profileMarker(granted ? "meetingMicPermissionGranted" : "meetingMicPermissionDenied")
-                prompt.resume(returning: granted)
+            if #available(macOS 14.0, *) {
+                Log.profileMarker("meetingMicPermissionRequestAPIAVAudioApplication")
+                AVAudioApplication.requestRecordPermission { granted in
+                    Log.profileMarker(granted ? "meetingMicPermissionGranted" : "meetingMicPermissionDenied")
+                    prompt.resume(returning: granted)
+                }
+            } else {
+                Log.profileMarker("meetingMicPermissionRequestAPIAVCaptureDevice")
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    Log.profileMarker(granted ? "meetingMicPermissionGranted" : "meetingMicPermissionDenied")
+                    prompt.resume(returning: granted)
+                }
             }
         }
+    }
+
+    static func shouldRequestMicrophonePermissionBeforeRecording(
+        screenCaptureKitMicrophoneAvailable: Bool = TranscriptionService.screenCaptureKitMicrophoneAvailable()
+    ) -> Bool {
+        #if canImport(FluidAudio)
+        !screenCaptureKitMicrophoneAvailable
+        #else
+        true
+        #endif
+    }
+
+    private nonisolated static func screenCaptureKitMicrophoneAvailable() -> Bool {
+        if #available(macOS 15.0, *) {
+            return true
+        }
+        return false
     }
 
     #if !canImport(FluidAudio)
@@ -494,12 +572,14 @@ class TranscriptionService {
         guard !isRecording else { return }
         liveAudioCaptureMarkers.reset()
 
-        let micGranted = await requestMicPermission()
-        guard micGranted else {
-            if error == nil {
-                error = RecordingPermissionPolicy.microphoneDeniedMessage
+        if Self.shouldRequestMicrophonePermissionBeforeRecording() {
+            let micGranted = await requestMicPermission()
+            guard micGranted else {
+                if error == nil {
+                    error = RecordingPermissionPolicy.microphoneDeniedMessage
+                }
+                return
             }
-            return
         }
 
         #if canImport(FluidAudio)
@@ -702,28 +782,57 @@ class TranscriptionService {
         onBuffer: @escaping @Sendable (LiveTranscriptionAudioSource, AVAudioPCMBuffer) -> Void
     ) async throws {
         stopSystemAudioCapture()
+        Log.profileMarker(
+            capturesMicrophone
+            ? "meetingScreenCaptureKitAudioCaptureRequestedWithMic"
+            : "meetingScreenCaptureKitAudioCaptureRequested"
+        )
 
         let capture = SystemAudioCapture()
-        let stream = try await capture.start(capturesMicrophone: capturesMicrophone)
-        systemAudioCapture = capture
-        systemAudioCaptureTask = Task.detached(priority: .userInitiated) { [weak self] in
-            for await capturedAudio in stream {
-                guard !Task.isCancelled else { break }
-                if let marker = await MainActor.run(body: { [weak self] () -> String? in
-                    guard let self else { return nil }
-                    return self.liveAudioCaptureMarkers.markerName(for: capturedAudio.source)
-                }) {
-                    Log.profileMarker(marker)
-                }
-                onBuffer(capturedAudio.source, capturedAudio.buffer)
+        do {
+            let stream = try await capture.start(capturesMicrophone: capturesMicrophone)
+            systemAudioCapture = capture
+            Log.profileMarker(
+                capturesMicrophone
+                ? "meetingScreenCaptureKitAudioCaptureStartedWithMic"
+                : "meetingScreenCaptureKitAudioCaptureStarted"
+            )
+            systemAudioCaptureTask = Task.detached(priority: .userInitiated) { [weak self] in
+                for await capturedAudio in stream {
+                    guard !Task.isCancelled else { break }
+                    if let marker = await MainActor.run(body: { [weak self] () -> String? in
+                        guard let self else { return nil }
+                        return self.liveAudioCaptureMarkers.markerName(for: capturedAudio.source)
+                    }) {
+                        Log.profileMarker(marker)
+                    }
+                    onBuffer(capturedAudio.source, capturedAudio.buffer)
 
-                let normalized = Self.rmsLevel(from: capturedAudio.buffer)
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.audioLevel = max(self.audioLevel, normalized)
+                    let normalized = Self.rmsLevel(from: capturedAudio.buffer)
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        self.audioLevel = max(self.audioLevel, normalized)
+                    }
                 }
             }
+        } catch {
+            Log.profileMarker(
+                capturesMicrophone
+                ? "meetingScreenCaptureKitAudioCaptureFailedWithMic"
+                : "meetingScreenCaptureKitAudioCaptureFailed"
+            )
+            Log.profileMarker("meetingScreenCaptureKitAudioCaptureFailure_\(Self.profileMarkerToken(for: error))")
+            throw error
         }
+    }
+
+    private nonisolated static func profileMarkerToken(for error: Error) -> String {
+        let nsError = error as NSError
+        let rawValue = "\(nsError.domain)_\(nsError.code)"
+        let allowedCharacters = CharacterSet.alphanumerics
+        return rawValue.unicodeScalars
+            .map { allowedCharacters.contains($0) ? String($0) : "_" }
+            .joined()
     }
 
     private func stopSystemAudioCapture() {
@@ -838,6 +947,13 @@ extension TranscriptionService {
                     "ScreenCaptureKit microphone capture was not available. Falling back to the microphone engine. (\(error.localizedDescription))"
                 )
             }
+        }
+
+        let micGranted = await requestMicPermission()
+        guard micGranted else {
+            throw TranscriptionError.transcriptionFailed(
+                error ?? RecordingPermissionPolicy.microphoneDeniedMessage
+            )
         }
 
         let engine = AVAudioEngine()

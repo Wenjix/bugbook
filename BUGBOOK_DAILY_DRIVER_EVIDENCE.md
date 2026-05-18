@@ -24,7 +24,7 @@ Current TCC query for `com.maxforsey.Dahso.dev` returns no rows after resetting
 the stale Debug-bundle grants. The reset removed older `auth_value=2` rows that
 were cdhash-scoped to a previous signed build and did not apply to the current
 Debug app. The latest short prompt diagnostic rebuilt the app with CDHash
-`A308CBA1F45E01DA9EF2FEF7029344C807838580`; TCC still has no current
+`66573431DCF618765A1154C7FF705F0C98A9F343`; TCC still has no current
 microphone, screen, or system-audio rows for that bundle.
 
 ## Completion Audit Snapshot
@@ -160,11 +160,11 @@ Latest baseline source in the current worktree:
 | Live 60-minute meeting RSS peak/growth under 200 MB | Not yet measured | Blocked |
 
 Latest `swift test` refreshed `Tests/BugbookTests/perf_baseline.tsv` at
-2026-05-18T13:03Z. It exited successfully with 502 tests and 0 failures. The
-hard targets above pass. The performance comparison reported a relative
-`transcript_finalize_60min_segments` regression from about 1.9 ms to 2.3 ms,
-which is still tiny in absolute terms and far below the 60-minute meeting
-finalization requirement; live RSS stability remains blocked on TCC approval.
+2026-05-18T14:33Z. It exited successfully with 507 tests and 0 failures. The
+hard targets above pass. The performance comparison reported relative changes
+in `markdown_serialize_500`, `row_serialize_100`, and `qmd_find_binary`; the
+absolute values remain tiny and outside the touched meeting-capture path. Live
+RSS stability remains blocked on TCC approval.
 
 ## Latest Permission Preflight
 
@@ -179,7 +179,7 @@ Debug-bundle TCC rows are stale cdhash-scoped rows from an older signed build.
 Diagnostic evidence:
 `.codex/perf/bugbook-meeting-soak-allocations-20260518T133510Z.md`.
 
-Latest diagnostics:
+Earlier stale-row diagnostics from that preflight:
 
 - Current CDHash:
   `511467b3f88c1a0b4ad5a214fc465e5cfed95c6a`
@@ -221,14 +221,14 @@ Recommended short permission-prompt refresh:
 scripts/run-daily-driver-soak.sh prompt
 ```
 
-Latest standard prompt refresh ran after `scripts/run-daily-driver-soak.sh
-reset-tcc`, with the wrapper's 600-second prompt/attach window. It timed out
-waiting for `liveTranscriptionChunk` after Bugbook emitted both
-`meetingMicPermissionPrompt` and `meetingMicPermissionRequestSubmitted`, which
-confirms the app submitted the AVFoundation microphone permission request. No
-grant/deny callback marker arrived before timeout, and macOS still did not
-create any TCC rows. Diagnostic evidence:
-`.codex/perf/bugbook-meeting-soak-allocations-20260518T135656Z.md`.
+Latest prompt diagnostics now show the capture path reaches ScreenCaptureKit
+first, then fails with `SCStreamErrorDomain -3801`, which the macOS SDK defines
+as `SCStreamErrorUserDeclined`. Bugbook then falls back to the legacy microphone
+permission path, submits the AVFAudio app-level record-permission request, and
+times out without a grant/deny callback. macOS still does not create any
+microphone, screen, or system-audio TCC rows for the Debug bundle. Diagnostic
+evidence:
+`.codex/perf/bugbook-meeting-soak-allocations-20260518T143031Z.md`.
 
 Observed markers:
 
@@ -237,13 +237,24 @@ Observed markers:
 - `profileMeetingRequested`
 - `appInitialLifecycleComplete`
 - `profileMeetingCreated`
+- `profileMeetingAutoStartDelay`
+- `profileMeetingAutoStartDelayComplete`
+- `meetingScreenCaptureKitAudioCaptureRequestedWithMic`
+- `meetingScreenCaptureKitAudioCaptureFailedWithMic`
+- `meetingScreenCaptureKitAudioCaptureFailure_com_apple_ScreenCaptureKit_SCStreamErrorDomain__3801`
 - `meetingMicPermissionPrompt`
 - `meetingMicPermissionRequestSubmitted`
+- `meetingMicPermissionRequestAPIAVAudioApplication`
 - `meetingNotePersist`
+- `meetingMicPermissionTimedOut`
 
 The diagnostic TCC query still returned no microphone/screen/system-audio rows.
-The standard prompt run sampled RSS from 110.1 MiB down to 69.2 MiB, with a
-110.5 MiB peak, but it does not cover the 60-minute live capture requirement.
+The latest short prompt run was diagnostic only and does not cover the 60-minute
+live capture requirement. Visual inspection of macOS Privacy & Security showed
+Bugbook is still not listed automatically in Microphone or Screen & System Audio
+Recording; the Screen & System Audio pane exposes an Add button that can add the
+Debug app manually, but changing that OS security setting requires explicit user
+approval.
 The harness
 now defaults `BUGBOOK_PROFILE_ALLOW_PERMISSION_PROMPT=1` runs to a 180-second
 macOS prompt window and 240-second first-marker wait when no explicit attach
@@ -313,7 +324,7 @@ commit the completed 65-minute live-soak evidence after privacy approval.
 
 Latest observed results:
 
-- `swift test`: 502 tests passed, 0 failures; refreshed `Tests/BugbookTests/perf_baseline.tsv` at 2026-05-18T13:03Z. The hard daily-driver benchmarks passed; the comparison flagged only the relative `transcript_finalize_60min_segments` change from about 1.9 ms to 2.3 ms, still far below any user-visible meeting finalization risk.
+- `swift test`: 507 tests passed, 0 failures; refreshed `Tests/BugbookTests/perf_baseline.tsv` at 2026-05-18T14:33Z. The hard daily-driver benchmarks passed; the comparison flagged relative changes in `markdown_serialize_500`, `row_serialize_100`, and `qmd_find_binary`, all outside the touched meeting-capture path and still tiny in absolute terms.
 - Targeted local-file daily-driver regression: `swift test --filter 'FirstPartyFileSystemServiceTests|MeetingNoteServiceTests|MeetingFrontmatterTests|MeetingTranscriptMarkdownTests|MeetingTranscriptStoreTests|EditorSaveWorkerTests|FileTreeFilterTests|CodeSyntaxHighlighterTests'` passed, 34 tests, 0 failures after re-checking first-party Daily Notes/Meetings hubs, friendly markdown files, title-to-filename synchronization, meeting frontmatter/finalization, transcript copy/sidecar storage, off-main editor saves, fuzzy file filtering, and code highlighting
 - Targeted meeting-capture logic regression: `swift test --filter 'TranscriptionServiceTests|MeetingRecordingNoticeTests|MeetingsViewModelTests|MeetingSummaryServiceTests'` passed, 28 tests, 0 failures after re-checking ScreenCaptureKit source mapping/configuration, raw mic/system audio marker emission, bounded live-transcription dispatch, long-session stop/finalize transcript assembly, privacy notice routing, floating-pill meeting navigation, symlinked meeting-root scanning, and retained meeting-summary generation/timeouts
 - Targeted parser/editor/meeting-summary regression: `swift test --filter 'MeetingSummaryServiceTests|MeetingTranscriptMarkdownTests|BlockDocumentTests|BugbookFeatureGateTests'` passed, 62 tests, 0 failures
@@ -339,8 +350,8 @@ Latest observed results:
 - Targeted meeting persist-marker lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/Meetings/MeetingPageView.swift Sources/Bugbook/Services/MeetingTranscriptStore.swift` exit 0, 0 violations
 - Targeted meeting note persist-marker lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/ContentView.swift Sources/Bugbook/Views/Meetings/MeetingPageView.swift Sources/Bugbook/Services/MeetingTranscriptStore.swift` exit 0, 0 violations
 - Targeted raw audio capture and ScreenCaptureKit helper lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Services/SystemAudioCapture.swift Tests/BugbookTests/TranscriptionServiceTests.swift` exit 0, 0 violations
-- Targeted microphone-permission marker lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Services/TranscriptionService.swift` exit 0, 0 violations
-- Targeted microphone/transcription regression: `swift test --filter TranscriptionServiceTests` passed, 17 tests, 0 failures after adding request-submitted and grant/deny profile markers around `AVCaptureDevice.requestAccess`
+- Targeted microphone/ScreenCaptureKit marker lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Services/TranscriptionService.swift Sources/Bugbook/Views/Meetings/MeetingPageView.swift Tests/BugbookTests/TranscriptionServiceTests.swift` exit 0, 0 violations
+- Targeted microphone/transcription regression: `swift test --filter TranscriptionServiceTests` passed, 22 tests, 0 failures after adding delayed profile auto-start, AVFAudio record-permission markers, ScreenCaptureKit request/success/failure markers, and macOS 15+ ScreenCaptureKit-microphone routing coverage
 - Targeted first-party database lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/ContentView.swift Sources/Bugbook/Services/FirstPartyDatabaseIndexWorker.swift` exit 0, 0 violations
 - Targeted database-view lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Views/Database/DatabaseFullPageView.swift Sources/Bugbook/Views/Database/DatabaseInlineEmbedView.swift Sources/Bugbook/Views/Database/DatabaseSettingsPopover.swift Sources/Bugbook/Views/Database/DatabaseRowViewModel.swift Sources/Bugbook/Views/Database/KanbanView.swift Sources/Bugbook/Views/Database/PropertyEditorView.swift Sources/Bugbook/Views/Database/PropertyOptionRows.swift` exit 0, 0 violations
 - Targeted file-system branding lint: `swiftlint lint --config .swiftlint.yml Sources/Bugbook/Services/FileSystemService.swift Tests/BugbookTests/FileSystemServiceTests.swift` exit 0, 3 warning-only pre-existing file/type-size violations, 0 serious
@@ -356,10 +367,10 @@ Latest observed results:
 - `git diff --check`: passed
 - Stale evidence and touched-file trailing-whitespace scans: passed
 - `zsh -n scripts/profile-meeting-soak.sh` and `zsh -n scripts/run-daily-driver-soak.sh`: passed after tightening the interactive permission-prompt timeout defaults, adding the explicit privacy-pane opener flag, adding the optional TCC approval wait mode, adding the opt-in system-audio stimulus loop, enforcing a finalization buffer before trace end, making enforced runs fail on missing or over-target Instruments/RSS samples, adding the one-command required soak wrapper with `preflight` and `prompt` modes, and rejecting stale cdhash-scoped TCC rows for older Debug builds
-- Wrapper preflight check: `scripts/run-daily-driver-soak.sh preflight` builds with the wrapper defaults, keeps `Open privacy settings: 0`, writes the latest preflight evidence, and fails on missing, denied, or stale TCC rows
-- Direct TCC recheck without rebuild: queried `~/Library/Application Support/com.apple.TCC/TCC.db`; `com.maxforsey.Dahso.dev` has old Microphone and AudioCapture rows with `auth_value=2`, but the wrapper marks both as stale because their cdhash-scoped `csreq` does not match the current Debug app CDHash `511467B3F88C1A0B4AD5A214FC465E5CFED95C6A`
+- Wrapper preflight check: `scripts/run-daily-driver-soak.sh preflight` builds with the wrapper defaults, keeps `Open privacy settings: 0`, writes preflight evidence, and fails on missing, denied, or stale TCC rows
+- Direct TCC recheck without rebuild: queried `~/Library/Application Support/com.apple.TCC/TCC.db`; after the latest reset and prompt attempts, `com.maxforsey.Dahso.dev` has no Microphone, AudioCapture, or ScreenCapture rows for the current Debug app CDHash `66573431DCF618765A1154C7FF705F0C98A9F343`
 - Wrapper help/usage check: `scripts/run-daily-driver-soak.sh --help` exits 0 and documents `soak`, `preflight`, `prompt`, `status`, `reset-tcc`, and `verify-latest`; invalid modes exit 2 with the same usage text
-- Wrapper privacy status check: `scripts/run-daily-driver-soak.sh status` does not build, launch Bugbook, or open System Settings; it reports the current Debug bundle path, bundle ID `com.maxforsey.Dahso.dev`, CDHash `511467B3F88C1A0B4AD5A214FC465E5CFED95C6A`, current TCC rows, and whether cdhash-scoped rows are current or stale; it exits nonzero while Microphone or Screen/System Audio authorization is missing, denied, or stale
+- Wrapper privacy status check: `scripts/run-daily-driver-soak.sh status` does not build, launch Bugbook, or open System Settings; it reports the current Debug bundle path, bundle ID `com.maxforsey.Dahso.dev`, CDHash `66573431DCF618765A1154C7FF705F0C98A9F343`, current TCC rows, and whether cdhash-scoped rows are current or stale; it exits nonzero while Microphone or Screen/System Audio authorization is missing, denied, or stale
 - Wrapper TCC reset command: `scripts/run-daily-driver-soak.sh reset-tcc` resolves the current Debug bundle ID and runs the bundle-specific `tccutil reset` calls for Microphone, AudioCapture, and ScreenCapture, then prints the same status output without building or launching Bugbook; with `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1`, it prints the reset commands without executing them; latest real reset cleared the stale `com.maxforsey.Dahso.dev` rows and status now reports no rows
 - Wrapper dry-run support: `BUGBOOK_DAILY_DRIVER_SOAK_DRY_RUN=1 scripts/run-daily-driver-soak.sh [mode]` prints shell-quoted `export` lines plus the delegated command without building, launching Bugbook, or opening System Settings; dry-run verified `soak` delegates to `65m Allocations` with `AUTO_STOP_RECORDING_AFTER_SECONDS=3600` and privacy panes enabled, `preflight` delegates to `10s Allocations` with `PREFLIGHT_ONLY=1` and privacy panes disabled, and `prompt` delegates to `1m Allocations` with a 30-second auto-stop and 10-second finalization buffer
 - Completed-soak evidence verifier: `scripts/verify-daily-driver-soak-evidence.sh` prints the selected evidence path, then checks the generated evidence note for the required 65-minute Allocations run shape, 60-minute auto-stop, live-transcription attach, required meeting markers, signpost validation, xctrace success, app-process survival after trace, enforced Instruments/RSS targets, and absence of failure markers; it accepts `latest`/`--latest` to pick the newest `.codex/perf/bugbook-meeting-soak-allocations-*.md` note, and `scripts/run-daily-driver-soak.sh verify-latest` delegates to that path; it passes a synthetic complete 65-minute evidence note including `App process alive after trace: PASS` and exits nonzero on the current short blocked prompt artifact, as expected
