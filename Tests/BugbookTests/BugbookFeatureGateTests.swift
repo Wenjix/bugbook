@@ -13,8 +13,8 @@ final class BugbookFeatureGateTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDefaultModeShowsOnlyMeetingAndNotesSidebarItems() {
-        XCTAssertEqual(ShellNavigationItems.visible.map(\.id), ["meeting", "notes"])
+    func testDefaultModeShowsOnlyMeetingSidebarItem() {
+        XCTAssertEqual(ShellNavigationItems.visible.map(\.id), ["meeting"])
     }
 
     func testEnvironmentOverrideCanEnableLegacyPanes() {

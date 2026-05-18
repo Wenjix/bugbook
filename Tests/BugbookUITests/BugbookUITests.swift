@@ -111,11 +111,11 @@ final class BugbookUITests: XCTestCase {
         )
     }
 
-    func testDefaultModeNavigationExposesOnlyMeetingAndNotes() {
+    func testDefaultModeNavigationExposesOnlyMeeting() {
         launchApp()
 
         XCTAssertTrue(app.buttons["shell-nav-meeting"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["shell-nav-notes"].exists)
+        XCTAssertFalse(app.buttons["shell-nav-notes"].exists)
         XCTAssertFalse(app.buttons["shell-nav-home"].exists)
         XCTAssertFalse(app.buttons["shell-nav-search"].exists)
         XCTAssertFalse(app.buttons["shell-nav-calendar"].exists)

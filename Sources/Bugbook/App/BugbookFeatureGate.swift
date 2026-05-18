@@ -183,7 +183,7 @@ enum BugbookFeatureGate {
 
     static func allowsSidebarItem(id: String) -> Bool {
         guard !legacyPanesEnabled else { return true }
-        return id == "meeting" || id == "notes"
+        return id == "meeting"
     }
 }
 

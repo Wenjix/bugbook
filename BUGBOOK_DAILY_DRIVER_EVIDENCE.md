@@ -89,7 +89,7 @@ Approval path:
 | --- | --- | --- |
 | Feature-flag Home, Search, Calendar, Terminal, Browser, and Mail off by default without deleting code | `BugbookFeatureGate`, `ContentView` lazy `LegacyPaneServices`, `BugbookFeatureGateTests` | Verified |
 | Hidden panes must not load, initialize, or consume runtime resources by default | `shouldInitializeLegacyServices`, `shouldScanLegacyWorkspaces`, `shouldRegisterSearchIndexAtLaunch`, AppState legacy refresh no-op tests | Verified |
-| Sidebar shows only Meeting and Notes | `ShellNavigationItems.visible`, `BugbookFeatureGate.allowsSidebarItem`, `BugbookFeatureGateTests` | Verified |
+| Sidebar shows Meeting as the only fixed destination, with Notes always available through the file tree | `ShellNavigationItems.visible`, `BugbookFeatureGate.allowsSidebarItem`, `BugbookFeatureGateTests`, `BugbookUITests` | Verified |
 | Notes pane uses the block editor and saves local `.md` files on every edit | `BlockEditorView`, `ContentView.scheduleSave`, `EditorSaveWorker`, `EditorSaveWorkerTests` | Verified |
 | Premium markdown coverage: headings, lists, tables, code, callouts, wikilinks, embedded images, footnotes | `MarkdownBlockParser`, `CodeSyntaxHighlighter`, `AsyncLocalImageView`, `FootnoteBlockView`, `BlockDocumentTests`, `CodeSyntaxHighlighterTests` | Verified by unit tests |
 | Notes file tree supports fast switching and fuzzy filename filtering | `FileTreeFilter`, `ShellNavigationViews`, `FileTreeFilterTests`, `PerformanceTests` | Verified |
@@ -108,7 +108,7 @@ Approval path:
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| Default sidebar shows only Meeting and Notes | `BugbookFeatureGate.allowsSidebarItem`, `paneLauncherBuiltInPanes`, `BugbookFeatureGateTests` | Verified |
+| Default sidebar shows only Meeting; Notes stays available through the left file tree and daily-note command | `BugbookFeatureGate.allowsSidebarItem`, `ShellNavigationItems.visible`, `BugbookFeatureGateTests`, `BugbookUITests` | Verified |
 | Home, Search, Calendar, Terminal, Browser, Mail remain behind flag and do not initialize by default | `shouldInitializeLegacyServices`, `shouldScanLegacyWorkspaces`, `shouldRegisterSearchIndexAtLaunch`, lazy `LegacyPaneServices`, notification and shortcut catalog guards, `BugbookFeatureGateTests` | Verified |
 | Search pane is hidden while qmd/search infrastructure remains available for note finding | `ShellNavigationItems.visible`, `CommandPaletteCreateKind.availableCases`, `SearchSettingsView`, `shouldRegisterSearchIndexAtLaunch` | Verified |
 | Search settings remain available without legacy Search pane startup work | `SearchSettingsView` keeps qmd configuration available on demand; default mode keeps `shouldRegisterSearchIndexAtLaunch` false and no force-unwrapped qmd repository URL remains | Verified |

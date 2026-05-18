@@ -20,7 +20,7 @@ Bugbook keeps plain `.md` files on disk as the source of truth. The desktop app 
 
 ## Pane system
 
-The default desktop workspace exposes only Notes and Meetings as first-class panes. Panes can be split, dragged, swapped, and closed; tabs let you save and switch between layouts.
+The default desktop workspace keeps Notes available through the left file tree and exposes Meeting as the only fixed sidebar destination. Panes can be split, dragged, swapped, and closed; tabs let you save and switch between layouts.
 
 A launcher (Cmd+K or the chrome bar split button) searches pages, databases, and the enabled built-in panes, then lets you open them in place, split right, split down, or in a new tab.
 
