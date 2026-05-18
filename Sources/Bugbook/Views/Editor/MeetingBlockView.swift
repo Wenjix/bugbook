@@ -426,8 +426,11 @@ private extension MeetingBlockView {
                     let entries = !block.transcriptEntries.isEmpty
                         ? block.transcriptEntries
                         : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
+                    let readableEntries = entries
+                        .map(MeetingTranscriptFormatter.readableText)
+                        .filter { !$0.isEmpty }
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(entries.joined(separator: "\n\n"), forType: .string)
+                    NSPasteboard.general.setString(readableEntries.joined(separator: "\n\n"), forType: .string)
                     copiedTranscript = true
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(2))
@@ -505,7 +508,10 @@ private extension MeetingBlockView {
                         let rawEntries = !block.transcriptEntries.isEmpty
                             ? block.transcriptEntries
                             : block.meetingTranscript.components(separatedBy: "\n").filter { !$0.isEmpty }
-                        let allEntries = rawEntries.flatMap { splitTranscriptEntry($0) }
+                        let allEntries = rawEntries
+                            .map(MeetingTranscriptFormatter.readableText)
+                            .filter { !$0.isEmpty }
+                            .flatMap { splitTranscriptEntry($0) }
                         let entries = transcriptSearch.isEmpty
                             ? allEntries
                             : allEntries.filter { $0.localizedCaseInsensitiveContains(transcriptSearch) }
@@ -915,7 +921,7 @@ struct TranscriptBubbleView: View {
     private func splitIntoUtterances(_ text: String) -> [String] {
         guard !text.isEmpty else { return [] }
         let paragraphs = text.components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { MeetingTranscriptFormatter.readableText($0) }
             .filter { !$0.isEmpty }
         if paragraphs.count > 1 {
             return paragraphs.flatMap { splitParagraphIntoSentenceGroups($0) }

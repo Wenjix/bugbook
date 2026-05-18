@@ -89,10 +89,10 @@ final class AttributedStringConverterTests: XCTestCase {
 // MARK: - Live Transcription Audio Source Tests
 
 final class LiveTranscriptionAudioSourceTests: XCTestCase {
-    func testTranscriptLabelsDistinguishMicAndSystemAudio() {
+    func testTranscriptLabelsOnlyMarkSystemAudio() {
         XCTAssertEqual(
             LiveTranscriptionAudioSource.microphone.labeledTranscript(" hello "),
-            "Me: hello"
+            "hello"
         )
         XCTAssertEqual(
             LiveTranscriptionAudioSource.system.labeledTranscript("remote voice"),

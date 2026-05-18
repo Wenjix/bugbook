@@ -16,7 +16,7 @@ final class FloatingRecordingPillPanel: NSPanel {
         self.hostingView = NSHostingView(rootView: RecordingPillView())
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 140, height: 30),
+            contentRect: NSRect(x: 0, y: 0, width: 178, height: 42),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -43,7 +43,11 @@ final class FloatingRecordingPillPanel: NSPanel {
         )
 
         // Re-evaluate size and position each show (handles display changes)
-        let size = hostingView.fittingSize
+        let fittingSize = hostingView.fittingSize
+        let size = NSSize(
+            width: max(fittingSize.width, 178),
+            height: max(fittingSize.height, 42)
+        )
         setContentSize(size)
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
@@ -119,6 +123,9 @@ private struct DurationLabel: View {
             Text(String(format: "%d:%02d", minutes, seconds))
                 .font(.system(size: 11, weight: .medium).monospacedDigit())
                 .foregroundStyle(Color.white.opacity(0.85))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 40, alignment: .trailing)
         }
     }
 }

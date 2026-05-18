@@ -33,9 +33,20 @@ struct MeetingTranscript: Codable, Equatable {
 }
 
 enum MeetingTranscriptFormatter {
+    static func readableText(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["Me:", "Mic:"] where trimmed.hasPrefix(prefix) {
+            return String(trimmed.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return trimmed
+    }
+
     static func copyText(entries: [MeetingTranscriptEntry], volatileText: String = "") -> String {
-        var lines = entries.map(\.text)
-        let trimmedVolatile = volatileText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var lines = entries
+            .map { readableText($0.text) }
+            .filter { !$0.isEmpty }
+        let trimmedVolatile = readableText(volatileText)
         if !trimmedVolatile.isEmpty {
             lines.append(trimmedVolatile)
         }

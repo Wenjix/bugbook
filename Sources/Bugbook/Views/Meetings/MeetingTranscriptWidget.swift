@@ -11,7 +11,9 @@ struct MeetingTranscriptWidget: View {
     private var filteredEntries: [MeetingTranscriptEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return entries }
-        return entries.filter { $0.text.lowercased().contains(query) }
+        return entries.filter {
+            MeetingTranscriptFormatter.readableText($0.text).lowercased().contains(query)
+        }
     }
 
     var body: some View {
@@ -143,7 +145,7 @@ struct MeetingTranscriptWidget: View {
         let isSelf = entry.speaker == "self"
         return HStack {
             if isSelf { Spacer(minLength: 40) }
-            Text(entry.text)
+            Text(MeetingTranscriptFormatter.readableText(entry.text))
                 .font(.system(size: Typography.bodySmall))
                 .foregroundStyle(isVolatile ? .tertiary : .primary)
                 .padding(.horizontal, 12)

@@ -26,7 +26,7 @@ enum LiveTranscriptionAudioSource: Sendable {
 
     var transcriptLabel: String {
         switch self {
-        case .microphone: return "Me"
+        case .microphone: return ""
         case .system: return "Other"
         }
     }
@@ -34,6 +34,7 @@ enum LiveTranscriptionAudioSource: Sendable {
     func labeledTranscript(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
+        guard !transcriptLabel.isEmpty else { return trimmed }
         return "\(transcriptLabel): \(trimmed)"
     }
 }

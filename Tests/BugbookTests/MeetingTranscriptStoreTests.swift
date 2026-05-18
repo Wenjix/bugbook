@@ -4,31 +4,31 @@ import XCTest
 final class MeetingTranscriptStoreTests: XCTestCase {
     func testFormatterBuildsCopyTextFromEntries() {
         let entries = [
-            MeetingTranscriptEntry(text: "Mic: first note", timestamp: 1, speaker: "self"),
+            MeetingTranscriptEntry(text: "Me: first note", timestamp: 1, speaker: "self"),
             MeetingTranscriptEntry(text: "System: second note", timestamp: 2, speaker: "other")
         ]
 
         XCTAssertEqual(
             MeetingTranscriptFormatter.copyText(entries: entries),
-            "Mic: first note\nSystem: second note"
+            "first note\nSystem: second note"
         )
     }
 
     func testFormatterAppendsTrimmedVolatileText() {
         let entries = [
-            MeetingTranscriptEntry(text: "Mic: confirmed", timestamp: 1, speaker: "self")
+            MeetingTranscriptEntry(text: "confirmed", timestamp: 1, speaker: "self")
         ]
 
         XCTAssertEqual(
-            MeetingTranscriptFormatter.copyText(entries: entries, volatileText: "\nSystem: in progress\n"),
-            "Mic: confirmed\nSystem: in progress"
+            MeetingTranscriptFormatter.copyText(entries: entries, volatileText: "\nMe: in progress\n"),
+            "confirmed\nin progress"
         )
     }
 
     func testFormatterAllowsCopyingVolatileTextWithoutEntries() {
         XCTAssertEqual(
-            MeetingTranscriptFormatter.copyText(entries: [], volatileText: "Mic: live words"),
-            "Mic: live words"
+            MeetingTranscriptFormatter.copyText(entries: [], volatileText: "Me: live words"),
+            "live words"
         )
     }
 
