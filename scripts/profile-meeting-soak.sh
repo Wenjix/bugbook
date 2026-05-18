@@ -592,7 +592,7 @@ append_permission_diagnostics() {
     related_tcc_rows="$(sqlite3 "$tcc_db" "
       select client || char(9) || service || char(9) || auth_value || char(9) || auth_reason || char(9) || last_modified || char(9) || hex(csreq)
       from access
-      where client in ('com.maxforsey.Bugbook', 'com.maxforsey.Bugbook.dev')
+      where client in ('com.maxforsey.Bugbook', 'com.maxforsey.Bugbook.dev', 'com.maxforsey.Dahso.dev')
         and service in ('kTCCServiceMicrophone', 'kTCCServiceAudioCapture', 'kTCCServiceScreenCapture')
       order by client, service;
     " 2>/dev/null || true)"
@@ -682,7 +682,7 @@ tcc_rows_for_current_bundle() {
     return
   fi
   sqlite3 "$tcc_db" "
-    select service || char(9) || auth_value
+    select service || char(9) || auth_value || char(9) || hex(csreq)
     from access
     where client = '$bundle_id'
       and service in ('kTCCServiceMicrophone', 'kTCCServiceAudioCapture', 'kTCCServiceScreenCapture')
@@ -690,11 +690,26 @@ tcc_rows_for_current_bundle() {
   " 2>/dev/null || true
 }
 
+current_app_cdhash() {
+  if [[ -d "$APP_PATH" ]]; then
+    codesign -dv --verbose=4 "$APP_PATH" 2>&1 | awk -F= '/^CDHash=/ { value = toupper($2) } END { print value }'
+  fi
+}
+
 has_authorized_tcc_row() {
   local rows="$1"
   local service="$2"
-  awk -F '\t' -v service="$service" '
-    $1 == service && $2 == "2" { found = 1 }
+  local cdhash
+  cdhash="$(current_app_cdhash)"
+  awk -F '\t' -v service="$service" -v cdhash="$cdhash" '
+    function is_cdhash_scoped(csreq) {
+      return length(csreq) == 80 && substr(csreq, 1, 40) == "FADE0C0000000028000000010000000800000014"
+    }
+    $1 == service && $2 == "2" {
+      if ($3 == "" || !is_cdhash_scoped($3) || (cdhash != "" && index(toupper($3), cdhash) > 0)) {
+        found = 1
+      }
+    }
     END { exit found ? 0 : 1 }
   ' <<< "$rows"
 }
@@ -721,6 +736,15 @@ wait_for_privacy_approval_if_requested() {
       echo "No current-bundle TCC rows yet; preflight cannot wait for approval before Bugbook creates the permission prompt/list entry."
     else
       echo "No current-bundle TCC rows yet; launching Bugbook so macOS can create the permission prompt/list entry."
+    fi
+    return
+  fi
+
+  if ! required_tcc_approval_is_present; then
+    if is_truthy "$PREFLIGHT_ONLY"; then
+      echo "Current-bundle TCC rows are missing, denied, or stale for this signed build."
+    else
+      echo "Current-bundle TCC rows are missing, denied, or stale; launching Bugbook so macOS can create or refresh the permission prompt/list entry."
     fi
     return
   fi

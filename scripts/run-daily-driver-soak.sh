@@ -77,26 +77,46 @@ privacy_bundle_id() {
     bundle_id="$(plutil -extract CFBundleIdentifier raw "$app_path/Contents/Info.plist" 2>/dev/null || true)"
   fi
   if [[ -z "$bundle_id" ]]; then
-    bundle_id="com.maxforsey.Bugbook.dev"
+    bundle_id="com.maxforsey.Dahso.dev"
   fi
   echo "$bundle_id"
 }
 
+privacy_cdhash() {
+  local app_path="$1"
+  if [[ -d "$app_path" ]]; then
+    codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^CDHash=/ { value = toupper($2) } END { print value }'
+  fi
+}
+
+has_current_authorized_tcc_row() {
+  local rows="$1"
+  local service="$2"
+  local cdhash="${3:u}"
+  awk -F '\t' -v service="$service" -v cdhash="$cdhash" '
+    function is_cdhash_scoped(csreq) {
+      return length(csreq) == 80 && substr(csreq, 1, 40) == "FADE0C0000000028000000010000000800000014"
+    }
+    $1 == service && $2 == "2" {
+      if ($5 == "" || !is_cdhash_scoped($5) || (cdhash != "" && index(toupper($5), cdhash) > 0)) {
+        found = 1
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' <<< "$rows"
+}
+
 print_privacy_status() {
-  local app_path bundle_id cdhash tcc_db rows microphone_status system_audio_status
+  local app_path bundle_id cdhash tcc_db rows related_rows microphone_status system_audio_status
   app_path="$(privacy_app_path)"
   bundle_id="$(privacy_bundle_id "$app_path")"
-
-  cdhash=""
-  if [[ -d "$app_path" ]]; then
-    cdhash="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^CDHash=/ { value = $2 } END { print value }')"
-  fi
+  cdhash="$(privacy_cdhash "$app_path")"
 
   tcc_db="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
   rows=""
   if [[ -r "$tcc_db" ]]; then
     rows="$(sqlite3 "$tcc_db" "
-      select service || char(9) || auth_value || char(9) || auth_reason || char(9) || last_modified
+      select service || char(9) || auth_value || char(9) || auth_reason || char(9) || last_modified || char(9) || hex(csreq)
       from access
       where client = '$bundle_id'
         and service in ('kTCCServiceMicrophone', 'kTCCServiceAudioCapture', 'kTCCServiceScreenCapture')
@@ -104,13 +124,13 @@ print_privacy_status() {
     " 2>/dev/null || true)"
   fi
 
-  if awk -F '\t' '$1 == "kTCCServiceMicrophone" && $2 == "2" { found = 1 } END { exit found ? 0 : 1 }' <<< "$rows"; then
+  if has_current_authorized_tcc_row "$rows" "kTCCServiceMicrophone" "$cdhash"; then
     microphone_status="PASS"
   else
     microphone_status="FAIL"
   fi
-  if awk -F '\t' '$1 == "kTCCServiceAudioCapture" && $2 == "2" { found = 1 } END { exit found ? 0 : 1 }' <<< "$rows" ||
-     awk -F '\t' '$1 == "kTCCServiceScreenCapture" && $2 == "2" { found = 1 } END { exit found ? 0 : 1 }' <<< "$rows"; then
+  if has_current_authorized_tcc_row "$rows" "kTCCServiceAudioCapture" "$cdhash" ||
+     has_current_authorized_tcc_row "$rows" "kTCCServiceScreenCapture" "$cdhash"; then
     system_audio_status="PASS"
   else
     system_audio_status="FAIL"
@@ -124,9 +144,32 @@ print_privacy_status() {
   echo "- Screen/System Audio authorization: $system_audio_status"
   echo "- TCC rows:"
   if [[ -n "$rows" ]]; then
-    printf '%s\n' "$rows" | awk -F '\t' '{ printf "  - %s auth_value=%s auth_reason=%s last_modified=%s\n", $1, $2, $3, $4 }'
+    printf '%s\n' "$rows" | awk -F '\t' -v cdhash="$cdhash" '
+      function is_cdhash_scoped(csreq) {
+        return length(csreq) == 80 && substr(csreq, 1, 40) == "FADE0C0000000028000000010000000800000014"
+      }
+      {
+        scope = "unscoped"
+        if (is_cdhash_scoped($5)) {
+          scope = (cdhash != "" && index(toupper($5), cdhash) > 0) ? "current-cdhash" : "stale-cdhash"
+        }
+        printf "  - %s auth_value=%s auth_reason=%s last_modified=%s csreq=%s\n", $1, $2, $3, $4, scope
+      }'
   else
     echo "  - none"
+  fi
+  if [[ -r "$tcc_db" ]]; then
+    related_rows="$(sqlite3 "$tcc_db" "
+      select client || char(9) || service || char(9) || auth_value || char(9) || auth_reason || char(9) || last_modified
+      from access
+      where client in ('com.maxforsey.Dahso.dev', 'com.maxforsey.Bugbook.dev', 'com.maxforsey.Bugbook')
+        and service in ('kTCCServiceMicrophone', 'kTCCServiceAudioCapture', 'kTCCServiceScreenCapture')
+      order by client, service;
+    " 2>/dev/null || true)"
+    if [[ -n "$related_rows" ]]; then
+      echo "- Related Bugbook/Dahso TCC rows:"
+      printf '%s\n' "$related_rows" | awk -F '\t' '{ printf "  - %s %s auth_value=%s auth_reason=%s last_modified=%s\n", $1, $2, $3, $4, $5 }'
+    fi
   fi
 
   if [[ "$microphone_status" == "PASS" && "$system_audio_status" == "PASS" ]]; then

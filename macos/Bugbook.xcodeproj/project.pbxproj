@@ -2109,7 +2109,7 @@
 					"-lz",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.Bugbook.dev;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maxforsey.Dahso.dev;
 				PRODUCT_NAME = Bugbook;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = (

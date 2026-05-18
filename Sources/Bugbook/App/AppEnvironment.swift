@@ -7,8 +7,8 @@ enum AppEnvironment {
         #if DEBUG
         return true
         #else
-        // Release builds from the release script use com.bugbook.Bugbook.
-        // Dev/Xcode builds use com.maxforsey.Bugbook.dev.
+        // Release builds use the Bugbook bundle ID.
+        // Dev/Xcode builds keep the legacy Dahso dev bundle ID for local TCC continuity.
         let bundleID = Bundle.main.bundleIdentifier ?? ""
         return bundleID.hasSuffix(".dev")
         #endif
