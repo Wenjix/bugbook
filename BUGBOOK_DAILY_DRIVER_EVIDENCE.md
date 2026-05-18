@@ -10,9 +10,9 @@ directory is ignored and stores local trace artifacts.
 
 Not complete. The code paths and automated checks below are green, but the live
 60-minute meeting soak is blocked until macOS privacy permissions are approved
-for the current app bundle. The foundation implementation and support-doc
-cleanup are committed in `4994142` and `d354e6c`; the remaining commit work is
-the final live-soak evidence after TCC approval.
+for the current app bundle. The foundation implementation and metadata/doc
+cleanup are committed in `4994142`, `d354e6c`, `91869ed`, and `6b21f67`; the
+remaining commit work is the final live-soak evidence after TCC approval.
 
 Current debug bundle ID:
 
@@ -142,7 +142,7 @@ Approval path:
 | Default visible settings code health | Force-unwrap and TODO/FIXME/HACK scans are clean across `GeneralSettingsView`, `AppearanceSettingsView`, `MeetingsSettingsView`, `SearchSettingsView`, and `ShortcutsSettingsView` | Verified |
 | TODO/FIXME hack cleanup in affected paths | `rg -ni "todo|fixme|hack|xxx"` over current Bugbook notes/meetings/database source paths returns no code-comment hacks in the affected implementation paths | Verified |
 | 60-minute live meeting must not drop audio, stall transcription, crash, or grow above 200 MB | Requires `scripts/run-daily-driver-soak.sh` after TCC approval, including raw mic/system audio capture markers plus transcript/persist markers, enforced Instruments/RSS targets, and an app-process-alive check after the trace | Blocked |
-| Small-commit execution evidence and before/after perf data | `Tests/BugbookTests/perf_baseline.tsv`, Xcode build, lint, `BUGBOOK_DAILY_DRIVER_EVIDENCE.md`, `4994142`, `d354e6c`, final live-soak commit | Partial: foundation perf evidence is committed, but final live-soak before/after numbers are still blocked |
+| Small-commit execution evidence and before/after perf data | `Tests/BugbookTests/perf_baseline.tsv`, Xcode build, lint, `BUGBOOK_DAILY_DRIVER_EVIDENCE.md`, `4994142`, `d354e6c`, `91869ed`, `6b21f67`, final live-soak commit | Partial: foundation perf evidence is committed, but final live-soak before/after numbers are still blocked |
 
 ## Performance Baseline
 
@@ -297,8 +297,10 @@ remaining capture blocker is the empty TCC authorization state above. The
 foundation commit `4994142` includes the Bugbook rename/default-mode
 implementation, soak scripts, README updates, and automated performance
 evidence in one buildable slice. The support-doc cleanup landed separately in
-`d354e6c`. The remaining commit-sequencing work is to commit the completed
-65-minute live-soak evidence after privacy approval.
+`d354e6c`, the committed-state evidence correction in `91869ed`, and the
+SwiftPM scheme-name metadata sync in `6b21f67`. The remaining commit-sequencing
+work is to commit the completed 65-minute live-soak evidence after privacy
+approval.
 
 ## Green Verification Commands
 
