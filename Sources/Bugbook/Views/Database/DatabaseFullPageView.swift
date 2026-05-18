@@ -365,51 +365,58 @@ struct DatabaseFullPageView: View {
     ) -> some View {
         let filteredRows = visibleRowsProvider()
         let filteredIds = filteredRows.map(\.id)
-        return ScrollViewReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
-                TableView(
-                    schema: schema,
-                    rows: boundRows,
-                    viewConfig: state.activeView ?? state.defaultViewConfig(),
-                    visibleRowsProvider: visibleRowsProvider,
-                    onOpenRow: { row in openRow(row) },
-                    onSave: { row in state.saveRow(row) },
-                    onDelete: { row in state.deleteRow(row) },
-                    onToggleColumn: { propId in state.toggleColumnVisibility(propId) },
-                    onAddProperty: { type in state.addPropertyFromTable(type: type) },
-                    onRenameProperty: { propId, newName in state.renameProperty(propId, to: newName) },
-                    onDeleteProperty: { propId in state.deleteProperty(propId) },
-                    onChangePropertyType: { propId, newType in state.changePropertyType(propId, to: newType) },
-                    onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
-                    onUpdateSelectOption: { propId, optId, name, color in
-                        state.updateSelectOption(propId, optionId: optId, name: name, color: color)
-                    },
-                    onDeleteSelectOption: { propId, optId in state.deleteSelectOption(propId, optionId: optId) },
-                    onLoadRelationRows: { prop in state.loadRelationRows(for: prop) },
-                    onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
-                    onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
-                    onResolveLookup: { row, prop in state.resolveLookupValue(for: row, property: prop) },
-                    onResolveRollup: { row, prop in state.resolveRollupValue(for: row, property: prop) },
-                    onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
-                    onReorderRows: { draggedId, targetId in
-                        state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
-                    },
-                    onClearSorts: { state.clearSorts() },
-                    onNewRow: { createNewRow() },
-                    onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
-                    onUpdateFormula: { propId, expr in state.updateFormulaExpression(propId, expression: expr) },
-                    calculationResults: state.calculationResults(for: filteredRows),
-                    showVerticalLines: showVerticalLines,
-                    usesInnerScroll: false,
-                    containerWidth: 0,
-                    matchedRowIds: Set(state.findMatchedRowIds),
-                    selectedFindRowId: state.findSelectedRowId
-                )
-                .fixedSize(horizontal: true, vertical: true)
-                .padding(.bottom, 48)
-            }
-            .onChange(of: state.findScrollRequestToken) { _, _ in
-                scrollToSelectedFindRow(using: proxy)
+        return GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView([.horizontal, .vertical]) {
+                    TableView(
+                        schema: schema,
+                        rows: boundRows,
+                        viewConfig: state.activeView ?? state.defaultViewConfig(),
+                        visibleRowsProvider: visibleRowsProvider,
+                        onOpenRow: { row in openRow(row) },
+                        onSave: { row in state.saveRow(row) },
+                        onDelete: { row in state.deleteRow(row) },
+                        onToggleColumn: { propId in state.toggleColumnVisibility(propId) },
+                        onAddProperty: { type in state.addPropertyFromTable(type: type) },
+                        onRenameProperty: { propId, newName in state.renameProperty(propId, to: newName) },
+                        onDeleteProperty: { propId in state.deleteProperty(propId) },
+                        onChangePropertyType: { propId, newType in state.changePropertyType(propId, to: newType) },
+                        onAddSelectOption: { propId, option in state.addSelectOption(propId, option: option) },
+                        onUpdateSelectOption: { propId, optId, name, color in
+                            state.updateSelectOption(propId, optionId: optId, name: name, color: color)
+                        },
+                        onDeleteSelectOption: { propId, optId in state.deleteSelectOption(propId, optionId: optId) },
+                        onLoadRelationRows: { prop in state.loadRelationRows(for: prop) },
+                        onListDatabases: { state.listDatabaseCandidates(workspacePath: workspacePath) },
+                        onSetRelationTarget: { propId, target in state.setRelationTarget(propId, target: target) },
+                        onResolveLookup: { row, prop in state.resolveLookupValue(for: row, property: prop) },
+                        onResolveRollup: { row, prop in state.resolveRollupValue(for: row, property: prop) },
+                        onResizeColumn: { propId, width in state.resizeColumn(propId, to: width) },
+                        onReorderRows: { draggedId, targetId in
+                            state.reorderRows(draggedId: draggedId, before: targetId, visibleRowIds: filteredIds)
+                        },
+                        onClearSorts: { state.clearSorts() },
+                        onNewRow: { createNewRow() },
+                        onSetCalculation: { propId, fn in state.setCalculation(propertyId: propId, function: fn) },
+                        onUpdateFormula: { propId, expr in state.updateFormulaExpression(propId, expression: expr) },
+                        calculationResults: state.calculationResults(for: filteredRows),
+                        showVerticalLines: showVerticalLines,
+                        usesInnerScroll: false,
+                        containerWidth: geometry.size.width,
+                        matchedRowIds: Set(state.findMatchedRowIds),
+                        selectedFindRowId: state.findSelectedRowId
+                    )
+                    .frame(
+                        minWidth: geometry.size.width,
+                        minHeight: geometry.size.height,
+                        alignment: .topLeading
+                    )
+                    .padding(.bottom, 48)
+                }
+                .bugbookCompactScrollIndicators()
+                .onChange(of: state.findScrollRequestToken) { _, _ in
+                    scrollToSelectedFindRow(using: proxy)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

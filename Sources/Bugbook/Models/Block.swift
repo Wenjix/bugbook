@@ -1,6 +1,6 @@
 import Foundation
 
-enum BlockType: Equatable {
+enum BlockType: Equatable, Sendable {
     case paragraph
     case heading
     case bulletListItem
@@ -31,14 +31,14 @@ enum BlockType: Equatable {
 }
 
 /// The lifecycle state of a meeting recording block.
-enum MeetingBlockState: Equatable {
+enum MeetingBlockState: Equatable, Sendable {
     case ready
     case recording
     case processing
     case complete
 }
 
-struct Block: Identifiable, Equatable {
+struct Block: Identifiable, Equatable, Sendable {
     let id: UUID
     var type: BlockType
     var text: String

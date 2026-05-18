@@ -49,15 +49,13 @@ struct HarborSidebarView<ContextualContent: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Top band — sits next to the traffic lights and holds the sidebar toggle.
-            // Leading padding clears the traffic lights so the toggle anchors in the
-            // same spot whether the sidebar is open or closed.
             HStack(spacing: 0) {
-                SidebarToggleButton()
                 Spacer(minLength: 0)
+                SidebarToggleButton()
+                    .padding(.bottom, ShellZoomMetrics.size(2))
             }
-            .padding(.top, ShellZoomMetrics.size(1))
-            .padding(.leading, ShellZoomMetrics.size(78))
-            .padding(.bottom, ShellZoomMetrics.size(8))
+            .frame(height: ShellZoomMetrics.size(36), alignment: .bottom)
+            .padding(.trailing, -ShellZoomMetrics.size(2))
 
             // ── Fixed Zone ──────────────────────────────────
             // Vertical navigation list. Click replaces focused pane; Cmd+click opens new workspace tab.
@@ -79,27 +77,33 @@ struct HarborSidebarView<ContextualContent: View>: View {
             .padding(.horizontal, inset)
             .padding(.bottom, ShellZoomMetrics.size(8))
 
-            // Favorites
-            if !appState.favorites.isEmpty {
-                VStack(alignment: .leading, spacing: ShellZoomMetrics.size(3)) {
-                    ShellSidebarSectionHeaderView(title: "Favorites", isExpanded: $favoritesExpanded)
+            if let dailyNotesEntry {
+                FileTreeItemView(
+                    entry: dailyNotesEntry,
+                    activeFilePath: activeFilePath,
+                    fileSystem: fileSystem,
+                    workspacePath: appState.workspacePath,
+                    onSelectFile: onSelectEntry,
+                    onRefreshTree: onRefreshTree,
+                    isSidebarReference: dailyNotesEntry.isSidebarReference,
+                    expandedFolders: $expandedFolders
+                )
+                .padding(.horizontal, inset)
+                .padding(.bottom, ShellZoomMetrics.size(8))
+            }
 
-                    if favoritesExpanded {
-                        VStack(spacing: ShellZoomMetrics.size(2)) {
-                            ForEach(appState.favorites) { entry in
-                                FileTreeItemView(
-                                    entry: entry,
-                                    activeFilePath: activeFilePath,
-                                    fileSystem: fileSystem,
-                                    workspacePath: appState.workspacePath,
-                                    onSelectFile: onSelectEntry,
-                                    onRefreshTree: onRefreshTree,
-                                    expandedFolders: $expandedFolders
-                                )
-                            }
-                        }
-                    }
-                }
+            // Favorites
+            if !userFavoriteEntries.isEmpty {
+                SidebarFavoritesSectionView(
+                    appState: appState,
+                    fileSystem: fileSystem,
+                    favoriteEntries: userFavoriteEntries,
+                    activeFilePath: activeFilePath,
+                    onSelectEntry: onSelectEntry,
+                    onRefreshTree: onRefreshTree,
+                    isExpanded: $favoritesExpanded,
+                    expandedFolders: $expandedFolders
+                )
                 .padding(.horizontal, inset)
                 .padding(.bottom, ShellZoomMetrics.size(8))
             }
@@ -168,6 +172,207 @@ struct HarborSidebarView<ContextualContent: View>: View {
             // A user-driven collapse only sticks within the same area.
             if !contextualExpanded { contextualExpanded = true }
         }
+    }
+
+    private var userFavoriteEntries: [FileEntry] {
+        var seenPaths = Set<String>()
+        if let dailyNotesEntry {
+            seenPaths.insert(dailyNotesEntry.path)
+        }
+        return appState.favorites.filter { entry in
+            seenPaths.insert(entry.path).inserted
+        }
+    }
+
+    private var dailyNotesEntry: FileEntry? {
+        guard let workspacePath = appState.workspacePath else { return nil }
+        let path = (workspacePath as NSString).appendingPathComponent("Daily Notes/Daily Notes Database")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        return FileEntry(
+            id: "system:\(path)",
+            name: "Daily Notes",
+            path: path,
+            isDirectory: true,
+            kind: .database,
+            icon: "sf:calendar",
+            isSidebarReference: true
+        )
+    }
+}
+
+private struct SidebarFavoritesSectionView: View {
+    @Bindable var appState: AppState
+    var fileSystem: FileSystemService
+    let favoriteEntries: [FileEntry]
+    let activeFilePath: String?
+    let onSelectEntry: (FileEntry) -> Void
+    let onRefreshTree: () -> Void
+    @Binding var isExpanded: Bool
+    @Binding var expandedFolders: Set<String>
+
+    @StateObject private var dropState = DropIndicatorState()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: ShellZoomMetrics.size(3)) {
+            ShellSidebarSectionHeaderView(title: "Favorites", isExpanded: $isExpanded)
+
+            if isExpanded {
+                VStack(spacing: ShellZoomMetrics.size(2)) {
+                    ForEach(Array(favoriteEntries.enumerated()), id: \.element.id) { index, entry in
+                        favoriteRow(entry, index: index)
+                    }
+
+                    favoriteDropZone
+                }
+            }
+        }
+    }
+
+    private func sidebarRow(_ entry: FileEntry) -> some View {
+        FileTreeItemView(
+            entry: entry,
+            activeFilePath: activeFilePath,
+            fileSystem: fileSystem,
+            workspacePath: appState.workspacePath,
+            onSelectFile: onSelectEntry,
+            onRefreshTree: onRefreshTree,
+            isSidebarReference: entry.isSidebarReference,
+            expandedFolders: $expandedFolders
+        )
+    }
+
+    private func favoriteRow(_ entry: FileEntry, index: Int) -> some View {
+        sidebarRow(entry)
+            .overlay(alignment: .top) {
+                dropIndicator(visibleWhen: dropState.mode == .above(index))
+            }
+            .overlay(alignment: .bottom) {
+                dropIndicator(visibleWhen: dropState.mode == .above(index + 1))
+            }
+            .onDrag {
+                dropState.mode = nil
+                return NSItemProvider(object: entry.path as NSString)
+            }
+            .onDrop(of: [.text], delegate: FavoriteSidebarDropDelegate(
+                targetIndex: index,
+                entries: favoriteEntries,
+                workspacePath: appState.workspacePath,
+                fileSystem: fileSystem,
+                dropState: dropState,
+                onDidReorder: refreshFavoritesFromStorage
+            ))
+    }
+
+    private var favoriteDropZone: some View {
+        Color.clear
+            .frame(height: favoriteEntries.isEmpty ? ShellZoomMetrics.size(4) : ShellZoomMetrics.size(12))
+            .overlay(alignment: .top) {
+                dropIndicator(visibleWhen: dropState.mode == .above(favoriteEntries.count))
+            }
+            .onDrop(of: [.text], delegate: FavoriteSidebarDropDelegate(
+                targetIndex: favoriteEntries.count,
+                entries: favoriteEntries,
+                workspacePath: appState.workspacePath,
+                fileSystem: fileSystem,
+                dropState: dropState,
+                onDidReorder: refreshFavoritesFromStorage
+            ))
+    }
+
+    private func dropIndicator(visibleWhen isVisible: Bool) -> some View {
+        Rectangle()
+            .fill(isVisible ? Color.accentColor : Color.clear)
+            .frame(height: 2)
+            .padding(.horizontal, ShellZoomMetrics.size(8))
+    }
+
+    private func refreshFavoritesFromStorage() {
+        guard let workspacePath = appState.workspacePath else { return }
+        appState.favorites = fileSystem.resolveFavorites(
+            for: workspacePath,
+            fileTree: appState.fileTree
+        )
+    }
+}
+
+private struct FavoriteSidebarDropDelegate: DropDelegate {
+    let targetIndex: Int
+    let entries: [FileEntry]
+    let workspacePath: String?
+    let fileSystem: FileSystemService
+    let dropState: DropIndicatorState
+    var onDidReorder: () -> Void
+
+    func dropEntered(info: DropInfo) {
+        updateDropMode(info: info)
+    }
+
+    func dropExited(info: DropInfo) {
+        dropState.mode = nil
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateDropMode(info: info)
+        return DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let insertIndex = dropIndex
+        dropState.mode = nil
+
+        guard let workspacePath,
+              let provider = info.itemProviders(for: [.text]).first else { return false }
+        let visiblePaths = entries.map(\.path)
+
+        provider.loadItem(forTypeIdentifier: "public.text", options: nil) { item, _ in
+            guard let draggedPath = draggedPath(from: item),
+                  visiblePaths.contains(draggedPath) else { return }
+
+            Task { @MainActor in
+                fileSystem.reorderFavoritePath(
+                    draggedPath,
+                    toVisibleIndex: insertIndex,
+                    visiblePaths: visiblePaths,
+                    for: workspacePath
+                )
+                onDidReorder()
+            }
+        }
+
+        return true
+    }
+
+    private var dropIndex: Int {
+        if case .above(let index) = dropState.mode {
+            return index
+        }
+        return targetIndex
+    }
+
+    private func updateDropMode(info: DropInfo) {
+        guard targetIndex < entries.count else {
+            dropState.mode = .above(entries.count)
+            return
+        }
+
+        let rowHeight = ShellZoomMetrics.size(28)
+        let isLowerHalf = info.location.y > rowHeight / 2
+        dropState.mode = .above(targetIndex + (isLowerHalf ? 1 : 0))
+    }
+
+    private func draggedPath(from item: NSSecureCoding?) -> String? {
+        if let data = item as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+        if let string = item as? String {
+            return string
+        }
+        if let string = item as? NSString {
+            return string as String
+        }
+        return nil
     }
 }
 
@@ -465,6 +670,11 @@ struct WorkspaceContextualSidebarView: View {
             }
             .padding(.horizontal, ShellSidebarMetrics.sectionHorizontalPadding)
             .padding(.bottom, ShellZoomMetrics.size(14))
+        }
+        .task(id: appState.workspacePath) {
+            guard appState.workspacePath != nil,
+                  appState.fileTree.isEmpty else { return }
+            onRefreshTree()
         }
     }
 

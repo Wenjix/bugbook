@@ -20,8 +20,7 @@ actor FirstPartyDatabaseIndexWorker {
 
 enum FirstPartyDatabaseFiles {
     static func dailyNotePath(in workspace: String) -> String {
-        let dateString = firstPartyDateString(from: Date())
-        return dailyNotePath(in: workspace, dateString: dateString)
+        dailyNotePath(in: workspace, date: Date())
     }
 
     static func openOrCreateDailyNote(in workspace: String) throws -> String {
@@ -36,12 +35,24 @@ enum FirstPartyDatabaseFiles {
         let companionPath = (workspace as NSString).appendingPathComponent("Daily Notes")
         let databasePath = (companionPath as NSString).appendingPathComponent("Daily Notes Database")
         let dateString = firstPartyDateString(from: date)
-        let rowPath = dailyNotePath(in: workspace, dateString: dateString)
+        let rowPath = dailyNotePath(in: workspace, date: date)
 
         try ensureHubPage(path: hubPath, title: "Daily Notes", databasePath: databasePath)
         let schema = dailyNotesSchema(createdAt: firstPartyISOString(from: date))
         try ensureFirstPartyDatabase(at: databasePath, schema: schema)
-        try ensureDailyNoteRow(at: rowPath, dateString: dateString, date: date, schema: schema)
+        var needsIndexRebuild = try ensureDailyNoteRow(
+            at: rowPath,
+            workspace: workspace,
+            dateString: dateString,
+            date: date,
+            schema: schema
+        )
+        if try normalizeDailyNoteRows(in: databasePath, schema: schema) {
+            needsIndexRebuild = true
+        }
+        if needsIndexRebuild {
+            try FirstPartyDatabaseIndexWorker.rebuildIndex(at: databasePath, schema: schema)
+        }
 
         return FileSystemService.FirstPartyDatabaseLocation(
             hubPath: hubPath,
@@ -175,37 +186,6 @@ enum FirstPartyDatabaseFiles {
         }
 
         return nil
-    }
-
-    private static func dailyNotePath(in workspace: String, dateString: String) -> String {
-        let databasePath = (workspace as NSString)
-            .appendingPathComponent("Daily Notes/Daily Notes Database")
-        return (databasePath as NSString).appendingPathComponent("\(dateString).md")
-    }
-
-    private static func ensureDailyNoteRow(
-        at rowPath: String,
-        dateString: String,
-        date: Date,
-        schema: DatabaseSchema
-    ) throws {
-        guard !FileManager.default.fileExists(atPath: rowPath) else { return }
-        let row = DatabaseRow(
-            id: "daily_\(dateString)",
-            properties: [
-                "name": .text(dateString),
-                "date": .date(dateString)
-            ],
-            body: "# \(dateString)\n\n",
-            createdAt: date,
-            updatedAt: date
-        )
-        try RowSerializer.serializeFlat(row: row, schema: schema)
-            .write(toFile: rowPath, atomically: true, encoding: .utf8)
-        try FirstPartyDatabaseIndexWorker.rebuildIndex(
-            at: (rowPath as NSString).deletingLastPathComponent,
-            schema: schema
-        )
     }
 
     private static func ensureHubPage(path: String, title: String, databasePath: String) throws {
@@ -475,6 +455,7 @@ enum FirstPartyDatabaseFiles {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
@@ -497,5 +478,194 @@ enum FirstPartyDatabaseFiles {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: string)
+    }
+}
+
+private extension FirstPartyDatabaseFiles {
+    static func dailyNotePath(in workspace: String, date: Date) -> String {
+        dailyNotePath(inDatabase: dailyNotesDatabasePath(in: workspace), date: date)
+    }
+
+    static func dailyNotePath(inDatabase databasePath: String, date: Date) -> String {
+        (databasePath as NSString).appendingPathComponent("\(dailyNoteDisplayTitle(from: date)).md")
+    }
+
+    static func legacyDailyNotePath(in workspace: String, dateString: String) -> String {
+        let databasePath = dailyNotesDatabasePath(in: workspace)
+        return (databasePath as NSString).appendingPathComponent("\(dateString).md")
+    }
+
+    static func dailyNotesDatabasePath(in workspace: String) -> String {
+        (workspace as NSString).appendingPathComponent("Daily Notes/Daily Notes Database")
+    }
+
+    static func ensureDailyNoteRow(
+        at rowPath: String,
+        workspace: String,
+        dateString: String,
+        date: Date,
+        schema: DatabaseSchema
+    ) throws -> Bool {
+        let title = dailyNoteDisplayTitle(from: date)
+        var didChange = false
+
+        if !FileManager.default.fileExists(atPath: rowPath) {
+            let legacyPath = legacyDailyNotePath(in: workspace, dateString: dateString)
+            if FileManager.default.fileExists(atPath: legacyPath) {
+                try FileManager.default.moveItem(atPath: legacyPath, toPath: rowPath)
+            } else {
+                let row = DatabaseRow(
+                    id: "daily_\(dateString)",
+                    properties: [
+                        "name": .text(title),
+                        "date": .date(dateString)
+                    ],
+                    body: "# \(title)\n\n",
+                    createdAt: date,
+                    updatedAt: date
+                )
+                try RowSerializer.serializeFlat(row: row, schema: schema)
+                    .write(toFile: rowPath, atomically: true, encoding: .utf8)
+            }
+            didChange = true
+        }
+
+        if try normalizeDailyNoteRow(at: rowPath, title: title, dateString: dateString, schema: schema) {
+            didChange = true
+        }
+
+        return didChange
+    }
+
+    static func normalizeDailyNoteRows(in databasePath: String, schema: DatabaseSchema) throws -> Bool {
+        let fileManager = FileManager.default
+        let filenames = try fileManager.contentsOfDirectory(atPath: databasePath)
+            .filter { $0.hasSuffix(".md") && !$0.hasPrefix("_") }
+
+        var didChange = false
+        for filename in filenames {
+            var rowPath = (databasePath as NSString).appendingPathComponent(filename)
+            guard let date = dailyNoteDate(at: rowPath, schema: schema) else { continue }
+
+            let dateString = firstPartyDateString(from: date)
+            let title = dailyNoteDisplayTitle(from: date)
+            let desiredPath = dailyNotePath(inDatabase: databasePath, date: date)
+            if rowPath != desiredPath && !fileManager.fileExists(atPath: desiredPath) {
+                try fileManager.moveItem(atPath: rowPath, toPath: desiredPath)
+                rowPath = desiredPath
+                didChange = true
+            }
+
+            if try normalizeDailyNoteRow(at: rowPath, title: title, dateString: dateString, schema: schema) {
+                didChange = true
+            }
+        }
+
+        return didChange
+    }
+
+    static func normalizeDailyNoteRow(
+        at rowPath: String,
+        title: String,
+        dateString: String,
+        schema: DatabaseSchema
+    ) throws -> Bool {
+        let content = try String(contentsOfFile: rowPath, encoding: .utf8)
+        guard var row = RowSerializer.parse(content: content, schema: schema) else { return false }
+
+        var didChange = false
+        if row.properties["name"] == .text(dateString) || row.properties["name"] == nil {
+            row.properties["name"] = .text(title)
+            didChange = true
+        }
+        if row.properties["date"] != .date(dateString) {
+            row.properties["date"] = .date(dateString)
+            didChange = true
+        }
+
+        let normalizedBody = normalizedDailyNoteBody(row.body, title: title, dateString: dateString)
+        if normalizedBody != row.body {
+            row.body = normalizedBody
+            didChange = true
+        }
+
+        guard didChange else { return false }
+        try RowSerializer.serializeFlat(row: row, schema: schema)
+            .write(toFile: rowPath, atomically: true, encoding: .utf8)
+        return true
+    }
+
+    static func normalizedDailyNoteBody(_ body: String, title: String, dateString: String) -> String {
+        var lines = body.components(separatedBy: "\n")
+        guard let firstContentIndex = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else {
+            return "# \(title)\n\n"
+        }
+
+        let firstContentLine = lines[firstContentIndex].trimmingCharacters(in: .whitespaces)
+        if firstContentLine == "# \(dateString)" || firstContentLine == "# \(title)" {
+            lines[firstContentIndex] = "# \(title)"
+            return lines.joined(separator: "\n")
+        }
+
+        guard !firstContentLine.hasPrefix("# ") else { return body }
+        let trimmedBody = body.trimmingCharacters(in: .newlines)
+        return "# \(title)\n\n\(trimmedBody)\n"
+    }
+
+    static func dailyNoteDate(at rowPath: String, schema: DatabaseSchema) -> Date? {
+        let baseName = ((rowPath as NSString).lastPathComponent as NSString).deletingPathExtension
+        if let date = firstPartyDate(from: baseName) {
+            return date
+        }
+
+        guard let content = try? String(contentsOfFile: rowPath, encoding: .utf8) else { return nil }
+        if let row = RowSerializer.parse(content: content, schema: schema),
+           case .date(let dateString) = row.properties["date"] {
+            return firstPartyDate(from: dateString) ?? firstPartyISODate(from: dateString)
+        }
+
+        guard let dateString = extractFrontmatterScalar("date", from: content) else { return nil }
+        return firstPartyDate(from: dateString) ?? firstPartyISODate(from: dateString)
+    }
+
+    static func firstPartyDate(from string: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: string)
+    }
+
+    static func dailyNoteDisplayTitle(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "EEEE, MMMM"
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let day = calendar.component(.day, from: date)
+        let year = calendar.component(.year, from: date)
+        return "\(formatter.string(from: date)) \(day)\(ordinalSuffix(for: day)), \(year)"
+    }
+
+    static func ordinalSuffix(for day: Int) -> String {
+        let teenRemainder = day % 100
+        if teenRemainder >= 11 && teenRemainder <= 13 {
+            return "th"
+        }
+
+        switch day % 10 {
+        case 1:
+            return "st"
+        case 2:
+            return "nd"
+        case 3:
+            return "rd"
+        default:
+            return "th"
+        }
     }
 }

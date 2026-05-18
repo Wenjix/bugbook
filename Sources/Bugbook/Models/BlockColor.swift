@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum BlockColor: String, CaseIterable, Equatable {
+enum BlockColor: String, CaseIterable, Equatable, Sendable {
     case `default`
     case gray
     case brown

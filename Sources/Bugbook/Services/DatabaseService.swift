@@ -12,6 +12,23 @@ class DatabaseService {
         let needsDiskRefresh: Bool
     }
 
+    private struct FileMetadata: Equatable {
+        let fileSize: UInt64
+        let modificationDate: Date
+    }
+
+    private struct DisplayCacheEntry {
+        let schemaMetadata: FileMetadata
+        let indexMetadata: FileMetadata
+        let indexData: [String: Any]
+        let result: DisplayLoadResult
+    }
+
+    private static let maxCachedDisplayDatabases = 32
+    private static let displayCacheLock = NSLock()
+    private static var displayCache: [String: DisplayCacheEntry] = [:]
+    private static var displayCacheOrder: [String] = []
+
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
@@ -27,32 +44,127 @@ class DatabaseService {
     }
 
     func loadDatabaseForDisplay(at path: String) throws -> DisplayLoadResult {
+        if let cached = Self.cachedDisplayResult(at: path) {
+            return cached
+        }
+
         let schema = try loadSchema(at: path)
 
         if let indexData = indexManager.loadIndex(at: path),
            let indexedRows = rowsFromIndex(indexData, schema: schema) {
-            return DisplayLoadResult(
+            let result = DisplayLoadResult(
                 schema: schema,
                 rows: indexedRows,
                 needsDiskRefresh: indexManager.isStale(indexData: indexData, dbPath: path)
             )
+            Self.cacheDisplayResult(result, at: path, indexData: indexData)
+            return result
         }
 
         let rows = try loadRows(in: path, schema: schema)
         try? updateIndex(rows: rows, schema: schema, at: path)
-        return DisplayLoadResult(schema: schema, rows: rows, needsDiskRefresh: false)
+        let result = DisplayLoadResult(schema: schema, rows: rows, needsDiskRefresh: false)
+        Self.cacheDisplayResult(result, at: path)
+        return result
     }
 
     func loadDatabaseFromDiskRefreshingIndex(at path: String) throws -> (DatabaseSchema, [DatabaseRow]) {
         let (schema, rows) = try loadDatabase(at: path)
         try? updateIndex(rows: rows, schema: schema, at: path)
+        Self.cacheDisplayResult(
+            DisplayLoadResult(schema: schema, rows: rows, needsDiskRefresh: false),
+            at: path
+        )
         return (schema, rows)
+    }
+
+    func preloadDatabaseForDisplay(at path: String) {
+        _ = try? loadDatabaseForDisplay(at: path)
     }
 
     private func loadSchema(at path: String) throws -> DatabaseSchema {
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let data = try Data(contentsOf: URL(fileURLWithPath: schemaPath))
         return try JSONDecoder().decode(DatabaseSchema.self, from: data)
+    }
+
+    private static func cachedDisplayResult(at path: String) -> DisplayLoadResult? {
+        guard let schemaMetadata = fileMetadata(
+            at: (path as NSString).appendingPathComponent("_schema.json")
+        ),
+              let indexMetadata = fileMetadata(
+                at: (path as NSString).appendingPathComponent("_index.json")
+              ) else {
+            return nil
+        }
+
+        displayCacheLock.lock()
+
+        guard let cached = displayCache[path],
+              cached.schemaMetadata == schemaMetadata,
+              cached.indexMetadata == indexMetadata else {
+            displayCache[path] = nil
+            displayCacheOrder.removeAll { $0 == path }
+            displayCacheLock.unlock()
+            return nil
+        }
+
+        touchDisplayCacheEntry(path)
+        displayCacheLock.unlock()
+
+        let needsDiskRefresh = cached.result.needsDiskRefresh ||
+            IndexManager().isStale(indexData: cached.indexData, dbPath: path)
+        return DisplayLoadResult(
+            schema: cached.result.schema,
+            rows: cached.result.rows,
+            needsDiskRefresh: needsDiskRefresh
+        )
+    }
+
+    private static func cacheDisplayResult(
+        _ result: DisplayLoadResult,
+        at path: String,
+        indexData providedIndexData: [String: Any]? = nil
+    ) {
+        guard let schemaMetadata = fileMetadata(
+            at: (path as NSString).appendingPathComponent("_schema.json")
+        ),
+              let indexMetadata = fileMetadata(
+                at: (path as NSString).appendingPathComponent("_index.json")
+              ),
+              let indexData = providedIndexData ?? IndexManager().loadIndex(at: path) else {
+            return
+        }
+
+        displayCacheLock.lock()
+        defer { displayCacheLock.unlock() }
+
+        displayCache[path] = DisplayCacheEntry(
+            schemaMetadata: schemaMetadata,
+            indexMetadata: indexMetadata,
+            indexData: indexData,
+            result: result
+        )
+        touchDisplayCacheEntry(path)
+
+        while displayCacheOrder.count > maxCachedDisplayDatabases {
+            let evictedPath = displayCacheOrder.removeFirst()
+            displayCache[evictedPath] = nil
+        }
+    }
+
+    private static func touchDisplayCacheEntry(_ path: String) {
+        displayCacheOrder.removeAll { $0 == path }
+        displayCacheOrder.append(path)
+    }
+
+    private static func fileMetadata(at path: String) -> FileMetadata? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let fileSize = attributes[.size] as? NSNumber,
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+        return FileMetadata(fileSize: fileSize.uint64Value, modificationDate: modificationDate)
     }
 
     // MARK: - Save Schema

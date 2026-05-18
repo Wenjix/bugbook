@@ -4,7 +4,7 @@ enum MarkdownBlockParser {
 
     // MARK: - Metadata
 
-    struct Metadata {
+    struct Metadata: Equatable, Sendable {
         var icon: String?
         var coverUrl: String?
         var coverPosition: Double = 50

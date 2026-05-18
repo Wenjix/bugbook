@@ -24,6 +24,13 @@ struct BlockFindSelection: Equatable {
 @MainActor
 @Observable
 class BlockDocument {
+    struct ParsedDocument: Equatable, Sendable {
+        let metadata: MarkdownBlockParser.Metadata
+        let blocks: [Block]
+        let persistsBlockIDs: Bool
+        let yamlFrontmatter: String
+    }
+
     var blocks: [Block] {
         didSet { contentVersion += 1 }
     }
@@ -137,8 +144,8 @@ class BlockDocument {
         return parts.joined(separator: "\n")
     }
 
-    init(markdown: String) {
-        let parsed = Self.parseDocument(markdown)
+    init(markdown: String, parsed: ParsedDocument? = nil) {
+        let parsed = parsed ?? Self.parseMarkdown(markdown)
         self.persistsBlockIDs = parsed.persistsBlockIDs
         self.icon = parsed.metadata.icon
         self.coverUrl = parsed.metadata.coverUrl
@@ -148,8 +155,8 @@ class BlockDocument {
         self.yamlFrontmatter = parsed.yamlFrontmatter
     }
 
-    func replaceMarkdown(_ markdown: String) {
-        let parsed = Self.parseDocument(markdown)
+    func replaceMarkdown(_ markdown: String, parsed: ParsedDocument? = nil) {
+        let parsed = parsed ?? Self.parseMarkdown(markdown)
         persistsBlockIDs = parsed.persistsBlockIDs
         icon = parsed.metadata.icon
         coverUrl = parsed.metadata.coverUrl
@@ -2018,16 +2025,11 @@ class BlockDocument {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    private static func parseDocument(_ markdown: String) -> (
-        metadata: MarkdownBlockParser.Metadata,
-        blocks: [Block],
-        persistsBlockIDs: Bool,
-        yamlFrontmatter: String
-    ) {
+    nonisolated static func parseMarkdown(_ markdown: String) -> ParsedDocument {
         let (yaml, afterYaml) = MarkdownBlockParser.stripYAMLFrontmatter(markdown)
         let (metadata, content) = MarkdownBlockParser.parseMetadata(afterYaml)
         let output = MarkdownBlockParser.parseWithFlags(content)
-        return (
+        return ParsedDocument(
             metadata: metadata,
             blocks: output.blocks,
             persistsBlockIDs: output.hasBlockIDs,

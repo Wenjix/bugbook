@@ -73,6 +73,7 @@ struct ContentView: View {
     @State private var fileTreeRefreshTask: Task<Void, Never>?
     @State private var fileTreeRefreshGeneration = 0
     @State private var pageLoadTasks: [UUID: Task<Void, Never>] = [:]
+    @State private var pagePreloadTask: Task<Void, Never>?
     @State private var workspaceWatcher: WorkspaceWatcher?
     @State private var restoredWorkspaceDocuments = false
     @State private var lastTrashPurgeWorkspace: String?
@@ -272,7 +273,7 @@ struct ContentView: View {
     private func applyLifecycle<V: View>(to view: V) -> some View {
         let baseView = view
             .ignoresSafeArea()
-            .frame(minWidth: 800, minHeight: 500)
+            .frame(minWidth: 420, minHeight: 420)
 
         return applyLifecycleNotifications(
             to: applyLifecycleObservers(
@@ -757,7 +758,7 @@ struct ContentView: View {
         switch effectiveSidebarContextType {
         case .mail: return "Mail"
         case .calendar: return "Calendar"
-        case .workspace: return "Pages"
+        case .workspace: return BugbookFeatureGate.legacyPanesEnabled ? "Pages" : nil
         case .none: return nil
         }
     }
@@ -961,6 +962,8 @@ struct ContentView: View {
         aiInitTask = nil
         fileTreeRefreshTask?.cancel()
         fileTreeRefreshTask = nil
+        pagePreloadTask?.cancel()
+        pagePreloadTask = nil
         pageLoadTasks.values.forEach { $0.cancel() }
         pageLoadTasks.removeAll()
         editorUI.cleanUp()
@@ -2019,8 +2022,18 @@ struct ContentView: View {
         if let document = blockDocuments[tab.id] {
             editorDocumentView(document)
         } else {
-            Color.fallbackEditorBg
+            editorLoadingView()
         }
+    }
+
+    private func editorLoadingView() -> some View {
+        ZStack {
+            Color.fallbackEditorBg
+            ProgressView()
+                .controlSize(.small)
+                .opacity(0.45)
+        }
+        .accessibilityIdentifier("editor-loading")
     }
 
     private func editorDocumentView(_ document: BlockDocument) -> some View {
@@ -2041,6 +2054,7 @@ struct ContentView: View {
         }
         .background(Color.fallbackEditorBg)
         .accessibilityIdentifier("editor")
+        .bugbookCompactScrollIndicators()
         .overlay {
             templatePickerOverlay(document)
         }
@@ -2351,7 +2365,7 @@ struct ContentView: View {
                 doc.blockMenuBlockId = nil
                 if let targetTab = appState.openTabs.first(where: { $0.path == targetPagePath }),
                    let targetDoc = blockDocuments[targetTab.id] {
-                    targetDoc.replaceMarkdown(loadedPage.content)
+                    targetDoc.replaceMarkdown(loadedPage.content, parsed: loadedPage.parsedDocument)
                 }
             }
         }
@@ -2665,9 +2679,12 @@ struct ContentView: View {
                 )
                 updateSidebarContextType()
 
-                if !handledWithoutLoad,
-                   let updatedTabId = workspaceManager.focusedPaneTabID {
-                    loadFileContentForPane(entry: entry, tabId: updatedTabId)
+                if let updatedTabId = workspaceManager.focusedPaneTabID {
+                    if handledWithoutLoad {
+                        loadFileContentForPaneIfMissing(entry: entry, tabId: updatedTabId)
+                    } else {
+                        loadFileContentForPane(entry: entry, tabId: updatedTabId)
+                    }
                 }
                 return
             } else {
@@ -2705,10 +2722,18 @@ struct ContentView: View {
         )
         updateSidebarContextType()
 
-        if !handledWithoutLoad,
-           let updatedTabId = workspaceManager.focusedPaneTabID {
-            loadFileContentForPane(entry: entry, tabId: updatedTabId)
+        if let updatedTabId = workspaceManager.focusedPaneTabID {
+            if handledWithoutLoad {
+                loadFileContentForPaneIfMissing(entry: entry, tabId: updatedTabId)
+            } else {
+                loadFileContentForPane(entry: entry, tabId: updatedTabId)
+            }
         }
+    }
+
+    private func loadFileContentForPaneIfMissing(entry: FileEntry, tabId: UUID) {
+        guard blockDocuments[tabId] == nil else { return }
+        loadFileContentForPane(entry: entry, tabId: tabId)
     }
 
     /// Check if a pane has an active terminal session.
@@ -2863,6 +2888,7 @@ struct ContentView: View {
               !entry.isGraphView else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
+        pagePreloadTask?.cancel()
         formattingPanel?.hidePanel()
         editorUI.focusModeSuppress = true
         pageLoadTasks[tabId]?.cancel()
@@ -2882,7 +2908,7 @@ struct ContentView: View {
         case .loaded(let loadedPage):
             guard workspaceManager.openFile(tabId: tabId)?.path == entry.path else { return }
             let content = loadedPage.content
-            let doc = BlockDocument(markdown: content)
+            let doc = BlockDocument(markdown: content, parsed: loadedPage.parsedDocument)
             doc.filePath = entry.path
             wireUpDocumentCallbacks(doc, tabId: tabId)
             injectChildPageLinks(into: doc, from: entry)
@@ -2936,9 +2962,17 @@ struct ContentView: View {
             pushHistory: true,
             preferExistingTab: preferExistingTab
         )
-        if !switchedToExisting {
+        if switchedToExisting {
+            loadFileContentIfMissing(for: entry)
+        } else {
             loadFileContent(for: entry)
         }
+    }
+
+    private func loadFileContentIfMissing(for entry: FileEntry) {
+        guard let tabId = appState.openTabs.first(where: { $0.path == entry.path })?.id,
+              blockDocuments[tabId] == nil else { return }
+        loadFileContent(for: entry)
     }
 
     private func openDatabaseRowPage(
@@ -3250,27 +3284,42 @@ struct ContentView: View {
         guard !restoredWorkspaceDocuments else { return }
         restoredWorkspaceDocuments = true
 
-        let targets = workspaceManager.allDocumentLeaves().compactMap { _, _, file -> WorkspaceDocumentRestoreTarget? in
-            guard file.kind == .page,
-                  !file.path.isEmpty,
-                  let entry = restoredEntry(for: file) else { return nil }
-            return WorkspaceDocumentRestoreTarget(tabId: file.id, entry: entry)
-        }
+        let targets = workspaceDocumentRestoreTargetsPrioritizingFocusedTab()
         guard !targets.isEmpty else { return }
 
         Task { @MainActor in
             var didRestoreAny = false
-            for target in targets {
-                let result = await editorSaveWorker.loadPageContent(at: target.entry.path)
+            for (index, target) in targets.enumerated() {
+                let priority: TaskPriority = index == 0 ? .userInitiated : .utility
+                let result = await editorSaveWorker.loadPageContent(at: target.entry.path, priority: priority)
                 guard !Task.isCancelled else { return }
                 if restoreWorkspaceDocument(result, target: target) {
                     didRestoreAny = true
                 }
+                await Task.yield()
             }
             if didRestoreAny {
                 workspaceManager.schedulePersist()
             }
         }
+    }
+
+    private func workspaceDocumentRestoreTargetsPrioritizingFocusedTab() -> [WorkspaceDocumentRestoreTarget] {
+        let focusedTabId = workspaceManager.focusedPaneTabID
+        var targets = workspaceManager.allDocumentLeaves().compactMap { _, _, file -> WorkspaceDocumentRestoreTarget? in
+            guard file.kind == .page,
+                  !file.path.isEmpty,
+                  let entry = restoredEntry(for: file) else { return nil }
+            return WorkspaceDocumentRestoreTarget(tabId: file.id, entry: entry)
+        }
+
+        if let focusedTabId,
+           let focusedIndex = targets.firstIndex(where: { $0.tabId == focusedTabId }) {
+            let focusedTarget = targets.remove(at: focusedIndex)
+            targets.insert(focusedTarget, at: 0)
+        }
+
+        return targets
     }
 
     @discardableResult
@@ -3286,7 +3335,7 @@ struct ContentView: View {
                 return false
             }
 
-            let doc = BlockDocument(markdown: loadedPage.content)
+            let doc = BlockDocument(markdown: loadedPage.content, parsed: loadedPage.parsedDocument)
             doc.filePath = target.entry.path
             wireUpDocumentCallbacks(doc, tabId: target.tabId)
             injectChildPageLinks(into: doc, from: target.entry)
@@ -3427,12 +3476,12 @@ struct ContentView: View {
 
             let document: BlockDocument
             if let existingDocument = blockDocuments[tabId] {
-                existingDocument.replaceMarkdown(content)
+                existingDocument.replaceMarkdown(content, parsed: loadedPage.parsedDocument)
                 existingDocument.filePath = file.path
                 wireUpDocumentCallbacks(existingDocument, tabId: tabId)
                 document = existingDocument
             } else {
-                let newDocument = BlockDocument(markdown: content)
+                let newDocument = BlockDocument(markdown: content, parsed: loadedPage.parsedDocument)
                 newDocument.filePath = file.path
                 wireUpDocumentCallbacks(newDocument, tabId: tabId)
                 blockDocuments[tabId] = newDocument
@@ -3507,9 +3556,107 @@ struct ContentView: View {
                 self.appState.agentSkills = skills
                 self.refreshSidebarReferences(using: tree)
                 self.refreshFavorites(using: tree)
+                self.schedulePagePreload(from: tree)
                 self.fileTreeRefreshTask = nil
             }
         }
+    }
+
+    private func schedulePagePreload(from fileTree: [FileEntry]) {
+        let paths = Self.pagePreloadCandidatePaths(from: fileTree, limit: 48)
+        let workspacePath = appState.workspacePath
+        pagePreloadTask?.cancel()
+        guard !paths.isEmpty, let workspacePath else {
+            pagePreloadTask = nil
+            return
+        }
+
+        let worker = editorSaveWorker
+        pagePreloadTask = Task.detached(priority: .utility) {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            for path in paths {
+                guard !Task.isCancelled else { return }
+                let result = await worker.loadPageContent(at: path, priority: .utility)
+                if case .loaded(let loadedPage) = result {
+                    let databasePaths = Self.databasePreloadCandidatePaths(
+                        from: loadedPage.parsedDocument,
+                        pagePath: path,
+                        workspacePath: workspacePath,
+                        limit: 4
+                    )
+                    if !databasePaths.isEmpty {
+                        let databaseService = DatabaseService()
+                        for databasePath in databasePaths {
+                            guard !Task.isCancelled else { return }
+                            databaseService.preloadDatabaseForDisplay(at: databasePath)
+                        }
+                    }
+                }
+                await Task.yield()
+            }
+        }
+    }
+
+    nonisolated private static func pagePreloadCandidatePaths(
+        from entries: [FileEntry],
+        limit: Int
+    ) -> [String] {
+        var paths: [String] = []
+        var seen: Set<String> = []
+
+        func collect(_ entry: FileEntry) {
+            guard paths.count < limit else { return }
+            if entry.kind == .page,
+               !entry.isDirectory,
+               entry.path.hasSuffix(".md"),
+               seen.insert(entry.path).inserted {
+                paths.append(entry.path)
+            }
+            for child in entry.children ?? [] {
+                guard paths.count < limit else { return }
+                collect(child)
+            }
+        }
+
+        for entry in entries {
+            guard paths.count < limit else { break }
+            collect(entry)
+        }
+        return paths
+    }
+
+    nonisolated private static func databasePreloadCandidatePaths(
+        from parsedDocument: BlockDocument.ParsedDocument?,
+        pagePath: String,
+        workspacePath: String,
+        limit: Int
+    ) -> [String] {
+        guard let parsedDocument else { return [] }
+
+        var paths: [String] = []
+        var seen: Set<String> = []
+
+        func collect(from blocks: [Block]) {
+            for block in blocks {
+                guard paths.count < limit else { return }
+                if block.type == .databaseEmbed,
+                   let resolution = resolveDatabaseEmbedPathForRendering(
+                    block.databasePath,
+                    pagePath: pagePath,
+                    workspacePath: workspacePath
+                   ),
+                   resolution.isResolved,
+                   seen.insert(resolution.renderPath).inserted {
+                    paths.append(resolution.renderPath)
+                }
+                if !block.children.isEmpty {
+                    collect(from: block.children)
+                }
+            }
+        }
+
+        collect(from: parsedDocument.blocks)
+        return paths
     }
 
     private func syncAvailablePages(_ pages: [FileEntry]) {
@@ -3640,6 +3787,7 @@ struct ContentView: View {
         guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
+        pagePreloadTask?.cancel()
         formattingPanel?.hidePanel()
         editorUI.focusModeSuppress = true
         guard let tabId = appState.openTabs.first(where: { $0.path == entry.path })?.id else {
@@ -3667,7 +3815,7 @@ struct ContentView: View {
             let content = loadedPage.content
             appState.openTabs[index].content = content
             appState.openTabs[index].isDirty = loadedPage.isRestoredDraft
-            let doc = BlockDocument(markdown: content)
+            let doc = BlockDocument(markdown: content, parsed: loadedPage.parsedDocument)
             doc.filePath = entry.path
             wireUpDocumentCallbacks(doc, tabId: appState.openTabs[index].id)
             injectChildPageLinks(into: doc, from: entry)
@@ -5203,5 +5351,63 @@ struct ContentView: View {
 extension Collection {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension View {
+    func bugbookCompactScrollIndicators() -> some View {
+        background(BugbookScrollIndicatorConfigurator())
+    }
+}
+
+private struct BugbookScrollIndicatorConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        Task { @MainActor in
+            Self.configureNearestScrollView(from: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        Task { @MainActor in
+            Self.configureNearestScrollView(from: view)
+        }
+    }
+
+    @MainActor
+    private static func configureNearestScrollView(from view: NSView) {
+        guard let scrollView = nearestScrollView(from: view) else { return }
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.controlSize = .mini
+        scrollView.horizontalScroller?.controlSize = .mini
+    }
+
+    @MainActor
+    private static func nearestScrollView(from view: NSView) -> NSScrollView? {
+        var currentView: NSView? = view
+        while let candidate = currentView {
+            if let scrollView = candidate as? NSScrollView {
+                return scrollView
+            }
+            if let scrollView = firstDescendantScrollView(in: candidate) {
+                return scrollView
+            }
+            currentView = candidate.superview
+        }
+        return nil
+    }
+
+    @MainActor
+    private static func firstDescendantScrollView(in view: NSView) -> NSScrollView? {
+        for subview in view.subviews {
+            if let scrollView = subview as? NSScrollView {
+                return scrollView
+            }
+            if let scrollView = firstDescendantScrollView(in: subview) {
+                return scrollView
+            }
+        }
+        return nil
     }
 }

@@ -1,53 +1,22 @@
 import Foundation
 import AppKit
 import BugbookCore
+import Darwin
 import os
 import Sentry
-
-private struct SidebarIconCacheEntry {
-    let modificationDate: Date?
-    let fileSize: Int?
-    let icon: String?
-}
-
-private final class SidebarIconCache: @unchecked Sendable {
-    private let lock = NSLock()
-    private var entries: [String: SidebarIconCacheEntry] = [:]
-
-    func icon(
-        for path: String,
-        resourceValues: URLResourceValues,
-        load: () -> String?
-    ) -> String? {
-        let modificationDate = resourceValues.contentModificationDate
-        let fileSize = resourceValues.fileSize
-
-        lock.lock()
-        if let entry = entries[path],
-           entry.modificationDate == modificationDate,
-           entry.fileSize == fileSize {
-            lock.unlock()
-            return entry.icon
-        }
-        lock.unlock()
-
-        let icon = load()
-
-        lock.lock()
-        entries[path] = SidebarIconCacheEntry(
-            modificationDate: modificationDate,
-            fileSize: fileSize,
-            icon: icon
-        )
-        lock.unlock()
-
-        return icon
-    }
-}
 
 @MainActor
 @Observable
 class FileSystemService {
+    private enum ReleaseDefaultsMigration {
+        static let markerKey = "releaseDefaultsMigratedFromDevelopmentBundle.v1"
+        static let productionBundleIdentifier = "com.maxforsey.Bugbook"
+        static let sourceBundleIdentifiers = [
+            "com.maxforsey.Dahso.dev",
+            "com.maxforsey.Bugbook.dev"
+        ]
+    }
+
     private enum DatabaseTreeItem {
         case none
         case hidden
@@ -172,10 +141,36 @@ class FileSystemService {
         // Logseq vault leftovers
         "journals", "logseq", "whiteboards"
     ]
-    nonisolated private static let sidebarIconCache = SidebarIconCache()
 
     init() {
+        migrateReleaseDefaultsFromDevelopmentBundlesIfNeeded()
         loadRecentWorkspaces()
+    }
+
+    private func migrateReleaseDefaultsFromDevelopmentBundlesIfNeeded() {
+        guard Bundle.main.bundleIdentifier == ReleaseDefaultsMigration.productionBundleIdentifier else { return }
+
+        let targetDefaults = UserDefaults.standard
+        guard !targetDefaults.bool(forKey: ReleaseDefaultsMigration.markerKey) else { return }
+
+        for identifier in ReleaseDefaultsMigration.sourceBundleIdentifiers {
+            guard let sourceDefaults = UserDefaults(suiteName: identifier) else { continue }
+            migrateSidebarDefaults(from: sourceDefaults, to: targetDefaults)
+        }
+
+        targetDefaults.set(true, forKey: ReleaseDefaultsMigration.markerKey)
+    }
+
+    private func migrateSidebarDefaults(from sourceDefaults: UserDefaults, to targetDefaults: UserDefaults) {
+        for key in sourceDefaults.dictionaryRepresentation().keys where key.hasPrefix(favoritesPrefix) {
+            guard let sourcePaths = sourceDefaults.stringArray(forKey: key),
+                  !sourcePaths.isEmpty else { continue }
+
+            let currentPaths = targetDefaults.stringArray(forKey: key) ?? []
+            guard currentPaths.isEmpty else { continue }
+
+            targetDefaults.set(sourcePaths, forKey: key)
+        }
     }
 
     @discardableResult
@@ -831,9 +826,7 @@ class FileSystemService {
             path: path,
             isDirectory: false,
             kind: isDbFile ? .database : .page,
-            icon: Self.sidebarIconCache.icon(for: path, resourceValues: resourceValues) {
-                parseIconFromFile(at: path)
-            },
+            icon: nil,
             children: children
         ))
     }
@@ -1469,6 +1462,17 @@ class FileSystemService {
         "\(favoritesPrefix)\(workspacePath)"
     }
 
+    nonisolated private static func isFirstPartySidebarFavoritePath(
+        _ path: String,
+        workspacePath: String
+    ) -> Bool {
+        let root = (workspacePath as NSString).standardizingPath
+        let normalizedPath = (path as NSString).standardizingPath
+        let dailyNotesPath = (root as NSString).appendingPathComponent("Daily Notes.md")
+        let meetingsPath = (root as NSString).appendingPathComponent("Meetings.md")
+        return normalizedPath == dailyNotesPath || normalizedPath == meetingsPath
+    }
+
     func favoritePaths(for workspacePath: String) -> [String] {
         UserDefaults.standard.stringArray(forKey: favoritesKey(for: workspacePath)) ?? []
     }
@@ -1478,6 +1482,7 @@ class FileSystemService {
     }
 
     func addFavoritePath(_ path: String, for workspacePath: String) {
+        guard !Self.isFirstPartySidebarFavoritePath(path, workspacePath: workspacePath) else { return }
         var paths = favoritePaths(for: workspacePath)
         guard !paths.contains(path) else { return }
         paths.append(path)
@@ -1490,7 +1495,30 @@ class FileSystemService {
     }
 
     func isFavorite(_ path: String, for workspacePath: String) -> Bool {
-        favoritePaths(for: workspacePath).contains(path)
+        guard !Self.isFirstPartySidebarFavoritePath(path, workspacePath: workspacePath) else { return false }
+        return favoritePaths(for: workspacePath).contains(path)
+    }
+
+    func reorderFavoritePath(
+        _ path: String,
+        toVisibleIndex newIndex: Int,
+        visiblePaths: [String],
+        for workspacePath: String
+    ) {
+        let storedPaths = favoritePaths(for: workspacePath)
+        let visiblePathSet = Set(visiblePaths)
+        var reorderedVisiblePaths = visiblePaths.filter { storedPaths.contains($0) }
+        guard let oldIndex = reorderedVisiblePaths.firstIndex(of: path) else { return }
+
+        reorderedVisiblePaths.remove(at: oldIndex)
+        let adjustedIndex = max(0, min(newIndex - (oldIndex < newIndex ? 1 : 0), reorderedVisiblePaths.count))
+        reorderedVisiblePaths.insert(path, at: adjustedIndex)
+
+        let hiddenPaths = storedPaths.filter { storedPath in
+            !visiblePathSet.contains(storedPath)
+            && !Self.isFirstPartySidebarFavoritePath(storedPath, workspacePath: workspacePath)
+        }
+        saveFavoritePaths(reorderedVisiblePaths + hiddenPaths, for: workspacePath)
     }
 
     // MARK: - Trash (Recently Deleted)
@@ -1572,17 +1600,27 @@ class FileSystemService {
 
     func resolveFavorites(for workspacePath: String, fileTree: [FileEntry]) -> [FileEntry] {
         let storedPaths = favoritePaths(for: workspacePath)
+        let userFavoritePaths = storedPaths.filter {
+            !Self.isFirstPartySidebarFavoritePath($0, workspacePath: workspacePath)
+        }
         var resolvedPaths: [String] = []
-        let entries = storedPaths.compactMap { path -> FileEntry? in
+        let entries = userFavoritePaths.compactMap { path -> FileEntry? in
             if let entry = findEntry(path: path, in: fileTree) {
                 resolvedPaths.append(path)
                 return FileEntry(
-                    id: "favorite:\(path)", name: entry.name, path: entry.path,
-                    isDirectory: false, kind: entry.kind, icon: entry.icon
+                    id: "favorite:\(path)",
+                    name: entry.name,
+                    path: entry.path,
+                    isDirectory: entry.isDirectory,
+                    kind: entry.kind,
+                    icon: entry.icon,
+                    children: entry.children
                 )
             }
             guard FileManager.default.fileExists(atPath: path) else { return nil }
             resolvedPaths.append(path)
+            var isDirectory: ObjCBool = false
+            _ = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
             let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
             let isDb = FileManager.default.fileExists(atPath: schemaPath)
             let kind: TabKind = isDb ? .database : .page
@@ -1594,7 +1632,13 @@ class FileSystemService {
             } else {
                 name = (path as NSString).lastPathComponent
             }
-            return FileEntry(id: "favorite:\(path)", name: name, path: path, isDirectory: false, kind: kind)
+            return FileEntry(
+                id: "favorite:\(path)",
+                name: name,
+                path: path,
+                isDirectory: isDirectory.boolValue,
+                kind: kind
+            )
         }
         if resolvedPaths != storedPaths {
             saveFavoritePaths(resolvedPaths, for: workspacePath)
@@ -1855,10 +1899,18 @@ class FileSystemService {
     }
 
     nonisolated private func parseIconFromFile(at path: String) -> String? {
-        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { fh.closeFile() }
-        let data = fh.readData(ofLength: 256)
-        guard let head = String(data: data, encoding: .utf8) else { return nil }
+        let fd = Darwin.open(path, O_RDONLY)
+        guard fd >= 0 else { return nil }
+        defer { Darwin.close(fd) }
+
+        var buffer = [UInt8](repeating: 0, count: 256)
+        let byteCount = buffer.withUnsafeMutableBytes { rawBuffer -> Int in
+            guard let baseAddress = rawBuffer.baseAddress else { return -1 }
+            return Darwin.read(fd, baseAddress, rawBuffer.count)
+        }
+
+        guard byteCount > 0 else { return nil }
+        guard let head = String(bytes: buffer.prefix(byteCount), encoding: .utf8) else { return nil }
         // Manual prefix scan — avoids regex allocation per file
         guard let startRange = head.range(of: "<!-- icon:") else { return nil }
         let afterPrefix = startRange.upperBound

@@ -43,6 +43,12 @@ enum MeetingNavigationCoordinator {
 /// Daily-driver meeting pane. Recording happens in `MeetingPageView`; this pane
 /// creates the meeting row and routes into that page with auto-record armed.
 struct MeetingsView: View {
+    private enum Layout {
+        static let horizontalPadding: CGFloat = 32
+        static let topPadding: CGFloat = 18
+        static let bottomPadding: CGFloat = 32
+    }
+
     var appState: AppState
     @Bindable var viewModel: MeetingsViewModel
     var meetingNoteService: MeetingNoteService
@@ -87,8 +93,9 @@ struct MeetingsView: View {
             .controlSize(.regular)
             .accessibilityIdentifier("meetings-record-meeting-button")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Layout.horizontalPadding)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
     }
 
     // MARK: - Content
@@ -98,6 +105,9 @@ struct MeetingsView: View {
         if let databasePath {
             DatabaseFullPageView(dbPath: databasePath)
                 .id(databasePath)
+                .padding(.horizontal, Layout.horizontalPadding)
+                .padding(.top, Layout.topPadding)
+                .padding(.bottom, Layout.bottomPadding)
         } else if let errorMessage {
             VStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")

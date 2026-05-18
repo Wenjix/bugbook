@@ -298,7 +298,7 @@ final class DetachedWindowManager {
 
     func openWindow(
         title: String,
-        bootstrap: ContentViewBootstrap,
+        bootstrap: ContentViewBootstrap? = nil,
         size: CGSize = CGSize(width: 1100, height: 700)
     ) {
         let windowID = UUID()
@@ -310,10 +310,7 @@ final class DetachedWindowManager {
             defer: false
         )
         window.identifier = NSUserInterfaceItemIdentifier(windowID.uuidString)
-        window.title = title
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.toolbarStyle = .unifiedCompact
+        configureBugbookWindowChrome(window, title: title)
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: contentView)
         let delegate = DetachedWindowDelegate { [weak self] in
@@ -367,6 +364,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         installWindowChromeObserver()
         installKeyboardMonitors()
         openProfileWindowIfNeeded()
+        openDefaultWindowIfNeeded()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            DetachedWindowManager.shared.openWindow(title: "Bugbook")
+        }
+        return true
     }
 
     private func openProfileWindowIfNeeded() {
@@ -378,6 +383,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 title: "Bugbook Profile",
                 bootstrap: ContentViewBootstrap(workspaces: [], activeWorkspaceIndex: 0, layoutPersistenceEnabled: false)
             )
+        }
+    }
+
+    private func openDefaultWindowIfNeeded() {
+        guard ProcessInfo.processInfo.environment["BUGBOOK_PROFILE_AUTO_START_MEETING"] != "1" else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !NSApp.windows.contains(where: \.isVisible) else { return }
+            DetachedWindowManager.shared.openWindow(title: "Bugbook")
         }
     }
 
@@ -568,20 +582,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8
     ]
 
+    @MainActor
     @objc private func windowDidBecomeKey(_ notification: Notification) {
         configureWindows()
     }
 
+    @MainActor
     private func configureWindows() {
         for window in NSApplication.shared.windows {
-            guard !(window is NSPanel) else { continue }
-            guard !window.titlebarAppearsTransparent else { continue }
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
-            window.title = "Bugbook"
-            window.styleMask.insert(.fullSizeContentView)
-            window.isMovableByWindowBackground = true
-            window.backgroundColor = NSColor(Container.groutBg)
+            configureBugbookWindowChrome(window)
         }
     }
 
@@ -632,6 +641,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         completionHandler()
     }
+}
+
+@MainActor
+private func configureBugbookWindowChrome(_ window: NSWindow, title: String = "Bugbook") {
+    guard !(window is NSPanel) else { return }
+    window.title = title
+    window.titleVisibility = .hidden
+    window.titlebarAppearsTransparent = true
+    window.styleMask.insert(.fullSizeContentView)
+    window.toolbarStyle = .unifiedCompact
+    window.isMovableByWindowBackground = false
+    window.backgroundColor = NSColor(Container.groutBg)
 }
 
 extension Notification.Name {

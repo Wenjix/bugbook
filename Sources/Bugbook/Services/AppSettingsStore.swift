@@ -54,6 +54,7 @@ struct AppSettingsStore {
         if settings.anthropicApiKey.isEmpty {
             settings.anthropicApiKey = secretStore.string(for: .anthropicApiKey) ?? ""
         }
+        guard BugbookFeatureGate.shouldInitializeLegacyServices else { return }
         for index in settings.googleAccounts.indices {
             let accountID = settings.googleAccounts[index].email
             if settings.googleAccounts[index].accessToken.isEmpty {
@@ -71,7 +72,10 @@ struct AppSettingsStore {
     private func migrateLegacySecrets(into settings: inout AppSettings) -> Bool {
         var migrated = false
         if migrateAnthropic(into: &settings) { migrated = true }
-        if migrateLegacyGoogleSecrets(into: &settings) { migrated = true }
+        if BugbookFeatureGate.shouldInitializeLegacyServices,
+           migrateLegacyGoogleSecrets(into: &settings) {
+            migrated = true
+        }
         return migrated
     }
 
@@ -118,6 +122,7 @@ struct AppSettingsStore {
 
     private func persistSecrets(from settings: AppSettings) {
         secretStore.set(settings.anthropicApiKey, for: .anthropicApiKey)
+        guard BugbookFeatureGate.shouldInitializeLegacyServices else { return }
         for account in settings.googleAccounts {
             secretStore.set(account.accessToken, for: .googleAccessToken, accountID: account.email)
             secretStore.set(account.refreshToken, for: .googleRefreshToken, accountID: account.email)

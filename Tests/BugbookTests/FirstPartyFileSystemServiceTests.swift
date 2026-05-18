@@ -30,25 +30,66 @@ final class FirstPartyFileSystemServiceTests: XCTestCase {
         XCTAssertFalse(schema.properties.contains { ["tags", "status"].contains($0.id) })
 
         let rowPath = try XCTUnwrap(location.rowPath)
-        XCTAssertEqual((rowPath as NSString).lastPathComponent, "2026-05-17.md")
+        XCTAssertEqual((rowPath as NSString).lastPathComponent, "Sunday, May 17th, 2026.md")
 
         let rowContent = try String(contentsOfFile: rowPath, encoding: .utf8)
         XCTAssertTrue(rowContent.contains("id: daily_2026-05-17"))
-        XCTAssertTrue(rowContent.contains("name: \"2026-05-17\""))
+        XCTAssertTrue(rowContent.contains("name: \"Sunday, May 17th, 2026\""))
         XCTAssertTrue(rowContent.contains("date: 2026-05-17"))
         XCTAssertFalse(rowContent.contains("properties:"))
 
         let row = try XCTUnwrap(RowSerializer.parse(content: rowContent, schema: schema))
-        XCTAssertEqual(row.properties["name"], .text("2026-05-17"))
+        XCTAssertEqual(row.properties["name"], .text("Sunday, May 17th, 2026"))
         XCTAssertEqual(row.properties["date"], .date("2026-05-17"))
 
         let rows = try readIndexRows(at: databasePath)
         let indexedRow = try XCTUnwrap(rows["daily_2026-05-17"])
-        XCTAssertEqual(indexedRow["filename"] as? String, "2026-05-17")
+        XCTAssertEqual(indexedRow["filename"] as? String, "Sunday, May 17th, 2026")
         XCTAssertEqual(
             service.firstPartyPagePathForDatabaseRow(dbPath: databasePath, rowId: "daily_2026-05-17"),
             rowPath
         )
+    }
+
+    func testEnsureDailyNotesHubMigratesLegacyNumericRowsToHumanDateTitles() throws {
+        let service = FileSystemService()
+        let workspace = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: workspace) }
+
+        let databasePath = (workspace as NSString).appendingPathComponent("Daily Notes/Daily Notes Database")
+        try FileManager.default.createDirectory(atPath: databasePath, withIntermediateDirectories: true)
+        let legacyPath = (databasePath as NSString).appendingPathComponent("2026-05-17.md")
+        try """
+        ---
+        id: daily_2026-05-17
+        name: "2026-05-17"
+        date: 2026-05-17
+        ---
+
+        # 2026-05-17
+
+        Existing notes
+        """.write(toFile: legacyPath, atomically: true, encoding: .utf8)
+
+        let date = try makeLocalDate(year: 2026, month: 5, day: 18, hour: 9, minute: 0)
+        _ = try service.ensureDailyNotesHub(in: workspace, date: date)
+
+        let migratedPath = (databasePath as NSString).appendingPathComponent("Sunday, May 17th, 2026.md")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: migratedPath))
+
+        let schema = try readSchema(at: databasePath)
+        let migratedContent = try String(contentsOfFile: migratedPath, encoding: .utf8)
+        XCTAssertTrue(migratedContent.contains("name: \"Sunday, May 17th, 2026\""))
+        XCTAssertTrue(migratedContent.contains("# Sunday, May 17th, 2026"))
+        XCTAssertTrue(migratedContent.contains("Existing notes"))
+
+        let row = try XCTUnwrap(RowSerializer.parse(content: migratedContent, schema: schema))
+        XCTAssertEqual(row.properties["name"], .text("Sunday, May 17th, 2026"))
+
+        let rows = try readIndexRows(at: databasePath)
+        let indexedRow = try XCTUnwrap(rows["daily_2026-05-17"])
+        XCTAssertEqual(indexedRow["filename"] as? String, "Sunday, May 17th, 2026")
     }
 
     func testEnsureMeetingsHubAndCreateMeetingRowUseFriendlyMarkdown() throws {
@@ -265,7 +306,7 @@ final class FirstPartyFileSystemServiceTests: XCTestCase {
 
         XCTAssertEqual(newPath, rowPath)
         XCTAssertTrue(FileManager.default.fileExists(atPath: rowPath))
-        XCTAssertEqual((rowPath as NSString).lastPathComponent, "2026-05-17.md")
+        XCTAssertEqual((rowPath as NSString).lastPathComponent, "Sunday, May 17th, 2026.md")
     }
 
     func testFileTreeHidesFirstPartyBackingDatabases() throws {
@@ -290,7 +331,7 @@ final class FirstPartyFileSystemServiceTests: XCTestCase {
         XCTAssertFalse(names.contains("Daily Notes"))
         XCTAssertFalse(names.contains("Daily Notes Database"))
         XCTAssertFalse(names.contains("Meetings Database"))
-        XCTAssertFalse(names.contains("2026-05-17.md"))
+        XCTAssertFalse(names.contains("Sunday, May 17th, 2026.md"))
         XCTAssertFalse(names.contains("2026-05-17 0900 Parent Interview.md"))
     }
 

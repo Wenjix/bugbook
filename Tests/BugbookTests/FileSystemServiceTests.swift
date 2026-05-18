@@ -177,6 +177,77 @@ final class FileSystemServiceTests: XCTestCase {
         XCTAssertFalse(names.contains("2026-04-05-photo.md"))
     }
 
+    func testResolveFavoritesPreservesNestedChildren() throws {
+        let service = FileSystemService()
+        let workspace = try makeTemporaryDirectory()
+        defer {
+            service.saveFavoritePaths([], for: workspace)
+            try? FileManager.default.removeItem(atPath: workspace)
+        }
+
+        let hubPath = (workspace as NSString).appendingPathComponent("Knowledge Vault.md")
+        let companionPath = (workspace as NSString).appendingPathComponent("Knowledge Vault")
+        let childPath = (companionPath as NSString).appendingPathComponent("Agent Flow.md")
+        try "# Knowledge Vault\n".write(toFile: hubPath, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(atPath: companionPath, withIntermediateDirectories: true)
+        try "# Agent Flow\n".write(toFile: childPath, atomically: true, encoding: .utf8)
+
+        service.saveFavoritePaths([hubPath], for: workspace)
+        let tree = service.buildFileTree(at: workspace)
+        let favorites = service.resolveFavorites(for: workspace, fileTree: tree)
+
+        let favorite = try XCTUnwrap(favorites.first)
+        XCTAssertEqual(favorite.id, "favorite:\(hubPath)")
+        XCTAssertEqual(favorite.name, "Knowledge Vault.md")
+        XCTAssertEqual(favorite.children?.map(\.name), ["Agent Flow.md"])
+    }
+
+    func testResolveFavoritesDropsFirstPartySidebarFavorites() throws {
+        let service = FileSystemService()
+        let workspace = try makeTemporaryDirectory()
+        defer {
+            service.saveFavoritePaths([], for: workspace)
+            try? FileManager.default.removeItem(atPath: workspace)
+        }
+
+        let dailyNotesPath = (workspace as NSString).appendingPathComponent("Daily Notes.md")
+        let meetingsPath = (workspace as NSString).appendingPathComponent("Meetings.md")
+        let favoritePath = (workspace as NSString).appendingPathComponent("Knowledge Vault.md")
+        try "# Daily Notes\n".write(toFile: dailyNotesPath, atomically: true, encoding: .utf8)
+        try "# Meetings\n".write(toFile: meetingsPath, atomically: true, encoding: .utf8)
+        try "# Knowledge Vault\n".write(toFile: favoritePath, atomically: true, encoding: .utf8)
+
+        service.saveFavoritePaths([dailyNotesPath, favoritePath, meetingsPath], for: workspace)
+        let tree = service.buildFileTree(at: workspace)
+        let favorites = service.resolveFavorites(for: workspace, fileTree: tree)
+
+        XCTAssertEqual(favorites.map(\.path), [favoritePath])
+        XCTAssertEqual(service.favoritePaths(for: workspace), [favoritePath])
+    }
+
+    func testReorderFavoritePathPersistsVisibleOrder() throws {
+        let service = FileSystemService()
+        let workspace = try makeTemporaryDirectory()
+        defer {
+            service.saveFavoritePaths([], for: workspace)
+            try? FileManager.default.removeItem(atPath: workspace)
+        }
+
+        let first = (workspace as NSString).appendingPathComponent("Action Zone.md")
+        let second = (workspace as NSString).appendingPathComponent("Alignment Zone.md")
+        let third = (workspace as NSString).appendingPathComponent("Knowledge Vault.md")
+        service.saveFavoritePaths([first, second, third], for: workspace)
+
+        service.reorderFavoritePath(
+            first,
+            toVisibleIndex: 3,
+            visiblePaths: [first, second, third],
+            for: workspace
+        )
+
+        XCTAssertEqual(service.favoritePaths(for: workspace), [second, third, first])
+    }
+
     func testDetectLegacyWorkspacesFindsKnownLegacyRootsWithContent() throws {
         let service = FileSystemService()
         let homePath = try makeTemporaryDirectory()
