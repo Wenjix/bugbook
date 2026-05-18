@@ -22,7 +22,7 @@ Period: March 22–29, 2026
 | #205 | Webhook on meeting end | Lightweight extensibility without a plugin system |
 | #191 | Auto-stop recording when meeting app exits | Smart lifecycle management |
 
-### Patterns worth adapting for Dahso
+### Patterns worth adapting for Bugbook
 
 | Pattern | Detail | Effort | Impact |
 |---------|--------|--------|--------|
@@ -53,7 +53,7 @@ Period: March 22–29, 2026
 
 **Notable issues:** #481 Feature request for knowledge-graph support, #483 Vector search unstable on Apple Silicon.
 
-### Patterns worth adapting for Dahso
+### Patterns worth adapting for Bugbook
 
 | Pattern | Detail | Effort | Impact |
 |---------|--------|--------|--------|
@@ -83,7 +83,7 @@ Period: March 22–29, 2026
 
 **Notable new issue:** #8599 — CLI Interface for Local AI Agent Integration & Headless Operations (proposes using the existing Rust `flowy-core` event dispatch to enable CLI/agent CRUD on workspaces).
 
-### Patterns worth adapting for Dahso
+### Patterns worth adapting for Bugbook
 
 | Pattern | Detail | Effort | Impact |
 |---------|--------|--------|--------|
@@ -104,7 +104,7 @@ The three highest-impact, lowest-effort items to act on first:
 
 ### 1. FTS5 CTE Query Pattern (from QMD #455)
 **Effort: Low | Impact: High**
-Wrap any FTS5 MATCH query in a CTE before applying additional WHERE filters. Without this, SQLite's query planner silently abandons the full-text index, causing 50× slowdowns. This is a one-line SQL restructure that applies immediately to Dahso's existing search layer. No new dependencies.
+Wrap any FTS5 MATCH query in a CTE before applying additional WHERE filters. Without this, SQLite's query planner silently abandons the full-text index, causing 50× slowdowns. This is a one-line SQL restructure that applies immediately to Bugbook's existing search layer. No new dependencies.
 
 ### 2. Slash Command Menu (from AppFlowy v0.11.4)
 **Effort: Low | Impact: High**

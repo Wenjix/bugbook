@@ -1,4 +1,4 @@
-# Dahso Smoke Test Checklist
+# Bugbook Smoke Test Checklist
 
 ## Workspace & File Management
 - [ ] Open workspace folder via menu
@@ -72,7 +72,7 @@
 - [ ] Send a chat message
 - [ ] AI response appears
 - [ ] Reference files show note titles (not paths)
-- [ ] App icon (DahsoLogo) shown in chat
+- [ ] App icon (BugbookLogo) shown in chat
 
 ## Agent Hub
 - [ ] Open Agent Hub (Cmd+Shift+J)
