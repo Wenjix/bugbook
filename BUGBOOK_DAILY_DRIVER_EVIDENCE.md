@@ -10,9 +10,9 @@ directory is ignored and stores local trace artifacts.
 
 Not complete. The code paths and automated checks below are green, but the live
 60-minute meeting soak is blocked until macOS privacy permissions are approved
-for the current app bundle. The changes are also still uncommitted, so the
-"small commits with before/after performance numbers" execution note remains
-open.
+for the current app bundle. The foundation implementation and support-doc
+cleanup are committed in `4994142` and `d354e6c`; the remaining commit work is
+the final live-soak evidence after TCC approval.
 
 Current debug bundle ID:
 
@@ -37,8 +37,8 @@ Audit result: not achieved yet. Automated implementation checks pass, but the
 definition of done requires a real 60-minute meeting capture run with live audio
 and transcription. That run is blocked by macOS privacy approval for the current
 Debug bundle. The execution-note requirement to land small commits with
-before/after performance numbers is also still open because the final live-soak
-numbers are not available yet and the worktree has not been committed.
+before/after performance numbers is partially satisfied by the foundation commit,
+but the final live-soak numbers are not available yet.
 
 Remaining required gate:
 
@@ -53,8 +53,7 @@ Remaining required gate:
    evidence note.
 5. Confirm RSS peak/growth stays under 200 MiB and the app process remains
    alive after the trace.
-6. Commit the completed slices with before/after performance evidence in the
-   relevant commit messages.
+6. Commit the final live-soak evidence with before/after performance details.
 
 Approval path:
 
@@ -143,7 +142,7 @@ Approval path:
 | Default visible settings code health | Force-unwrap and TODO/FIXME/HACK scans are clean across `GeneralSettingsView`, `AppearanceSettingsView`, `MeetingsSettingsView`, `SearchSettingsView`, and `ShortcutsSettingsView` | Verified |
 | TODO/FIXME hack cleanup in affected paths | `rg -ni "todo|fixme|hack|xxx"` over current Bugbook notes/meetings/database source paths returns no code-comment hacks in the affected implementation paths | Verified |
 | 60-minute live meeting must not drop audio, stall transcription, crash, or grow above 200 MB | Requires `scripts/run-daily-driver-soak.sh` after TCC approval, including raw mic/system audio capture markers plus transcript/persist markers, enforced Instruments/RSS targets, and an app-process-alive check after the trace | Blocked |
-| Small-commit execution evidence and before/after perf data | `Tests/BugbookTests/perf_baseline.tsv`, Xcode build, lint, `BUGBOOK_DAILY_DRIVER_EVIDENCE.md`, final commit messages | Partial: perf evidence exists, but changes are not yet committed and final live-soak before/after numbers are still blocked |
+| Small-commit execution evidence and before/after perf data | `Tests/BugbookTests/perf_baseline.tsv`, Xcode build, lint, `BUGBOOK_DAILY_DRIVER_EVIDENCE.md`, `4994142`, `d354e6c`, final live-soak commit | Partial: foundation perf evidence is committed, but final live-soak before/after numbers are still blocked |
 
 ## Performance Baseline
 
@@ -295,18 +294,11 @@ Current Debug bundle checks:
 
 The app bundle has the required microphone/system-audio declarations. The
 remaining capture blocker is the empty TCC authorization state above. The
-worktree is still uncommitted, so the "small commits with before/after numbers"
-execution note remains open until the live-soak evidence can be included in the
-final commit history.
-
-Commit sequencing note: the soak scripts and README changes reference the
-Bugbook bundle name, product names, and Xcode project paths from the broader
-rename/default-mode implementation. They should be committed with or after the
-corresponding app/project rename slice, not as a standalone first commit against
-the old Dahso tree. The current index also contains staged rename-only entries
-while package/project/build configuration edits remain in the worktree; do not
-commit the staged index by itself, because that would leave the renamed source
-paths disconnected from the manifest/project configuration.
+foundation commit `4994142` includes the Bugbook rename/default-mode
+implementation, soak scripts, README updates, and automated performance
+evidence in one buildable slice. The support-doc cleanup landed separately in
+`d354e6c`. The remaining commit-sequencing work is to commit the completed
+65-minute live-soak evidence after privacy approval.
 
 ## Green Verification Commands
 
