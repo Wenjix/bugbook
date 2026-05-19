@@ -5106,6 +5106,24 @@ struct ContentView: View {
             .buttonStyle(.plain)
 
             Button {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: tab.path)])
+                showPageOptionsMenu = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder")
+                        .frame(width: 16)
+                    Text("Show in Finder")
+                    Spacer()
+                }
+                .font(.system(size: Typography.bodySmall))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(document.markdown, forType: .string)
                 showPageOptionsMenu = false
