@@ -128,6 +128,8 @@ final class DatabaseViewState {
     @ObservationIgnored private var diskRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var isLoadInFlight = false
     @ObservationIgnored private var reloadRequestedWhileLoading = false
+    @ObservationIgnored private var didLoadSynchronously = false
+    @ObservationIgnored private var pendingInitialDiskRefresh = false
 
     var activeView: ViewConfig? {
         schema?.views.first(where: { $0.id == activeViewId })
@@ -135,6 +137,23 @@ final class DatabaseViewState {
 
     init(dbPath: String) {
         self.dbPath = dbPath
+        // Populate schema/rows synchronously from the warm cache or on-disk index
+        // so the first render shows real content instead of a "Loading database..."
+        // spinner. Falls through to the async path in loadData() when the database
+        // has no index yet.
+        if let fast = dbService.fastDisplayResult(at: dbPath, checkStale: false) {
+            applyLoadedDatabase(schema: fast.schema, rows: fast.rows, onLoaded: nil, postNameChange: false)
+            didLoadSynchronously = true
+            pendingInitialDiskRefresh = fast.needsDiskRefresh
+        } else if let schemaOnly = try? dbService.loadSchemaForDisplay(at: dbPath) {
+            // No index yet (e.g. a freshly imported database). Render the chrome
+            // from the schema immediately so the database opens instantly — even a
+            // large one — while loadData() streams the rows in. No full-screen
+            // spinner; the rows just fill into the table as they load.
+            schema = schemaOnly
+            editingTitle = schemaOnly.name
+            activeViewId = schemaOnly.defaultView
+        }
     }
 
     // MARK: - Filtered/Sorted Rows
@@ -200,9 +219,26 @@ final class DatabaseViewState {
 
     // MARK: - Data Loading
 
-    func loadData(onLoaded: (() -> Void)? = nil) {
+    func loadData(onLoaded: (() -> Void)? = nil, forceReload: Bool = false) {
         if isLoadInFlight {
             reloadRequestedWhileLoading = true
+            return
+        }
+
+        // init() already populated schema/rows synchronously — the first render
+        // showed real content with no spinner. Skip the redundant load; just emit
+        // the deferred name change and refresh from disk in the background if the
+        // index was stale.
+        if didLoadSynchronously, !forceReload {
+            didLoadSynchronously = false
+            if let schema {
+                postDatabaseNameChange(schema.name)
+            }
+            onLoaded?()
+            if pendingInitialDiskRefresh {
+                pendingInitialDiskRefresh = false
+                refreshFromDiskInBackground(onLoaded: onLoaded)
+            }
             return
         }
 
@@ -245,7 +281,12 @@ final class DatabaseViewState {
         }
     }
 
-    private func applyLoadedDatabase(schema loadedSchema: DatabaseSchema, rows loadedRows: [DatabaseRow], onLoaded: (() -> Void)?) {
+    private func applyLoadedDatabase(
+        schema loadedSchema: DatabaseSchema,
+        rows loadedRows: [DatabaseRow],
+        onLoaded: (() -> Void)?,
+        postNameChange: Bool = true
+    ) {
         schema = loadedSchema
         let deleted = deletedRowIds
         rows = deleted.isEmpty ? loadedRows : loadedRows.filter { !deleted.contains($0.id) }
@@ -255,15 +296,22 @@ final class DatabaseViewState {
         if activeViewId.isEmpty || !loadedSchema.views.contains(where: { $0.id == self.activeViewId }) {
             self.activeViewId = loadedSchema.defaultView
         }
-        // Sync tab displayName with schema name so breadcrumbs show the correct title
-        if !loadedSchema.name.isEmpty {
-            NotificationCenter.default.post(
-                name: .databaseNameDidChange,
-                object: nil,
-                userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.newName: loadedSchema.name]
-            )
+        // Sync tab displayName with schema name so breadcrumbs show the correct title.
+        // Skipped when called from init() — posting during SwiftUI view construction
+        // can mutate observers mid-update; loadData() emits it on the next runloop.
+        if postNameChange {
+            postDatabaseNameChange(loadedSchema.name)
         }
         onLoaded?()
+    }
+
+    private func postDatabaseNameChange(_ name: String) {
+        guard !name.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: .databaseNameDidChange,
+            object: nil,
+            userInfo: [DatabaseNotificationKey.dbPath: dbPath, DatabaseNotificationKey.newName: name]
+        )
     }
 
     private func refreshFromDiskInBackground(onLoaded: (() -> Void)?) {

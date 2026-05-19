@@ -15,7 +15,9 @@ struct DatabaseRowFullPageView: View {
         self.rowId = rowId
         self.onTitleChange = onTitleChange
         self.fullWidth = fullWidth
-        _vm = State(initialValue: DatabaseRowViewModel(dbPath: dbPath, origin: "rowFullPage"))
+        let model = DatabaseRowViewModel(dbPath: dbPath, origin: "rowFullPage")
+        model.loadSynchronouslyIfPossible(rowId: rowId)
+        _vm = State(initialValue: model)
     }
 
     var body: some View {

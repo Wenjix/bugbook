@@ -430,4 +430,131 @@ final class PerformanceTests: XCTestCase {
         PerfBaseline.record(testName: "note_switch_1000_folder", metric: "ms", value: ms)
         XCTAssertLessThan(ms, 50)
     }
+
+    // MARK: 7. Database/row view state: synchronous load eliminates the load spinner
+
+    /// Verifies the synchronous fast path: a DatabaseViewState / DatabaseRowViewModel
+    /// for an indexed database must have `schema` and `rows` populated immediately
+    /// after construction, so the first render shows content rather than a spinner.
+    func testSyncLoadEliminatesLoadingSpinner() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BugbookPerfSyncLoad-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let dbPath = tmpDir.path
+        let schema = TestData.makeSchema()
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(schema).write(to: tmpDir.appendingPathComponent("_schema.json"))
+
+        let rowStore = RowStore()
+        for i in 0..<100 {
+            try rowStore.saveRow(TestData.makeRow(index: i), schema: schema, dbPath: dbPath)
+        }
+        // Build the on-disk index so the synchronous fast path is available.
+        _ = try DatabaseService().loadDatabaseFromDiskRefreshingIndex(at: dbPath)
+
+        // Database view: schema/rows must be ready before the first render.
+        let dbState = DatabaseViewState(dbPath: dbPath)
+        XCTAssertNotNil(dbState.schema, "schema must be populated synchronously in init")
+        XCTAssertEqual(dbState.rows.count, 100)
+
+        // Row view: same guarantee for a single row.
+        let rowVM = DatabaseRowViewModel(dbPath: dbPath, origin: "test")
+        rowVM.loadSynchronouslyIfPossible(rowId: "row_000050")
+        XCTAssertNotNil(rowVM.schema)
+        XCTAssertEqual(rowVM.row?.id, "row_000050")
+
+        // The synchronous construction must stay within one frame (16ms).
+        let ms = timed {
+            let state = DatabaseViewState(dbPath: dbPath)
+            XCTAssertNotNil(state.schema)
+        }
+        PerfBaseline.record(testName: "database_view_sync_load", metric: "ms", value: ms)
+        XCTAssertLessThan(ms, 16)
+    }
+
+    /// Verifies the page editor's synchronous warm path: once a page has been loaded,
+    /// `cachedLoadedPage` returns the fully parsed page with no actor hop, so a
+    /// revisit renders on the first frame instead of after an `await`.
+    func testWarmPageLoadsSynchronously() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BugbookPerfPageCache-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let pagePath = tmpDir.appendingPathComponent("Page.md").path
+        try TestData.makeMarkdown(lineCount: 200).write(toFile: pagePath, atomically: true, encoding: .utf8)
+
+        let worker = EditorSaveWorker()
+
+        // Cold: a cache miss returns nil synchronously — caller falls back to async.
+        XCTAssertNil(worker.cachedLoadedPage(at: pagePath))
+
+        // Warm the cache through the normal async load.
+        _ = await worker.loadPageContent(at: pagePath)
+
+        // Warm: the synchronous fast path returns a fully parsed page within a frame.
+        let ms = timed {
+            guard case .loaded(let page)? = worker.cachedLoadedPage(at: pagePath) else {
+                XCTFail("expected a warm cache hit")
+                return
+            }
+            XCTAssertNotNil(page.parsedDocument)
+        }
+        PerfBaseline.record(testName: "page_cache_sync_load", metric: "ms", value: ms)
+        XCTAssertLessThan(ms, 16)
+    }
+
+    /// Verifies a cold open of a large, un-indexed database: the view state still
+    /// exposes a schema synchronously (so the chrome renders with no spinner) while
+    /// the rows load, and the parallel cold load returns every row.
+    func testColdDatabaseOpensWithChromeBeforeRows() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BugbookPerfColdDB-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let dbPath = tmpDir.path
+        let schema = TestData.makeSchema()
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(schema).write(to: tmpDir.appendingPathComponent("_schema.json"))
+
+        let rowStore = RowStore()
+        for i in 0..<500 {
+            try rowStore.saveRow(TestData.makeRow(index: i), schema: schema, dbPath: dbPath)
+        }
+        // Deliberately no _index.json — this is a first-ever cold open.
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: tmpDir.appendingPathComponent("_index.json").path))
+
+        // The chrome must render from the schema synchronously; rows arrive async.
+        let state = DatabaseViewState(dbPath: dbPath)
+        XCTAssertNotNil(state.schema, "chrome must render from the schema before rows load")
+        XCTAssertTrue(state.rows.isEmpty)
+
+        // The row-display path returns every row fast — it must not wait on index
+        // building. It reports needsDiskRefresh so the caller builds the index in
+        // the background.
+        let displayMs = timed {
+            let loaded = try! DatabaseService().loadDatabaseForDisplay(at: dbPath)
+            XCTAssertEqual(loaded.rows.count, 500)
+            XCTAssertTrue(loaded.needsDiskRefresh)
+        }
+        PerfBaseline.record(testName: "database_cold_display_500", metric: "ms", value: displayMs)
+        XCTAssertLessThan(displayMs, 100)
+
+        // The background index build (and every later open via the warm path) is
+        // also fast now that rebuild is O(rows) rather than O(rows²).
+        let indexMs = timed {
+            let loaded = try! DatabaseService().loadDatabaseFromDiskRefreshingIndex(at: dbPath)
+            XCTAssertEqual(loaded.1.count, 500)
+        }
+        PerfBaseline.record(testName: "database_index_build_500", metric: "ms", value: indexMs)
+        XCTAssertLessThan(indexMs, 250)
+    }
 }

@@ -2040,13 +2040,11 @@ struct ContentView: View {
     }
 
     private func editorLoadingView() -> some View {
-        ZStack {
-            Color.fallbackEditorBg
-            ProgressView()
-                .controlSize(.small)
-                .opacity(0.45)
-        }
-        .accessibilityIdentifier("editor-loading")
+        // No spinner for local content: a page parses in a few milliseconds, so the
+        // gap before `blockDocuments[tab.id]` is populated is roughly one frame.
+        // A flashed spinner reads as jank; a plain editor background does not.
+        Color.fallbackEditorBg
+            .accessibilityIdentifier("editor-loading")
     }
 
     private func editorDocumentView(_ document: BlockDocument) -> some View {
@@ -3010,6 +3008,19 @@ struct ContentView: View {
         formattingPanel?.hidePanel()
         editorUI.focusModeSuppress = true
         pageLoadTasks[tabId]?.cancel()
+
+        // Warm cache: render the page synchronously on this frame — no actor hop,
+        // no loading state. Cold pages fall through to the async load below.
+        if let cachedResult = editorSaveWorker.cachedLoadedPage(at: entry.path) {
+            handleLoadedPanePage(cachedResult, entry: entry, tabId: tabId)
+            pageLoadTasks[tabId] = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+                editorUI.focusModeSuppress = false
+            }
+            return
+        }
+
         pageLoadTasks[tabId] = Task { @MainActor in
             let result = await editorSaveWorker.loadPageContent(at: entry.path)
             guard !Task.isCancelled else { return }

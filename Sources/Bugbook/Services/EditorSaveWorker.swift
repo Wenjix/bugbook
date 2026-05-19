@@ -37,33 +37,98 @@ enum EditorLoadResult: Equatable, Sendable {
     case failed(String)
 }
 
-actor EditorSaveWorker {
-    private struct PageFileMetadata: Equatable, Sendable {
-        let fileSize: UInt64
-        let modificationDate: Date
-    }
+/// File size + modification date — a cheap identity check for a page file on disk.
+struct PageFileMetadata: Equatable, Sendable {
+    let fileSize: UInt64
+    let modificationDate: Date
+}
 
-    private struct CachedPageContent: Sendable {
+/// Thread-safe LRU cache of parsed page content. Held outside the EditorSaveWorker
+/// actor (as a `nonisolated let`) so a synchronous caller — a SwiftUI view opening
+/// a page — can read a warm entry without an actor hop and render on the first
+/// frame instead of after an `await`.
+final class PageContentCache: @unchecked Sendable {
+    struct Entry: Sendable {
         let metadata: PageFileMetadata
         let content: String
         let parsedDocument: BlockDocument.ParsedDocument?
     }
 
+    private let lock = NSLock()
+    private var entries: [String: Entry] = [:]
+    private var order: [String] = []
+    private let maxEntries: Int
+
+    init(maxEntries: Int = 128) {
+        self.maxEntries = maxEntries
+    }
+
+    func entry(at path: String) -> Entry? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = entries[path] else { return nil }
+        touchLocked(path)
+        return entry
+    }
+
+    func store(_ entry: Entry, at path: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        entries[path] = entry
+        touchLocked(path)
+        while order.count > maxEntries {
+            entries.removeValue(forKey: order.removeFirst())
+        }
+    }
+
+    func remove(at path: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        entries.removeValue(forKey: path)
+        order.removeAll { $0 == path }
+    }
+
+    private func touchLocked(_ path: String) {
+        order.removeAll { $0 == path }
+        order.append(path)
+    }
+}
+
+actor EditorSaveWorker {
     private struct DiskReadResult: Sendable {
         let metadata: PageFileMetadata
         let content: String
     }
 
-    private static let maxCachedPages = 128
-
     private let fileManager: FileManager
-    private let draftStore: EditorDraftStore
-    private var contentCache: [String: CachedPageContent] = [:]
-    private var contentCacheOrder: [String] = []
+    private nonisolated let draftStore: EditorDraftStore
+    nonisolated let pageCache = PageContentCache()
 
     init(fileManager: FileManager = .default, draftStore: EditorDraftStore = EditorDraftStore()) {
         self.fileManager = fileManager
         self.draftStore = draftStore
+    }
+
+    /// Synchronous warm-cache read. Returns a fully parsed page when one is cached,
+    /// matches the file on disk, and has no newer unsaved draft — letting a caller
+    /// render the page on the first frame with no actor hop and no loading state.
+    /// Returns nil on a cache miss; callers fall back to async `loadPageContent`.
+    nonisolated func cachedLoadedPage(at path: String) -> EditorLoadResult? {
+        guard let metadata = Self.fileMetadata(at: path),
+              let cached = pageCache.entry(at: path),
+              cached.metadata == metadata,
+              let parsed = cached.parsedDocument else {
+            return nil
+        }
+        // A newer unsaved draft must win; defer to the async path to restore it.
+        guard draftStore.restorePageDraftIfNewer(path: path) == nil else {
+            return nil
+        }
+        return .loaded(EditorLoadedPage(
+            content: cached.content,
+            isRestoredDraft: false,
+            parsedDocument: parsed
+        ))
     }
 
     func savePageDraft(content: String, path: String) {
@@ -134,10 +199,9 @@ actor EditorSaveWorker {
 
         let diskContent: String
         let cachedParsedDocument: BlockDocument.ParsedDocument?
-        if let cached = contentCache[path], cached.metadata == metadata {
+        if let cached = pageCache.entry(at: path), cached.metadata == metadata {
             diskContent = cached.content
             cachedParsedDocument = cached.parsedDocument
-            touchCacheEntry(path)
         } else {
             let result = await Self.readDiskContent(at: path, priority: priority)
             guard !Task.isCancelled else { return .cancelled }
@@ -146,11 +210,13 @@ actor EditorSaveWorker {
             case .success(let diskResult):
                 diskContent = diskResult.content
                 cachedParsedDocument = nil
-                cache(
-                    content: diskResult.content,
-                    metadata: diskResult.metadata,
-                    path: path,
-                    parsedDocument: nil
+                pageCache.store(
+                    PageContentCache.Entry(
+                        metadata: diskResult.metadata,
+                        content: diskResult.content,
+                        parsedDocument: nil
+                    ),
+                    at: path
                 )
             case .failure(let error):
                 return .failed(error.localizedDescription)
@@ -220,33 +286,12 @@ actor EditorSaveWorker {
         parsedDocument: BlockDocument.ParsedDocument? = nil
     ) {
         guard let metadata = Self.fileMetadata(at: path) else {
-            contentCache.removeValue(forKey: path)
-            contentCacheOrder.removeAll { $0 == path }
+            pageCache.remove(at: path)
             return
         }
-        cache(content: content, metadata: metadata, path: path, parsedDocument: parsedDocument)
-    }
-
-    private func cache(
-        content: String,
-        metadata: PageFileMetadata,
-        path: String,
-        parsedDocument: BlockDocument.ParsedDocument?
-    ) {
-        contentCache[path] = CachedPageContent(
-            metadata: metadata,
-            content: content,
-            parsedDocument: parsedDocument
+        pageCache.store(
+            PageContentCache.Entry(metadata: metadata, content: content, parsedDocument: parsedDocument),
+            at: path
         )
-        touchCacheEntry(path)
-        while contentCacheOrder.count > Self.maxCachedPages {
-            let evicted = contentCacheOrder.removeFirst()
-            contentCache.removeValue(forKey: evicted)
-        }
-    }
-
-    private func touchCacheEntry(_ path: String) {
-        contentCacheOrder.removeAll { $0 == path }
-        contentCacheOrder.append(path)
     }
 }

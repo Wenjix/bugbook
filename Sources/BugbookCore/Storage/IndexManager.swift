@@ -65,8 +65,29 @@ public class IndexManager {
         var localIndexes: [String: [String: [String]]] = Dictionary(minimumCapacity: indexedProps.count)
         for prop in indexedProps { localIndexes[prop.id] = [:] }
 
+        // List the directory once and map each row-id suffix to its filename.
+        // Otherwise buildRowEntry -> rowFilename re-lists and re-scans the whole
+        // directory per row, making a rebuild O(rows²) — the dominant cost of a
+        // large cold database open.
+        let dirContents = (try? fm.contentsOfDirectory(atPath: dbPath)) ?? []
+        var filenameBySuffix: [String: String] = Dictionary(minimumCapacity: dirContents.count)
+        for name in dirContents where name.hasSuffix(".md") && !name.hasPrefix("_") {
+            // Filenames look like "Title (suffix).md"; the suffix is between the
+            // last "(" and last ")".
+            guard let lparen = name.lastIndex(of: "("),
+                  let rparen = name.lastIndex(of: ")"),
+                  lparen < rparen else { continue }
+            filenameBySuffix[String(name[name.index(after: lparen)..<rparen])] = String(name.dropLast(3))
+        }
+
         for row in rows {
-            rowsMap[row.id] = buildRowEntry(row: row, schema: schema, dbPath: dbPath)
+            rowsMap[row.id] = buildRowEntry(
+                row: row,
+                schema: schema,
+                dbPath: dbPath,
+                dirContents: dirContents,
+                precomputedFilename: filenameBySuffix[RowStore.extractIdSuffix(from: row.id)]
+            )
 
             // Build reverse indexes in the same pass
             for prop in indexedProps {
@@ -105,7 +126,15 @@ public class IndexManager {
     // MARK: - Single Row Entry
 
     /// Build the index entry dictionary for a single row (used by incremental updates).
-    public func buildRowEntry(row: DatabaseRow, schema: DatabaseSchema, dbPath: String) -> [String: Any] {
+    /// Pass `dirContents` (a pre-listed directory) when building many entries at once
+    /// to avoid re-listing the directory per row.
+    public func buildRowEntry(
+        row: DatabaseRow,
+        schema: DatabaseSchema,
+        dbPath: String,
+        dirContents: [String]? = nil,
+        precomputedFilename: String? = nil
+    ) -> [String: Any] {
         var props: [String: Any] = [:]
         for prop in schema.properties {
             if let val = row.properties[prop.id] {
@@ -113,7 +142,8 @@ public class IndexManager {
             }
         }
 
-        let filename = rowFilename(row: row, schema: schema, dbPath: dbPath)
+        let filename = precomputedFilename
+            ?? rowFilename(row: row, schema: schema, dbPath: dbPath, dirContents: dirContents)
         let filePath = (dbPath as NSString).appendingPathComponent("\(filename).md")
         let mtime: Int
         if let attrs = try? fm.attributesOfItem(atPath: filePath),
@@ -146,13 +176,23 @@ public class IndexManager {
         Self.isoFormatter.string(from: date)
     }
 
-    private func rowFilename(row: DatabaseRow, schema: DatabaseSchema, dbPath: String) -> String {
+    private func rowFilename(
+        row: DatabaseRow,
+        schema: DatabaseSchema,
+        dbPath: String,
+        dirContents: [String]? = nil
+    ) -> String {
         let title = row.title(schema: schema)
         let suffix = RowStore.extractIdSuffix(from: row.id)
         let fallback = RowStore.rowFilename(title: title, suffix: suffix)
             .replacingOccurrences(of: ".md", with: "")
 
-        guard let contents = try? fm.contentsOfDirectory(atPath: dbPath) else {
+        let contents: [String]
+        if let dirContents {
+            contents = dirContents
+        } else if let listed = try? fm.contentsOfDirectory(atPath: dbPath) {
+            contents = listed
+        } else {
             return fallback
         }
 

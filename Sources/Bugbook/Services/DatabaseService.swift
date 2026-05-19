@@ -44,27 +44,46 @@ class DatabaseService {
     }
 
     func loadDatabaseForDisplay(at path: String) throws -> DisplayLoadResult {
-        if let cached = Self.cachedDisplayResult(at: path) {
+        if let fast = fastDisplayResult(at: path) {
+            return fast
+        }
+
+        // Un-indexed (e.g. a freshly imported database): return the rows for
+        // immediate display and report `needsDiskRefresh` so the caller builds the
+        // index in the background. Index building is the slowest step for a large
+        // database and must not block the rows from appearing.
+        let schema = try loadSchema(at: path)
+        let rows = try loadRows(in: path, schema: schema)
+        return DisplayLoadResult(schema: schema, rows: rows, needsDiskRefresh: true)
+    }
+
+    /// Synchronous fast path for first render. Returns a result only when it can be
+    /// produced without a full directory scan — a warm in-memory cache hit or an
+    /// on-disk index — so callers can populate the view before the first frame and
+    /// never show a loading spinner. Returns nil when only a full disk load would
+    /// work (an un-indexed database); callers fall back to the async path.
+    ///
+    /// `checkStale: false` skips the per-row-file staleness scan, which keeps the
+    /// call cheap enough for a hot path (e.g. a SwiftUI view initializer). The
+    /// returned `needsDiskRefresh` is then always `true` so the caller refreshes
+    /// from disk in the background once and stays correct.
+    func fastDisplayResult(at path: String, checkStale: Bool = true) -> DisplayLoadResult? {
+        if let cached = Self.cachedDisplayResult(at: path, checkStale: checkStale) {
             return cached
         }
 
-        let schema = try loadSchema(at: path)
-
-        if let indexData = indexManager.loadIndex(at: path),
-           let indexedRows = rowsFromIndex(indexData, schema: schema) {
-            let result = DisplayLoadResult(
-                schema: schema,
-                rows: indexedRows,
-                needsDiskRefresh: indexManager.isStale(indexData: indexData, dbPath: path)
-            )
-            Self.cacheDisplayResult(result, at: path, indexData: indexData)
-            return result
+        guard let schema = try? loadSchema(at: path),
+              let indexData = indexManager.loadIndex(at: path),
+              let indexedRows = rowsFromIndex(indexData, schema: schema) else {
+            return nil
         }
 
-        let rows = try loadRows(in: path, schema: schema)
-        try? updateIndex(rows: rows, schema: schema, at: path)
-        let result = DisplayLoadResult(schema: schema, rows: rows, needsDiskRefresh: false)
-        Self.cacheDisplayResult(result, at: path)
+        let result = DisplayLoadResult(
+            schema: schema,
+            rows: indexedRows,
+            needsDiskRefresh: checkStale ? indexManager.isStale(indexData: indexData, dbPath: path) : true
+        )
+        Self.cacheDisplayResult(result, at: path, indexData: indexData)
         return result
     }
 
@@ -79,7 +98,18 @@ class DatabaseService {
     }
 
     func preloadDatabaseForDisplay(at path: String) {
-        _ = try? loadDatabaseForDisplay(at: path)
+        // Already indexed or cached — nothing to warm.
+        if fastDisplayResult(at: path) != nil { return }
+        // Un-indexed: build the index now so the eventual open is instant.
+        _ = try? loadDatabaseFromDiskRefreshingIndex(at: path)
+    }
+
+    /// Loads only the schema (`_schema.json`) — a single small file. Fast enough to
+    /// call synchronously while rendering, so a database with no index yet can show
+    /// its chrome (header, columns, view tabs) on the first frame while its rows
+    /// load, instead of a full-screen loading spinner.
+    func loadSchemaForDisplay(at path: String) throws -> DatabaseSchema {
+        try loadSchema(at: path)
     }
 
     private func loadSchema(at path: String) throws -> DatabaseSchema {
@@ -88,7 +118,7 @@ class DatabaseService {
         return try JSONDecoder().decode(DatabaseSchema.self, from: data)
     }
 
-    private static func cachedDisplayResult(at path: String) -> DisplayLoadResult? {
+    private static func cachedDisplayResult(at path: String, checkStale: Bool = true) -> DisplayLoadResult? {
         guard let schemaMetadata = fileMetadata(
             at: (path as NSString).appendingPathComponent("_schema.json")
         ),
@@ -112,7 +142,7 @@ class DatabaseService {
         touchDisplayCacheEntry(path)
         displayCacheLock.unlock()
 
-        let needsDiskRefresh = cached.result.needsDiskRefresh ||
+        let needsDiskRefresh = !checkStale || cached.result.needsDiskRefresh ||
             IndexManager().isStale(indexData: cached.indexData, dbPath: path)
         return DisplayLoadResult(
             schema: cached.result.schema,

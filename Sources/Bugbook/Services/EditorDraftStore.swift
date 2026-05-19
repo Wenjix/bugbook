@@ -1,7 +1,10 @@
 import Foundation
 import CryptoKit
 
-struct EditorDraftStore {
+/// Path-keyed file store with value semantics — no shared mutable Swift state, so
+/// it is safe to read from any isolation domain (e.g. EditorSaveWorker's
+/// `nonisolated` synchronous cache lookup).
+struct EditorDraftStore: @unchecked Sendable {
     enum DraftKey {
         case page(path: String)
         case rowBody(dbPath: String, rowId: String)

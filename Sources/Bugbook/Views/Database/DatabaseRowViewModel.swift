@@ -50,6 +50,27 @@ final class DatabaseRowViewModel {
         }
     }
 
+    /// Populate schema/row synchronously from the warm cache or on-disk index so the
+    /// first render shows the row instead of a "Loading row..." spinner. A no-op when
+    /// the database has no index yet — `loadData` then loads it on the async path.
+    /// The `.task`-driven `loadData` still runs afterward as a background refresh.
+    func loadSynchronouslyIfPossible(rowId: String) {
+        guard schema == nil, row == nil, !isLoadInFlight,
+              let fast = dbService.fastDisplayResult(at: dbPath, checkStale: false),
+              var loadedRow = fast.rows.first(where: { $0.id == rowId }) else { return }
+        loadedRow.body = dbService.loadRowBody(rowId: rowId, at: dbPath)
+        if let restoredBody = draftStore.restoreRowBodyDraftIfNewer(
+            dbPath: dbPath,
+            rowId: rowId,
+            rowFilePath: rowFilePath(rowId: rowId)
+        ) {
+            loadedRow.body = restoredBody
+            didEdit = true
+        }
+        schema = fast.schema
+        row = loadedRow
+    }
+
     func loadData(rowId: String) {
         if isLoadInFlight {
             pendingRowIdForReload = rowId

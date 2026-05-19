@@ -184,7 +184,7 @@ struct DatabaseFullPageView: View {
             guard let changedPath = notification.databasePath,
                   changedPath == dbPath else { return }
             guard notification.databaseOrigin != state.notificationOrigin else { return }
-            state.loadData()
+            state.loadData(forceReload: true)
         }
         .preference(key: DatabaseViewStatePreferenceKey.self, value: DatabaseViewStatePreferenceValue(state: state))
     }

@@ -114,17 +114,36 @@ public class RowStore {
     public func loadAllRowsDetailed(in dbPath: String, schema: DatabaseSchema) -> [DetailedLoadResult] {
         guard let contents = try? fm.contentsOfDirectory(atPath: dbPath) else { return [] }
 
+        let mdFiles = contents.filter { $0.hasSuffix(".md") && !$0.hasPrefix("_") }
+        guard !mdFiles.isEmpty else { return [] }
+
+        // Read + parse every row file in parallel — this is the dominant cost when
+        // a large database is opened cold (no index). Each iteration writes its own
+        // slot, and RowSerializer.parseDetailed is a pure parse over read-only state,
+        // so this is data-race-free. Dedup runs serially afterward; it is cheap.
+        var parsedFiles = [DetailedLoadResult?](repeating: nil, count: mdFiles.count)
+        parsedFiles.withUnsafeMutableBufferPointer { buffer in
+            DispatchQueue.concurrentPerform(iterations: mdFiles.count) { index in
+                let name = mdFiles[index]
+                let filePath = (dbPath as NSString).appendingPathComponent(name)
+                guard let content = try? String(contentsOfFile: filePath, encoding: .utf8),
+                      let parsed = RowSerializer.parseDetailed(content: content, schema: schema, skipBody: true)
+                else { return }
+                buffer[index] = DetailedLoadResult(
+                    row: parsed.row,
+                    filename: name,
+                    rawProperties: parsed.rawProperties
+                )
+            }
+        }
+
         var bestByID: [String: DetailedLoadResult] = [:]
         var duplicateFiles: [String] = []
 
-        for name in contents {
-            guard name.hasSuffix(".md"), !name.hasPrefix("_") else { continue }
-            let filePath = (dbPath as NSString).appendingPathComponent(name)
-            guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
-            guard let parsed = RowSerializer.parseDetailed(content: content, schema: schema, skipBody: true) else { continue }
-
-            let detail = DetailedLoadResult(row: parsed.row, filename: name, rawProperties: parsed.rawProperties)
-            let rowId = parsed.row.id
+        for detail in parsedFiles {
+            guard let detail else { continue }
+            let name = detail.filename
+            let rowId = detail.row.id
 
             if let existing = bestByID[rowId] {
                 let suffix = Self.extractIdSuffix(from: rowId)
@@ -137,7 +156,7 @@ public class RowStore {
                 } else if !newIsCanonical && existingIsCanonical {
                     duplicateFiles.append(name)
                 } else {
-                    if parsed.row.updatedAt > existing.row.updatedAt {
+                    if detail.row.updatedAt > existing.row.updatedAt {
                         duplicateFiles.append(existing.filename)
                         bestByID[rowId] = detail
                     } else {
