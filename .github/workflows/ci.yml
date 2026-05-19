@@ -39,15 +39,16 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .build
-          # v2 forces cache invalidation after the 2026-04-12 dahso-to-bugbook rename, which left
-          # stale absolute paths like /Users/runner/work/bugbook/bugbook/.build/... inside the
+          # v3 forces cache invalidation after stale absolute paths from older repo names appeared
+          # inside the cached Sparkle artifact path, such as /Users/runner/work/dahso/dahso/.build/...
           # cached Sparkle XCFramework Info.plist.
-          key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v2-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v3-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v2-
-            ${{ runner.os }}-spm-v2-
+            ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v3-
+            ${{ runner.os }}-spm-v3-
 
       - name: Cache CEF runtime
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v5
         with:
           path: macos/vendor/cef
@@ -56,6 +57,7 @@ jobs:
             ${{ runner.os }}-cef-
 
       - name: Verify Ghostty archive
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           ARCHIVE="Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty-fat.a"
@@ -64,13 +66,21 @@ jobs:
           ar -t "$ARCHIVE" >/dev/null
 
       - name: Fetch CEF runtime
+        if: github.event_name != 'pull_request'
         run: bash scripts/fetch-cef.sh
 
-      - name: Build
+      - name: Build CLI product
+        if: github.event_name == 'pull_request'
+        run: |
+          swift build --product BugbookCLI
+
+      - name: Build package
+        if: github.event_name != 'pull_request'
         run: |
           swift build
 
       - name: Install XcodeGen
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           if ! command -v xcodegen >/dev/null 2>&1; then
@@ -143,18 +153,22 @@ jobs:
             swift format lint "$file"
           done
 
-      - name: Run tests
-        run: swift test
+      # Full performance regression checks run in performance.yml on schedule or by manual dispatch.
+      # Keep PR CI fast enough that small CLI changes are reviewable.
+      - name: Run CLI tests
+        run: swift test --filter BugbookCLITests
 
       - name: Run smoke test
         run: bash scripts/smoke-cli.sh
 
       - name: Generate Xcode project
+        if: github.event_name != 'pull_request'
         run: |
           cd macos
           xcodegen generate
 
       - name: Build macOS app target
+        if: github.event_name != 'pull_request'
         run: |
           xcodebuild \
             -project /Users/runner/work/bugbook/bugbook/macos/Bugbook.xcodeproj \

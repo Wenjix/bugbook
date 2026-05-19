@@ -2472,6 +2472,66 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertTrue(summary.contains("second line"))
     }
 
+    func testContextRepoCommandsListCreateValidateExportAndReadPack() throws {
+        let workspace = try makeContextRepoWorkspace()
+
+        let opened = try runJSON(
+            Context.Open.parseAsRoot([
+                workspace
+            ])
+        )
+        XCTAssertEqual(opened["detected"] as? Bool, true)
+        XCTAssertEqual(opened["records_count"] as? Int, 1)
+
+        let listed = try runJSON(
+            Context.List.parseAsRoot([
+                "--workspace", workspace,
+                "--group-by", "status"
+            ])
+        )
+        XCTAssertEqual(listed["count"] as? Int, 1)
+        XCTAssertEqual(listed["group_by"] as? String, "status")
+
+        let created = try runJSON(
+            Context.Create.parseAsRoot([
+                "--workspace", workspace,
+                "--type", "research",
+                "--status", "seed",
+                "--title", "Dex Camera Research Import Plan",
+                "--tags", "dex", "research",
+                "--summary", "Plan the first Dex research source import.",
+                "--body", "Needs source records, review synthesis, and open questions."
+            ])
+        )
+
+        XCTAssertEqual(created["type"] as? String, "research")
+        XCTAssertEqual(created["status"] as? String, "seed")
+        XCTAssertEqual(created["relative_path"] as? String, "records/research/dex-camera-research-import-plan.md")
+
+        let validate = try runJSON(
+            Context.Validate.parseAsRoot([
+                "--workspace", workspace
+            ])
+        )
+        XCTAssertEqual(validate["ok"] as? Bool, true)
+        XCTAssertTrue((validate["stdout"] as? String)?.contains("context valid") == true)
+
+        let export = try runJSON(
+            Context.Export.parseAsRoot([
+                "--workspace", workspace
+            ])
+        )
+        XCTAssertEqual(export["ok"] as? Bool, true)
+
+        let pack = try captureStandardOutput {
+            var command = try Context.Pack.parseAsRoot([
+                "--workspace", workspace
+            ])
+            try command.run()
+        }
+        XCTAssertTrue(pack.contains("# Test Context Pack"))
+    }
+
     func testSharedAgentsTemplateCoversNotesBoardsSkillsAndTracking() {
         let template = AgentWorkspaceTemplate.agentsMarkdown(workspace: "/tmp/Bugbook")
         XCTAssertTrue(template.contains("## Notes And Pages"))
@@ -2696,6 +2756,76 @@ private func makeWorkspace() throws -> String {
     let workspaceURL = FileManager.default.temporaryDirectory.appendingPathComponent("BugbookCLITests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
     return workspaceURL.path
+}
+
+private func makeContextRepoWorkspace() throws -> String {
+    let workspace = try makeWorkspace()
+    let fm = FileManager.default
+    for directory in [
+        "records/decisions",
+        "generated",
+        "scripts",
+    ] {
+        try fm.createDirectory(
+            atPath: (workspace as NSString).appendingPathComponent(directory),
+            withIntermediateDirectories: true
+        )
+    }
+
+    try "manifest".write(
+        toFile: (workspace as NSString).appendingPathComponent("CONTEXT_MANIFEST.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "agents".write(
+        toFile: (workspace as NSString).appendingPathComponent("AGENTS.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "# Test Context Pack\n".write(
+        toFile: (workspace as NSString).appendingPathComponent("generated/daso-context-pack.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try """
+    ---
+    id: dec_test_context
+    type: decision
+    status: accepted
+    title: Test Context Decision
+    owner: max
+    created_at: 2026-05-19
+    updated_at: 2026-05-19
+    tags:
+      - context
+    source_refs: []
+    supersedes: []
+    superseded_by: []
+    ---
+
+    # Test Context Decision
+
+    A durable decision.
+    """.write(
+        toFile: (workspace as NSString).appendingPathComponent("records/decisions/test-context-decision.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try """
+    print("context valid")
+    """.write(
+        toFile: (workspace as NSString).appendingPathComponent("scripts/validate_context.py"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try """
+    print("context exported")
+    """.write(
+        toFile: (workspace as NSString).appendingPathComponent("scripts/export_context_pack.py"),
+        atomically: true,
+        encoding: .utf8
+    )
+    return workspace
 }
 
 private func writeTempFile(in workspace: String, name: String, contents: String) throws -> String {

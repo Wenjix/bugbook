@@ -1,0 +1,63 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+
+jobs:
+  performance:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Select Xcode
+        id: toolchain
+        run: |
+          set -euo pipefail
+          if [ -d "/Applications/Xcode_26.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          fi
+
+          swift --version
+          XCODE_BUILD_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_BUILD_VERSION"
+          XCODE_VERSION="$(printf '%s\n' "$XCODE_BUILD_VERSION" | awk '/^Xcode / { print $2 }')"
+          echo "xcode_version=$XCODE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v5
+        with:
+          path: .build
+          key: ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v3-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v3-
+            ${{ runner.os }}-spm-v3-
+
+      - name: Cache CEF runtime
+        uses: actions/cache@v5
+        with:
+          path: macos/vendor/cef
+          key: ${{ runner.os }}-cef-${{ hashFiles('scripts/fetch-cef.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-cef-
+
+      - name: Verify Ghostty archive
+        run: |
+          set -euo pipefail
+          ARCHIVE="Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty-fat.a"
+          test -f "$ARCHIVE"
+          file "$ARCHIVE"
+          ar -t "$ARCHIVE" >/dev/null
+
+      - name: Fetch CEF runtime
+        run: bash scripts/fetch-cef.sh
+
+      - name: Run performance regression checks
+        run: zsh scripts/perf-compare.sh
