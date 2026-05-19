@@ -33,11 +33,15 @@ echo "-- Generating Xcode project"
 
 echo "-- Building Xcode app target"
 rm -rf "$DERIVED_DATA"
+# arm64-only: the vendored frameworks (CEF, GhosttyKit) ship arm64 slices only,
+# so a universal build fails at the x86_64 link step.
 xcodebuild \
     -project "$REPO_ROOT/macos/Bugbook.xcodeproj" \
     -scheme BugbookApp \
     -configuration Release \
     -derivedDataPath "$DERIVED_DATA" \
+    -arch arm64 \
+    ONLY_ACTIVE_ARCH=YES \
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
     MARKETING_VERSION="$VERSION" \
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
