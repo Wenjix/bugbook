@@ -135,7 +135,8 @@ enum PaneContent: Codable, Equatable {
                 navigationHistory: file.navigationHistory,
                 navigationHistoryIndex: file.navigationHistoryIndex,
                 browserSavedRecordID: file.browserSavedRecordID,
-                browserPageZoom: file.browserPageZoom
+                browserPageZoom: file.browserPageZoom,
+                isExternal: file.isExternal
             )
             return .document(openFile: file)
         }
