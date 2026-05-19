@@ -944,8 +944,15 @@ extension TranscriptionService {
                 startFluidChunkTimer()
                 return
             } catch {
-                reportSystemAudioFallback(
-                    "ScreenCaptureKit microphone capture was not available. Falling back to the microphone engine. (\(error.localizedDescription))"
+                // The combined ScreenCaptureKit mic+system stream failed; fall back
+                // to the AVAudioEngine mic plus a separate system-audio capture
+                // below. This is an internal detail — the mic is still captured —
+                // so it must NOT consume the one-shot user notice. Only a genuine
+                // system-audio failure (reported by startSystemAudioCapture) should
+                // surface, otherwise the actionable "other participants are not
+                // being recorded" message gets pre-empted by this benign one.
+                Log.transcription.warning(
+                    "ScreenCaptureKit combined mic+system capture unavailable, using split capture path: \(error.localizedDescription, privacy: .public)"
                 )
             }
         }
