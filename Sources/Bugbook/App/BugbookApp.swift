@@ -374,6 +374,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
+    // MARK: - External File Open Handler
+
+    /// Markdown file paths handed to the app by the macOS "Open With" handler.
+    /// Buffered here so the open request survives the gap before a window and its
+    /// workspace are ready (cold launch). ContentView drains this once ready.
+    private static var pendingExternalFilePaths: [String] = []
+
+    static func enqueueExternalFilePaths(_ paths: [String]) {
+        pendingExternalFilePaths.append(contentsOf: paths)
+    }
+
+    static func peekPendingExternalFilePaths() -> [String] {
+        pendingExternalFilePaths
+    }
+
+    static func takePendingExternalFilePaths() -> [String] {
+        let paths = pendingExternalFilePaths
+        pendingExternalFilePaths = []
+        return paths
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let paths = urls.filter { $0.isFileURL }.map { $0.path }
+        guard !paths.isEmpty else { return }
+        Log.app.info("application(open:) received \(paths.count) external file(s)")
+        Self.enqueueExternalFilePaths(paths)
+        // If the app is running but has no window (e.g. all closed), spawn one to receive
+        // the file. On cold launch `openDefaultWindowIfNeeded` already handles this.
+        let hasVisibleWindow = application.windows.contains { $0.isVisible && !($0 is NSPanel) }
+        if !hasVisibleWindow {
+            DetachedWindowManager.shared.openWindow(title: "Bugbook")
+        }
+        NotificationCenter.default.post(name: .openExternalFiles, object: nil)
+    }
+
     private func openProfileWindowIfNeeded() {
         guard ProcessInfo.processInfo.environment["BUGBOOK_PROFILE_AUTO_START_MEETING"] == "1" else { return }
         Task { @MainActor in
@@ -684,6 +719,7 @@ extension Notification.Name {
     static let openTerminal = Notification.Name("openTerminal")
     static let openBrowser = Notification.Name("openBrowser")
     static let toggleShortcutOverlay = Notification.Name("toggleShortcutOverlay")
+    static let openExternalFiles = Notification.Name("openExternalFiles")
     static let fileDeleted = Notification.Name("fileDeleted")
     static let fileMoved = Notification.Name("fileMoved")
     static let movePage = Notification.Name("movePage")

@@ -104,6 +104,7 @@ struct WorkspaceTabBar: View {
             }
             .padding(.leading, 0)
             Spacer(minLength: 0)
+            saveToWorkspaceButton
             layoutSavedIndicator
         }
         .frame(height: ShellZoomMetrics.size(36))
@@ -132,6 +133,33 @@ struct WorkspaceTabBar: View {
             return Color.primary.opacity(0.08)
         }
         return Color.clear
+    }
+
+    /// Shown only when the focused tab is an external markdown file. Its presence is the
+    /// signal that the file lives outside the workspace; tapping it moves the file in.
+    @ViewBuilder
+    private var saveToWorkspaceButton: some View {
+        if workspaceManager.focusedOpenFile?.isExternal == true {
+            Button {
+                NotificationCenter.default.post(name: .saveFile, object: nil)
+            } label: {
+                HStack(spacing: ShellZoomMetrics.size(4)) {
+                    Image(systemName: "tray.and.arrow.down")
+                    Text("Save to Workspace")
+                }
+                .font(.system(size: Typography.caption2))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, ShellZoomMetrics.size(8))
+                .padding(.vertical, ShellZoomMetrics.size(3))
+                .background(
+                    RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
+                        .fill(Color.primary.opacity(0.06))
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, ShellZoomMetrics.size(10))
+            .help("Move this file into your workspace")
+        }
     }
 
     @ViewBuilder

@@ -31,6 +31,23 @@ struct Workspace: Identifiable, Codable, Equatable {
         root.allLeaves
     }
 
+    /// True when every tab in every pane is an external-file tab.
+    var isEntirelyExternalFiles: Bool {
+        let leaves = allLeaves
+        guard !leaves.isEmpty else { return false }
+        return leaves.allSatisfy { leaf in
+            !leaf.tabs.isEmpty && leaf.tabs.allSatisfy { $0.openFile?.isExternal == true }
+        }
+    }
+
+    /// A copy with external-file tabs removed from every pane (used when persisting —
+    /// external tabs are session-only and must not be written to the saved layout).
+    func strippingExternalFileTabs() -> Workspace {
+        var copy = self
+        copy.root = root.strippingExternalFileTabs()
+        return copy
+    }
+
     /// Create a default workspace with a single empty-tab document pane.
     static func makeDefault(name: String = "Workspace") -> Workspace {
         let paneId = UUID()

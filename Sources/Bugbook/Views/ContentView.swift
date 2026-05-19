@@ -74,6 +74,9 @@ struct ContentView: View {
     @State private var fileTreeRefreshGeneration = 0
     @State private var pageLoadTasks: [UUID: Task<Void, Never>] = [:]
     @State private var pagePreloadTask: Task<Void, Never>?
+    /// True once the app's own launch navigation (daily note / hub) has run, so an
+    /// external file opened via "Open With" won't be clobbered by that async navigation.
+    @State private var launchNavigationSettled = false
     @State private var workspaceWatcher: WorkspaceWatcher?
     @State private var restoredWorkspaceDocuments = false
     @State private var lastTrashPurgeWorkspace: String?
@@ -297,6 +300,7 @@ struct ContentView: View {
         if BugbookFeatureGate.shouldWarmTranscriptionAtLaunch {
             warmUpTranscriptionModel()
         }
+        drainPendingExternalFiles()
         Log.profileMarker("appInitialLifecycleComplete")
     }
 
@@ -603,6 +607,15 @@ struct ContentView: View {
                 if !postBrowserCommandIfFocused(.browserSavePage) {
                     forceSave()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openExternalFiles)) { _ in
+                drainPendingExternalFiles()
+            }
+            .onOpenURL { url in
+                Log.app.info("onOpenURL received: \(url.path)")
+                guard url.isFileURL else { return }
+                AppDelegate.enqueueExternalFilePaths([url.path])
+                drainPendingExternalFiles()
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
                 guard !appState.showSettings else { return }
@@ -2772,6 +2785,111 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - External File Open ("Open With" handler)
+
+    /// Drain any markdown files the macOS "Open With" handler buffered in `AppDelegate`.
+    /// Waits until the app's own launch navigation (e.g. opening the daily note) has
+    /// settled — otherwise that async navigation clobbers the external file's pane.
+    /// Retries up to ~5s, then opens anyway so a buffered file is never lost.
+    private func drainPendingExternalFiles(attempt: Int = 0) {
+        guard !AppDelegate.peekPendingExternalFilePaths().isEmpty else { return }
+        let ready = (workspaceManager.focusedPane != nil && launchNavigationSettled) || attempt >= 25
+        guard ready else {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                drainPendingExternalFiles(attempt: attempt + 1)
+            }
+            return
+        }
+        let paths = AppDelegate.takePendingExternalFilePaths()
+        Log.app.info("drainPendingExternalFiles: opening \(paths.count) external file(s) [attempt \(attempt)]")
+        for path in paths {
+            openExternalFile(at: path)
+        }
+    }
+
+    /// Open a markdown file from outside the workspace as its own top-level workspace tab.
+    /// External tabs are not autosaved — saving moves the file into the workspace
+    /// (see `saveExternalFileToWorkspace`).
+    private func openExternalFile(at path: String) {
+        Log.app.info("openExternalFile: \(path)")
+        guard FileManager.default.fileExists(atPath: path) else {
+            Log.fileSystem.error("External file no longer exists: \(path)")
+            return
+        }
+        appState.currentView = .editor
+        appState.showSettings = false
+
+        // Already open in a workspace — switch to that workspace instead of reopening.
+        if let existingIndex = workspaceManager.workspaces.firstIndex(where: { ws in
+            ws.allLeaves.contains { leaf in
+                leaf.tabs.contains { $0.openFile?.path == path }
+            }
+        }) {
+            workspaceManager.switchWorkspace(to: existingIndex)
+            return
+        }
+
+        // Open as its own top-level workspace tab.
+        let name = (path as NSString).lastPathComponent
+        let entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: .page)
+        var file = makeOpenFile(for: entry, id: UUID())
+        file.isExternal = true
+        workspaceManager.addWorkspaceWith(content: .document(openFile: file))
+        if let actualTabId = workspaceManager.activeWorkspace?.focusedLeaf?.activeTabID {
+            loadFileContentForPane(entry: entry, tabId: actualTabId)
+        }
+        updateSidebarContextType()
+    }
+
+    /// Move an external markdown file into the workspace: write the current editor content
+    /// to the workspace root, delete the original file, and convert the tab to a normal note.
+    private func saveExternalFileToWorkspace(tabId: UUID) {
+        guard let workspace = appState.workspacePath, !workspace.isEmpty,
+              let file = workspaceManager.openFile(tabId: tabId),
+              let document = blockDocuments[tabId] else { return }
+        let originalPath = file.path
+        let content = document.markdown
+        let destPath = uniqueWorkspaceDestination(
+            forName: (originalPath as NSString).lastPathComponent,
+            in: workspace
+        )
+
+        do {
+            try content.write(toFile: destPath, atomically: true, encoding: .utf8)
+        } catch {
+            Log.fileSystem.error("Failed to move external file into workspace: \(error.localizedDescription)")
+            return
+        }
+        try? FileManager.default.removeItem(atPath: originalPath)
+
+        document.filePath = destPath
+        let cleanName = (destPath as NSString).lastPathComponent
+        workspaceManager.updateOpenFile(tabId: tabId) { entry in
+            entry.path = destPath
+            entry.isExternal = false
+            entry.isDirty = false
+            entry.displayName = cleanName.hasSuffix(".md") ? String(cleanName.dropLast(3)) : cleanName
+        }
+        refreshFileTree()
+        backlinkService.updateFile(at: destPath, in: workspace)
+    }
+
+    /// Finder-style non-colliding destination path in the workspace root (`name 2.md`, …).
+    private func uniqueWorkspaceDestination(forName fileName: String, in directory: String) -> String {
+        let ext = (fileName as NSString).pathExtension
+        let base = (fileName as NSString).deletingPathExtension
+        var candidate = fileName
+        var counter = 2
+        while FileManager.default.fileExists(
+            atPath: (directory as NSString).appendingPathComponent(candidate)
+        ) {
+            candidate = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
+            counter += 1
+        }
+        return (directory as NSString).appendingPathComponent(candidate)
+    }
+
     private func openLauncherFile(_ entry: FileEntry, destination: CommandPaletteDestination) {
         switch destination {
         case .inPlace:
@@ -4166,9 +4284,13 @@ struct ContentView: View {
     }
 
     private func openDailyNote() {
-        guard let workspace = appState.workspacePath else { return }
+        guard let workspace = appState.workspacePath else {
+            markLaunchNavigationSettled()
+            return
+        }
 
         Task { @MainActor in
+            defer { markLaunchNavigationSettled() }
             do {
                 let path = try await fileSystem.openOrCreateDailyNoteInBackground(in: workspace)
                 guard !Task.isCancelled else { return }
@@ -4182,10 +4304,22 @@ struct ContentView: View {
         }
     }
 
+    /// Mark the app's launch navigation as finished and release any external files
+    /// the "Open With" handler buffered while waiting for it.
+    private func markLaunchNavigationSettled() {
+        guard !launchNavigationSettled else { return }
+        launchNavigationSettled = true
+        drainPendingExternalFiles()
+    }
+
     private func openMeetingsHub() {
-        guard let workspace = appState.workspacePath else { return }
+        guard let workspace = appState.workspacePath else {
+            markLaunchNavigationSettled()
+            return
+        }
 
         Task { @MainActor in
+            defer { markLaunchNavigationSettled() }
             do {
                 let location = try await fileSystem.ensureMeetingsHubInBackground(in: workspace)
                 guard !Task.isCancelled else { return }
@@ -4517,6 +4651,8 @@ struct ContentView: View {
             return
         }
         guard !file.path.isEmpty else { return }
+        // External files are never autosaved — saving moves them into the workspace instead.
+        guard !file.isExternal else { return }
         let tabId = file.id
         persistPageDraft(for: tabId, path: file.path)
 
@@ -4624,6 +4760,7 @@ struct ContentView: View {
         let workspaceFile = workspaceManager.openFile(tabId: tabId)
         guard let currentFile = workspaceFile ?? legacyIndex.map({ appState.openTabs[$0] }),
               currentFile.isDirty,
+              !currentFile.isExternal,
               let document = blockDocuments[tabId] else { return nil }
 
         let oldPath = currentFile.path
@@ -5122,6 +5259,10 @@ struct ContentView: View {
         guard let tab = activeWorkspaceDocumentContext()?.file ?? appState.activeTab,
               !tab.path.isEmpty else { return }
         SentryBreadcrumbs.add(Breadcrumb(level: .info, category: "editor.save"))
+        if tab.isExternal {
+            saveExternalFileToWorkspace(tabId: tab.id)
+            return
+        }
         performSave(tabId: tab.id)
     }
 

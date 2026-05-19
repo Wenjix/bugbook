@@ -272,6 +272,12 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Bugbook
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Markdown Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - net.daringfireball.markdown
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
@@ -285,6 +291,20 @@ targets:
             UTTypeConformsTo:
               - public.data
             UTTypeTagSpecification: {}
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown Document
+            UTTypeConformsTo:
+              - public.plain-text
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - md
+                - markdown
+                - mdown
+                - mkd
+                - mkdn
+              public.mime-type:
+                - text/markdown
         NSMicrophoneUsageDescription: Bugbook needs microphone access to record meeting audio for live transcription.
         NSAudioCaptureUsageDescription: Bugbook records system audio during meetings so transcripts include remote participants alongside your own voice.
     entitlements:

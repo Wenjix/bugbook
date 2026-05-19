@@ -601,9 +601,23 @@ class WorkspaceManager {
         }
     }
 
+    /// Drop external-file tabs from a workspace list: whole workspaces holding only
+    /// external files are removed, mixed workspaces keep their non-external tabs.
+    /// External tabs are session-only and never written to the saved layout.
+    private static func withoutExternalFiles(_ input: [Workspace]) -> [Workspace] {
+        input.compactMap { workspace in
+            workspace.isEntirelyExternalFiles ? nil : workspace.strippingExternalFileTabs()
+        }
+    }
+
     private func persist() {
         Self.ensureLayoutDirectory()
-        let layout = PersistedLayout(version: 1, activeWorkspaceIndex: activeWorkspaceIndex, workspaces: workspaces)
+        let persistable = Self.withoutExternalFiles(workspaces)
+        let layout = PersistedLayout(
+            version: 1,
+            activeWorkspaceIndex: min(activeWorkspaceIndex, max(persistable.count - 1, 0)),
+            workspaces: persistable
+        )
         do {
             let data = try JSONEncoder().encode(layout)
             try data.write(to: Self.layoutFileURL, options: .atomic)
@@ -623,11 +637,13 @@ class WorkspaceManager {
         do {
             let data = try Data(contentsOf: url)
             let layout = try JSONDecoder().decode(PersistedLayout.self, from: data)
-            guard !layout.workspaces.isEmpty else {
+            // Discard any external-file tabs a prior session left in the saved layout.
+            let restored = Self.withoutExternalFiles(layout.workspaces)
+            guard !restored.isEmpty else {
                 addWorkspace(name: "Workspace")
                 return
             }
-            let sanitized = sanitize(workspaces: layout.workspaces)
+            let sanitized = sanitize(workspaces: restored)
             workspaces = sanitized.workspaces
             activeWorkspaceIndex = min(layout.activeWorkspaceIndex, workspaces.count - 1)
             if sanitized.changed {

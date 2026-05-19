@@ -334,6 +334,27 @@ indirect enum PaneNode: Identifiable, Codable, Equatable {
         }
     }
 
+    /// A copy of the tree with external-file tabs removed from every leaf.
+    /// A leaf left with no tabs falls back to an empty document (handled by `Leaf.init`).
+    func strippingExternalFileTabs() -> PaneNode {
+        switch self {
+        case .leaf(let leaf):
+            let kept = leaf.tabs.filter { $0.openFile?.isExternal != true }
+            guard kept.count != leaf.tabs.count else { return self }
+            let selectedID = leaf.activeTabID
+            let newIndex = kept.firstIndex { $0.id == selectedID } ?? 0
+            return .leaf(Leaf(id: leaf.id, tabs: kept, selectedTabIndex: newIndex))
+        case .split(let split):
+            return .split(Split(
+                id: split.id,
+                axis: split.axis,
+                ratio: split.ratio,
+                first: split.first.strippingExternalFileTabs(),
+                second: split.second.strippingExternalFileTabs()
+            ))
+        }
+    }
+
     func updatingLeaf(id targetId: UUID, transform: (Leaf) -> Leaf) -> PaneNode {
         switch self {
         case .leaf(let leaf):

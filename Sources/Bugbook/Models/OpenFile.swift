@@ -14,6 +14,10 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var navigationHistoryIndex: Int = -1
     var browserSavedRecordID: UUID?
     var browserPageZoom: Double
+    /// True when this tab points at a markdown file outside the workspace folder
+    /// (opened via the system "Open With" handler). External tabs are not autosaved;
+    /// saving moves the file into the workspace and clears this flag.
+    var isExternal: Bool = false
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -29,6 +33,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
         case navigationHistoryIndex
         case browserSavedRecordID
         case browserPageZoom
+        case isExternal
     }
 
     // Shims forwarding to kind for incremental migration
@@ -66,7 +71,8 @@ struct OpenFile: Identifiable, Equatable, Codable {
         navigationHistory: [String] = [],
         navigationHistoryIndex: Int = -1,
         browserSavedRecordID: UUID? = nil,
-        browserPageZoom: Double = 0.85
+        browserPageZoom: Double = 0.85,
+        isExternal: Bool = false
     ) {
         self.id = id
         self.path = path
@@ -81,6 +87,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
         self.navigationHistoryIndex = navigationHistoryIndex
         self.browserSavedRecordID = browserSavedRecordID
         self.browserPageZoom = browserPageZoom
+        self.isExternal = isExternal
     }
 
     init(from decoder: Decoder) throws {
@@ -98,6 +105,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
         self.navigationHistoryIndex = try container.decodeIfPresent(Int.self, forKey: .navigationHistoryIndex) ?? -1
         self.browserSavedRecordID = try container.decodeIfPresent(UUID.self, forKey: .browserSavedRecordID)
         self.browserPageZoom = try container.decodeIfPresent(Double.self, forKey: .browserPageZoom) ?? 0.85
+        self.isExternal = try container.decodeIfPresent(Bool.self, forKey: .isExternal) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -115,5 +123,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
         try container.encode(navigationHistoryIndex, forKey: .navigationHistoryIndex)
         try container.encodeIfPresent(browserSavedRecordID, forKey: .browserSavedRecordID)
         try container.encode(browserPageZoom, forKey: .browserPageZoom)
+        try container.encode(isExternal, forKey: .isExternal)
     }
 }
