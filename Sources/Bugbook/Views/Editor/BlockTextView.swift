@@ -156,6 +156,9 @@ struct BlockTextView: NSViewRepresentable {
         textView.selectAllBlocksAction = { [weak coordinator] in
             coordinator?.parent.document.selectAllBlocks()
         }
+        textView.extendBlockSelectionAction = { [weak coordinator] direction in
+            coordinator?.parent.document.selectBlockRangeFromFocusedBlock(toBoundary: direction) ?? false
+        }
         textView.blockTypeShortcutAction = { [weak coordinator] action in
             coordinator?.handleBlockTypeShortcut(action)
         }
@@ -178,6 +181,10 @@ struct BlockTextView: NSViewRepresentable {
         textView.onPasteImage = { [weak coordinator] in
             guard let coordinator = coordinator else { return false }
             return coordinator.handleImagePaste()
+        }
+        textView.onPasteMarkdown = { [weak coordinator] markdown, selectedRange in
+            guard let coordinator = coordinator else { return false }
+            return coordinator.handleMarkdownPaste(markdown, selectedRange: selectedRange)
         }
         textView.onPageLinkDrop = { [weak coordinator] pageName in
             guard let coordinator = coordinator else { return }
@@ -585,6 +592,76 @@ struct BlockTextView: NSViewRepresentable {
                 guard nextLocation < visibleText.length else { break }
                 searchRange = NSRange(location: nextLocation, length: visibleText.length - nextLocation)
             }
+        }
+
+        // MARK: - Markdown Paste
+
+        func handleMarkdownPaste(_ markdown: String, selectedRange: NSRange) -> Bool {
+            guard parent.contentMode.usesInlineMarkdown,
+                  shouldPasteAsMarkdownBlocks(markdown),
+                  let textView else {
+                return false
+            }
+
+            let attributed = textView.attributedString()
+            let markdownStart = markdownOffset(forDisplayOffset: selectedRange.location, in: attributed)
+            let displayEnd = selectedRange.location + max(0, selectedRange.length)
+            let markdownEnd = markdownOffset(forDisplayOffset: displayEnd, in: attributed)
+            let markdownRange = NSRange(
+                location: markdownStart,
+                length: max(0, markdownEnd - markdownStart)
+            )
+
+            let didPaste = parent.document.pasteMarkdownBlocks(
+                markdown,
+                into: parent.blockId,
+                replacingMarkdownRange: markdownRange
+            )
+            if didPaste {
+                parent.onTextChange?()
+            }
+            return didPaste
+        }
+
+        private func shouldPasteAsMarkdownBlocks(_ markdown: String) -> Bool {
+            let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.contains("\n") else { return false }
+
+            if trimmed.contains("\n\n") {
+                return true
+            }
+
+            return trimmed
+                .components(separatedBy: .newlines)
+                .contains { Self.isMarkdownBlockLine($0) }
+        }
+
+        private static func isMarkdownBlockLine(_ rawLine: String) -> Bool {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { return false }
+
+            if line.hasPrefix("```")
+                || line.hasPrefix(">") || line.hasPrefix("![")
+                || (line.hasPrefix("[[") && line.hasSuffix("]]"))
+                || (line.hasPrefix("|") && line.hasSuffix("|"))
+                || line == "---" || line == "***" || line == "___" {
+                return true
+            }
+
+            if line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) != nil {
+                return true
+            }
+            if line.range(of: #"^[-*+]\s+"#, options: .regularExpression) != nil {
+                return true
+            }
+            if line.range(of: #"^\d+[\.)]\s+"#, options: .regularExpression) != nil {
+                return true
+            }
+            if line.range(of: #"^\[\^[^\]]+\]:"#, options: .regularExpression) != nil {
+                return true
+            }
+
+            return false
         }
 
         // MARK: - Image Paste
@@ -1535,12 +1612,14 @@ class BlockNSTextView: NSTextView {
     var undoAction: (() -> Void)?
     var redoAction: (() -> Void)?
     var selectAllBlocksAction: (() -> Void)?
+    var extendBlockSelectionAction: ((BlockSelectionDirection) -> Bool)?
     var blockTypeShortcutAction: ((String) -> Void)?
     var onDragOutOfBlock: ((Int, NSPoint) -> Void)?
     var onMultiBlockSelectionDrag: ((NSPoint) -> Void)?
     var onMultiBlockSelectionEnd: (() -> Void)?
     var onShiftClick: (() -> Void)?
     var onPasteImage: (() -> Bool)?
+    var onPasteMarkdown: ((String, NSRange) -> Bool)?
     var onPageLinkDrop: ((String) -> Void)?
     var copySelectionAction: (() -> Bool)?
     var cutSelectionAction: (() -> Bool)?
@@ -1653,17 +1732,20 @@ class BlockNSTextView: NSTextView {
             return // Image paste handled
         }
 
-        // Strip Bugbook metadata comments (<!-- icon:... -->, <!-- full-width -->, etc.)
-        // from pasted markdown so "Copy Page Content" round-trips cleanly back into the editor.
-        if let string = NSPasteboard.general.string(forType: .string),
-           string.contains("<!--") {
-            let cleaned = string.replacingOccurrences(
-                of: "<!--.*?-->\\n?",
-                with: "",
-                options: .regularExpression
-            ).trimmingCharacters(in: .whitespacesAndNewlines)
-            if cleaned != string {
-                insertText(cleaned, replacementRange: selectedRange())
+        if let string = NSPasteboard.general.string(forType: .string) {
+            let normalized = Self.normalizedLineEndings(in: string)
+            let commentCleaned = Self.removingBugbookMetadataComments(from: normalized)
+            let blockMarkdown = commentCleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if let handler = onPasteMarkdown,
+               handler(blockMarkdown, selectedRange()) {
+                return
+            }
+
+            // Strip Bugbook metadata comments (<!-- icon:... -->, <!-- full-width -->, etc.)
+            // from pasted markdown so "Copy Page Content" round-trips cleanly back into the editor.
+            if commentCleaned != normalized {
+                insertText(blockMarkdown, replacementRange: selectedRange())
                 return
             }
         }
@@ -1671,6 +1753,21 @@ class BlockNSTextView: NSTextView {
         // Paste as plain text so the block's typing attributes (font, size, color)
         // apply instead of whatever styling the source had.
         pasteAsPlainText(sender)
+    }
+
+    private static func normalizedLineEndings(in string: String) -> String {
+        string
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+    }
+
+    private static func removingBugbookMetadataComments(from string: String) -> String {
+        guard string.contains("<!--") else { return string }
+        return string.replacingOccurrences(
+            of: "<!--.*?-->\\n?",
+            with: "",
+            options: .regularExpression
+        )
     }
 
     // MARK: - Cross-Block Selection
@@ -1781,6 +1878,13 @@ class BlockNSTextView: NSTextView {
         }
 
         if flags.contains([.command, .shift]) && !flags.contains(.option) && !flags.contains(.control) {
+            if event.keyCode == 126, extendBlockSelectionAction?(.up) == true {
+                return
+            }
+            if event.keyCode == 125, extendBlockSelectionAction?(.down) == true {
+                return
+            }
+
             // Cmd+Shift+Return — toggle expand/collapse for toggle/headingToggle blocks
             if event.keyCode == 36 {
                 toggleBlockExpandAction?()

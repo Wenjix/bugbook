@@ -10,11 +10,12 @@ struct PaneChromeBar: View {
     let isOnlyPane: Bool
     let fileTree: [FileEntry]
     var breadcrumbs: [BreadcrumbItem] = []
-    var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
+    var onBreadcrumbNavigate: ((BreadcrumbItem, UUID) -> Void)? = nil
     let paneActions: PaneActions
 
     @State private var isHovered = false
     @State private var showSplitPopover = false
+    @Environment(\.editorTypingFocusActive) private var editorTypingFocusActive
     @Environment(\.paneReplaceWarningId) private var replaceWarningId
 
     // Steel blue accent for focused state
@@ -35,12 +36,22 @@ struct PaneChromeBar: View {
             HStack(spacing: 0) {
                 dragHandleArea
 
+                if !breadcrumbs.isEmpty {
+                    compactBreadcrumbs
+                        .padding(.leading, 2)
+                } else {
+                    paneIdentity
+                        .padding(.leading, 2)
+                }
+
                 Spacer(minLength: 0)
 
                 actionButtons
             }
             .frame(height: 20)
             .padding(.horizontal, 6)
+            .opacity(chromeContentOpacity)
+            .allowsHitTesting(!editorTypingFocusActive)
             .contentShape(Rectangle())
             .onDrag {
                 NSItemProvider(object: leaf.id.uuidString as NSString)
@@ -77,9 +88,66 @@ struct PaneChromeBar: View {
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.15), value: isFocused)
         .animation(.easeInOut(duration: 0.2), value: isReplaceWarning)
+        .animation(EditorFocusModeAnimation.animation, value: editorTypingFocusActive)
     }
 
     // MARK: - Pane Controls
+
+    private var chromeContentOpacity: Double {
+        editorTypingFocusActive ? 0 : 1
+    }
+
+    private var paneIdentity: some View {
+        HStack(spacing: 5) {
+            chromeIconView(leaf.activeContent.paneItemIcon)
+                .frame(width: 12, height: 12)
+            Text(leaf.activeContent.paneItemTitle)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.76))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: 280, alignment: .leading)
+    }
+
+    private var compactBreadcrumbs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(Array(breadcrumbs.enumerated()), id: \.element.id) { index, item in
+                    if index > 0 {
+                        Text("/")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Color.primary.opacity(0.65))
+                    }
+                    breadcrumbButton(item, isCurrent: index == breadcrumbs.count - 1)
+                }
+            }
+            .padding(.trailing, 8)
+        }
+        .frame(maxWidth: 420, alignment: .leading)
+    }
+
+    private func breadcrumbButton(_ item: BreadcrumbItem, isCurrent: Bool) -> some View {
+        Button {
+            onBreadcrumbNavigate?(item, leaf.id)
+        } label: {
+            HStack(spacing: 4) {
+                if let icon = item.icon, !icon.isEmpty {
+                    chromeIconView(icon)
+                        .frame(width: 12, height: 12)
+                }
+                Text(item.name)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(isCurrent ? (isFocused ? steelBlue : Color.primary) : Color.primary.opacity(0.65))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(.horizontal, 3)
+            .frame(height: 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 
     private var dragHandleArea: some View {
         // Pane identity belongs to the tab strip and the content surface. This row is

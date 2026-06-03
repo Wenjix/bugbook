@@ -21,6 +21,11 @@ struct BlockFindSelection: Equatable {
     let range: NSRange
 }
 
+enum BlockSelectionDirection {
+    case up
+    case down
+}
+
 @MainActor
 @Observable
 class BlockDocument {
@@ -479,6 +484,69 @@ class BlockDocument {
         focusedBlockId = newBlock.id
         cursorPosition = 0
         return newBlock.id
+    }
+
+    @discardableResult
+    func pasteMarkdownBlocks(_ markdown: String, into blockId: UUID, replacingMarkdownRange range: NSRange) -> Bool {
+        let trimmedMarkdown = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedMarkdown.isEmpty,
+              let loc = blockLocation(for: blockId),
+              let currentBlock = block(for: blockId) else {
+            return false
+        }
+
+        let parsedBlocks = Self.parseMarkdown(trimmedMarkdown).blocks
+        guard !parsedBlocks.isEmpty else { return false }
+
+        let currentText = currentBlock.text as NSString
+        let start = min(max(0, range.location), currentText.length)
+        let requestedEnd = range.location + max(0, range.length)
+        let end = min(max(start, requestedEnd), currentText.length)
+        let before = currentText.substring(to: start)
+        let after = currentText.substring(from: end)
+        let afterBlock = after.isEmpty ? nil : Block(
+            type: .paragraph,
+            text: after,
+            columnIndex: currentBlock.columnIndex
+        )
+        let focusAfterPaste = afterBlock ?? parsedBlocks.last
+
+        var insertedBlocks = parsedBlocks
+        if loc.child != nil {
+            insertedBlocks = insertedBlocks.map { block in
+                var adjusted = block
+                adjusted.columnIndex = currentBlock.columnIndex
+                return adjusted
+            }
+        }
+        if let afterBlock {
+            insertedBlocks.append(afterBlock)
+        }
+
+        saveUndo()
+
+        if let childIdx = loc.child {
+            if before.isEmpty {
+                blocks[loc.topLevel].children.remove(at: childIdx)
+                blocks[loc.topLevel].children.insert(contentsOf: insertedBlocks, at: childIdx)
+            } else {
+                blocks[loc.topLevel].children[childIdx].text = before
+                blocks[loc.topLevel].children.insert(contentsOf: insertedBlocks, at: childIdx + 1)
+            }
+        } else if before.isEmpty {
+            blocks.remove(at: loc.topLevel)
+            blocks.insert(contentsOf: insertedBlocks, at: loc.topLevel)
+        } else {
+            blocks[loc.topLevel].text = before
+            blocks.insert(contentsOf: insertedBlocks, at: loc.topLevel + 1)
+        }
+
+        ensureTrailingParagraph()
+        clearBlockSelection()
+        clearMultiBlockTextSelection()
+        focusedBlockId = focusAfterPaste?.id
+        cursorPosition = afterBlock == nil ? ((focusAfterPaste?.text ?? "") as NSString).length : 0
+        return true
     }
 
     @discardableResult
@@ -1633,6 +1701,26 @@ class BlockDocument {
         selectionRect = nil
         selectionBlockId = nil
         selectionVersion += 1
+    }
+
+    @discardableResult
+    func selectBlockRangeFromFocusedBlock(toBoundary direction: BlockSelectionDirection) -> Bool {
+        guard let focusedBlockId else { return false }
+        let ordered = selectionOrder()
+        guard let focusIndex = ordered.firstIndex(of: focusedBlockId), !ordered.isEmpty else {
+            return false
+        }
+
+        let boundaryIndex = direction == .up ? 0 : ordered.count - 1
+        let range = min(focusIndex, boundaryIndex)...max(focusIndex, boundaryIndex)
+        clearMultiBlockTextSelection()
+        selectedBlockIds = Set(range.map { ordered[$0] })
+        blockSelectionAnchor = focusedBlockId
+        selectionRect = nil
+        selectionBlockId = nil
+        suppressNextEditorTapAfterBlockSelection = false
+        selectionVersion += 1
+        return true
     }
 
     func beginBlockSelectionDrag(from anchorId: UUID) {

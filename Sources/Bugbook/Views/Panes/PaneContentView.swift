@@ -19,7 +19,7 @@ struct PaneContentView: View {
     let documentContentBuilder: (PaneNode.Leaf, OpenFile) -> AnyView
     let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
-    var onBreadcrumbNavigate: ((BreadcrumbItem) -> Void)? = nil
+    var onBreadcrumbNavigate: ((BreadcrumbItem, UUID) -> Void)? = nil
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
     let paneActions: PaneActions
 
@@ -136,8 +136,6 @@ struct PaneContentView: View {
                         onBreadcrumbNavigate: onBreadcrumbNavigate,
                         paneActions: paneActions
                     )
-                    .opacity(editorTypingFocusActive ? 0 : 1)
-                    .allowsHitTesting(!editorTypingFocusActive)
                 }
 
                 if showFindBar {

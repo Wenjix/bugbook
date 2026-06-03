@@ -194,7 +194,8 @@ struct ContentView: View {
     @State private var sidebarHiddenByPeek: Bool = false
     @State private var sidebarVisibleBeforePeekHide: Bool = true
     @State private var modalTarget: RowTarget?
-    @State private var showPageOptionsMenu = false
+    @State private var pageOptionsMenuPaneId: UUID?
+    @State private var hoveredPageOptionsPaneId: UUID?
     @State private var databaseRowFullWidth: [UUID: Bool] = [:]
 
     // Cmd+K deferred navigation: set by palette closure, consumed by .onChange in ContentView's own cycle
@@ -1714,8 +1715,8 @@ struct ContentView: View {
             breadcrumbProvider: { file in
                 self.breadcrumbs(for: file)
             },
-            onBreadcrumbNavigate: { item in
-                self.navigateToBreadcrumb(item)
+            onBreadcrumbNavigate: { item, paneId in
+                self.navigateToBreadcrumb(item, inPane: paneId)
             },
             blockDocumentLookup: { tabId in
                 self.blockDocuments[tabId]
@@ -1741,31 +1742,8 @@ struct ContentView: View {
     @ViewBuilder
     private func paneDocumentContent(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
         VStack(spacing: 0) {
-            // Breadcrumb moved to chrome bar. Options menu stays in content area.
             if showsPageOptionsMenu(for: file) {
-                HStack {
-                    Spacer()
-                    Button {
-                        showPageOptionsMenu.toggle()
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(ShellZoomMetrics.font(Typography.bodySmall))
-                            .foregroundStyle(.primary)
-                            .frame(width: ShellZoomMetrics.size(32), height: ShellZoomMetrics.size(32))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, ShellZoomMetrics.size(4))
-                    .floatingPopover(isPresented: $showPageOptionsMenu) {
-                        if file.isDatabaseRow {
-                            databaseRowOptionsMenu(for: file)
-                        } else if let doc = blockDocuments[file.id] {
-                            pageOptionsMenu(for: file, document: doc)
-                        }
-                    }
-                }
-                .opacity(editorUI.focusModeActive ? 0 : 1)
-                .allowsHitTesting(!editorUI.focusModeActive)
+                documentTopChromeBar(for: file, in: leaf)
             }
 
             if file.path.contains("/.claude/skills/") {
@@ -1775,6 +1753,180 @@ struct ContentView: View {
             paneContentRouting(leaf: leaf, file: file)
         }
         .padding(.leading, paneLeadingPadding(for: file))
+    }
+
+    private func documentTopChromeBar(for file: OpenFile, in leaf: PaneNode.Leaf) -> some View {
+        let pageOptionsOpen = pageOptionsMenuPaneId == leaf.id
+        let pageOptionsActive = hoveredPageOptionsPaneId == leaf.id || pageOptionsOpen
+
+        return HStack(spacing: ShellZoomMetrics.size(10)) {
+            documentBreadcrumbTrail(
+                items: breadcrumbs(for: file),
+                fallbackFile: file,
+                onNavigate: { item in navigateToBreadcrumb(item, inPane: leaf.id) }
+            )
+
+            Spacer(minLength: ShellZoomMetrics.size(12))
+
+            Button {
+                togglePageOptionsMenu(for: leaf.id)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(ShellZoomMetrics.font(Typography.bodySmall, weight: .semibold))
+                    .foregroundStyle(.primary.opacity(pageOptionsActive ? 0.9 : 0.72))
+                    .frame(width: ShellZoomMetrics.size(32), height: ShellZoomMetrics.size(32))
+                    .background {
+                        RoundedRectangle(cornerRadius: ShellZoomMetrics.size(6))
+                            .fill(pageOptionsActive ? Color.primary.opacity(0.06) : Color.clear)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: ShellZoomMetrics.size(6))
+                            .strokeBorder(
+                                Color.primary.opacity(pageOptionsActive ? 0.08 : 0),
+                                lineWidth: 1
+                            )
+                    }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered in
+                if isHovered {
+                    hoveredPageOptionsPaneId = leaf.id
+                } else if hoveredPageOptionsPaneId == leaf.id {
+                    hoveredPageOptionsPaneId = nil
+                }
+            }
+            .help("Page options")
+            .accessibilityLabel("Page options")
+            .animation(.easeInOut(duration: 0.12), value: pageOptionsActive)
+            .floatingPopover(isPresented: pageOptionsMenuBinding(for: leaf.id)) {
+                if file.isDatabaseRow {
+                    databaseRowOptionsMenu(for: file)
+                } else if let doc = blockDocuments[file.id] {
+                    pageOptionsMenu(for: file, document: doc)
+                }
+            }
+        }
+        .opacity(editorUI.focusModeActive ? 0 : 1)
+        .allowsHitTesting(!editorUI.focusModeActive)
+        .frame(height: ShellZoomMetrics.size(44))
+        .padding(.leading, ShellZoomMetrics.size(18))
+        .padding(.trailing, ShellZoomMetrics.size(6))
+        .background(Color.fallbackEditorBg)
+    }
+
+    private func pageOptionsMenuBinding(for paneId: UUID) -> Binding<Bool> {
+        Binding(
+            get: {
+                pageOptionsMenuPaneId == paneId
+            },
+            set: { isPresented in
+                if isPresented {
+                    pageOptionsMenuPaneId = paneId
+                } else if pageOptionsMenuPaneId == paneId {
+                    pageOptionsMenuPaneId = nil
+                }
+            }
+        )
+    }
+
+    private func togglePageOptionsMenu(for paneId: UUID) {
+        pageOptionsMenuPaneId = pageOptionsMenuPaneId == paneId ? nil : paneId
+    }
+
+    private func closePageOptionsMenu() {
+        pageOptionsMenuPaneId = nil
+    }
+
+    private func documentBreadcrumbTrail(
+        items: [BreadcrumbItem],
+        fallbackFile: OpenFile,
+        onNavigate: @escaping (BreadcrumbItem) -> Void
+    ) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: ShellZoomMetrics.size(6)) {
+                if items.isEmpty {
+                    documentPageIdentity(fallbackFile)
+                } else {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 {
+                            Text("/")
+                                .font(ShellZoomMetrics.font(Typography.bodySmall, weight: .regular))
+                                .foregroundStyle(Container.pillInactiveText)
+                        }
+                        documentBreadcrumbButton(
+                            item,
+                            isCurrent: index == items.count - 1,
+                            onNavigate: onNavigate
+                        )
+                    }
+                }
+            }
+            .padding(.trailing, ShellZoomMetrics.size(10))
+        }
+        .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func documentPageIdentity(_ file: OpenFile) -> some View {
+        HStack(spacing: ShellZoomMetrics.size(6)) {
+            if let icon = file.icon, !icon.isEmpty {
+                documentChromeIconView(icon)
+                    .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
+            }
+            Text(file.paneItemTitle)
+                .font(ShellZoomMetrics.font(Typography.bodySmall, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .frame(height: ShellZoomMetrics.size(24), alignment: .leading)
+    }
+
+    private func documentBreadcrumbButton(
+        _ item: BreadcrumbItem,
+        isCurrent: Bool,
+        onNavigate: @escaping (BreadcrumbItem) -> Void
+    ) -> some View {
+        Button {
+            onNavigate(item)
+        } label: {
+            HStack(spacing: ShellZoomMetrics.size(5)) {
+                if let icon = item.icon, !icon.isEmpty {
+                    documentChromeIconView(icon)
+                        .frame(width: ShellZoomMetrics.size(15), height: ShellZoomMetrics.size(15))
+                }
+                Text(item.name)
+                    .font(ShellZoomMetrics.font(Typography.bodySmall, weight: isCurrent ? .semibold : .regular))
+                    .foregroundStyle(isCurrent ? Color.primary : Container.pillInactiveText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(height: ShellZoomMetrics.size(24), alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func documentChromeIconView(_ icon: String) -> some View {
+        if icon.hasPrefix("sf:") {
+            Image(systemName: String(icon.dropFirst(3)))
+                .font(ShellZoomMetrics.font(Typography.caption))
+        } else if icon.hasPrefix("custom:") {
+            if let nsImage = NSImage(contentsOfFile: String(icon.dropFirst(7))) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
+            }
+        } else if icon.unicodeScalars.first?.properties.isEmoji == true {
+            Text(icon)
+                .font(ShellZoomMetrics.font(Typography.caption))
+        } else {
+            Image(systemName: icon)
+                .font(ShellZoomMetrics.font(Typography.caption))
+        }
     }
 
     private func paneLeadingPadding(for file: OpenFile) -> CGFloat {
@@ -2779,45 +2931,14 @@ struct ContentView: View {
 
         guard let ws = workspaceManager.activeWorkspace else { return }
 
-        // Save current pane if dirty
         let focusedPaneId = ws.focusedPaneId
         let focusedTabId = ws.focusedLeaf?.activeTabID
-        if let leaf = ws.focusedLeaf,
-           case .document(let file) = leaf.content,
-           file.isDirty {
-            performSave(tabId: file.id)
-        }
-
         // Guard: if focused pane is a live terminal, warn before replacing it
         if let focusedTabId, isTerminalAlive(tabId: focusedTabId) {
             if paneReplaceWarningId == focusedPaneId {
                 // Second press within timeout — proceed: close terminal, replace in place
                 clearPaneReplaceWarning()
-
-                let willReuseExistingTab = workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
-                    leaf.tabs.compactMap(\.openFile).contains { $0.path == entry.path }
-                } == true
-
-                if !willReuseExistingTab {
-                    cleanupPaneTabResources(paneId: focusedPaneId, tabId: focusedTabId)
-                }
-
-                let handledWithoutLoad = appState.openFileReplacingCurrentTab(
-                    entry,
-                    workspaceManager: workspaceManager,
-                    paneId: focusedPaneId,
-                    pushHistory: true,
-                    preferExistingTab: preferExistingTab
-                )
-                updateSidebarContextType()
-
-                if let updatedTabId = workspaceManager.focusedPaneTabID {
-                    if handledWithoutLoad {
-                        loadFileContentForPaneIfMissing(entry: entry, tabId: updatedTabId)
-                    } else {
-                        loadFileContentForPane(entry: entry, tabId: updatedTabId)
-                    }
-                }
+                replaceEntryInPane(entry, paneId: focusedPaneId, preferExistingTab: preferExistingTab)
                 return
             } else {
                 // First press — show amber warning on the terminal pane
@@ -2836,9 +2957,40 @@ struct ContentView: View {
             targetPaneId = focusedPaneId
         }
 
-        let willReuseExistingTab = workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
+        navigateToEntryInPane(entry, paneId: targetPaneId, preferExistingTab: preferExistingTab)
+    }
+
+    private func navigateToEntryInPane(
+        _ entry: FileEntry,
+        paneId targetPaneId: UUID,
+        preferExistingTab: Bool = true
+    ) {
+        appState.currentView = .editor
+        appState.showSettings = false
+
+        guard let targetLeaf = workspaceManager.leaf(id: targetPaneId) else { return }
+
+        if let currentFile = targetLeaf.activeOpenFile, currentFile.isDirty {
+            performSave(tabId: currentFile.id)
+        }
+
+        let targetTabId = targetLeaf.activeTabID
+        if isTerminalAlive(tabId: targetTabId) {
+            if paneReplaceWarningId == targetPaneId {
+                clearPaneReplaceWarning()
+            } else {
+                setPaneReplaceWarning(paneId: targetPaneId)
+                return
+            }
+        }
+
+        replaceEntryInPane(entry, paneId: targetPaneId, preferExistingTab: preferExistingTab)
+    }
+
+    private func replaceEntryInPane(_ entry: FileEntry, paneId targetPaneId: UUID, preferExistingTab: Bool) {
+        let willReuseExistingTab = preferExistingTab && (workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
             leaf.tabs.compactMap(\.openFile).contains { $0.path == entry.path }
-        } == true
+        } == true)
 
         if !willReuseExistingTab,
            let targetTabId = workspaceManager.leaf(id: targetPaneId)?.activeTabID {
@@ -3287,21 +3439,42 @@ struct ContentView: View {
         }
     }
 
-    private func navigateToBreadcrumb(_ item: BreadcrumbItem) {
+    private func navigateToBreadcrumb(_ item: BreadcrumbItem, inPane paneId: UUID? = nil) {
+        guard let entry = breadcrumbEntry(for: item) else { return }
+
+        if let paneId {
+            guard workspaceManager.leaf(id: paneId)?.activeOpenFile?.path != entry.path else { return }
+            navigateToEntryInPane(entry, paneId: paneId, preferExistingTab: false)
+        } else {
+            guard workspaceManager.focusedOpenFile?.path != entry.path else { return }
+            navigateToEntryInPane(entry, preferExistingTab: false)
+        }
+    }
+
+    private func breadcrumbEntry(for item: BreadcrumbItem) -> FileEntry? {
         let candidates = [item.path, item.id].filter { !$0.isEmpty }
-        guard let targetPath = candidates.first(where: isOpenableBreadcrumbPath(_:)) else { return }
-        guard appState.activeTab?.path != targetPath else { return }
+        guard let targetPath = candidates.first(where: isOpenableBreadcrumbPath(_:)) else { return nil }
 
         if let existing = fileSystem.findEntry(path: targetPath, in: appState.fileTree) {
-            navigateToEntry(existing, preferExistingTab: false)
-            return
+            return existing
+        }
+
+        if let row = DatabaseRowNavigationPath.parse(targetPath) {
+            return FileEntry(
+                id: targetPath,
+                name: item.name,
+                path: targetPath,
+                isDirectory: false,
+                kind: .databaseRow(dbPath: row.dbPath, rowId: row.rowId),
+                icon: item.icon
+            )
         }
 
         let isDatabase = fileSystem.isDatabaseFolder(at: targetPath)
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: targetPath, isDirectory: &isDir)
         let kind: TabKind = isDatabase ? .database : .page
-        let entry = FileEntry(
+        return FileEntry(
             id: targetPath,
             name: item.name,
             path: targetPath,
@@ -3309,10 +3482,10 @@ struct ContentView: View {
             kind: kind,
             icon: item.icon
         )
-        navigateToEntry(entry, preferExistingTab: false)
     }
 
     private func isOpenableBreadcrumbPath(_ path: String) -> Bool {
+        if DatabaseRowNavigationPath.parse(path) != nil { return true }
         if fileSystem.isDatabaseFolder(at: path) { return true }
         return FileManager.default.fileExists(atPath: path)
     }
@@ -5178,7 +5351,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
                 toggleFavorite(path: tab.path)
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: isPathFavorited(tab.path) ? "star.fill" : "star")
@@ -5198,7 +5371,7 @@ struct ContentView: View {
                 document.fullWidth.toggle()
                 markActiveEditorTabDirty()
                 scheduleSave()
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.left.and.right")
@@ -5221,7 +5394,7 @@ struct ContentView: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(tab.path, forType: .string)
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "doc.on.doc")
@@ -5239,7 +5412,7 @@ struct ContentView: View {
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: tab.path)])
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "folder")
@@ -5258,7 +5431,7 @@ struct ContentView: View {
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(document.markdown, forType: .string)
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "doc.plaintext")
@@ -5276,7 +5449,7 @@ struct ContentView: View {
 
             Button {
                 appState.movePagePath = tab.path
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.right")
@@ -5301,7 +5474,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
                 databaseRowFullWidth[tab.id, default: false].toggle()
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.left.and.right")
@@ -5326,7 +5499,7 @@ struct ContentView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(path, forType: .string)
                 }
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "doc.on.doc")
@@ -5344,7 +5517,7 @@ struct ContentView: View {
 
             Button {
                 deleteDatabaseRow(for: tab)
-                showPageOptionsMenu = false
+                closePageOptionsMenu()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "trash")

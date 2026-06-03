@@ -429,6 +429,40 @@ final class BlockDocumentTests: XCTestCase {
         XCTAssertTrue(doc.selectedBlockIds.contains(doc.blocks[3].id))
     }
 
+    func testCommandShiftDownSelectionExtendsFromFocusedBlockToEnd() {
+        let doc = BlockDocument(markdown: "# Title\nA\nB\nC\nD\n")
+        guard doc.blocks.count >= 5 else {
+            XCTFail("Expected at least 5 blocks")
+            return
+        }
+
+        doc.focusedBlockId = doc.blocks[2].id
+
+        XCTAssertTrue(doc.selectBlockRangeFromFocusedBlock(toBoundary: .down))
+        XCTAssertEqual(doc.selectedBlockIds, Set(doc.blocks[2...].map(\.id)))
+    }
+
+    func testCommandShiftUpSelectionExtendsFromStartToFocusedBlock() {
+        let doc = BlockDocument(markdown: "# Title\nA\nB\nC\nD\n")
+        guard doc.blocks.count >= 5 else {
+            XCTFail("Expected at least 5 blocks")
+            return
+        }
+
+        doc.focusedBlockId = doc.blocks[3].id
+
+        XCTAssertTrue(doc.selectBlockRangeFromFocusedBlock(toBoundary: .up))
+        XCTAssertEqual(doc.selectedBlockIds, Set(doc.blocks[...3].map(\.id)))
+    }
+
+    func testCommandShiftBlockSelectionRequiresFocusedBlock() {
+        let doc = BlockDocument(markdown: "# Title\nA\nB\n")
+        doc.focusedBlockId = nil
+
+        XCTAssertFalse(doc.selectBlockRangeFromFocusedBlock(toBoundary: .down))
+        XCTAssertTrue(doc.selectedBlockIds.isEmpty)
+    }
+
     func testDeleteSelectedBlocks() {
         let doc = BlockDocument(markdown: "# Title\nA\nB\nC\n")
         let initialCount = doc.blocks.count
@@ -499,6 +533,61 @@ final class BlockDocumentTests: XCTestCase {
         XCTAssertEqual(doc.blocks.count, initialCount + 1)
         XCTAssertEqual(doc.blocks[1].text, "Hello")
         XCTAssertEqual(doc.blocks[2].text, " World")
+    }
+
+    func testPasteMarkdownBlocksIntoEmptyParagraph() {
+        let doc = BlockDocument(markdown: "")
+        let targetId = doc.blocks[0].id
+
+        let didPaste = doc.pasteMarkdownBlocks(
+            """
+            ## From Obsidian
+
+            - [ ] Draft import
+            [[Action Zone]]
+            """,
+            into: targetId,
+            replacingMarkdownRange: NSRange(location: 0, length: 0)
+        )
+
+        XCTAssertTrue(didPaste)
+        XCTAssertEqual(doc.blocks[0].type, .heading)
+        XCTAssertEqual(doc.blocks[0].headingLevel, 2)
+        XCTAssertEqual(doc.blocks[0].text, "From Obsidian")
+        XCTAssertEqual(doc.blocks[1].type, .taskItem)
+        XCTAssertFalse(doc.blocks[1].isChecked)
+        XCTAssertEqual(doc.blocks[1].text, "Draft import")
+        XCTAssertEqual(doc.blocks[2].type, .pageLink)
+        XCTAssertEqual(doc.blocks[2].pageLinkName, "Action Zone")
+        XCTAssertEqual(doc.blocks.last?.type, .paragraph)
+        XCTAssertEqual(doc.blocks.last?.text, "")
+    }
+
+    func testPasteMarkdownBlocksSplitsCurrentParagraph() {
+        let doc = BlockDocument(markdown: "Before after")
+        let targetId = doc.blocks[0].id
+        let insertionOffset = ("Before " as NSString).length
+
+        let didPaste = doc.pasteMarkdownBlocks(
+            """
+            # Inserted
+
+            Body
+            """,
+            into: targetId,
+            replacingMarkdownRange: NSRange(location: insertionOffset, length: 0)
+        )
+
+        XCTAssertTrue(didPaste)
+        XCTAssertEqual(doc.blocks[0].text, "Before ")
+        XCTAssertEqual(doc.blocks[1].type, .heading)
+        XCTAssertEqual(doc.blocks[1].text, "Inserted")
+        XCTAssertEqual(doc.blocks[2].type, .paragraph)
+        XCTAssertEqual(doc.blocks[2].text, "Body")
+        XCTAssertEqual(doc.blocks[3].type, .paragraph)
+        XCTAssertEqual(doc.blocks[3].text, "after")
+        XCTAssertEqual(doc.focusedBlockId, doc.blocks[3].id)
+        XCTAssertEqual(doc.cursorPosition, 0)
     }
 
     func testSetHeadingLevel() {
@@ -693,6 +782,19 @@ final class AppStateTests: XCTestCase {
         )
     }
 
+    private func makeOpenFile(name: String, path: String, id: UUID = UUID()) -> OpenFile {
+        OpenFile(
+            id: id,
+            path: path,
+            content: "",
+            isDirty: false,
+            isEmptyTab: false,
+            displayName: name.replacingOccurrences(of: ".md", with: ""),
+            navigationHistory: [path],
+            navigationHistoryIndex: 0
+        )
+    }
+
     func testOpenFileCreatesTab() {
         let state = AppState()
         let entry = makeEntry()
@@ -713,6 +815,36 @@ final class AppStateTests: XCTestCase {
         state.openFile(entry1) // should switch, not create new
         XCTAssertEqual(state.openTabs.count, 2)
         XCTAssertEqual(state.activeTabIndex, 0)
+    }
+
+    func testPaneScopedReplaceUpdatesRequestedPaneWhenAnotherPaneIsFocused() throws {
+        let state = AppState()
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+
+        manager.addWorkspaceWith(content: .document(openFile: makeOpenFile(name: "Child.md", path: "/test/Child.md")))
+        let sourcePaneId = try XCTUnwrap(manager.focusedPane?.id)
+
+        let otherFile = makeOpenFile(name: "Other.md", path: "/test/Other.md")
+        let otherPaneId = try XCTUnwrap(
+            manager.splitFocusedPane(axis: .horizontal, newContent: .document(openFile: otherFile))
+        )
+        XCTAssertEqual(manager.activeWorkspace?.focusedPaneId, otherPaneId)
+
+        let target = makeEntry(name: "Parent.md", path: "/test/Parent.md")
+        let handledWithoutLoad = state.openFileReplacingCurrentTab(
+            target,
+            workspaceManager: manager,
+            paneId: sourcePaneId,
+            pushHistory: true,
+            preferExistingTab: false
+        )
+
+        XCTAssertFalse(handledWithoutLoad)
+        XCTAssertEqual(manager.leaf(id: sourcePaneId)?.activeOpenFile?.path, "/test/Parent.md")
+        XCTAssertEqual(manager.leaf(id: otherPaneId)?.activeOpenFile?.path, "/test/Other.md")
+        XCTAssertEqual(manager.activeWorkspace?.focusedPaneId, sourcePaneId)
+        XCTAssertTrue(state.openTabs.isEmpty)
     }
 
     func testCloseTab() {
