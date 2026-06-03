@@ -4,6 +4,16 @@ import XCTest
 
 @MainActor
 final class MailFeatureTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.set(true, forKey: BugbookFeatureGate.legacyPanesDefaultsKey)
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: BugbookFeatureGate.legacyPanesDefaultsKey)
+        super.tearDown()
+    }
+
     func testMailDocumentFactoryProducesMailOpenFile() throws {
         let content = PaneContent.mailDocument()
 

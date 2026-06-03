@@ -96,6 +96,12 @@ final class BugbookUITests: XCTestCase {
           "indexes": {}
         }
         """.write(to: databaseURL.appendingPathComponent("_index.json"), atomically: true, encoding: .utf8)
+
+        try """
+        # Project Note
+
+        This regular workspace note should stay visible in the Pages sidebar.
+        """.write(to: workspaceURL.appendingPathComponent("Project Note.md"), atomically: true, encoding: .utf8)
     }
 
     // MARK: - Responsiveness Tests
@@ -163,11 +169,12 @@ final class BugbookUITests: XCTestCase {
         )
     }
 
-    func testDefaultModeNavigationExposesOnlyMeetingAndDailyNotes() {
+    func testDefaultModeNavigationExposesMeetingDailyNotesAndPages() {
         launchApp()
 
         XCTAssertTrue(app.buttons["shell-nav-meeting"].waitForExistence(timeout: 5))
         XCTAssertNotNil(sidebarItem(named: "Daily Notes"))
+        XCTAssertNotNil(sidebarItem(named: "Project Note"))
         XCTAssertFalse(app.buttons["shell-nav-notes"].exists)
         XCTAssertFalse(app.buttons["shell-nav-home"].exists)
         XCTAssertFalse(app.buttons["shell-nav-search"].exists)

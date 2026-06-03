@@ -42,7 +42,7 @@ struct FileTreeView: View {
     @State private var cachedEntries: [FileEntry] = []
 
     var body: some View {
-        VStack(spacing: ShellZoomMetrics.size(1)) {
+        LazyVStack(spacing: ShellZoomMetrics.size(1)) {
             ForEach(Array(cachedEntries.enumerated()), id: \.element.id) { index, entry in
                 FileTreeItemView(
                     entry: entry,

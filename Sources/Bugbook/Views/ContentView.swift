@@ -41,6 +41,92 @@ private struct ShellTopChromeUnderlapModifier: ViewModifier {
     }
 }
 
+private struct PointerMovementReporter: NSViewRepresentable {
+    var onMove: () -> Void
+
+    func makeNSView(context: Context) -> PointerMovementReporterView {
+        let view = PointerMovementReporterView()
+        view.onMove = onMove
+        return view
+    }
+
+    func updateNSView(_ nsView: PointerMovementReporterView, context: Context) {
+        nsView.onMove = onMove
+    }
+}
+
+private final class PointerMovementReporterView: NSView {
+    var onMove: (() -> Void)?
+    private var currentTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        if let currentTrackingArea {
+            removeTrackingArea(currentTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(trackingArea)
+        currentTrackingArea = trackingArea
+        super.updateTrackingAreas()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onMove?()
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onMove?()
+        super.mouseDragged(with: event)
+    }
+}
+
+private struct WindowBackgroundUpdater: NSViewRepresentable {
+    var color: NSColor
+
+    func makeNSView(context: Context) -> WindowBackgroundUpdaterView {
+        let view = WindowBackgroundUpdaterView()
+        view.configure(color: color, animated: false)
+        return view
+    }
+
+    func updateNSView(_ nsView: WindowBackgroundUpdaterView, context: Context) {
+        nsView.configure(color: color, animated: true)
+    }
+}
+
+private final class WindowBackgroundUpdaterView: NSView {
+    private var targetColor = NSColor(Container.groutBg)
+
+    func configure(color: NSColor, animated: Bool) {
+        guard targetColor != color else { return }
+        targetColor = color
+        applyColor(animated: animated)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyColor(animated: false)
+    }
+
+    private func applyColor(animated: Bool) {
+        guard let window, !(window is NSPanel), window.backgroundColor != targetColor else { return }
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = EditorFocusModeAnimation.duration
+                context.allowsImplicitAnimation = true
+                window.animator().backgroundColor = targetColor
+            }
+        } else {
+            window.backgroundColor = targetColor
+        }
+    }
+}
+
 // swiftlint:disable:next type_body_length
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -186,7 +272,7 @@ struct ContentView: View {
 
     private var baseLayout: some View {
         ZStack(alignment: .leading) {
-            Container.groutBg
+            shellBackground
 
             HStack(spacing: 0) {
                 if appState.sidebarVisible {
@@ -261,6 +347,11 @@ struct ContentView: View {
             editorZoomOverlay
             shortcutOverlay
         }
+        .background(PointerMovementReporter { editorUI.handlePointerMovement() })
+        .background(WindowBackgroundUpdater(color: shellWindowBackgroundColor))
+        .environment(\.editorTypingFocusActive, editorUI.focusModeActive)
+        .environment(\.editorTypingFocusFullBleed, typingFocusFullBleedActive)
+        .animation(EditorFocusModeAnimation.animation, value: typingFocusFullBleedActive)
     }
 
     private var configuredLayout: some View {
@@ -296,7 +387,7 @@ struct ContentView: View {
             applyTerminalColorScheme(appState.settings.terminalColorScheme)
         }
         editorZoomScale = clampedEditorZoomScale(editorZoomScale)
-        editorUI.focusModeEnabled = appState.settings.focusModeOnType
+        editorUI.setFocusModeEnabled(appState.settings.focusModeOnType)
         if BugbookFeatureGate.shouldWarmTranscriptionAtLaunch {
             warmUpTranscriptionModel()
         }
@@ -369,7 +460,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: appState.settings.focusModeOnType) { _, enabled in
-                editorUI.focusModeEnabled = enabled
+                editorUI.setFocusModeEnabled(enabled)
             }
             .onChange(of: workspaceManager.activeWorkspace?.focusedPaneId) { _, _ in
                 hideFormattingPanel()
@@ -771,7 +862,7 @@ struct ContentView: View {
         switch effectiveSidebarContextType {
         case .mail: return "Mail"
         case .calendar: return "Calendar"
-        case .workspace: return BugbookFeatureGate.legacyPanesEnabled ? "Pages" : nil
+        case .workspace: return "Pages"
         case .none: return nil
         }
     }
@@ -1373,6 +1464,22 @@ struct ContentView: View {
         appState.currentView == .graphView && BugbookFeatureGate.allowsViewMode(.graphView)
     }
 
+    private var typingFocusFullBleedActive: Bool {
+        editorUI.focusModeActive && !shellShowsSidebarPanel && !appState.showSettings
+    }
+
+    private var shellBackground: some View {
+        ZStack {
+            Container.groutBg
+            Color.fallbackEditorBg
+                .opacity(typingFocusFullBleedActive ? 1 : 0)
+        }
+    }
+
+    private var shellWindowBackgroundColor: NSColor {
+        typingFocusFullBleedActive ? NSColor(Color.fallbackEditorBg) : NSColor(Container.groutBg)
+    }
+
     @ViewBuilder
     private var mainContentWithAiPanel: some View {
         VStack(spacing: 0) {
@@ -1384,13 +1491,14 @@ struct ContentView: View {
                     sidebarOpen: shellShowsSidebarPanel,
                     currentView: appState.currentView,
                     recordingPagePath: appState.activeMeetingSession?.meetingPagePath,
+                    typingFocusActive: editorUI.focusModeActive,
+                    typingFocusFullBleedActive: typingFocusFullBleedActive,
                     onOpenNewTabLauncher: {
                         flushDirtyTabContent()
                         appState.commandPaletteMode = .newTab
                         appState.commandPaletteOpen = true
                     }
                 )
-                .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
             }
 
             if !appState.legacyWorkspacesNeedingAttention.isEmpty {
@@ -1421,6 +1529,7 @@ struct ContentView: View {
             .padding(.bottom, mainContentBottomPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .animation(EditorFocusModeAnimation.animation, value: editorUI.focusModeActive)
     }
 
     @ViewBuilder
@@ -1482,6 +1591,9 @@ struct ContentView: View {
     private let usesFullBleedShellLayout = false
 
     private var mainContentLeadingPadding: CGFloat {
+        if typingFocusFullBleedActive {
+            return 0
+        }
         if usesFullBleedShellLayout {
             return 0
         }
@@ -1489,11 +1601,17 @@ struct ContentView: View {
     }
 
     private var mainContentTrailingPadding: CGFloat {
-        usesFullBleedShellLayout ? 0 : Container.groutGap
+        if typingFocusFullBleedActive {
+            return 0
+        }
+        return usesFullBleedShellLayout ? 0 : Container.groutGap
     }
 
     private var mainContentBottomPadding: CGFloat {
-        usesFullBleedShellLayout ? 0 : Container.groutGap
+        if typingFocusFullBleedActive {
+            return 0
+        }
+        return usesFullBleedShellLayout ? 0 : Container.groutGap
     }
 
     @ViewBuilder
@@ -1646,7 +1764,8 @@ struct ContentView: View {
                         }
                     }
                 }
-                .opacity(editorUI.focusModeActive ? 0.0 : 1.0)
+                .opacity(editorUI.focusModeActive ? 0 : 1)
+                .allowsHitTesting(!editorUI.focusModeActive)
             }
 
             if file.path.contains("/.claude/skills/") {
@@ -2059,6 +2178,8 @@ struct ContentView: View {
         ScrollView {
             VStack(spacing: 0) {
                 editorPageHeader(document)
+                    .opacity(editorUI.focusModeActive ? 0 : 1)
+                    .allowsHitTesting(!editorUI.focusModeActive)
                 editorTitleRow(document)
                 editorBlockEditor(document)
             }

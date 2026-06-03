@@ -465,9 +465,9 @@ During terminal walkthrough:
 
 ## Workspace Note
 
-All bugbook commands need the workspace flag for Bugbook 2:
+All bugbook commands need the workspace flag for the canonical iCloud workspace, Bugbook:
 ```bash
-WS="$HOME/Library/Mobile Documents/iCloud~com~bugbook~app/Documents/Bugbook 2"
+WS="$HOME/Library/Mobile Documents/iCloud~com~bugbook~app/Documents/Bugbook"
 bugbook --workspace "$WS" <command>
 ```
 

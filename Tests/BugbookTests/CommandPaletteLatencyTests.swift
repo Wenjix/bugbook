@@ -16,16 +16,17 @@ final class CommandPaletteLatencyTests: XCTestCase {
             pagesPerFolder: pagesPerFolder
         )
 
-        var cache: [CommandPalettePageEntry] = []
+        var index = CommandPalettePageSearchIndex.empty
         let buildMS = milliseconds {
-            cache = CommandPalettePageEntry.build(
+            let cache = CommandPalettePageEntry.build(
                 from: fileTree,
                 workspacePath: workspacePath,
                 includeModificationDates: false
             )
+            index = CommandPalettePageSearchIndex(entries: cache)
         }
 
-        XCTAssertEqual(cache.count, folderCount * pagesPerFolder)
+        XCTAssertEqual(index.count, folderCount * pagesPerFolder)
         XCTAssertLessThan(
             buildMS,
             cacheBuildBudgetMS,
@@ -35,10 +36,7 @@ final class CommandPaletteLatencyTests: XCTestCase {
         let queries = ["page 12", "folder 30", "research", "missing result", "page"]
         let searchMS = milliseconds {
             for query in queries {
-                _ = cache
-                    .lazy
-                    .filter { $0.matches(query) }
-                    .prefix(10)
+                _ = index.rankedMatches(query: query, limit: 10)
                     .map(\.fileEntry)
             }
         }
@@ -48,6 +46,43 @@ final class CommandPaletteLatencyTests: XCTestCase {
             repeatedSearchBudgetMS,
             "Typing in the workspace launcher should keep result recompute below the interactive budget."
         )
+    }
+
+    func testCommandPaletteSearchRanksExactAndPrefixMatchesFirst() {
+        let workspacePath = "/tmp/bugbook-command-palette-ranking"
+        let entries = [
+            makeFile(name: "Meeting Daily.md", path: "\(workspacePath)/Meeting Daily.md"),
+            makeFile(name: "Daily Notes.md", path: "\(workspacePath)/Daily Notes.md"),
+            makeFile(name: "Work Log.md", path: "\(workspacePath)/Work Log.md")
+        ]
+        let cache = CommandPalettePageEntry.build(
+            from: entries,
+            workspacePath: workspacePath,
+            includeModificationDates: false
+        )
+        let index = CommandPalettePageSearchIndex(entries: cache)
+
+        let results = index.rankedMatches(query: "daily", limit: 10)
+
+        XCTAssertEqual(results.map(\.displayName), ["Daily Notes", "Meeting Daily"])
+    }
+
+    func testCommandPaletteSearchSupportsSubsequenceMatches() {
+        let workspacePath = "/tmp/bugbook-command-palette-fuzzy"
+        let entries = [
+            makeFile(name: "Parent Interview.md", path: "\(workspacePath)/Research/Parent Interview.md"),
+            makeFile(name: "Roadmap.md", path: "\(workspacePath)/Research/Roadmap.md")
+        ]
+        let cache = CommandPalettePageEntry.build(
+            from: entries,
+            workspacePath: workspacePath,
+            includeModificationDates: false
+        )
+        let index = CommandPalettePageSearchIndex(entries: cache)
+
+        let results = index.rankedMatches(query: "pin", limit: 10)
+
+        XCTAssertEqual(results.map(\.displayName), ["Parent Interview"])
     }
 
     private func milliseconds(_ work: () -> Void) -> Double {
@@ -79,5 +114,15 @@ final class CommandPaletteLatencyTests: XCTestCase {
                 children: children
             )
         }
+    }
+
+    private func makeFile(name: String, path: String) -> FileEntry {
+        FileEntry(
+            id: path,
+            name: name,
+            path: path,
+            isDirectory: false,
+            kind: .page
+        )
     }
 }

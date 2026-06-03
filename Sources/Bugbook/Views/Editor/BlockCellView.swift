@@ -20,6 +20,7 @@ struct BlockCellView: View {
     @State private var showPagePicker = false
     @State private var showMentionPicker = false
     @State private var showAiPrompt = false
+    @Environment(\.editorTypingFocusActive) private var editorTypingFocusActive
 
     var body: some View {
         // Database embed blocks need their own interactive controls to work, so we
@@ -115,7 +116,10 @@ struct BlockCellView: View {
     }
 
     private var handleIsVisible: Bool {
-        isRowHovering
+        if editorTypingFocusActive {
+            return false
+        }
+        return isRowHovering
             || isHandleHovering
             || isHandleDragging
             || showBlockMenu

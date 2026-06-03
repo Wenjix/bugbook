@@ -122,12 +122,32 @@ struct CommandPaletteOpenPaneReference: Identifiable, Equatable {
     }
 }
 
+fileprivate struct CommandPalettePageSearchQuery: Sendable {
+    let value: String
+    let tokens: [String]
+    let bytes: [UInt8]
+    let tokenBytes: [[UInt8]]
+    let allowsFuzzy: Bool
+
+    init(_ rawValue: String) {
+        value = CommandPalettePageEntry.normalizedQuery(rawValue)
+        tokens = value
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        bytes = Array(value.utf8)
+        tokenBytes = tokens.map { Array($0.utf8) }
+        allowsFuzzy = tokenBytes.count == 1 && bytes.count <= 8
+    }
+}
+
 struct CommandPalettePageEntry: Identifiable, Sendable {
     let fileEntry: FileEntry
     let displayName: String
     let relativePath: String
     let modificationDate: Date
-    private let searchableText: String
+    private let searchableNameBytes: [UInt8]
+    private let searchablePathBytes: [UInt8]
+    fileprivate let indexTokens: [String]
 
     var id: String { fileEntry.id }
 
@@ -149,8 +169,59 @@ struct CommandPalettePageEntry: Identifiable, Sendable {
     }
 
     func matches(_ query: String) -> Bool {
-        guard !query.isEmpty else { return true }
-        return searchableText.localizedStandardContains(query)
+        let query = CommandPalettePageSearchQuery(query)
+        guard !query.value.isEmpty else { return false }
+        return matchScore(query: query) != nil
+    }
+
+    static func rankedMatches(
+        in entries: [CommandPalettePageEntry],
+        query: String,
+        limit: Int
+    ) -> [CommandPalettePageEntry] {
+        let query = CommandPalettePageSearchQuery(query)
+        guard !query.value.isEmpty else {
+            return Array(entries.prefix(limit))
+        }
+        return rankedMatches(in: entries, query: query, limit: limit)
+    }
+
+    fileprivate static func rankedMatches(
+        in entries: [CommandPalettePageEntry],
+        query: CommandPalettePageSearchQuery,
+        limit: Int
+    ) -> [CommandPalettePageEntry] {
+        var bestMatches: [(entry: CommandPalettePageEntry, score: Int)] = []
+        bestMatches.reserveCapacity(limit + 1)
+
+        for entry in entries {
+            guard let score = entry.matchScore(query: query) else { continue }
+            let candidate = (entry: entry, score: score)
+
+            if let insertionIndex = bestMatches.firstIndex(where: { isBetter(candidate, than: $0) }) {
+                bestMatches.insert(candidate, at: insertionIndex)
+            } else if bestMatches.count < limit {
+                bestMatches.append(candidate)
+            }
+
+            if bestMatches.count > limit {
+                bestMatches.removeLast()
+            }
+        }
+
+        return bestMatches.map(\.entry)
+    }
+
+    fileprivate func matchScore(query: CommandPalettePageSearchQuery) -> Int? {
+        guard !query.value.isEmpty else { return 0 }
+        if let name = Self.matchScore(in: searchableNameBytes, query: query) {
+            return name
+        }
+        return Self.matchScore(in: searchablePathBytes, query: query).map { $0 - 350 }
+    }
+
+    static func normalizedQuery(_ value: String) -> String {
+        normalize(value)
     }
 
     private static func flatten(
@@ -187,7 +258,11 @@ struct CommandPalettePageEntry: Identifiable, Sendable {
         self.displayName = displayName
         self.relativePath = relativePath
         self.modificationDate = modificationDate
-        self.searchableText = "\(displayName)\n\(relativePath)"
+        let normalizedName = Self.normalize(displayName)
+        let normalizedPath = Self.normalize(relativePath)
+        self.searchableNameBytes = Array(normalizedName.utf8)
+        self.searchablePathBytes = Array(normalizedPath.utf8)
+        self.indexTokens = Self.indexTokens(in: [normalizedPath])
     }
 
     private static func isPalettePage(_ entry: FileEntry) -> Bool {
@@ -208,6 +283,240 @@ struct CommandPalettePageEntry: Identifiable, Sendable {
         let attributes = try? FileManager.default.attributesOfItem(atPath: entry.path)
         return attributes?[.modificationDate] as? Date ?? .distantPast
     }
+
+    private static func isBetter(
+        _ lhs: (entry: CommandPalettePageEntry, score: Int),
+        than rhs: (entry: CommandPalettePageEntry, score: Int)
+    ) -> Bool {
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        if lhs.entry.modificationDate != rhs.entry.modificationDate {
+            return lhs.entry.modificationDate > rhs.entry.modificationDate
+        }
+        // Preserve cache order for exact ties. Broad queries can produce thousands
+        // of equal-score matches, so avoid localized title comparison in this hot path.
+        return false
+    }
+
+    private static func matchScore(in normalizedValue: [UInt8], query: CommandPalettePageSearchQuery) -> Int? {
+        guard !normalizedValue.isEmpty else { return nil }
+
+        if normalizedValue == query.bytes { return 3_000 }
+        if hasPrefix(query.bytes, in: normalizedValue) { return 2_500 - normalizedValue.count }
+        if let index = firstIndex(of: query.bytes, in: normalizedValue) {
+            return 2_000 - index
+        }
+
+        if let tokenScore = tokenScore(in: normalizedValue, query: query) {
+            return tokenScore
+        }
+
+        guard query.allowsFuzzy else { return nil }
+        return subsequenceScore(in: normalizedValue, query: query.bytes)
+    }
+
+    private static func tokenScore(in normalizedValue: [UInt8], query: CommandPalettePageSearchQuery) -> Int? {
+        guard query.tokenBytes.count > 1 else { return nil }
+
+        var score = 1_700
+        var searchStart = 0
+
+        for token in query.tokenBytes {
+            guard let index = firstIndex(of: token, in: normalizedValue, from: searchStart) else {
+                return nil
+            }
+
+            score -= index - searchStart
+
+            if index == 0 {
+                score += 120
+            } else if isTokenBoundary(normalizedValue[index - 1]) {
+                score += 60
+            }
+
+            searchStart = index + token.count
+        }
+
+        return score
+    }
+
+    private static func subsequenceScore(in normalizedValue: [UInt8], query: [UInt8]) -> Int? {
+        var score = 1_000
+        var searchStart = 0
+        var previousMatch: Int?
+
+        for byte in query {
+            guard let match = firstIndex(of: byte, in: normalizedValue, from: searchStart) else {
+                return nil
+            }
+
+            if let previousMatch, previousMatch + 1 == match {
+                score += 8
+            }
+
+            score -= match - searchStart
+            previousMatch = match
+            searchStart = match + 1
+        }
+
+        return score
+    }
+
+    private static func hasPrefix(_ prefix: [UInt8], in value: [UInt8]) -> Bool {
+        guard !prefix.isEmpty, prefix.count <= value.count else { return false }
+        for index in prefix.indices where value[index] != prefix[index] {
+            return false
+        }
+        return true
+    }
+
+    private static func firstIndex(of byte: UInt8, in value: [UInt8], from start: Int) -> Int? {
+        guard start < value.count else { return nil }
+        var index = start
+        while index < value.count {
+            if value[index] == byte { return index }
+            index += 1
+        }
+        return nil
+    }
+
+    private static func firstIndex(of needle: [UInt8], in value: [UInt8], from start: Int = 0) -> Int? {
+        guard !needle.isEmpty, needle.count <= value.count else { return nil }
+        let limit = value.count - needle.count
+        guard start <= limit else { return nil }
+
+        let firstByte = needle[0]
+        var index = start
+        while index <= limit {
+            if value[index] == firstByte {
+                var offset = 1
+                while offset < needle.count, value[index + offset] == needle[offset] {
+                    offset += 1
+                }
+                if offset == needle.count { return index }
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    private static func isTokenBoundary(_ byte: UInt8) -> Bool {
+        byte <= 32 || byte == 45 || byte == 46 || byte == 47 || byte == 95
+    }
+
+    private static func indexTokens(in values: [String]) -> [String] {
+        var tokens = Set<String>()
+        for value in values {
+            for token in value.split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
+                let token = String(token)
+                if token != "md" {
+                    tokens.insert(token)
+                }
+            }
+        }
+        return Array(tokens)
+    }
+
+    private static func normalize(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct CommandPalettePageSearchIndex: Sendable {
+    static let empty = CommandPalettePageSearchIndex(entries: [])
+
+    let entries: [CommandPalettePageEntry]
+    private let tokenIndex: [String: [Int]]
+
+    var count: Int { entries.count }
+
+    init(entries: [CommandPalettePageEntry]) {
+        self.entries = entries
+
+        var tokenIndex: [String: [Int]] = [:]
+
+        for (entryIndex, entry) in entries.enumerated() {
+            for token in entry.indexTokens {
+                tokenIndex[token, default: []].append(entryIndex)
+            }
+        }
+
+        self.tokenIndex = tokenIndex
+    }
+
+    func rankedMatches(query rawQuery: String, limit: Int) -> [CommandPalettePageEntry] {
+        let query = CommandPalettePageSearchQuery(rawQuery)
+        guard !query.value.isEmpty else {
+            return Array(entries.prefix(limit))
+        }
+
+        if let candidateIndices = candidateIndices(for: query) {
+            guard !candidateIndices.isEmpty else { return [] }
+
+            if query.tokens.count == 1, candidateIndices.count > 500 {
+                return candidateIndices.prefix(limit).map { entries[$0] }
+            }
+
+            let candidates = candidateIndices.map { entries[$0] }
+            return CommandPalettePageEntry.rankedMatches(in: candidates, query: query, limit: limit)
+        }
+
+        guard query.allowsFuzzy else { return [] }
+        return CommandPalettePageEntry.rankedMatches(in: entries, query: query, limit: limit)
+    }
+
+    private func candidateIndices(for query: CommandPalettePageSearchQuery) -> [Int]? {
+        guard !query.tokens.isEmpty else { return nil }
+
+        if query.tokens.count == 1 {
+            let token = query.tokens[0]
+            return tokenIndex[token] ?? prefixCandidateIndices(for: token)
+        }
+
+        var lists: [[Int]] = []
+        lists.reserveCapacity(query.tokens.count)
+
+        for token in query.tokens {
+            guard let list = tokenIndex[token] ?? prefixCandidateIndices(for: token) else { return [] }
+            lists.append(list)
+        }
+
+        return Self.intersection(lists)
+    }
+
+    private func prefixCandidateIndices(for token: String) -> [Int]? {
+        var seen = Set<Int>()
+        var candidates: [Int] = []
+
+        for (indexedToken, indices) in tokenIndex where indexedToken.hasPrefix(token) {
+            for index in indices where seen.insert(index).inserted {
+                candidates.append(index)
+            }
+        }
+
+        guard !candidates.isEmpty else { return nil }
+        candidates.sort()
+        return candidates
+    }
+
+    private static func intersection(_ lists: [[Int]]) -> [Int] {
+        guard let smallestIndex = lists.indices.min(by: { lists[$0].count < lists[$1].count }) else { return [] }
+        var result = lists[smallestIndex]
+        let otherSets = lists
+            .enumerated()
+            .filter { $0.offset != smallestIndex }
+            .map(\.element)
+            .map(Set.init)
+
+        guard !otherSets.isEmpty else { return result }
+        result.removeAll { index in
+            otherSets.contains { !$0.contains(index) }
+        }
+        result.sort()
+        return result
+    }
+
 }
 
 // MARK: - Result Types
@@ -303,7 +612,7 @@ struct CommandPaletteView: View {
 
     @State private var searchText = ""
     @State private var selectedIndex = 0
-    @State private var cachedPageEntries: [CommandPalettePageEntry] = []
+    @State private var pageSearchIndex = CommandPalettePageSearchIndex.empty
     @State private var pageCacheTask: Task<Void, Never>?
     @FocusState private var isSearchFieldFocused: Bool
 
@@ -429,11 +738,9 @@ struct CommandPaletteView: View {
     }
 
     private var pageItems: [PaletteItem] {
-        let matched = cachedPageEntries
-            .filter { $0.matches(query) }
-            .prefix(10)
-
-        return matched.map { .recent($0, isOpen: isOpenPage($0.fileEntry)) }
+        pageSearchIndex
+            .rankedMatches(query: query, limit: 10)
+            .map { .recent($0, isOpen: isOpenPage($0.fileEntry)) }
     }
 
     private func openPaneItems(openReferences: [CommandPaletteOpenPaneReference]) -> [PaletteItem] {
@@ -592,11 +899,12 @@ struct CommandPaletteView: View {
     private func refreshPageCache() {
         let fileTree = appState.fileTree
         let workspacePath = appState.workspacePath
-        cachedPageEntries = CommandPalettePageEntry.build(
+        let entries = CommandPalettePageEntry.build(
             from: fileTree,
             workspacePath: workspacePath,
             includeModificationDates: false
         )
+        pageSearchIndex = CommandPalettePageSearchIndex(entries: entries)
 
         pageCacheTask?.cancel()
         pageCacheTask = Task.detached(priority: .utility) {
@@ -607,7 +915,7 @@ struct CommandPaletteView: View {
             )
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                cachedPageEntries = datedEntries
+                pageSearchIndex = CommandPalettePageSearchIndex(entries: datedEntries)
             }
         }
     }

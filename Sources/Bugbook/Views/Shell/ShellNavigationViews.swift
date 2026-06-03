@@ -580,11 +580,10 @@ struct WorkspaceContextualSidebarView: View {
         let stored = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
         return Set(stored)
     }()
-    @State private var fileFilter = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: ShellSidebarMetrics.sectionSpacing) {
+            LazyVStack(alignment: .leading, spacing: ShellSidebarMetrics.sectionSpacing) {
                 // Sidebar references (pinned workspace shortcuts like Today, Graph)
                 if !appState.sidebarReferences.isEmpty {
                     VStack(spacing: ShellZoomMetrics.size(1)) {
@@ -603,24 +602,16 @@ struct WorkspaceContextualSidebarView: View {
                     }
                 }
 
-                if !appState.fileTree.isEmpty {
-                    fileFilterField
-                }
-
                 // Full file tree
-                if trimmedFileFilter.isEmpty {
-                    FileTreeView(
-                        entries: appState.fileTree,
-                        activeFilePath: activeFilePath,
-                        fileSystem: fileSystem,
-                        workspacePath: appState.workspacePath,
-                        onSelectFile: onSelectWorkspaceEntry,
-                        onRefreshTree: onRefreshTree,
-                        expandedFolders: $expandedFolders
-                    )
-                } else {
-                    filteredFileResults
-                }
+                FileTreeView(
+                    entries: appState.fileTree,
+                    activeFilePath: activeFilePath,
+                    fileSystem: fileSystem,
+                    workspacePath: appState.workspacePath,
+                    onSelectFile: onSelectWorkspaceEntry,
+                    onRefreshTree: onRefreshTree,
+                    expandedFolders: $expandedFolders
+                )
 
                 // Agents section
                 if BugbookFeatureGate.shouldExposeAgentSurfaces,
@@ -678,72 +669,8 @@ struct WorkspaceContextualSidebarView: View {
         }
     }
 
-    private var trimmedFileFilter: String {
-        fileFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var hasAgentSidebarEntries: Bool {
         !appState.agentSkills.isEmpty || !appState.mcpServers.isEmpty
-    }
-
-    private var filteredFiles: [FileEntry] {
-        FileTreeFilter.filteredEntries(appState.fileTree, query: trimmedFileFilter)
-    }
-
-    private var fileFilterField: some View {
-        HStack(spacing: ShellZoomMetrics.size(6)) {
-            Image(systemName: "magnifyingglass")
-                .font(ShellZoomMetrics.font(Typography.caption))
-                .foregroundStyle(.secondary)
-                .frame(width: ShellZoomMetrics.size(14))
-
-            TextField("Filter files", text: $fileFilter)
-                .textFieldStyle(.plain)
-                .font(ShellZoomMetrics.font(Typography.body))
-
-            if !trimmedFileFilter.isEmpty {
-                Button {
-                    fileFilter = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(ShellZoomMetrics.font(Typography.caption))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, ShellSidebarMetrics.rowHorizontalPadding)
-        .padding(.vertical, ShellZoomMetrics.size(6))
-        .background(
-            RoundedRectangle(cornerRadius: ShellZoomMetrics.size(Radius.sm))
-                .fill(Color.primary.opacity(0.06))
-        )
-    }
-
-    private var filteredFileResults: some View {
-        VStack(spacing: ShellZoomMetrics.size(1)) {
-            ForEach(filteredFiles) { entry in
-                FileTreeItemView(
-                    entry: entry,
-                    activeFilePath: activeFilePath,
-                    fileSystem: fileSystem,
-                    workspacePath: appState.workspacePath,
-                    onSelectFile: onSelectWorkspaceEntry,
-                    onRefreshTree: onRefreshTree,
-                    showsParentPath: true,
-                    expandedFolders: $expandedFolders
-                )
-            }
-
-            if filteredFiles.isEmpty {
-                Text("No matching files")
-                    .font(ShellZoomMetrics.font(Typography.caption))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, ShellSidebarMetrics.rowHorizontalPadding)
-                    .padding(.vertical, ShellZoomMetrics.size(6))
-            }
-        }
     }
 }
 

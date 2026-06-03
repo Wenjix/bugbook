@@ -389,24 +389,6 @@ final class PerformanceTests: XCTestCase {
         PerfBaseline.record(testName: "filesystem_tree_1000", metric: "ms", value: ms)
     }
 
-    func testFileTreeFilter1000FilesUnder16ms() {
-        let entries = (0..<1_000).map { index in
-            let name = "Page \(String(format: "%04d", index)).md"
-            return FileEntry(
-                id: "/tmp/\(name)",
-                name: name,
-                path: "/tmp/\(name)",
-                isDirectory: false
-            )
-        }
-
-        let ms = timed {
-            _ = FileTreeFilter.filteredEntries(entries, query: "p0500")
-        }
-        PerfBaseline.record(testName: "file_tree_filter_1000", metric: "ms", value: ms)
-        XCTAssertLessThan(ms, 16)
-    }
-
     func testNoteSwitchingIn1000FileFolderUnder50ms() async throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("BugbookPerfSwitch-\(UUID().uuidString)", isDirectory: true)

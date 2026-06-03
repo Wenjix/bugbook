@@ -11,6 +11,8 @@ struct WorkspaceTabBar: View {
     var sidebarOpen: Bool
     var currentView: ViewMode = .editor
     var recordingPagePath: String?
+    var typingFocusActive = false
+    var typingFocusFullBleedActive = false
     var onOpenNewTabLauncher: () -> Void = {}
 
     @State private var dragOverIndex: Int?
@@ -24,6 +26,36 @@ struct WorkspaceTabBar: View {
     private let detachThreshold: CGFloat = 90
 
     var body: some View {
+        ZStack {
+            tabBarBackground
+            tabBarContent
+                .opacity(typingFocusActive ? 0 : 1)
+                .allowsHitTesting(!typingFocusActive)
+        }
+        .frame(height: ShellZoomMetrics.size(36))
+        .animation(EditorFocusModeAnimation.animation, value: typingFocusActive)
+        .animation(EditorFocusModeAnimation.animation, value: typingFocusFullBleedActive)
+        .onChange(of: workspaceManager.lastSavedAt) { _, _ in
+            savedIndicatorTask?.cancel()
+            withAnimation(.easeIn(duration: 0.15)) { showSavedIndicator = true }
+            savedIndicatorTask = Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.3)) { showSavedIndicator = false }
+            }
+        }
+        .onPreferenceChange(WorkspaceTabFramePreferenceKey.self) { workspaceTabFrames = $0 }
+    }
+
+    private var tabBarBackground: some View {
+        ZStack {
+            Container.groutBg
+            Color.fallbackEditorBg
+                .opacity(typingFocusFullBleedActive ? 1 : 0)
+        }
+    }
+
+    private var tabBarContent: some View {
         HStack(alignment: .bottom, spacing: 0) {
             // Sidebar toggle — only in the tab bar when the sidebar is closed.
             // When open, the toggle lives in the sidebar's own top band.
@@ -107,18 +139,6 @@ struct WorkspaceTabBar: View {
             saveToWorkspaceButton
             layoutSavedIndicator
         }
-        .frame(height: ShellZoomMetrics.size(36))
-        .background(Container.groutBg)
-        .onChange(of: workspaceManager.lastSavedAt) { _, _ in
-            savedIndicatorTask?.cancel()
-            withAnimation(.easeIn(duration: 0.15)) { showSavedIndicator = true }
-            savedIndicatorTask = Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.3)) { showSavedIndicator = false }
-            }
-        }
-        .onPreferenceChange(WorkspaceTabFramePreferenceKey.self) { workspaceTabFrames = $0 }
     }
 
     private var addWorkspaceForeground: Color {

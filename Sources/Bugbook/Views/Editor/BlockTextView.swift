@@ -1375,6 +1375,7 @@ struct BlockTextView: NSViewRepresentable {
                 let displayPos = textView.selectedRange().location
                 let mdPos = markdownOffset(forDisplayOffset: displayPos, in: textView.attributedString())
                 parent.document.splitBlock(id: parent.blockId, atOffset: mdPos)
+                parent.onTextChange?()
                 return true
             }
 
@@ -1390,9 +1391,11 @@ struct BlockTextView: NSViewRepresentable {
                     if let block = parent.document.block(for: parent.blockId),
                        block.type != .paragraph {
                         parent.document.changeBlockType(id: parent.blockId, to: .paragraph)
+                        parent.onTextChange?()
                         return true
                     }
                     parent.document.mergeWithPrevious(id: parent.blockId)
+                    parent.onTextChange?()
                     return true
                 }
                 return false

@@ -13,14 +13,14 @@ Each review is a row in the **Weekly Reviews** database under Max Flow in Gatewa
 
 ## Workspace
 
-The active Bugbook workspace is **Bugbook 2** in iCloud. All `bugbook` commands need the workspace flag:
+The active Bugbook workspace is **Bugbook** in iCloud. All `bugbook` commands need the workspace flag:
 
 ```bash
-WS="$HOME/Library/Mobile Documents/iCloud~com~bugbook~app/Documents/Bugbook 2"
+WS="$HOME/Library/Mobile Documents/iCloud~com~bugbook~app/Documents/Bugbook"
 bugbook query "Agent Tickets" --workspace "$WS"
 ```
 
-Set `WS` once at the start of the session and use it everywhere. The symlink at `~/Documents/Bugbook/` points to a different (older) workspace — do not use the default.
+Set `WS` once at the start of the session and use it everywhere. Do not use old duplicate workspaces.
 
 ---
 

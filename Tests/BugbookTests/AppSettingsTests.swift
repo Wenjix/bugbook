@@ -18,6 +18,13 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(decoded.notesFolderPath, "")
     }
 
+    func testFocusModeWhileTypingDefaultsToEnabled() throws {
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"theme":"system"}"#.utf8))
+
+        XCTAssertTrue(AppSettings.default.focusModeOnType)
+        XCTAssertTrue(decoded.focusModeOnType)
+    }
+
     func testResolvedNotesFolderPathUsesTrimmedSettingsPathByDefault() {
         var settings = AppSettings.default
         settings.notesFolderPath = "  /tmp/Bugbook Notes  "

@@ -4,10 +4,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-INSTALL_DIR="$HOME/Applications"
+INSTALL_DIR="${BUGBOOK_INSTALL_DIR:-/Applications}"
 APP_NAME="Bugbook.app"
 APP_PATH="$INSTALL_DIR/$APP_NAME"
-BUNDLE_ID="com.bugbook.Bugbook"
+BUNDLE_ID="${BUGBOOK_BUNDLE_ID:-com.maxforsey.Bugbook}"
 DERIVED_DATA="$REPO_ROOT/.build/release-derived-data"
 
 VERSION="0.$(git rev-list --count HEAD 2>/dev/null || echo 1)"

@@ -220,7 +220,7 @@ struct AppSettings: Codable, Equatable {
 
     static let `default` = AppSettings(
         theme: .system,
-        focusModeOnType: false,
+        focusModeOnType: true,
         preferredAIEngine: .auto,
         executionPolicy: .ask,
         bugbookSkillEnabled: false,
@@ -326,7 +326,7 @@ struct AppSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         theme = try container.decodeIfPresent(ThemeMode.self, forKey: .theme) ?? .system
-        focusModeOnType = try container.decodeIfPresent(Bool.self, forKey: .focusModeOnType) ?? false
+        focusModeOnType = try container.decodeIfPresent(Bool.self, forKey: .focusModeOnType) ?? true
         preferredAIEngine = try container.decodeIfPresent(PreferredAIEngine.self, forKey: .preferredAIEngine) ?? .auto
         executionPolicy = try container.decodeIfPresent(ExecutionPolicy.self, forKey: .executionPolicy) ?? .ask
         bugbookSkillEnabled = try container.decodeIfPresent(Bool.self, forKey: .bugbookSkillEnabled) ?? false

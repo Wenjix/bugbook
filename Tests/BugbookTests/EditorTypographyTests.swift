@@ -17,4 +17,28 @@ final class EditorTypographyTests: XCTestCase {
         XCTAssertEqual(EditorTypography.defaultZoomScale, 1.0)
         XCTAssertEqual(EditorTypography.zoomScale, 1.0)
     }
+
+    @MainActor
+    func testTypingFocusStaysActiveUntilPointerMoves() {
+        let state = EditorUIState()
+
+        state.setFocusModeEnabled(true)
+        state.triggerFocusMode()
+
+        XCTAssertTrue(state.focusModeActive)
+
+        state.handlePointerMovement()
+
+        XCTAssertFalse(state.focusModeActive)
+    }
+
+    @MainActor
+    func testTypingFocusDoesNotActivateWhenDisabled() {
+        let state = EditorUIState()
+
+        state.setFocusModeEnabled(false)
+        state.triggerFocusMode()
+
+        XCTAssertFalse(state.focusModeActive)
+    }
 }

@@ -23,6 +23,8 @@ struct PaneContentView: View {
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
     let paneActions: PaneActions
 
+    @Environment(\.editorTypingFocusActive) private var editorTypingFocusActive
+    @Environment(\.editorTypingFocusFullBleed) private var editorTypingFocusFullBleed
     @State private var isDropTarget = false
 
     // Find-in-page state (per-pane)
@@ -134,6 +136,8 @@ struct PaneContentView: View {
                         onBreadcrumbNavigate: onBreadcrumbNavigate,
                         paneActions: paneActions
                     )
+                    .opacity(editorTypingFocusActive ? 0 : 1)
+                    .allowsHitTesting(!editorTypingFocusActive)
                 }
 
                 if showFindBar {
@@ -157,8 +161,8 @@ struct PaneContentView: View {
                     .allowsHitTesting(false)
             }
         }
-        .background(Container.cardBg)
-        .clipShape(RoundedRectangle(cornerRadius: Container.cardRadius))
+        .background(editorTypingFocusFullBleed ? Color.fallbackEditorBg : Container.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: editorTypingFocusFullBleed ? 0 : Container.cardRadius))
         .onDrop(of: [.text], isTargeted: $isDropTarget) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: NSString.self) { item, _ in
