@@ -225,6 +225,52 @@ final class FileSystemServiceTests: XCTestCase {
         XCTAssertEqual(service.favoritePaths(for: workspace), [favoritePath])
     }
 
+    func testResolveFavoritesPreservesUnresolvedUserFavorites() throws {
+        let service = FileSystemService()
+        let workspace = try makeTemporaryDirectory()
+        defer {
+            service.saveFavoritePaths([], for: workspace)
+            try? FileManager.default.removeItem(atPath: workspace)
+        }
+
+        let missingPath = (workspace as NSString).appendingPathComponent("Gateway 8.0.md")
+        let favoritePath = (workspace as NSString).appendingPathComponent("Knowledge Vault.md")
+        try "# Knowledge Vault\n".write(toFile: favoritePath, atomically: true, encoding: .utf8)
+
+        service.saveFavoritePaths([missingPath, favoritePath], for: workspace)
+        let tree = service.buildFileTree(at: workspace)
+        let favorites = service.resolveFavorites(for: workspace, fileTree: tree)
+
+        XCTAssertEqual(favorites.map(\.path), [favoritePath])
+        XCTAssertEqual(service.favoritePaths(for: workspace), [missingPath, favoritePath])
+    }
+
+    func testResolveFavoritesNormalizesCompanionFolderPath() throws {
+        let service = FileSystemService()
+        let workspace = try makeTemporaryDirectory()
+        defer {
+            service.saveFavoritePaths([], for: workspace)
+            try? FileManager.default.removeItem(atPath: workspace)
+        }
+
+        let pagePath = (workspace as NSString).appendingPathComponent("Alignment Zone.md")
+        let companionPath = (workspace as NSString).appendingPathComponent("Alignment Zone")
+        let childPath = (companionPath as NSString).appendingPathComponent("Agent Flow.md")
+        try "# Alignment Zone\n".write(toFile: pagePath, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(atPath: companionPath, withIntermediateDirectories: true)
+        try "# Agent Flow\n".write(toFile: childPath, atomically: true, encoding: .utf8)
+
+        service.saveFavoritePaths([companionPath], for: workspace)
+        let tree = service.buildFileTree(at: workspace)
+        let favorites = service.resolveFavorites(for: workspace, fileTree: tree)
+
+        let favorite = try XCTUnwrap(favorites.first)
+        XCTAssertEqual(favorite.id, "favorite:\(pagePath)")
+        XCTAssertEqual(favorite.path, pagePath)
+        XCTAssertEqual(favorite.children?.map(\.name), ["Agent Flow.md"])
+        XCTAssertEqual(service.favoritePaths(for: workspace), [pagePath])
+    }
+
     func testReorderFavoritePathPersistsVisibleOrder() throws {
         let service = FileSystemService()
         let workspace = try makeTemporaryDirectory()

@@ -1490,7 +1490,10 @@ class FileSystemService {
     }
 
     func removeFavoritePath(_ path: String, for workspacePath: String) {
-        let filtered = favoritePaths(for: workspacePath).filter { $0 != path }
+        let companionPath = path.hasSuffix(".md") ? String(path.dropLast(3)) : nil
+        let filtered = favoritePaths(for: workspacePath).filter { storedPath in
+            storedPath != path && storedPath != companionPath
+        }
         saveFavoritePaths(filtered, for: workspacePath)
     }
 
@@ -1600,50 +1603,86 @@ class FileSystemService {
 
     func resolveFavorites(for workspacePath: String, fileTree: [FileEntry]) -> [FileEntry] {
         let storedPaths = favoritePaths(for: workspacePath)
-        let userFavoritePaths = storedPaths.filter {
-            !Self.isFirstPartySidebarFavoritePath($0, workspacePath: workspacePath)
-        }
-        var resolvedPaths: [String] = []
-        let entries = userFavoritePaths.compactMap { path -> FileEntry? in
-            if let entry = findEntry(path: path, in: fileTree) {
-                resolvedPaths.append(path)
-                return FileEntry(
-                    id: "favorite:\(path)",
-                    name: entry.name,
-                    path: entry.path,
-                    isDirectory: entry.isDirectory,
-                    kind: entry.kind,
-                    icon: entry.icon,
-                    children: entry.children
-                )
+        var persistedPaths: [String] = []
+        var persistedPathSet = Set<String>()
+
+        let entries = storedPaths.compactMap { path -> FileEntry? in
+            guard !Self.isFirstPartySidebarFavoritePath(path, workspacePath: workspacePath) else {
+                return nil
             }
-            guard FileManager.default.fileExists(atPath: path) else { return nil }
-            resolvedPaths.append(path)
-            var isDirectory: ObjCBool = false
-            _ = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-            let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
-            let isDb = FileManager.default.fileExists(atPath: schemaPath)
-            let kind: TabKind = isDb ? .database : .page
-            let name: String
-            if isDb, let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let dbName = json["name"] as? String {
-                name = dbName
-            } else {
-                name = (path as NSString).lastPathComponent
+
+            let normalizedPath = favoriteLookupPath(for: path, fileTree: fileTree)
+            if persistedPathSet.insert(normalizedPath).inserted {
+                persistedPaths.append(normalizedPath)
             }
-            return FileEntry(
-                id: "favorite:\(path)",
-                name: name,
-                path: path,
-                isDirectory: isDirectory.boolValue,
-                kind: kind
-            )
+
+            return favoriteEntry(for: normalizedPath, fileTree: fileTree)
         }
-        if resolvedPaths != storedPaths {
-            saveFavoritePaths(resolvedPaths, for: workspacePath)
+
+        if persistedPaths != storedPaths {
+            saveFavoritePaths(persistedPaths, for: workspacePath)
         }
         return entries
+    }
+
+    private func favoriteLookupPath(for path: String, fileTree: [FileEntry]) -> String {
+        if findEntry(path: path, in: fileTree) != nil {
+            return path
+        }
+
+        guard !path.hasSuffix(".md") else { return path }
+
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+        guard !FileManager.default.fileExists(atPath: schemaPath) else { return path }
+
+        let pagePath = path + ".md"
+        if findEntry(path: pagePath, in: fileTree) != nil || FileManager.default.fileExists(atPath: pagePath) {
+            return pagePath
+        }
+
+        return path
+    }
+
+    private func favoriteEntry(for path: String, fileTree: [FileEntry]) -> FileEntry? {
+        if let entry = findEntry(path: path, in: fileTree) {
+            return FileEntry(
+                id: "favorite:\(path)",
+                name: entry.name,
+                path: entry.path,
+                isDirectory: entry.isDirectory,
+                kind: entry.kind,
+                icon: entry.icon,
+                children: entry.children
+            )
+        }
+
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+
+        var isDirectory: ObjCBool = false
+        _ = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
+        let isDb = FileManager.default.fileExists(atPath: schemaPath)
+
+        guard !isDirectory.boolValue || isDb else {
+            return nil
+        }
+
+        let kind: TabKind = isDb ? .database : .page
+        let name: String
+        if isDb, let data = try? Data(contentsOf: URL(fileURLWithPath: schemaPath)),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let dbName = json["name"] as? String {
+            name = dbName
+        } else {
+            name = (path as NSString).lastPathComponent
+        }
+        return FileEntry(
+            id: "favorite:\(path)",
+            name: name,
+            path: path,
+            isDirectory: isDirectory.boolValue,
+            kind: kind
+        )
     }
 
     func findEntry(path: String, in entries: [FileEntry]) -> FileEntry? {
