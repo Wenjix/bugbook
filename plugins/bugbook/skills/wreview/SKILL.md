@@ -61,7 +61,27 @@ Read `references/gather.md` for the full list of data source queries. Run all so
 - Claude Code insights (`~/.claude/usage-data/facets/`)
 - Claude Code memory (`~/.claude/projects/-Users-maxforsey/memory/`)
 - Alignment Zone (personal project progress)
+- Garmin health — sleep, resting HR, HRV, steps, stress, body battery, weight, workouts (last 7 days)
 - Previous weekly review (follow-through check)
+
+**Garmin health queries.** Data lives in local SQLite DBs kept current by the launchd job `com.maxforsey.garmindb` (fires ~06:30 / 12:34 / 19:34; `--latest` is idempotent and backfills missed days). Run these and average only non-empty, real rows:
+
+```bash
+GDB="$HOME/HealthData/DBs/garmin.db"
+ADB="$HOME/HealthData/DBs/garmin_activities.db"
+# Sleep: skip all-zero rows, usually nights with no device wear.
+sqlite3 -header -column "$GDB" "SELECT day, total_sleep, deep_sleep, rem_sleep, score, avg_stress FROM sleep WHERE day >= date('now','-7 days') AND total_sleep!='00:00:00.000000' ORDER BY day;"
+# Resting HR, steps, stress, body battery.
+sqlite3 -header -column "$GDB" "SELECT day, rhr, steps, stress_avg, bb_min, bb_max FROM daily_summary WHERE day >= date('now','-7 days') ORDER BY day;"
+# HRV: may be empty until several nights of overnight wear accrue.
+sqlite3 -header -column "$GDB" "SELECT * FROM hrv WHERE day >= date('now','-7 days') ORDER BY day;"
+# Weight.
+sqlite3 -header -column "$GDB" "SELECT day, weight FROM weight WHERE day >= date('now','-14 days') ORDER BY day;"
+# Workouts.
+sqlite3 -header -column "$ADB" "SELECT start_time, name, sport, elapsed_time, distance FROM activities WHERE start_time >= date('now','-7 days') ORDER BY start_time DESC;"
+```
+
+If the latest day is missing or all sleep rows are zero, the sync likely failed — check `~/HealthData/logs/garmin_daily_*.log` for `GARMIN_SYNC_FAILURE`. Use whatever real rows exist; skip the Health section entirely if there is no usable data.
 
 ### 1b. Create Review Row
 
@@ -77,6 +97,7 @@ echo '<filled template>' | bugbook create "Weekly Reviews" \
 Pre-fill these sections from gathered data:
 - **Observe > What happened this week** — tickets completed/stalled, git commits, email summary, calendar breakdown, commitments check, wins, blocked patterns
 - **Observe > Work** — detailed work summary
+- **Observe > Health** — one short line of Garmin weekly averages: avg sleep (hours + score), avg resting HR, avg steps, latest weight, and workout count. Numbers only — no daily breakdown, no trend commentary, no flagging. Skip the section entirely if there's no usable data for the week.
 - **Observe > Relationships** — people interacted with from email/calendar/messages. Include a tally of iMessage activity (direct threads, group threads) over the last 14 days.
 - **Orient > Project status** — pull from Bugbook project pages
 - **Orient > Relationship pulse** — pending follow-ups. Include:
@@ -119,7 +140,7 @@ Ask each, wait for response, update the page:
 
 1. "How did food go this week?"
 2. "How did finances go?"
-3. "How did exercise go this week, and what's the plan for next week?" — covers both retrospective and forward-looking in one question. Show the scheduled gym sessions from calendar for context. No need to ask about workouts again in Decide.
+3. "How did exercise go this week, and what's the plan for next week?" — covers both retrospective and forward-looking in one question. Show the scheduled gym sessions from calendar plus the Garmin workout/sleep/resting-HR summary for context. No need to ask about workouts again in Decide.
 4. "How did spiritual progress go?"
 5. "How are relationships and social life?" (show the pre-filled interaction list for context). After Max answers, run the **message draft-and-confirm flow**:
    - Present the pre-filled unresponded 1:1 drafts + group thread highlights as a single scannable block (same layout as /inbox-zero Step 6).
