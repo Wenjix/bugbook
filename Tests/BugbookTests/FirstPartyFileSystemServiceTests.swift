@@ -151,6 +151,34 @@ final class FirstPartyFileSystemServiceTests: XCTestCase {
         XCTAssertEqual(service.rowFilePathForDatabaseRow(dbPath: location.databasePath, rowId: row.id), rowPath)
     }
 
+    func testEnsureDailyNotesHubCreatesMissingWorkspaceDirectory() throws {
+        let service = FileSystemService()
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let workspace = (root as NSString).appendingPathComponent("Missing Bugbook")
+        let date = try makeLocalDate(year: 2026, month: 6, day: 4, hour: 9, minute: 0)
+
+        let location = try service.ensureDailyNotesHub(in: workspace, date: date)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: location.hubPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: location.databasePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(location.rowPath)))
+    }
+
+    func testEnsureMeetingsHubCreatesMissingWorkspaceDirectory() throws {
+        let service = FileSystemService()
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let workspace = (root as NSString).appendingPathComponent("Missing Bugbook")
+
+        let location = try service.ensureMeetingsHub(in: workspace)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: location.hubPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: location.databasePath))
+    }
+
     func testMeetingRowEscapesYamlTitleAndSanitizesFilename() throws {
         let service = FileSystemService()
         let workspace = try makeTemporaryDirectory()

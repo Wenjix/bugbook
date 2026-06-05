@@ -189,6 +189,9 @@ enum FirstPartyDatabaseFiles {
     }
 
     private static func ensureHubPage(path: String, title: String, databasePath: String) throws {
+        let parentDirectory = (path as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: parentDirectory, withIntermediateDirectories: true)
+
         let marker = "<!-- database: \(databasePath) -->"
         if !FileManager.default.fileExists(atPath: path) {
             let content = "# \(title)\n\n\(marker)\n"

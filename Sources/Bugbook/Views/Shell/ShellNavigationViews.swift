@@ -39,7 +39,7 @@ struct HarborSidebarView<ContextualContent: View>: View {
     private var windowChromeBandHeight: CGFloat { ShellZoomMetrics.size(36) }
 
     @AppStorage("sidebar_favorites_expanded") private var favoritesExpanded = true
-    @AppStorage("sidebar_contextual_expanded") private var contextualExpanded = true
+    @State private var contextualExpanded = true
     @State private var expandedFolders: Set<String> = {
         let stored = UserDefaults.standard.stringArray(forKey: "expandedFolders") ?? []
         return Set(stored)
@@ -480,7 +480,7 @@ private struct ShellSidebarSectionHeaderView: View {
                     .font(.system(size: ShellZoomMetrics.size(8), weight: .semibold))
                     .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .opacity(isHovering ? 1 : 0)
+                    .opacity(isHovering || !isExpanded ? 1 : 0)
                 Spacer()
             }
             .padding(.horizontal, ShellZoomMetrics.size(4))
