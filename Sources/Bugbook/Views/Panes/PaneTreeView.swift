@@ -21,7 +21,6 @@ struct PaneTreeView: View {
     var fileTree: [FileEntry] = []
 
     let documentContentBuilder: (PaneNode.Leaf, OpenFile) -> AnyView
-    let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
     var onBreadcrumbNavigate: ((BreadcrumbItem, UUID) -> Void)? = nil
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
@@ -36,7 +35,6 @@ struct PaneTreeView: View {
                 showFocusBorder: hasMultiplePanes,
                 fileTree: fileTree,
                 documentContentBuilder: documentContentBuilder,
-                terminalContentBuilder: terminalContentBuilder,
                 breadcrumbProvider: breadcrumbProvider,
                 onBreadcrumbNavigate: onBreadcrumbNavigate,
                 blockDocumentLookup: blockDocumentLookup,
@@ -86,7 +84,6 @@ struct PaneTreeView: View {
             hasMultiplePanes: hasMultiplePanes,
             fileTree: fileTree,
             documentContentBuilder: documentContentBuilder,
-            terminalContentBuilder: terminalContentBuilder,
             breadcrumbProvider: breadcrumbProvider,
             onBreadcrumbNavigate: onBreadcrumbNavigate,
             blockDocumentLookup: blockDocumentLookup,

@@ -43,19 +43,12 @@ enum KeyboardShortcutCatalog {
                 KeyboardShortcutEntry(keys: "\u{2318}\u{21E7}D", label: "Today's note"),
             ]
 
-        var editorShortcuts = [
+        let editorShortcuts = [
             KeyboardShortcutEntry(keys: "\u{2318}N", label: "New note"),
             KeyboardShortcutEntry(keys: "\u{2318}S", label: "Save note"),
             KeyboardShortcutEntry(keys: "\u{2318}\u{21E7}L", label: "Toggle theme"),
             KeyboardShortcutEntry(keys: "\u{2318}F", label: "Find in page"),
         ]
-
-        if BugbookFeatureGate.legacyPanesEnabled {
-            editorShortcuts.append(contentsOf: [
-                KeyboardShortcutEntry(keys: "\u{2318}L", label: "Focus browser URL bar"),
-                KeyboardShortcutEntry(keys: "\u{2318}P", label: "Print"),
-            ])
-        }
 
         return [
             KeyboardShortcutSection(title: "Views", shortcuts: viewShortcuts),

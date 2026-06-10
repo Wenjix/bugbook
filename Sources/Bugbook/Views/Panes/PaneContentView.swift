@@ -9,7 +9,7 @@ private enum PaneFindMatch: Equatable {
 /// Renders a single pane leaf: chrome bar (30px) + content below.
 ///
 /// Focus state is observed by PaneChromeBar and PaneFocusOverlay internally —
-/// the document/terminal content is NOT re-rendered when focus changes.
+/// the document content is NOT re-rendered when focus changes.
 struct PaneContentView: View {
     let leaf: PaneNode.Leaf
     let workspaceManager: WorkspaceManager
@@ -17,7 +17,6 @@ struct PaneContentView: View {
     var fileTree: [FileEntry] = []
 
     let documentContentBuilder: (PaneNode.Leaf, OpenFile) -> AnyView
-    let terminalContentBuilder: (PaneNode.Leaf, Bool) -> AnyView
     var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
     var onBreadcrumbNavigate: ((BreadcrumbItem, UUID) -> Void)? = nil
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
@@ -284,7 +283,6 @@ struct PaneContentView: View {
             && !file.isCalendar
             && !file.isMeetings
             && !file.isGateway
-            && !file.isBrowser
             && !file.isChat
             && !file.isGraphView
     }
@@ -294,8 +292,6 @@ struct PaneContentView: View {
         switch leaf.content {
         case .document(let file):
             documentContentBuilder(leaf, file)
-        case .terminal:
-            terminalContentBuilder(leaf, false)
         }
     }
 

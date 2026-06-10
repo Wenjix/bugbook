@@ -7,7 +7,6 @@ enum GatewayLink {
     case graph
     case meetings
     case database(path: String)
-    case terminal
 }
 
 /// Native mission-control dashboard — the home screen of Bugbook.

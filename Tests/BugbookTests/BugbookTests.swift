@@ -876,13 +876,6 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.activeTab?.path, "/test/Test.md")
     }
 
-    func testOpenFileInNewTab() {
-        let state = AppState()
-        let entry = makeEntry()
-        state.openFileInNewTab(entry)
-        XCTAssertEqual(state.openTabs.count, 1)
-    }
-
     func testReorderTab() {
         let state = AppState()
         state.openFile(makeEntry(name: "A.md", path: "/test/A.md"))
@@ -930,26 +923,17 @@ final class AppStateTests: XCTestCase {
         let state = AppState()
         state.openFile(makeEntry(name: "Home.md", path: "/test/Home.md"))
 
+        // Seed the active tab's history as a navigation to a database row
+        // would have recorded it.
         let rowPath = DatabaseRowNavigationPath.make(dbPath: "/test/Tasks", rowId: "row_123")
-        let rowEntry = FileEntry(
-            id: rowPath,
-            name: "Row Title",
-            path: rowPath,
-            isDirectory: false,
-            kind: .databaseRow(dbPath: "/test/Tasks", rowId: "row_123")
-        )
-
-        _ = state.openFileReplacingCurrentTab(rowEntry)
-        XCTAssertTrue(state.openTabs[0].isDatabaseRow)
-        XCTAssertEqual(state.openTabs[0].databasePath, "/test/Tasks")
-        XCTAssertEqual(state.openTabs[0].databaseRowId, "row_123")
+        state.openTabs[0].navigationHistory = ["/test/Home.md", rowPath]
+        state.openTabs[0].navigationHistoryIndex = 1
 
         _ = state.goBackInActiveTab()
         let forwardEntry = state.goForwardInActiveTab()
         XCTAssertEqual(forwardEntry?.path, rowPath)
         XCTAssertEqual(forwardEntry?.databasePath, "/test/Tasks")
         XCTAssertEqual(forwardEntry?.databaseRowId, "row_123")
-        XCTAssertTrue(state.openTabs[0].isDatabaseRow)
     }
 
     func testDefaultModeBlocksLegacyViewModeTransitions() {

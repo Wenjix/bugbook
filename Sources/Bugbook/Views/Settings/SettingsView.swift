@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     var appState: AppState
-    var browserManager: BrowserManager?
     var onSwitchWorkspace: (String) -> Void
 
     private var selectedTabID: String {
@@ -16,8 +15,6 @@ struct SettingsView: View {
         case "meetings": return "Meetings"
         case "ai": return "AI"
         case "google", "calendar": return "Google"
-        case "terminal": return "Terminal"
-        case "browser": return "Browser"
         case "agents": return "Agents"
         case "search": return "Search"
         case "shortcuts": return "Shortcuts"
@@ -45,12 +42,6 @@ struct SettingsView: View {
                     AISettingsView(appState: appState)
                 case "google", "calendar":
                     GoogleSettingsView(appState: appState)
-                case "terminal":
-                    TerminalSettingsView(appState: appState)
-                case "browser":
-                    if let browserManager {
-                        BrowserSettingsView(appState: appState, browserManager: browserManager)
-                    }
                 case "agents":
                     AgentsSettingsView(appState: appState)
                 case "search":

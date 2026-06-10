@@ -23,10 +23,6 @@ enum ShortcutsSettingsCatalog {
                 KeyboardShortcutEntry(keys: "Cmd + Shift + C", label: "Toggle Chat Drawer"),
                 at: 2
             )
-            navigation.append(contentsOf: [
-                KeyboardShortcutEntry(keys: "Cmd + L", label: "Focus URL Bar"),
-                KeyboardShortcutEntry(keys: "Cmd + S", label: "Save Browser Page"),
-            ])
         }
 
         return [

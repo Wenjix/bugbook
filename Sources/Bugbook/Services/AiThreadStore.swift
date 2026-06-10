@@ -26,6 +26,23 @@ struct AiThread: Identifiable, Codable {
 
 @MainActor
 @Observable class AiThreadStore {
+    /// Process-wide store: every window's AppState shares one in-memory thread
+    /// list and one write queue. Created lazily on first chat use.
+    static let shared = AiThreadStore()
+
+    /// Live instances (weak) so app termination can flush pending writes of
+    /// whatever stores actually exist without forcing any into existence.
+    private static let liveStores = NSHashTable<AiThreadStore>.weakObjects()
+
+    /// Flushes write-behind persistence of every live store. Owned by the app
+    /// lifecycle (AppDelegate.applicationWillTerminate); a no-op when no store
+    /// was ever created this session.
+    static func flushAllPendingWrites() {
+        for store in liveStores.allObjects {
+            store.flushPendingWrites()
+        }
+    }
+
     private(set) var threads: [AiThread] = []
     var activeThreadId: UUID?
 
@@ -40,17 +57,18 @@ struct AiThread: Identifiable, Codable {
 
     private let fileManager: FileManager
     private let storeDirectory: URL
-    private let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .iso8601
-        return e
-    }()
+    /// Serial queue for write-behind persistence. Saves and deletes run here in
+    /// order, off the main thread, so appending a chat message never blocks a
+    /// frame on disk I/O.
+    private let persistenceQueue = DispatchQueue(label: "com.bugbook.aithreadstore.persistence", qos: .utility)
     private let decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         return d
     }()
 
+    /// Internal so tests can construct private instances with custom
+    /// directories; the app uses `AiThreadStore.shared`.
     init(fileManager: FileManager = .default, directoryURL: URL? = nil) {
         self.fileManager = fileManager
         self.storeDirectory = directoryURL ?? Self.defaultDirectory(fileManager: fileManager)
@@ -59,6 +77,7 @@ struct AiThread: Identifiable, Codable {
         if activeThreadId == nil, let mostRecent = sortedThreads.first {
             activeThreadId = mostRecent.id
         }
+        Self.liveStores.add(self)
     }
 
     // MARK: - Public API
@@ -111,14 +130,38 @@ struct AiThread: Identifiable, Codable {
 
     // MARK: - Persistence
 
+    /// Blocks until every queued save/delete has reached disk. Part of the
+    /// interface contract: persistence is asynchronous; call this when the
+    /// on-disk state must be observable (tests, shutdown).
+    func flushPendingWrites() {
+        persistenceQueue.sync {}
+    }
+
+    /// Pending coalesced save per thread — cancel-and-replace so a burst of
+    /// appends collapses to one full-file write of the latest snapshot.
+    private var pendingSaves: [UUID: DispatchWorkItem] = [:]
+
     private func save(_ thread: AiThread) {
-        do {
-            try ensureDirectoryExists()
-            let data = try encoder.encode(thread)
-            try data.write(to: fileURL(for: thread.id), options: .atomic)
-        } catch {
-            Log.ai.error("Failed to save AI thread: \(error.localizedDescription)")
+        pendingSaves[thread.id]?.cancel()
+
+        let url = fileURL(for: thread.id)
+        let directory = storeDirectory
+        let work = DispatchWorkItem {
+            do {
+                let fm = FileManager.default
+                if !fm.fileExists(atPath: directory.path) {
+                    try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+                }
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                let data = try encoder.encode(thread)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                Log.ai.error("Failed to save AI thread: \(error.localizedDescription)")
+            }
         }
+        pendingSaves[thread.id] = work
+        persistenceQueue.async(execute: work)
     }
 
     private func loadAll() {
@@ -136,12 +179,14 @@ struct AiThread: Identifiable, Codable {
     }
 
     private func removeFile(for id: UUID) {
-        try? fileManager.removeItem(at: fileURL(for: id))
-    }
+        // A queued save for this thread is moot — the file is going away.
+        pendingSaves[id]?.cancel()
+        pendingSaves[id] = nil
 
-    private func ensureDirectoryExists() throws {
-        guard !fileManager.fileExists(atPath: storeDirectory.path) else { return }
-        try fileManager.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
+        let url = fileURL(for: id)
+        persistenceQueue.async {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     private func fileURL(for id: UUID) -> URL {

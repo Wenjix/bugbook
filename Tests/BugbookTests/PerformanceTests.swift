@@ -17,7 +17,17 @@ private enum PerfBaseline {
         let testName: String
         let metric: String
         let value: Double
+        /// Per-metric absolute noise floor (ms): a delta must exceed both the
+        /// 20% relative threshold AND this floor to count as a REGRESSION.
+        /// Derived from observed run variance; fallback formula below.
+        let floor: Double
         let timestamp: String
+    }
+
+    /// Fallback floor when a metric has no recorded one: 5% of the baseline,
+    /// never below 0.05ms (microsecond metrics flap far more than 20%).
+    static func fallbackFloor(forBaseline value: Double) -> Double {
+        max(0.05, value * 0.05)
     }
 
     static func load() -> [String: Entry] {
@@ -26,16 +36,28 @@ private enum PerfBaseline {
         for line in text.components(separatedBy: "\n").dropFirst() { // skip header
             let cols = line.components(separatedBy: "\t")
             guard cols.count >= 4, let val = Double(cols[2]) else { continue }
-            entries[cols[0]] = Entry(testName: cols[0], metric: cols[1], value: val, timestamp: cols[3])
+            // 5-column format: name, metric, value, floor, timestamp.
+            // Legacy 4-column rows (no floor) get the fallback floor.
+            if cols.count >= 5, let floor = Double(cols[3]) {
+                entries[cols[0]] = Entry(testName: cols[0], metric: cols[1], value: val, floor: floor, timestamp: cols[4])
+            } else {
+                entries[cols[0]] = Entry(
+                    testName: cols[0], metric: cols[1], value: val,
+                    floor: fallbackFloor(forBaseline: val), timestamp: cols[3]
+                )
+            }
         }
         return entries
     }
 
     static func save(_ entries: [String: Entry]) {
-        var lines = ["test_name\tmetric\tvalue\ttimestamp"]
+        var lines = ["test_name\tmetric\tvalue\tfloor\ttimestamp"]
         for key in entries.keys.sorted() {
             let entry = entries[key]!
-            lines.append("\(entry.testName)\t\(entry.metric)\t\(String(format: "%.3f", entry.value))\t\(entry.timestamp)")
+            lines.append(
+                "\(entry.testName)\t\(entry.metric)\t\(String(format: "%.3f", entry.value))\t" +
+                "\(String(format: "%.3f", entry.floor))\t\(entry.timestamp)"
+            )
         }
         try? lines.joined(separator: "\n").write(toFile: tsvPath, atomically: true, encoding: .utf8)
     }
@@ -43,13 +65,21 @@ private enum PerfBaseline {
     static func record(testName: String, metric: String, value: Double) {
         var entries = load()
         let ts = ISO8601DateFormatter().string(from: Date())
-        let entry = Entry(testName: testName, metric: metric, value: value, timestamp: ts)
+        // Keep a variance-derived floor once recorded; new metrics start with
+        // the fallback formula.
+        let entry = Entry(
+            testName: testName,
+            metric: metric,
+            value: value,
+            floor: entries[testName]?.floor ?? fallbackFloor(forBaseline: value),
+            timestamp: ts
+        )
 
         // Compare to existing baseline if present
         if let baseline = entries[testName] {
             let pctChange = ((value - baseline.value) / baseline.value) * 100
             let direction = pctChange > 0 ? "slower" : "faster"
-            let symbol = pctChange > 20 ? "REGRESSION" : "ok"
+            let symbol = (pctChange > 20 && (value - baseline.value) > baseline.floor) ? "REGRESSION" : "ok"
             print(String(format: "  %@: %.1fms -> %.1fms (%.0f%% %@) %@",
                          testName, baseline.value, value, abs(pctChange), direction, symbol))
         } else {

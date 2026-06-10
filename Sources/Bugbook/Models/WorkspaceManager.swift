@@ -41,7 +41,7 @@ class WorkspaceManager {
         activeWorkspace?.focusedLeaf
     }
 
-    /// The OpenFile for the focused pane (nil if terminal or no workspace).
+    /// The OpenFile for the focused pane (nil if no workspace).
     var focusedOpenFile: OpenFile? {
         activeWorkspace?.focusedOpenFile
     }
@@ -138,7 +138,7 @@ class WorkspaceManager {
     /// Split the focused pane, inserting a new sibling pane.
     func splitFocusedPane(
         axis: PaneNode.Split.Axis,
-        newContent: PaneContent = .terminal()
+        newContent: PaneContent = .emptyDocument()
     ) -> UUID? {
         guard var ws = activeWorkspace else { return nil }
         let newLeafId = UUID()
@@ -415,10 +415,7 @@ class WorkspaceManager {
 
     func setPaneTabs(paneId: UUID, tabs: [PaneContent], selectedTabID: UUID? = nil) {
         let allowedTabs = tabs.filter { BugbookFeatureGate.allowsPaneContent($0) }
-        let fallbackTab: PaneContent = BugbookFeatureGate.legacyPanesEnabled
-            ? .browserDocument(id: paneId)
-            : .emptyDocument(id: paneId)
-        let normalizedTabs = allowedTabs.isEmpty ? [fallbackTab] : allowedTabs
+        let normalizedTabs = allowedTabs.isEmpty ? [.emptyDocument(id: paneId)] : allowedTabs
         let selectedIndex = selectedTabID.flatMap { tabID in
             normalizedTabs.firstIndex { $0.id == tabID }
         } ?? 0

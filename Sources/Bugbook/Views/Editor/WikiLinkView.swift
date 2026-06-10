@@ -48,26 +48,11 @@ struct WikiLinkView: View {
         SidebarDragPreview(systemImage: "doc.text", title: pageName)
     }
 
-    @ViewBuilder
     private var iconView: some View {
-        if let icon = icon, !icon.isEmpty {
-            if icon.hasPrefix("custom:") {
-                let path = String(icon.dropFirst(7))
-                AsyncLocalImageView(path: path, width: 14, height: 14) {
-                    defaultPageIcon
-                }
-            } else if icon.hasPrefix("sf:") {
-                Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 13))
-            } else {
-                defaultPageIcon
-            }
-        } else {
+        PageIconView(icon: icon) {
             defaultPageIcon
         }
+        .foregroundStyle(.secondary)
     }
 
     private var defaultPageIcon: some View {

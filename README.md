@@ -16,19 +16,11 @@ Bugbook keeps plain `.md` files on disk as the source of truth. The desktop app 
 
 **Search.** The Search pane is hidden in daily-driver mode, but filename filtering and qmd-backed search infrastructure remain available for notes workflows.
 
-**Legacy panes.** Home, Terminal, Browser, Mail, Calendar, Graph, AI side panel, and Agent Hub code remains in the tree, but is feature-flagged off by default and does not initialize at runtime unless legacy mode is enabled.
-
 ## Pane system
 
 The default desktop workspace keeps Notes available through the left file tree and exposes Meeting as the only fixed sidebar destination. Panes can be split, dragged, swapped, and closed; tabs let you save and switch between layouts.
 
 A launcher (Cmd+K or the chrome bar split button) searches pages, databases, and the enabled built-in panes, then lets you open them in place, split right, split down, or in a new tab.
-
-To temporarily restore the hidden legacy panes for development:
-
-```bash
-BUGBOOK_LEGACY_PANES=1 swift run Bugbook
-```
 
 ## Targets
 
@@ -64,13 +56,12 @@ bugbook --help
 ## Build and run
 
 ```bash
-# macOS app (SwiftPM/WebKit fallback path)
+# macOS app (SwiftPM)
 swift run Bugbook
 
-# macOS app bundle (Xcode/Chromium path)
-bash scripts/fetch-cef.sh
+# macOS app bundle (Xcode)
 cd macos && xcodegen generate
-xcodebuild -project /Users/maxforsey/Code/bugbook/macos/Bugbook.xcodeproj -scheme BugbookApp -configuration Debug build
+xcodebuild -project macos/Bugbook.xcodeproj -scheme BugbookApp -configuration Debug build
 
 # CLI
 swift run BugbookCLI --help
@@ -120,9 +111,6 @@ scripts/verify-daily-driver-soak-evidence.sh .codex/perf/bugbook-meeting-soak-al
 scripts/run-daily-driver-soak.sh verify-latest
 ```
 
-See `BUGBOOK_DAILY_DRIVER_EVIDENCE.md` for the current Notes + Meetings
-daily-driver checklist, performance numbers, and live-soak gate.
-
 ## Dependencies
 
-Sparkle (auto-update), Sentry (error tracking), FluidAudio (transcription), Yams (YAML/frontmatter), qmd (search), and legacy-pane dependencies such as Ghostty and Google OAuth.
+Sparkle (auto-update), Sentry (error tracking), FluidAudio (transcription), Yams (YAML/frontmatter), swift-argument-parser (CLI), and qmd (search).
