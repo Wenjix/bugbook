@@ -83,7 +83,28 @@ sqlite3 -header -column "$ADB" "SELECT start_time, name, sport, elapsed_time, di
 
 If the latest day is missing or all sleep rows are zero, the sync likely failed — check `~/HealthData/logs/garmin_daily_*.log` for `GARMIN_SYNC_FAILURE`. Use whatever real rows exist; skip the Health section entirely if there is no usable data.
 
-### 1b. Create Review Row
+### 1b. Health Artifact (optional)
+
+If Garmin returned 3+ days of real data, build an interactive health artifact
+before creating the review row. Read the artifact skill
+(`plugins/bugbook/skills/artifact/SKILL.md`) for the authoring contract; start
+from its `examples/health-dashboard.html`, replace the embedded
+`<script type="application/json" id="data">` payload with this week's daily
+rows (date, sleep/deep/REM hours, resting HR, steps, stress, body battery
+min/max), and set `bugbook-title` to "Health — {week}" and `bugbook-generator`
+to "claude-code/wreview".
+
+```bash
+bugbook artifact create "Weekly Reviews/_artifacts/{YYYY}-W{WW}-health.html" \
+  --workspace "$WS" --content-file /tmp/health.html
+```
+
+Fix any validation errors it reports (usually an external reference that must
+be inlined) and re-run. Keep the `markdown_link` line from the output for the
+Health section below. If creation fails twice, skip the artifact and continue
+— the artifact is optional, the review is not.
+
+### 1c. Create Review Row
 
 Read `references/template.md` for the full OODA template. Create a row in the Weekly Reviews database:
 
@@ -97,7 +118,7 @@ echo '<filled template>' | bugbook create "Weekly Reviews" \
 Pre-fill these sections from gathered data:
 - **Observe > What happened this week** — tickets completed/stalled, git commits, email summary, calendar breakdown, commitments check, wins, blocked patterns
 - **Observe > Work** — detailed work summary
-- **Observe > Health** — one short line of Garmin weekly averages: avg sleep (hours + score), avg resting HR, avg steps, latest weight, and workout count. Numbers only — no daily breakdown, no trend commentary, no flagging. Skip the section entirely if there's no usable data for the week.
+- **Observe > Health** — one short line of Garmin weekly averages: avg sleep (hours + score), avg resting HR, avg steps, latest weight, and workout count. Numbers only in the text — no daily breakdown, no trend commentary, no flagging; the daily time-series lives in the health artifact (1b). If the artifact was created, end the line with its `markdown_link`. Skip the section entirely if there's no usable data for the week.
 - **Observe > Relationships** — people interacted with from email/calendar/messages. Include a tally of iMessage activity (direct threads, group threads) over the last 14 days.
 - **Orient > Project status** — pull from Bugbook project pages
 - **Orient > Relationship pulse** — pending follow-ups. Include:
@@ -108,7 +129,7 @@ Pre-fill these sections from gathered data:
 
 Leave personal/reflective sections blank for Phase 2.
 
-### 1c. Show Summary
+### 1d. Show Summary
 
 Keep terminal output concise — the rich content is in Bugbook:
 
