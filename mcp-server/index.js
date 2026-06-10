@@ -37,9 +37,22 @@ function run(args) {
   });
 }
 
+// Run a bugbook CLI command, never rejecting on nonzero exit.
+// Artifact validation prints its JSON error report to stdout and exits 1,
+// so callers need both the exit code and stdout.
+function runStatus(args) {
+  return new Promise((resolve) => {
+    execFile(BUGBOOK, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const code = err ? (typeof err.code === "number" ? err.code : 1) : 0;
+      const errText = (stderr ?? "").trim() || (err && !stdout ? err.message : "");
+      resolve({ code, stdout: stdout ?? "", stderr: errText });
+    });
+  });
+}
+
 // Write content to a temp file, return its path
-async function writeTmp(content) {
-  const p = join(tmpdir(), `bugbook-mcp-${randomUUID()}.md`);
+async function writeTmp(content, ext = ".md") {
+  const p = join(tmpdir(), `bugbook-mcp-${randomUUID()}${ext}`);
   await writeFile(p, content, "utf-8");
   return p;
 }
