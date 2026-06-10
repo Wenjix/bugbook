@@ -2752,6 +2752,92 @@ final class BugbookCLITests: XCTestCase {
     }
     // MARK: - Artifacts
 
+    func testArtifactCreateValidateAndListRoundTrip() throws {
+        let workspace = try makeWorkspace()
+
+        let created = try runJSON(
+            Artifact.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Weekly Review/sleep-trends.html",
+                "--content-file", try writeTempFile(in: workspace, name: "good.html", contents: validArtifactHTML)
+            ])
+        )
+        XCTAssertEqual(created["created"] as? Bool, true)
+        XCTAssertEqual(created["relative_path"] as? String, "Weekly Review/sleep-trends.html")
+        XCTAssertEqual(created["title"] as? String, "Sleep Trends")
+        XCTAssertEqual(created["markdown_link"] as? String, "[Sleep Trends](Weekly Review/sleep-trends.html)")
+        XCTAssertEqual((created["errors"] as? [String])?.isEmpty, true)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: (workspace as NSString).appendingPathComponent("Weekly Review/sleep-trends.html")
+        ))
+
+        let validated = try runJSON(
+            Artifact.Validate.parseAsRoot([
+                "--workspace", workspace,
+                "Weekly Review/sleep-trends.html"
+            ])
+        )
+        XCTAssertEqual(validated["valid"] as? Bool, true)
+
+        _ = try runJSON(
+            Artifact.Create.parseAsRoot([
+                "--workspace", workspace,
+                "Tickets/_artifacts/2026-W23-board.html",
+                "--content-file", try writeTempFile(in: workspace, name: "board.html", contents: validArtifactHTML)
+            ])
+        )
+
+        // Decoys: unmarked html at root, and a marked html inside a hidden dir.
+        try "<!DOCTYPE html><html><body>not an artifact</body></html>".write(
+            toFile: (workspace as NSString).appendingPathComponent("plain.html"),
+            atomically: true, encoding: .utf8
+        )
+        let hiddenDir = (workspace as NSString).appendingPathComponent(".hidden")
+        try FileManager.default.createDirectory(atPath: hiddenDir, withIntermediateDirectories: true)
+        try validArtifactHTML.write(
+            toFile: (hiddenDir as NSString).appendingPathComponent("ghost.html"),
+            atomically: true, encoding: .utf8
+        )
+
+        let listed = try runJSONArray(
+            Artifact.List.parseAsRoot(["--workspace", workspace])
+        )
+        XCTAssertEqual(listed.count, 2)
+        XCTAssertEqual(
+            listed.compactMap { $0["relative_path"] as? String },
+            ["Tickets/_artifacts/2026-W23-board.html", "Weekly Review/sleep-trends.html"]
+        )
+        XCTAssertEqual(listed.last?["title"] as? String, "Sleep Trends")
+        XCTAssertNotNil(listed.last?["size_bytes"])
+    }
+
+    func testArtifactCreateRejectsExternalScriptAndWritesNothing() throws {
+        let workspace = try makeWorkspace()
+        let contentPath = try writeTempFile(in: workspace, name: "cdn.html", contents: """
+        <!DOCTYPE html><html><head>
+        <meta name="bugbook-artifact" content="1">
+        <meta name="bugbook-title" content="Bad">
+        <script src="https://cdn.example.com/chart.min.js"></script>
+        </head><body></body></html>
+        """)
+
+        XCTAssertThrowsError(
+            try captureStandardOutput {
+                var command = try Artifact.Create.parseAsRoot([
+                    "--workspace", workspace,
+                    "bad-artifact.html",
+                    "--content-file", contentPath
+                ])
+                try command.run()
+            }
+        ) { error in
+            XCTAssertTrue(error is ExitCode)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: (workspace as NSString).appendingPathComponent("bad-artifact.html")
+        ))
+    }
+
     func testArtifactValidationFlagsExternalReferences() throws {
         let report = validateArtifactContent("""
         <!DOCTYPE html><html><head>

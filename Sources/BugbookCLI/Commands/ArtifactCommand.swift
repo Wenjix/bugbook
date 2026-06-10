@@ -2,6 +2,147 @@ import ArgumentParser
 import Foundation
 import BugbookCore
 
+struct Artifact: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "artifact",
+        abstract: "Create, validate, and list self-contained HTML artifacts",
+        discussion: """
+        Artifacts are single self-contained .html files rendered in a sandboxed,
+        offline pane. All CSS, JS, and data must be inline; external network
+        references are rejected. Markdown remains the source of truth — always
+        link an artifact from its parent page or row body.
+        """,
+        subcommands: [Create.self, Validate.self, List.self]
+    )
+
+    struct Create: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "create",
+            abstract: "Validate HTML artifact content and write it into the workspace"
+        )
+
+        @OptionGroup var options: Bugbook.Options
+
+        @Argument(help: "Target path inside the workspace, ending in .html (e.g. \"Weekly Review/sleep-trends.html\" or \"Tickets/_artifacts/2026-W23-board.html\")")
+        var path: String
+
+        @Option(name: .long, help: "HTML content file path, or - for stdin")
+        var contentFile: String
+
+        func run() throws {
+            let workspace = normalizePath(options.resolvedWorkspace)
+            let target = try resolveArtifactWritePath(path, workspace: workspace)
+            let content = try readTextInput(from: contentFile)
+            let report = validateArtifactContent(content)
+            let relative = relativePath(from: target, workspace: workspace)
+
+            guard report.isValid else {
+                var json = report.toJSON()
+                json["created"] = false
+                json["path"] = target
+                json["relative_path"] = relative
+                try outputJSON(json)
+                throw ExitCode.failure
+            }
+
+            let fm = FileManager.default
+            let replacedExisting = fm.fileExists(atPath: target)
+            try fm.createDirectory(
+                atPath: (target as NSString).deletingLastPathComponent,
+                withIntermediateDirectories: true
+            )
+            try content.write(toFile: target, atomically: true, encoding: .utf8)
+
+            let fallbackTitle = ((target as NSString).lastPathComponent as NSString).deletingPathExtension
+            var json = report.toJSON()
+            json["created"] = true
+            json["replaced_existing"] = replacedExisting
+            json["path"] = target
+            json["relative_path"] = relative
+            json["markdown_link"] = "[\(report.title ?? fallbackTitle)](\(relative))"
+            try outputJSON(json)
+        }
+    }
+
+    struct Validate: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "validate",
+            abstract: "Validate an HTML artifact (marker, self-containment, size); exits nonzero on errors"
+        )
+
+        @OptionGroup var options: Bugbook.Options
+
+        @Argument(help: "Artifact path (workspace-relative or absolute)")
+        var path: String
+
+        func run() throws {
+            let workspace = normalizePath(options.resolvedWorkspace)
+            let target = try resolveArtifactReadPath(path, workspace: workspace)
+            guard let content = try? String(contentsOfFile: target, encoding: .utf8) else {
+                throw CLIError.invalidInput("Artifact is not readable UTF-8 text: \(path)")
+            }
+            let report = validateArtifactContent(content)
+            var json = report.toJSON()
+            json["path"] = target
+            if isPathInsideWorkspace(target, workspace: workspace) {
+                json["relative_path"] = relativePath(from: target, workspace: workspace)
+            }
+            try outputJSON(json)
+            if !report.isValid {
+                throw ExitCode.failure
+            }
+        }
+    }
+
+    struct List: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "list",
+            abstract: "List HTML artifacts in the workspace (files carrying the bugbook-artifact marker)"
+        )
+
+        @OptionGroup var options: Bugbook.Options
+
+        func run() throws {
+            let workspace = normalizePath(options.resolvedWorkspace)
+            let fm = FileManager.default
+            var items: [[String: Any]] = []
+
+            if let enumerator = fm.enumerator(atPath: workspace) {
+                while let relative = enumerator.nextObject() as? String {
+                    if WorkspacePathRules.shouldIgnoreRelativePath(relative) { continue }
+                    guard relative.lowercased().hasSuffix(".html") else { continue }
+                    let absolute = (workspace as NSString).appendingPathComponent(relative)
+
+                    guard let handle = FileHandle(forReadingAtPath: absolute) else { continue }
+                    let prefixData = handle.readData(ofLength: ArtifactManifest.scanByteLimit)
+                    try? handle.close()
+                    let prefix = String(decoding: prefixData, as: UTF8.self)
+                    guard let manifest = ArtifactManifest.parse(prefix) else { continue }
+
+                    let attrs = (try? fm.attributesOfItem(atPath: absolute)) ?? [:]
+                    var item: [String: Any] = [
+                        "relative_path": relative,
+                        "path": absolute,
+                        "size_bytes": (attrs[.size] as? NSNumber)?.intValue ?? 0,
+                    ]
+                    if let title = manifest.title { item["title"] = title }
+                    if let icon = manifest.icon { item["icon"] = icon }
+                    if let generator = manifest.generator { item["generator"] = generator }
+                    if let modified = attrs[.modificationDate] as? Date {
+                        item["modified_at"] = iso8601String(from: modified)
+                    }
+                    items.append(item)
+                }
+            }
+
+            items.sort {
+                (($0["relative_path"] as? String) ?? "") < (($1["relative_path"] as? String) ?? "")
+            }
+            try outputJSON(items)
+        }
+    }
+}
+
 // MARK: - Validation engine
 
 let artifactSizeWarnBytes = 2 * 1024 * 1024
@@ -222,4 +363,37 @@ private func lineNumber(at location: Int, in text: NSString) -> Int {
         index += 1
     }
     return line
+}
+
+// MARK: - Path resolution
+
+func resolveArtifactWritePath(_ rawPath: String, workspace: String) throws -> String {
+    let normalizedWorkspace = normalizePath(workspace)
+    let expanded = (rawPath as NSString).expandingTildeInPath
+    let absolute = expanded.hasPrefix("/")
+        ? normalizePath(expanded)
+        : normalizePath((normalizedWorkspace as NSString).appendingPathComponent(rawPath))
+
+    guard isPathInsideWorkspace(absolute, workspace: normalizedWorkspace) else {
+        throw CLIError.invalidInput("Artifact path must be inside the workspace: \(rawPath)")
+    }
+    guard absolute.lowercased().hasSuffix(".html") else {
+        throw CLIError.invalidInput("Artifact path must end in .html: \(rawPath)")
+    }
+    let baseName = ((absolute as NSString).lastPathComponent as NSString).deletingPathExtension
+    guard !baseName.isEmpty else {
+        throw CLIError.invalidInput("Artifact path must include a file name: \(rawPath)")
+    }
+    return absolute
+}
+
+func resolveArtifactReadPath(_ rawPath: String, workspace: String) throws -> String {
+    let expanded = (rawPath as NSString).expandingTildeInPath
+    let absolute = expanded.hasPrefix("/")
+        ? normalizePath(expanded)
+        : normalizePath((normalizePath(workspace) as NSString).appendingPathComponent(rawPath))
+    guard FileManager.default.fileExists(atPath: absolute) else {
+        throw CLIError.fileNotFound(rawPath)
+    }
+    return absolute
 }
