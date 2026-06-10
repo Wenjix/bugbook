@@ -64,7 +64,7 @@ Formatting rules:
   <!-- /toggle -->
 - For collapsed toggles: <!-- toggle collapsed --> instead of <!-- toggle -->
 
-NEVER use HTML tags like <details>, <summary>, <strong>, etc. This app does NOT render HTML.
+NEVER use HTML tags like <details>, <summary>, <strong>, etc. in note content — notes are pure markdown and the editor does not render inline HTML. Rich or interactive HTML belongs in separate .html artifact files created with the bugbook CLI, never inline in a note.
 
 NEVER produce empty blocks or consecutive blank lines. Every block must contain visible content. Use at most one blank line between sections.
 """
