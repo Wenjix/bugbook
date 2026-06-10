@@ -3267,6 +3267,7 @@ struct ContentView: View {
     private func loadFileContentForPane(entry: FileEntry, tabId: UUID) {
         guard !entry.isDatabase,
               !entry.isDatabaseRow,
+              !entry.isArtifact,
               !entry.isSkill,
               !entry.isMail,
               !entry.isCalendar,
@@ -4207,7 +4208,7 @@ struct ContentView: View {
     }
 
     private func loadFileContent(for entry: FileEntry) {
-        guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill else { return }
+        guard !entry.isDatabase, !entry.isDatabaseRow, !entry.isSkill, !entry.isArtifact else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
         defer { Log.signpost.endInterval("loadFileContent", signpostState) }
         pagePreloadTask?.cancel()
