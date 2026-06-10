@@ -2750,6 +2750,85 @@ final class BugbookCLITests: XCTestCase {
         XCTAssertEqual(error["code"] as? String, "live_content_unavailable")
         XCTAssertEqual(error["requires_running_app_bridge"] as? Bool, true)
     }
+    // MARK: - Artifacts
+
+    func testArtifactValidationFlagsExternalReferences() throws {
+        let report = validateArtifactContent("""
+        <!DOCTYPE html><html><head>
+        <meta name="bugbook-artifact" content="1">
+        <meta name="bugbook-title" content="Probe">
+        <meta http-equiv="refresh" content="0;url=https://evil.example/exfil">
+        <link rel="stylesheet" href="//cdn.example.com/style.css">
+        <style>@import "https://fonts.example.com/font.css"; .a { background: url(https://x.example/i.png); }</style>
+        </head><body>
+        <script src="https://cdn.example.com/chart.js"></script>
+        <img srcset="https://cdn.example.com/a.png 1x, local.png 2x">
+        </body></html>
+        """)
+        XCTAssertFalse(report.isValid)
+        let joined = report.errors.joined(separator: "\n")
+        XCTAssertTrue(joined.contains("src on <script>"))
+        XCTAssertTrue(joined.contains("href on <link>"))
+        XCTAssertTrue(joined.contains("srcset on <img>"))
+        XCTAssertTrue(joined.contains("@import"))
+        XCTAssertTrue(joined.contains("url() reference in CSS"))
+        XCTAssertTrue(joined.contains("http-equiv=\"refresh\""))
+        XCTAssertGreaterThanOrEqual(report.errors.count, 6)
+    }
+
+    func testArtifactValidationAllowsAnchorsDataURIsAndRelativeRefs() throws {
+        let report = validateArtifactContent("""
+        <!DOCTYPE html><html><head>
+        <meta name="bugbook-artifact" content="1">
+        <meta name="bugbook-title" content="Allowed">
+        </head><body>
+        <a href="https://github.com/anthropics/claude-code">external link</a>
+        <a href="#section">fragment</a>
+        <img src="data:image/png;base64,iVBORw0KGgo=">
+        <img src="blob:abc">
+        <script type="application/json" id="data">{"url":"https://example.com/just-data"}</script>
+        </body></html>
+        """)
+        XCTAssertTrue(report.isValid, "unexpected errors: \(report.errors)")
+        XCTAssertEqual(report.title, "Allowed")
+    }
+
+    func testArtifactValidationMarkerAndManifestDiagnostics() throws {
+        let missing = validateArtifactContent("<!DOCTYPE html><html><head><title>x</title></head><body></body></html>")
+        XCTAssertTrue(missing.errors.joined().contains("Missing required <meta name=\"bugbook-artifact\""))
+
+        let late = validateArtifactContent(
+            "<!DOCTYPE html><html><head><!-- " + String(repeating: "x", count: 5000) + " -->"
+            + "<meta name=\"bugbook-artifact\" content=\"1\"></head><body></body></html>"
+        )
+        XCTAssertTrue(late.errors.joined().contains("after the first 4096 bytes"))
+
+        let badManifest = validateArtifactContent("""
+        <!DOCTYPE html><html><head>
+        <meta name="bugbook-artifact" content="1">
+        <meta name="bugbook-title" content="Manifest">
+        <script type="application/bugbook-manifest">{ not json }</script>
+        </head><body></body></html>
+        """)
+        XCTAssertTrue(badManifest.errors.joined().contains("bugbook-manifest JSON does not parse"))
+    }
+
+    func testArtifactValidationSizeLimits() throws {
+        let head = """
+        <!DOCTYPE html><html><head>
+        <meta name="bugbook-artifact" content="1">
+        <meta name="bugbook-title" content="Big">
+        </head><body><!--
+        """
+        let tail = "--></body></html>"
+
+        let warned = validateArtifactContent(head + String(repeating: "a", count: 3 * 1024 * 1024) + tail)
+        XCTAssertTrue(warned.isValid)
+        XCTAssertTrue(warned.warnings.joined().contains("2 MB"))
+
+        let rejected = validateArtifactContent(head + String(repeating: "a", count: 11 * 1024 * 1024) + tail)
+        XCTAssertTrue(rejected.errors.joined().contains("10 MB"))
+    }
 }
 
 private func makeWorkspace() throws -> String {
@@ -2893,3 +2972,24 @@ private func captureStandardOutput(_ body: () throws -> Void) throws -> String {
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     return String(decoding: data, as: UTF8.self)
 }
+
+
+private let validArtifactHTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="bugbook-artifact" content="1">
+<meta name="bugbook-title" content="Sleep Trends">
+<meta name="bugbook-icon" content="sf:bed.double">
+<meta name="bugbook-generator" content="bugbook-cli-tests">
+<style>body { font-family: -apple-system, sans-serif; }</style>
+</head>
+<body>
+<h1>Sleep Trends</h1>
+<a href="https://example.com/docs">External docs link (allowed)</a>
+<script type="application/json" id="data">[{"day":"2026-06-01","hours":7.4}]</script>
+<script>const data = JSON.parse(document.getElementById("data").textContent);</script>
+</body>
+</html>
+"""
