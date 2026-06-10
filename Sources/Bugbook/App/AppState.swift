@@ -28,15 +28,13 @@ enum SidebarContextType: Equatable {
     case mail
     case calendar
     case workspace   // editor pages — shows file tree
-    case none        // terminal, browser — contextual zone collapses
+    case none        // contextual zone collapses
 
     static func from(_ content: PaneContent) -> SidebarContextType {
         switch content {
-        case .terminal: return .none
         case .document(let file):
             if file.isMail { return .mail }
             if file.isCalendar { return .calendar }
-            if file.isBrowser { return .none }
             return .workspace
         }
     }
@@ -114,7 +112,22 @@ extension AppState {
     var legacyWorkspaces: [FileSystemService.LegacyWorkspace] = []
     var migratingLegacyWorkspaceKeys: Set<String> = []
     var legacyWorkspaceErrorMessages: [String: String] = [:]
-    @ObservationIgnored lazy var aiThreadStore = AiThreadStore()
+    @ObservationIgnored private var loadedAiThreadStore: AiThreadStore?
+    var aiThreadStore: AiThreadStore {
+        if let loadedAiThreadStore { return loadedAiThreadStore }
+        // Process singleton — every window shares one in-memory thread list
+        // and one write queue; still created only on first chat use.
+        let store = AiThreadStore.shared
+        loadedAiThreadStore = store
+        return store
+    }
+
+    /// Flush write-behind AI thread persistence to disk without forcing the
+    /// store into existence when it was never used this session.
+    func flushPendingAiThreadWrites() {
+        loadedAiThreadStore?.flushPendingWrites()
+    }
+
     @ObservationIgnored private let userDefaults: UserDefaults
 
     var activeTab: OpenFile? {
@@ -272,9 +285,7 @@ extension AppState {
             openerPagePath: tab.openerPagePath,
             icon: tab.icon,
             navigationHistory: tab.navigationHistory,
-            navigationHistoryIndex: tab.navigationHistoryIndex,
-            browserSavedRecordID: tab.browserSavedRecordID,
-            browserPageZoom: tab.browserPageZoom
+            navigationHistoryIndex: tab.navigationHistoryIndex
         )
     }
 
@@ -311,31 +322,6 @@ extension AppState {
         SentryBreadcrumbs.add(crumb)
     }
 
-    /// Replace the active tab's content with the given file. If the file is already open, switch to it instead.
-    /// Returns true if an existing tab was switched to (no load needed), false if the tab was replaced (caller should load content).
-    @discardableResult
-    func openFileReplacingCurrentTab(
-        _ entry: FileEntry,
-        pushHistory: Bool = true,
-        preferExistingTab: Bool = true
-    ) -> Bool {
-        // If already open in another tab, just switch
-        if preferExistingTab, let existingIndex = openTabs.firstIndex(where: { $0.path == entry.path }) {
-            activeTabIndex = existingIndex
-            return true
-        }
-
-        // Replace the active tab
-        guard activeTabIndex >= 0, activeTabIndex < openTabs.count else {
-            // No active tab — fall back to opening a new one
-            openFile(entry)
-            return false
-        }
-
-        applyEntry(entry, toTabAt: activeTabIndex, pushHistory: pushHistory)
-        return false
-    }
-
     /// Pane-aware replacement path used by the unified pane/tab workspace model.
     /// Returns true when caller should not load content because an existing pane tab
     /// was focused, false when the active pane tab was replaced and needs loading.
@@ -369,17 +355,6 @@ extension AppState {
         )
         workspaceManager.setFocusedPane(id: paneId)
         return false
-    }
-
-    /// Always open a file in a new tab. If already open, switch to it instead.
-    func openFileInNewTab(_ entry: FileEntry) {
-        if let existingIndex = openTabs.firstIndex(where: { $0.path == entry.path }) {
-            activeTabIndex = existingIndex
-            return
-        }
-        let tab = makeTab(for: entry)
-        openTabs.append(tab)
-        activeTabIndex = openTabs.count - 1
     }
 
     // MARK: - Per-Tab Navigation History
@@ -488,8 +463,6 @@ extension AppState {
             return FileEntry(id: path, name: "Mail", path: path, isDirectory: false, kind: .mail, icon: "envelope")
         case "bugbook://calendar":
             return FileEntry(id: path, name: "Calendar", path: path, isDirectory: false, kind: .calendar, icon: "calendar.badge.clock")
-        case "bugbook://browser":
-            return FileEntry(id: path, name: "Browser", path: path, isDirectory: false, kind: .browser, icon: "globe")
         case "bugbook://meetings":
             return FileEntry(id: path, name: "Meetings", path: path, isDirectory: false, kind: .meetings, icon: "person.2")
         case "bugbook://graph":
@@ -649,30 +622,6 @@ extension AppState {
             kind: .calendar,
             displayName: "Calendar",
             icon: "calendar.badge.clock"
-        )
-        openTabs.append(tab)
-        activeTabIndex = openTabs.count - 1
-    }
-
-    func openBrowser() {
-        guard BugbookFeatureGate.allowsTabKind(.browser) else { return }
-        showSettings = false
-        currentView = .editor
-
-        let browserPath = "bugbook://browser"
-        if let existingIndex = openTabs.firstIndex(where: { $0.isBrowser }) {
-            activeTabIndex = existingIndex
-            return
-        }
-        let tab = OpenFile(
-            id: UUID(),
-            path: browserPath,
-            content: "",
-            isDirty: false,
-            isEmptyTab: false,
-            kind: .browser,
-            displayName: "Browser",
-            icon: "globe"
         )
         openTabs.append(tab)
         activeTabIndex = openTabs.count - 1

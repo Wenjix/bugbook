@@ -5,9 +5,6 @@ enum PaneContent: Codable, Equatable {
     /// A document pane — routes through OpenFile.kind for all existing content types.
     case document(openFile: OpenFile)
 
-    /// A terminal pane (shell session). Ephemeral; only the type is persisted.
-    case terminal(sessionID: UUID)
-
     // MARK: - Factories
 
     /// An empty document pane (new tab / welcome view).
@@ -63,38 +60,10 @@ enum PaneContent: Codable, Equatable {
         ))
     }
 
-    /// A browser pane.
-    static func browserDocument(
-        id: UUID = UUID(),
-        urlString: String = "bugbook://browser",
-        title: String = "Browser",
-        savedRecordID: UUID? = nil,
-        pageZoom: Double = 0.85
-    ) -> PaneContent {
-        return .document(openFile: OpenFile(
-            id: id,
-            path: urlString,
-            content: "",
-            isDirty: false,
-            isEmptyTab: false,
-            kind: .browser,
-            displayName: title,
-            icon: "globe",
-            browserSavedRecordID: savedRecordID,
-            browserPageZoom: pageZoom
-        ))
-    }
-
-    static func terminal(id: UUID = UUID()) -> PaneContent {
-        .terminal(sessionID: id)
-    }
-
     var id: UUID {
         switch self {
         case .document(let file):
             return file.id
-        case .terminal(let sessionID):
-            return sessionID
         }
     }
 
@@ -107,20 +76,8 @@ enum PaneContent: Codable, Equatable {
         true
     }
 
-    var isBrowser: Bool {
-        guard case .document(let file) = self else { return false }
-        return file.isBrowser
-    }
-
-    var isTerminal: Bool {
-        if case .terminal = self { return true }
-        return false
-    }
-
     func reidentified(as id: UUID) -> PaneContent {
         switch self {
-        case .terminal:
-            return .terminal(id: id)
         case .document(var file):
             file = OpenFile(
                 id: id,
@@ -134,8 +91,6 @@ enum PaneContent: Codable, Equatable {
                 icon: file.icon,
                 navigationHistory: file.navigationHistory,
                 navigationHistoryIndex: file.navigationHistoryIndex,
-                browserSavedRecordID: file.browserSavedRecordID,
-                browserPageZoom: file.browserPageZoom,
                 isExternal: file.isExternal
             )
             return .document(openFile: file)
@@ -144,12 +99,7 @@ enum PaneContent: Codable, Equatable {
 
     func defaultNewPaneTab() -> PaneContent? {
         switch self {
-        case .terminal:
-            return .terminal()
-        case .document(let file):
-            if file.isBrowser {
-                return .browserDocument(urlString: "bugbook://browser", title: "Browser")
-            }
+        case .document:
             return .emptyDocument()
         }
     }
@@ -160,21 +110,26 @@ enum PaneContent: Codable, Equatable {
         case sessionID
     }
 
-    private enum ContentType: String, Codable {
-        case document
-        case terminal
-    }
-
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(ContentType.self, forKey: .type)
+        let type = try container.decode(String.self, forKey: .type)
         switch type {
-        case .document:
+        case "document":
             let file = try container.decode(OpenFile.self, forKey: .openFile)
             self = .document(openFile: file)
-        case .terminal:
+        default:
+            // Removed pane types from older layouts (e.g. "terminal") decode as
+            // a sentinel the workspace sanitizer prunes — the pane collapses to
+            // its surviving sibling instead of lingering as a blank pane.
             let sessionID = try container.decodeIfPresent(UUID.self, forKey: .sessionID) ?? UUID()
-            self = .terminal(sessionID: sessionID)
+            self = .document(openFile: OpenFile(
+                id: sessionID,
+                path: "",
+                content: "",
+                isDirty: false,
+                isEmptyTab: false,
+                kind: .removed
+            ))
         }
     }
 
@@ -182,11 +137,8 @@ enum PaneContent: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .document(let file):
-            try container.encode(ContentType.document, forKey: .type)
+            try container.encode("document", forKey: .type)
             try container.encode(file, forKey: .openFile)
-        case .terminal(let sessionID):
-            try container.encode(ContentType.terminal, forKey: .type)
-            try container.encode(sessionID, forKey: .sessionID)
         }
     }
 }
@@ -194,8 +146,6 @@ enum PaneContent: Codable, Equatable {
 extension PaneContent {
     var paneItemTitle: String {
         switch self {
-        case .terminal:
-            return "Terminal"
         case .document(let file):
             return file.paneItemTitle
         }
@@ -203,8 +153,6 @@ extension PaneContent {
 
     var paneItemIcon: String {
         switch self {
-        case .terminal:
-            return "sf:terminal"
         case .document(let file):
             return file.paneItemIcon
         }
@@ -217,7 +165,6 @@ extension OpenFile {
         if isGateway { return "Home" }
         if isMail { return "Mail" }
         if isCalendar { return "Calendar" }
-        if isBrowser { return browserPaneItemTitle }
         if isMeetings { return "Meetings" }
         if isChat { return "Chat" }
         if isGraphView { return "Graph View" }
@@ -238,7 +185,6 @@ extension OpenFile {
         if isGateway { return "sf:house" }
         if isMail { return "sf:envelope" }
         if isCalendar { return "sf:calendar.badge.clock" }
-        if isBrowser { return "sf:globe" }
         if isMeetings { return "sf:person.2" }
         if isChat { return "sf:bubble.left.and.bubble.right" }
         if isGraphView { return "sf:point.3.connected.trianglepath.dotted" }
@@ -249,24 +195,9 @@ extension OpenFile {
         return isDatabase ? "sf:tablecells" : "sf:doc.text"
     }
 
-    private var browserPaneItemTitle: String {
-        if path == "bugbook://browser" {
-            let trimmed = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return trimmed.isEmpty || trimmed == "New Tab" ? "Browser" : trimmed
-        }
-        if let displayName, !displayName.isEmpty {
-            return displayName
-        }
-        if let host = URL(string: path)?.host, !host.isEmpty {
-            return host
-        }
-        return "Browser"
-    }
-
     private static func normalizedPaneIcon(_ icon: String) -> String {
-        if icon.hasPrefix("sf:") || icon.unicodeScalars.first?.properties.isEmoji == true {
-            return icon
-        }
-        return "sf:\(icon)"
+        // Any icon PageIcon can decode (sf:/emoji/custom:/absolute path)
+        // passes through unchanged; only bare SF symbol names get prefixed.
+        PageIcon.parse(icon) != nil ? icon : "sf:\(icon)"
     }
 }

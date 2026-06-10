@@ -16,19 +16,13 @@ struct PaneChromeBar: View {
     @State private var isHovered = false
     @State private var showSplitPopover = false
     @Environment(\.editorTypingFocusActive) private var editorTypingFocusActive
-    @Environment(\.paneReplaceWarningId) private var replaceWarningId
 
     // Steel blue accent for focused state
     private let steelBlue = Color(red: 0.357, green: 0.596, blue: 0.722)
     private let steelBlueLight = Color(red: 0.561, green: 0.741, blue: 0.831)
-    private let amberWarning = Color(red: 0.9, green: 0.65, blue: 0.2)
 
     private var isFocused: Bool {
         workspaceManager.activeWorkspace?.focusedPaneId == leaf.id
-    }
-
-    private var isReplaceWarning: Bool {
-        replaceWarningId == leaf.id
     }
 
     var body: some View {
@@ -61,33 +55,16 @@ struct PaneChromeBar: View {
                 tabStrip
             }
         }
-        .background(isReplaceWarning ? amberWarning.opacity(0.12) : Container.cardBg)
+        .background(Container.cardBg)
         .overlay(alignment: .top) {
-            if isReplaceWarning {
-                Rectangle()
-                    .fill(amberWarning)
-                    .frame(height: 2)
-            } else if isFocused && !isOnlyPane {
+            if isFocused && !isOnlyPane {
                 Rectangle()
                     .fill(steelBlue)
                     .frame(height: 2)
             }
         }
-        .overlay {
-            if isReplaceWarning {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                    Text("Terminal is running. Click again to replace.")
-                        .font(.system(size: 11, weight: .medium))
-                }
-                .foregroundStyle(amberWarning)
-                .transition(.opacity)
-            }
-        }
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.15), value: isFocused)
-        .animation(.easeInOut(duration: 0.2), value: isReplaceWarning)
         .animation(EditorFocusModeAnimation.animation, value: editorTypingFocusActive)
     }
 
@@ -368,14 +345,13 @@ struct PaneChromeBar: View {
 
     // MARK: - Icon Rendering
 
-    @ViewBuilder
     private func chromeIconView(_ icon: String) -> some View {
-        if icon.hasPrefix("sf:") {
-            Image(systemName: String(icon.dropFirst(3)))
-                .font(.system(size: 12))
-        } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-            Text(icon).font(.system(size: 11))
-        } else {
+        PageIconView(
+            icon: icon,
+            imageSize: 12,
+            symbolFont: .system(size: 12),
+            emojiFont: .system(size: 11)
+        ) {
             Image(systemName: icon)
                 .font(.system(size: 12))
         }

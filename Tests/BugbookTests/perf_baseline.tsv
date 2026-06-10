@@ -1,20 +1,17 @@
-test_name	metric	value	timestamp
-block_document_init_50	ms	0.651	2026-05-19T16:48:47Z
-block_input_model_update_1000	ms	0.165	2026-05-19T16:48:47Z
-database_cold_display_500	ms	13.076	2026-05-19T16:48:54Z
-database_cold_load_500	ms	79.859	2026-05-19T16:44:50Z
-database_index_build_500	ms	68.368	2026-05-19T16:48:54Z
-database_load_100	ms	8.048	2026-05-19T16:48:55Z
-database_view_sync_load	ms	0.212	2026-05-19T16:48:59Z
-file_tree_filter_1000	ms	3.920	2026-05-19T16:48:57Z
-filesystem_tree_100	ms	4.021	2026-05-19T16:48:57Z
-filesystem_tree_1000	ms	43.318	2026-05-19T16:48:57Z
-markdown_parse_500	ms	4.104	2026-05-19T16:48:57Z
-markdown_serialize_500	ms	2.597	2026-05-19T16:48:58Z
-note_switch_1000_folder	ms	0.472	2026-05-19T16:48:58Z
-page_cache_sync_load	ms	4.552	2026-05-19T16:48:59Z
-qmd_find_binary	ms	0.006	2026-05-19T16:48:58Z
-row_deserialize_100	ms	7.531	2026-05-19T16:48:59Z
-row_serialize_100	ms	1.122	2026-05-19T16:48:59Z
-transcript_finalize_60min_segments	ms	1.782	2026-05-19T16:48:59Z
-xctrace_default_launch_initial_frame	ms	459.090	2026-05-18T01:00:35Z
+test_name	metric	value	floor	timestamp
+block_document_init_50	ms	0.456	0.424	2026-06-10T19:03:10Z
+block_input_model_update_1000	ms	0.235	0.178	2026-06-10T19:03:10Z
+database_cold_display_500	ms	15.328	2.421	2026-06-10T19:03:18Z
+database_index_build_500	ms	92.024	17.725	2026-06-10T19:03:19Z
+database_load_100	ms	10.118	0.507	2026-06-10T19:03:20Z
+database_view_sync_load	ms	0.280	0.050	2026-06-10T19:03:30Z
+filesystem_tree_100	ms	4.980	0.252	2026-06-10T19:03:22Z
+filesystem_tree_1000	ms	53.317	3.039	2026-06-10T19:03:21Z
+markdown_parse_500	ms	5.451	0.270	2026-06-10T19:03:23Z
+markdown_serialize_500	ms	3.244	0.209	2026-06-10T19:03:23Z
+note_switch_1000_folder	ms	0.585	0.089	2026-06-10T19:03:23Z
+page_cache_sync_load	ms	6.223	0.370	2026-06-10T19:03:30Z
+qmd_find_binary	ms	0.026	0.050	2026-06-10T19:03:26Z
+row_deserialize_100	ms	6.745	0.340	2026-06-10T19:03:28Z
+row_serialize_100	ms	1.554	1.197	2026-06-10T19:03:29Z
+transcript_finalize_60min_segments	ms	2.423	0.372	2026-06-10T19:03:30Z

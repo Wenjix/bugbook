@@ -416,8 +416,6 @@ enum ShellNavigationItems {
         ShellNavItem(id: "search", label: "Search", icon: "magnifyingglass", notification: .quickOpen),
         ShellNavItem(id: "meeting", label: "Meeting", icon: "waveform", notification: .openMeetings),
         ShellNavItem(id: "calendar", label: "Calendar", icon: "calendar.badge.clock", notification: .openCalendar),
-        ShellNavItem(id: "terminal", label: "Terminal", icon: "terminal", notification: .openTerminal),
-        ShellNavItem(id: "browser", label: "Browser", icon: "globe", notification: .openBrowser),
         ShellNavItem(id: "mail", label: "Mail", icon: "envelope", notification: .openMail),
         ShellNavItem(id: "notes", label: "Notes", icon: "doc.text", notification: .openDailyNote)
     ]

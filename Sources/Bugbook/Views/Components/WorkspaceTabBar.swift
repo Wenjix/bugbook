@@ -7,7 +7,6 @@ import AppKit
 /// Tab bar at the top of the content area. Each tab owns a pane layout.
 struct WorkspaceTabBar: View {
     var workspaceManager: WorkspaceManager
-    var browserManager: BrowserManager?
     var sidebarOpen: Bool
     var currentView: ViewMode = .editor
     var recordingPagePath: String?
@@ -200,7 +199,7 @@ struct WorkspaceTabBar: View {
             if currentView == .graphView { return "Graph" }
             if currentView == .calendar { return "Calendar" }
         }
-        // In splits, prefer the first document pane over terminal for the tab title
+        // In splits, prefer the first document pane for the tab title
         let leaf = ws.root.firstDocumentLeaf ?? ws.focusedLeaf
         if let leaf {
             return leaf.content.paneItemTitle
@@ -280,29 +279,12 @@ struct WorkspaceTabBar: View {
         }
 
         let title = tabTitle(for: workspace)
-        let browserSnapshots = detachedBrowserSnapshots(for: workspace)
         let bootstrap = ContentViewBootstrap(
             workspaces: [workspace],
             activeWorkspaceIndex: 0,
-            browserSnapshots: browserSnapshots,
             layoutPersistenceEnabled: false
         )
         DetachedWindowManager.shared.openWindow(title: title, bootstrap: bootstrap)
-    }
-
-    private func detachedBrowserSnapshots(for workspace: Workspace) -> [UUID: BrowserPaneSnapshot] {
-        guard let browserManager else { return [:] }
-        let snapshots: [(UUID, BrowserPaneSnapshot)] = workspace.allLeaves.compactMap { leaf -> (UUID, BrowserPaneSnapshot)? in
-            guard leaf.tabs.contains(where: { content in
-                guard case .document(let file) = content else { return false }
-                return file.isBrowser
-            }),
-                  let snapshot = browserManager.snapshot(for: leaf.id) else {
-                return nil
-            }
-            return (leaf.id, snapshot)
-        }
-        return Dictionary(uniqueKeysWithValues: snapshots)
     }
 
     private func insertionIndex(for location: CGPoint) -> Int? {
@@ -400,17 +382,16 @@ private struct TabItemView: View {
         return Color.clear
     }
 
-    @ViewBuilder
     private var tabIconView: some View {
-        if let icon, !icon.isEmpty {
-            if icon.hasPrefix("sf:") {
-                Image(systemName: String(icon.dropFirst(3)))
-                    .font(ShellZoomMetrics.font(Typography.caption))
-                    .foregroundStyle(.secondary)
-            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(ShellZoomMetrics.font(14))
-            }
+        PageIconView(
+            icon: icon,
+            imageSize: ShellZoomMetrics.size(14),
+            symbolFont: ShellZoomMetrics.font(Typography.caption),
+            emojiFont: ShellZoomMetrics.font(14)
+        ) {
+            EmptyView()
         }
+        .foregroundStyle(.secondary)
     }
 }
 

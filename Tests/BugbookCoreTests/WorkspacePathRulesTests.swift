@@ -71,6 +71,30 @@ final class WorkspacePathRulesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: symlinkURL.path))
     }
 
+    func testEnsureWorkspaceDirectoryCreatesDanglingSymlinkTarget() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let documentsURL = rootURL.appendingPathComponent("Documents", isDirectory: true)
+        let targetURL = rootURL
+            .appendingPathComponent("Mobile Documents", isDirectory: true)
+            .appendingPathComponent("iCloud~com~bugbook~app", isDirectory: true)
+            .appendingPathComponent("Documents", isDirectory: true)
+            .appendingPathComponent("Bugbook", isDirectory: true)
+        let symlinkURL = documentsURL.appendingPathComponent("Bugbook", isDirectory: true)
+        try FileManager.default.createDirectory(at: documentsURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: symlinkURL.path, withDestinationPath: targetURL.path)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        XCTAssertFalse(WorkspaceResolver.workspaceDirectoryExists(at: symlinkURL.path))
+
+        try WorkspaceResolver.ensureWorkspaceDirectoryExists(at: symlinkURL.path)
+
+        var targetIsDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: targetURL.path, isDirectory: &targetIsDirectory))
+        XCTAssertTrue(targetIsDirectory.boolValue)
+        XCTAssertTrue(WorkspaceResolver.workspaceDirectoryExists(at: symlinkURL.path))
+    }
+
     func testLocalFallbackCanResolveRichestSiblingWhenAllowed() throws {
         let documentsURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -49,9 +49,6 @@ enum Container {
     /// Workspace pill tab — inactive text
     static let pillInactiveText = Color(light: Color(hex: "888888"), dark: Color(hex: "555555"))
 
-    /// Browser URL bar background (inside card)
-    static let urlBarBg = Color(light: Color(hex: "f5f3ef"), dark: Color(hex: "2e2e2e"))
-
     /// Gap between cards and around content area
     static let groutGap: CGFloat = 6
 

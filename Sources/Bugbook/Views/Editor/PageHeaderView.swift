@@ -168,14 +168,21 @@ struct PageHeaderView: View {
 
     @ViewBuilder
     private func iconDisplay(_ value: String) -> some View {
-        if value.hasPrefix("sf:") {
-            let symbolName = String(value.dropFirst(3))
-            Image(systemName: symbolName)
-                .font(.system(size: 36))
-                .frame(width: 56, height: 56)
-        } else if value.hasPrefix("custom:") {
-            CustomIconView(path: String(value.dropFirst(7)))
-        } else {
+        switch PageIcon.parse(value) {
+        case .some(let parsed):
+            switch parsed.type {
+            case .symbol:
+                Image(systemName: parsed.value)
+                    .font(.system(size: 36))
+                    .frame(width: 56, height: 56)
+            case .custom:
+                CustomIconView(path: parsed.value)
+            case .emoji:
+                Text(parsed.value)
+                    .font(.system(size: 46))
+                    .frame(width: 56, height: 56, alignment: .leading)
+            }
+        case nil:
             Text(value)
                 .font(.system(size: 46))
                 .frame(width: 56, height: 56, alignment: .leading)

@@ -15,15 +15,18 @@ struct CoverPickerView: View {
                 .padding(.top, 8)
 
             if let coverPath = coverUrl {
-                // Preview current cover
-                if let nsImage = loadCoverImage(from: coverPath) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 120)
-                        .clipped()
-                        .clipShape(.rect(cornerRadius: 6))
-                        .padding(.horizontal, 12)
+                // Preview current cover — loaded off the main thread.
+                if let filePath = normalizedCoverPath(coverPath) {
+                    AsyncLocalImageView(
+                        path: filePath,
+                        width: 296,
+                        height: 120,
+                        contentMode: .fill,
+                        cornerRadius: 6
+                    ) {
+                        Color.primary.opacity(0.05)
+                    }
+                    .padding(.horizontal, 12)
                 }
 
                 // Reposition slider
@@ -76,12 +79,9 @@ struct CoverPickerView: View {
         .popoverSurface()
     }
 
-    private func loadCoverImage(from path: String) -> NSImage? {
-        if path.hasPrefix("file://") || path.hasPrefix("/") {
-            let filePath = path.hasPrefix("file://") ? String(path.dropFirst(7)) : path
-            return NSImage(contentsOfFile: filePath)
-        }
-        return nil
+    private func normalizedCoverPath(_ path: String) -> String? {
+        if path.hasPrefix("file://") { return String(path.dropFirst(7)) }
+        return path.hasPrefix("/") ? path : nil
     }
 
     private func chooseCoverImage() {

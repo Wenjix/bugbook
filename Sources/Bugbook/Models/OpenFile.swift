@@ -12,8 +12,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var icon: String?
     var navigationHistory: [String] = []
     var navigationHistoryIndex: Int = -1
-    var browserSavedRecordID: UUID?
-    var browserPageZoom: Double
     /// True when this tab points at a markdown file outside the workspace folder
     /// (opened via the system "Open With" handler). External tabs are not autosaved;
     /// saving moves the file into the workspace and clears this flag.
@@ -31,8 +29,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
         case icon
         case navigationHistory
         case navigationHistoryIndex
-        case browserSavedRecordID
-        case browserPageZoom
         case isExternal
     }
 
@@ -41,7 +37,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var isMail: Bool { kind.isMail }
     var isCalendar: Bool { kind.isCalendar }
     var isMeetings: Bool { kind.isMeetings }
-    var isBrowser: Bool { kind.isBrowser }
     var isGraphView: Bool { kind.isGraphView }
     var isSkill: Bool { kind.isSkill }
     var isGateway: Bool { kind.isGateway }
@@ -49,14 +44,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var isDatabaseRow: Bool { kind.isDatabaseRow }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }
-    var browserURLString: String {
-        guard isBrowser, path == "bugbook://browser" else { return path }
-        return ""
-    }
-    var browserURL: URL? {
-        guard !browserURLString.isEmpty else { return nil }
-        return URL(string: browserURLString)
-    }
 
     init(
         id: UUID,
@@ -70,8 +57,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
         icon: String? = nil,
         navigationHistory: [String] = [],
         navigationHistoryIndex: Int = -1,
-        browserSavedRecordID: UUID? = nil,
-        browserPageZoom: Double = 0.85,
         isExternal: Bool = false
     ) {
         self.id = id
@@ -85,8 +70,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
         self.icon = icon
         self.navigationHistory = navigationHistory
         self.navigationHistoryIndex = navigationHistoryIndex
-        self.browserSavedRecordID = browserSavedRecordID
-        self.browserPageZoom = browserPageZoom
         self.isExternal = isExternal
     }
 
@@ -97,14 +80,14 @@ struct OpenFile: Identifiable, Equatable, Codable {
         self.content = try container.decode(String.self, forKey: .content)
         self.isDirty = try container.decode(Bool.self, forKey: .isDirty)
         self.isEmptyTab = try container.decode(Bool.self, forKey: .isEmptyTab)
+        // TabKind maps removed/unknown discriminators (e.g. "browser") to
+        // .removed itself and rethrows genuine payload errors for live kinds.
         self.kind = try container.decodeIfPresent(TabKind.self, forKey: .kind) ?? .page
         self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         self.openerPagePath = try container.decodeIfPresent(String.self, forKey: .openerPagePath)
         self.icon = try container.decodeIfPresent(String.self, forKey: .icon)
         self.navigationHistory = try container.decodeIfPresent([String].self, forKey: .navigationHistory) ?? []
         self.navigationHistoryIndex = try container.decodeIfPresent(Int.self, forKey: .navigationHistoryIndex) ?? -1
-        self.browserSavedRecordID = try container.decodeIfPresent(UUID.self, forKey: .browserSavedRecordID)
-        self.browserPageZoom = try container.decodeIfPresent(Double.self, forKey: .browserPageZoom) ?? 0.85
         self.isExternal = try container.decodeIfPresent(Bool.self, forKey: .isExternal) ?? false
     }
 
@@ -121,8 +104,6 @@ struct OpenFile: Identifiable, Equatable, Codable {
         try container.encodeIfPresent(icon, forKey: .icon)
         try container.encode(navigationHistory, forKey: .navigationHistory)
         try container.encode(navigationHistoryIndex, forKey: .navigationHistoryIndex)
-        try container.encodeIfPresent(browserSavedRecordID, forKey: .browserSavedRecordID)
-        try container.encode(browserPageZoom, forKey: .browserPageZoom)
         try container.encode(isExternal, forKey: .isExternal)
     }
 }

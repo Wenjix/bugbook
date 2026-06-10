@@ -32,32 +32,7 @@ enum AiContextItem: Identifiable, Equatable {
         }
     }
 
-    /// Heading label used when building AI prompt context (not truncated).
-    var contextHeading: String {
-        switch self {
-        case .block(_, let preview, _):
-            let trimmed = preview.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "Referenced block (\(trimmed.isEmpty ? "untitled" : trimmed))"
-        case .page(_, let name):
-            return "Referenced page \"\(cleanPageName(name))\""
-        }
-    }
-
     private func cleanPageName(_ name: String) -> String {
         name.hasSuffix(".md") ? String(name.dropLast(3)) : name
-    }
-
-    var contextMarkdown: String {
-        switch self {
-        case .block(_, _, let markdown): return markdown
-        case .page(let path, _):
-            guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
-                return "[Could not read page content]"
-            }
-            let maxChars = 8_000
-            let snippet = String(content.prefix(maxChars))
-            let truncated = content.count > maxChars ? "\n...[truncated]" : ""
-            return snippet + truncated
-        }
     }
 }

@@ -1,68 +1,44 @@
-#!/bin/zsh
-# perf-compare.sh — Compare current performance test results against baseline.
+#!/usr/bin/env bash
+# perf-compare.sh — Run performance tests and report regressions.
 # Usage: ./scripts/perf-compare.sh [baseline_tsv]
 #
-# Reads the baseline TSV (default: Tests/BugbookTests/perf_baseline.tsv),
-# runs performance tests, and reports regressions.
-# Uses zsh for associative array support on macOS (bash 3.x lacks it).
+# The regression policy (20% relative threshold + per-metric absolute noise
+# floor, both read from Tests/BugbookTests/perf_baseline.tsv) lives in
+# PerfBaseline.record (Tests/BugbookTests/PerformanceTests.swift). This script
+# does not re-implement it: it runs the tests and surfaces the comparison
+# lines they print — one policy, one owner.
 
 set -euo pipefail
 
-SCRIPT_DIR="${0:A:h}"
-PROJECT_ROOT="${SCRIPT_DIR:h}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BASELINE="${1:-$PROJECT_ROOT/Tests/BugbookTests/perf_baseline.tsv}"
+
+cd "$PROJECT_ROOT"
 
 if [ ! -f "$BASELINE" ]; then
     echo "No baseline found at $BASELINE"
     echo "Running tests to generate initial baseline..."
-    cd "$PROJECT_ROOT"
     swift test --filter Performance 2>&1 | tail -30
     echo ""
     echo "Baseline generated at $BASELINE"
     exit 0
 fi
 
-# Snapshot current baseline
-typeset -A OLD_VALUES
-while IFS=$'\t' read -r name metric value timestamp; do
-    [ "$name" = "test_name" ] && continue
-    OLD_VALUES[$name]="$value"
-done < "$BASELINE"
-
 echo "Running performance tests..."
-cd "$PROJECT_ROOT"
-swift test --filter Performance 2>&1 | tail -30
+if ! OUTPUT="$(swift test --filter Performance 2>&1)"; then
+    echo "$OUTPUT" | tail -40
+    echo "Performance tests failed."
+    exit 1
+fi
+echo "$OUTPUT" | tail -5
 
 echo ""
 echo "=== Performance Comparison ==="
 echo ""
+echo "$OUTPUT" | grep -E '^[[:space:]]+[A-Za-z0-9_]+: .*ms' || echo "(no comparison lines found)"
 
-REGRESSIONS=0
-while IFS=$'\t' read -r name metric value timestamp; do
-    [ "$name" = "test_name" ] && continue
-    old="${OLD_VALUES[$name]:-}"
-    if [ -z "$old" ]; then
-        printf "  %-30s %8sms (new)\n" "$name" "$value"
-        continue
-    fi
-
-    pct=$(awk "BEGIN { printf \"%.0f\", (($value - $old) / $old) * 100 }")
-    if [ "$pct" -gt 0 ]; then
-        direction="slower"
-    else
-        direction="faster"
-        pct=$(( -pct ))
-    fi
-
-    if [ "$pct" -gt 20 ] && [ "$direction" = "slower" ]; then
-        symbol="REGRESSION"
-        REGRESSIONS=$((REGRESSIONS + 1))
-    else
-        symbol="ok"
-    fi
-
-    printf "  %-30s %8sms -> %8sms (%d%% %s) %s\n" "$name" "$old" "$value" "$pct" "$direction" "$symbol"
-done < "$BASELINE"
+REGRESSIONS="$(echo "$OUTPUT" | grep -c 'REGRESSION' || true)"
 
 echo ""
 if [ "$REGRESSIONS" -gt 0 ]; then

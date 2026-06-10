@@ -179,42 +179,7 @@ final class BugbookUITests: XCTestCase {
         XCTAssertFalse(app.buttons["shell-nav-home"].exists)
         XCTAssertFalse(app.buttons["shell-nav-search"].exists)
         XCTAssertFalse(app.buttons["shell-nav-calendar"].exists)
-        XCTAssertFalse(app.buttons["shell-nav-terminal"].exists)
-        XCTAssertFalse(app.buttons["shell-nav-browser"].exists)
         XCTAssertFalse(app.buttons["shell-nav-mail"].exists)
     }
 
-    func testDefaultModeDoesNotExposeBrowserPane() {
-        launchApp()
-
-        XCTAssertFalse(app.otherElements["browser-pane"].exists)
-        XCTAssertFalse(app.textFields["browser-new-tab-search"].exists)
-        XCTAssertFalse(app.textFields["browser-omnibar"].exists)
-    }
-
-    /// Opening the Browser pane via the app shortcut must surface browser UI
-    /// without crashing the app. This exercises Chromium startup in the built
-    /// macOS bundle.
-    func testLegacyBrowserShortcutOpensBrowserPane() throws {
-        guard ProcessInfo.processInfo.environment["BUGBOOK_RUN_LEGACY_PANE_UI_TESTS"] == "1" else {
-            throw XCTSkip("Legacy panes are feature-flagged off by default; run with BUGBOOK_RUN_LEGACY_PANE_UI_TESTS=1.")
-        }
-
-        launchApp(legacyPanes: true)
-        app.typeKey("b", modifierFlags: [.command, .shift])
-
-        let newTabSearch = app.textFields["browser-new-tab-search"]
-        let omnibar = app.textFields["browser-omnibar"]
-        let browserPane = app.otherElements["browser-pane"]
-
-        let browserAppeared =
-            newTabSearch.waitForExistence(timeout: 5) ||
-            omnibar.waitForExistence(timeout: 5) ||
-            browserPane.waitForExistence(timeout: 5)
-
-        XCTAssertTrue(
-            browserAppeared,
-            "Browser pane did not appear after Cmd-Shift-B — possible Chromium startup or helper bundle regression"
-        )
-    }
 }

@@ -5,7 +5,6 @@ import SwiftUI
 extension EnvironmentValues {
     @Entry var popoverDismiss: (() -> Void)? = nil
     @Entry var workspacePath: String? = nil
-    @Entry var paneReplaceWarningId: UUID? = nil
 }
 
 // MARK: - Floating Popover

@@ -40,24 +40,5 @@ jobs:
             ${{ runner.os }}-xcode-${{ steps.toolchain.outputs.xcode_version }}-spm-v3-
             ${{ runner.os }}-spm-v3-
 
-      - name: Cache CEF runtime
-        uses: actions/cache@v5
-        with:
-          path: macos/vendor/cef
-          key: ${{ runner.os }}-cef-${{ hashFiles('scripts/fetch-cef.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-cef-
-
-      - name: Verify Ghostty archive
-        run: |
-          set -euo pipefail
-          ARCHIVE="Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty-fat.a"
-          test -f "$ARCHIVE"
-          file "$ARCHIVE"
-          ar -t "$ARCHIVE" >/dev/null
-
-      - name: Fetch CEF runtime
-        run: bash scripts/fetch-cef.sh
-
       - name: Run performance regression checks
         run: zsh scripts/perf-compare.sh
