@@ -12,6 +12,8 @@ enum TabKind: Equatable, Hashable, Codable, Sendable {
     case gateway
     case chat
     case databaseRow(dbPath: String, rowId: String)
+    /// Self-contained HTML artifact rendered in a locked-down WKWebView (Level 1).
+    case artifact
 
     var isDatabase: Bool { self == .database }
     var isMail: Bool { self == .mail }
@@ -23,6 +25,7 @@ enum TabKind: Equatable, Hashable, Codable, Sendable {
     var isGateway: Bool { self == .gateway }
     var isChat: Bool { self == .chat }
     var isDatabaseRow: Bool { if case .databaseRow = self { return true }; return false }
+    var isArtifact: Bool { self == .artifact }
     var databasePath: String? { if case .databaseRow(let p, _) = self { return p }; return nil }
     var databaseRowId: String? { if case .databaseRow(_, let r) = self { return r }; return nil }
 }
@@ -48,6 +51,7 @@ struct FileEntry: Identifiable, Hashable, Sendable {
     var isGateway: Bool { kind.isGateway }
     var isChat: Bool { kind.isChat }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
+    var isArtifact: Bool { kind.isArtifact }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }
 
@@ -69,5 +73,14 @@ struct FileEntry: Identifiable, Hashable, Sendable {
         self.icon = icon
         self.children = children
         self.isSidebarReference = isSidebarReference
+    }
+}
+
+extension String {
+    /// File name with a known document extension removed (".md" pages, ".html" artifacts).
+    var removingPageExtension: String {
+        if hasSuffix(".md") { return String(dropLast(3)) }
+        if hasSuffix(".html") { return String(dropLast(5)) }
+        return self
     }
 }

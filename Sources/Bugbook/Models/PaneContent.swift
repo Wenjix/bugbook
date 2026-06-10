@@ -226,11 +226,8 @@ extension OpenFile {
             return displayName
         }
 
-        let filename = (path as NSString).lastPathComponent
-        if filename.hasSuffix(".md") {
-            return String(filename.dropLast(3))
-        }
-        return filename.isEmpty ? "Untitled" : filename
+        let trimmed = (path as NSString).lastPathComponent.removingPageExtension
+        return trimmed.isEmpty ? "Untitled" : trimmed
     }
 
     var paneItemIcon: String {
@@ -246,6 +243,7 @@ extension OpenFile {
         if let icon, !icon.isEmpty {
             return OpenFile.normalizedPaneIcon(icon)
         }
+        if isArtifact { return "sf:doc.richtext" }
         return isDatabase ? "sf:tablecells" : "sf:doc.text"
     }
 

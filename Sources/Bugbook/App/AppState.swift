@@ -239,7 +239,7 @@ extension AppState {
     }
 
     private func cleanDisplayName(_ name: String) -> String {
-        name.hasSuffix(".md") ? String(name.dropLast(3)) : name
+        name.removingPageExtension
     }
 
     private func makeTab(for entry: FileEntry, id: UUID = UUID()) -> OpenFile {
@@ -522,7 +522,14 @@ extension AppState {
         }
         let schemaPath = (path as NSString).appendingPathComponent("_schema.json")
         let isDatabase = FileManager.default.fileExists(atPath: schemaPath)
-        let kind: TabKind = isDatabase ? .database : .page
+        let kind: TabKind
+        if isDatabase {
+            kind = .database
+        } else if path.hasSuffix(".html") {
+            kind = .artifact
+        } else {
+            kind = .page
+        }
         return FileEntry(
             id: path,
             name: (path as NSString).lastPathComponent,

@@ -47,6 +47,7 @@ struct OpenFile: Identifiable, Equatable, Codable {
     var isGateway: Bool { kind.isGateway }
     var isChat: Bool { kind.isChat }
     var isDatabaseRow: Bool { kind.isDatabaseRow }
+    var isArtifact: Bool { kind.isArtifact }
     var databasePath: String? { kind.databasePath }
     var databaseRowId: String? { kind.databaseRowId }
     var browserURLString: String {

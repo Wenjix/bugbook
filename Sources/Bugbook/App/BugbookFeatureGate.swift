@@ -112,7 +112,7 @@ enum BugbookFeatureGate {
 
     static func allowsTabKind(_ kind: TabKind) -> Bool {
         switch kind {
-        case .page, .database, .databaseRow, .meetings:
+        case .page, .database, .databaseRow, .meetings, .artifact:
             return true
         case .mail, .calendar, .browser, .graphView, .skill, .gateway, .chat:
             return legacyPanesEnabled
