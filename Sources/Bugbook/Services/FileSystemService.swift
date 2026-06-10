@@ -753,7 +753,7 @@ class FileSystemService {
         if resourceValues.isDirectory ?? false {
             return directoryTreeItem(name: name, path: fullPath, siblings: siblings, depth: depth)
         }
-        return markdownTreeItem(
+        return documentTreeItem(
             name: name,
             path: fullPath,
             resourceValues: resourceValues,
@@ -794,41 +794,58 @@ class FileSystemService {
         }
     }
 
-    nonisolated private func markdownTreeItem(
+    nonisolated private func documentTreeItem(
         name: String,
         path: String,
         resourceValues: URLResourceValues,
         siblings: Set<String>,
         depth: Int
     ) -> FileTreeItem {
-        guard name.hasSuffix(".md") else { return .none }
+        if name.hasSuffix(".md") {
+            let isDbFile = name.hasSuffix(".db.md")
+            // Skip empty .md files and the `# \n` placeholder from createNewFile.
+            // Database files are kept regardless of size since they store metadata elsewhere.
+            if !isDbFile, let size = resourceValues.fileSize, size < 10 {
+                return .none
+            }
 
-        let isDbFile = name.hasSuffix(".db.md")
-        // Skip empty .md files and the `# \n` placeholder from createNewFile.
-        // Database files are kept regardless of size since they store metadata elsewhere.
-        if !isDbFile, let size = resourceValues.fileSize, size < 10 {
-            return .none
+            let companionName = String(name.dropLast(3))
+            let children: [FileEntry]?
+            if siblings.contains(companionName) {
+                let companionPath = ((path as NSString).deletingLastPathComponent as NSString)
+                    .appendingPathComponent(companionName)
+                children = buildFileTree(at: companionPath, depth: depth + 1)
+            } else {
+                children = nil
+            }
+
+            return .file(FileEntry(
+                id: path,
+                name: name,
+                path: path,
+                isDirectory: false,
+                kind: isDbFile ? .database : .page,
+                icon: nil,
+                children: children
+            ))
         }
 
-        let companionName = String(name.dropLast(3))
-        let children: [FileEntry]?
-        if siblings.contains(companionName) {
-            let companionPath = ((path as NSString).deletingLastPathComponent as NSString)
-                .appendingPathComponent(companionName)
-            children = buildFileTree(at: companionPath, depth: depth + 1)
-        } else {
-            children = nil
+        if name.hasSuffix(".html") {
+            // Artifacts are leaf documents: no companion-folder nesting, no
+            // children, and no minimum-size heuristic (the <10-byte rule exists
+            // only to hide the "# \n" placeholder createNewFile writes for pages).
+            return .file(FileEntry(
+                id: path,
+                name: name,
+                path: path,
+                isDirectory: false,
+                kind: .artifact,
+                icon: "sf:doc.richtext",
+                children: nil
+            ))
         }
 
-        return .file(FileEntry(
-            id: path,
-            name: name,
-            path: path,
-            isDirectory: false,
-            kind: isDbFile ? .database : .page,
-            icon: nil,
-            children: children
-        ))
+        return .none
     }
 
     nonisolated private static func databaseTreeItem(at path: String, fallbackName: String) -> DatabaseTreeItem {

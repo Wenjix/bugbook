@@ -886,4 +886,67 @@ final class FileSystemServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: legacyPlan.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: legacyArchive.path))
     }
+
+    // MARK: - HTML artifact admission (Level 1)
+
+    func testBuildFileTreeAdmitsHtmlAsArtifact() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try "<!doctype html><html></html>".write(
+            toFile: (root as NSString).appendingPathComponent("chart.html"),
+            atomically: true, encoding: .utf8)
+
+        let tree = FileSystemService().buildFileTree(at: root)
+
+        let entry = try XCTUnwrap(tree.first { $0.name == "chart.html" })
+        XCTAssertEqual(entry.kind, .artifact)
+        XCTAssertEqual(entry.icon, "sf:doc.richtext")
+        XCTAssertNil(entry.children)
+    }
+
+    func testZeroByteHtmlIsAdmitted() throws {
+        // The <10-byte skip is a .md placeholder heuristic only; `artifact create`
+        // feedback loops need html files visible immediately (decision 4).
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        FileManager.default.createFile(
+            atPath: (root as NSString).appendingPathComponent("empty.html"), contents: nil)
+
+        let tree = FileSystemService().buildFileTree(at: root)
+        XCTAssertTrue(tree.contains { $0.name == "empty.html" && $0.kind == .artifact })
+    }
+
+    func testHtmlInsideCompanionFolderNestsUnderPage() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let pagePath = (root as NSString).appendingPathComponent("Weekly Review.md")
+        try "# Weekly Review\n\nContent here.".write(toFile: pagePath, atomically: true, encoding: .utf8)
+        let companion = (root as NSString).appendingPathComponent("Weekly Review")
+        try FileManager.default.createDirectory(atPath: companion, withIntermediateDirectories: true)
+        try "<!doctype html>".write(
+            toFile: (companion as NSString).appendingPathComponent("sleep-trends.html"),
+            atomically: true, encoding: .utf8)
+
+        let tree = FileSystemService().buildFileTree(at: root)
+        let page = try XCTUnwrap(tree.first { $0.name == "Weekly Review.md" })
+        XCTAssertTrue(
+            page.children?.contains { $0.name == "sleep-trends.html" && $0.kind == .artifact } ?? false,
+            "page-attached artifact should nest under its page via the companion folder"
+        )
+    }
+
+    func testUnderscoreArtifactsFolderHidden() throws {
+        // Row-attached artifacts live in `_artifacts/`; the `_` prefix keeps them
+        // out of the sidebar by existing convention (shouldShowSidebarEntry).
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let artifacts = (root as NSString).appendingPathComponent("_artifacts")
+        try FileManager.default.createDirectory(atPath: artifacts, withIntermediateDirectories: true)
+        try "<!doctype html>".write(
+            toFile: (artifacts as NSString).appendingPathComponent("x.html"),
+            atomically: true, encoding: .utf8)
+
+        let tree = FileSystemService().buildFileTree(at: root)
+        XCTAssertTrue(tree.isEmpty)
+    }
 }
