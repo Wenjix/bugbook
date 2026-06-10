@@ -147,3 +147,85 @@ final class ArtifactSchemeHandler: NSObject, WKURLSchemeHandler {
         // Replies are synchronous in start(); nothing in flight to cancel.
     }
 }
+
+/// Navigation policy: the artifact document itself (initial load, reloads, and
+/// same-document #anchor jumps) is the only permitted navigation. User-activated
+/// http(s) links surface a native confirmation; everything else is cancelled.
+/// Also the WKUIDelegate, so target=_blank routes through the same confirmation
+/// and window.open never creates a window.
+@MainActor
+final class ArtifactNavigationPolicy: NSObject, WKNavigationDelegate, WKUIDelegate {
+    private let artifactURL: URL
+    var onExternalLinkRequest: ((URL) -> Void)?
+    var onLoadFinished: (() -> Void)?
+    var onLoadFailed: ((String) -> Void)?
+
+    init(artifactURL: URL) {
+        self.artifactURL = artifactURL
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        // The artifact itself, main frame only — covers the initial load,
+        // FSEvents-driven reload(), and in-page #anchor navigation (TOC links
+        // inside artifacts must keep working, decision 6). Sibling-token
+        // probing has a different path → cancelled here AND refused by the
+        // scheme handler.
+        if navigationAction.targetFrame?.isMainFrame == true,
+           stripFragment(url) == stripFragment(artifactURL) {
+            decisionHandler(.allow)
+            return
+        }
+
+        if navigationAction.navigationType == .linkActivated,
+           let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            onExternalLinkRequest?(url)
+        }
+
+        decisionHandler(.cancel)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        onLoadFinished?()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        onLoadFailed?(error.localizedDescription)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        onLoadFailed?(error.localizedDescription)
+    }
+
+    private func stripFragment(_ url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        return components?.string ?? url.absoluteString
+    }
+
+    // MARK: - WKUIDelegate
+
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        if navigationAction.navigationType == .linkActivated,
+           let url = navigationAction.request.url,
+           let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            onExternalLinkRequest?(url)
+        }
+        return nil  // window.open and target=_blank never spawn a window
+    }
+}
