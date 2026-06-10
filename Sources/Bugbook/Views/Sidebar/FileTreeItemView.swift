@@ -1,5 +1,4 @@
 import SwiftUI
-import ImageIO
 import os
 
 struct FileTreeItemView: View {
@@ -131,15 +130,8 @@ struct FileTreeItemView: View {
 
     /// Path to load as a file-based icon, or nil if the icon is not a file path.
     private var iconFilePath: String? {
-        guard let icon = entry.icon, !icon.isEmpty else { return nil }
-        if icon.hasPrefix("custom:") {
-            return String(icon.dropFirst(7))
-        } else if icon.hasPrefix("sf:") || icon.unicodeScalars.first?.properties.isEmoji == true {
-            return nil
-        } else if FileManager.default.fileExists(atPath: icon) {
-            return icon
-        }
-        return nil
+        guard let parsed = PageIcon.parse(entry.icon), parsed.type == .custom else { return nil }
+        return parsed.value
     }
 
     private func loadIconImage() async {
@@ -147,33 +139,18 @@ struct FileTreeItemView: View {
             cachedIconImage = nil
             return
         }
-        let loaded = await Task.detached(priority: .utility) {
-            Self.downsampledImage(at: path, maxPixelSize: 32)
-        }.value
+        let loaded = await LocalImageThumbnailCache.loadImage(at: path, maxPixelSize: 32)
         if !Task.isCancelled {
             cachedIconImage = loaded
         }
     }
 
-    nonisolated private static func downsampledImage(at path: String, maxPixelSize: Int) -> NSImage? {
-        let url = URL(fileURLWithPath: path)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            return nil
-        }
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-    }
-
     @ViewBuilder
     private var iconView: some View {
-        if let icon = entry.icon, !icon.isEmpty {
-            if icon.hasPrefix("custom:") || iconFilePath != nil {
+        switch PageIcon.parse(entry.icon) {
+        case .some(let parsed):
+            switch parsed.type {
+            case .custom:
                 // File-based icon — uses async-loaded cachedIconImage
                 if let cached = cachedIconImage {
                     Image(nsImage: cached)
@@ -184,21 +161,18 @@ struct FileTreeItemView: View {
                 } else {
                     defaultIcon
                 }
-            } else if icon.hasPrefix("sf:") {
-                // SF Symbol (sf:symbolName)
-                Image(systemName: String(icon.dropFirst(3)))
+            case .symbol:
+                Image(systemName: parsed.value)
                     .font(ShellZoomMetrics.font(Typography.bodySmall))
                     .foregroundStyle(.secondary)
                     .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon)
+            case .emoji:
+                Text(parsed.value)
                     .font(ShellZoomMetrics.font(13))
                     .minimumScaleFactor(0.5)
                     .frame(width: ShellZoomMetrics.size(16), height: ShellZoomMetrics.size(16))
-            } else {
-                defaultIcon
             }
-        } else {
+        case nil:
             defaultIcon
         }
     }

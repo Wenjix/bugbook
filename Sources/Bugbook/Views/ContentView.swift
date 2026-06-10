@@ -4,12 +4,10 @@ import AppKit
 import os
 import Sentry
 import BugbookCore
-import GhosttyKit
 
 struct ContentViewBootstrap {
     var workspaces: [Workspace]
     var activeWorkspaceIndex: Int
-    var browserSnapshots: [UUID: BrowserPaneSnapshot] = [:]
     var layoutPersistenceEnabled: Bool = true
 }
 
@@ -19,8 +17,6 @@ private final class LegacyPaneServices {
     let mailService = MailService()
     let calendarVM = CalendarViewModel()
     let meetingNotificationService = MeetingNotificationService()
-    let terminalManager = TerminalManager()
-    let browserManager = BrowserManager()
 }
 
 @MainActor
@@ -37,6 +33,34 @@ private struct ShellTopChromeUnderlapModifier: ViewModifier {
             content.ignoresSafeArea(.container, edges: .top)
         } else {
             content
+        }
+    }
+}
+
+/// Captures the NSWindow hosting a SwiftUI view so per-window state (e.g. key
+/// window checks for app-wide command notifications) can be derived.
+private struct HostingWindowReader: NSViewRepresentable {
+    @Binding var window: NSWindow?
+
+    func makeNSView(context: Context) -> HostingWindowReaderView {
+        let view = HostingWindowReaderView()
+        view.onWindowChange = { window = $0 }
+        return view
+    }
+
+    func updateNSView(_ nsView: HostingWindowReaderView, context: Context) {
+        nsView.onWindowChange = { window = $0 }
+    }
+}
+
+private final class HostingWindowReaderView: NSView {
+    var onWindowChange: ((NSWindow?) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        let window = window
+        DispatchQueue.main.async { [weak self] in
+            self?.onWindowChange?(window)
         }
     }
 }
@@ -201,9 +225,9 @@ struct ContentView: View {
     // Cmd+K deferred navigation: set by palette closure, consumed by .onChange in ContentView's own cycle
     @State private var pendingCmdKNavigation: CmdKNavRequest?
 
-    // Pane replacement guard: amber warning for active terminal panes
-    @State private var paneReplaceWarningId: UUID?
-    @State private var paneReplaceWarningTask: Task<Void, Never>?
+    /// The NSWindow hosting this ContentView (one ContentView per window).
+    @State private var hostingWindow: NSWindow?
+
 
     private struct CmdKNavRequest: Equatable {
         let entry: FileEntry
@@ -257,14 +281,6 @@ struct ContentView: View {
 
     private var meetingNotificationService: MeetingNotificationService {
         legacyServices.meetingNotificationService
-    }
-
-    private var terminalManager: TerminalManager {
-        legacyServices.terminalManager
-    }
-
-    private var browserManager: BrowserManager {
-        legacyServices.browserManager
     }
 
     var body: some View {
@@ -369,6 +385,7 @@ struct ContentView: View {
         let baseView = view
             .ignoresSafeArea()
             .frame(minWidth: 420, minHeight: 420)
+            .background(HostingWindowReader(window: $hostingWindow))
 
         return applyLifecycleNotifications(
             to: applyLifecycleObservers(
@@ -379,14 +396,18 @@ struct ContentView: View {
         )
     }
 
+    /// True when this ContentView's window is the key window — used to keep
+    /// app-wide command notifications (e.g. Cmd+N) from fanning out to every
+    /// open window. Defaults to acting when the window is not yet resolved.
+    private var isHostingWindowKey: Bool {
+        hostingWindow.map(\.isKeyWindow) ?? true
+    }
+
     private func performInitialLifecycleSetup() {
         Log.profileMarker("appInitialLifecycleStart")
         loadAppSettings()
         initializeWorkspace()
         applyTheme(appState.settings.theme)
-        if BugbookFeatureGate.shouldInitializeLegacyServices {
-            applyTerminalColorScheme(appState.settings.terminalColorScheme)
-        }
         editorZoomScale = clampedEditorZoomScale(editorZoomScale)
         editorUI.setFocusModeEnabled(appState.settings.focusModeOnType)
         if BugbookFeatureGate.shouldWarmTranscriptionAtLaunch {
@@ -408,17 +429,6 @@ struct ContentView: View {
         view
             .onChange(of: appState.settings) { _, newSettings in
                 appSettingsStore.save(newSettings)
-                if BugbookFeatureGate.shouldInitializeLegacyServices {
-                    applyTerminalColorScheme(newSettings.terminalColorScheme)
-                }
-            }
-            .onChange(of: appState.settings.browserHistoryEnabled) { _, enabled in
-                guard BugbookFeatureGate.shouldInitializeLegacyServices else { return }
-                browserManager.setHistoryEnabled(enabled)
-            }
-            .onChange(of: appState.settings.browserExtensionPaths) { _, extensionPaths in
-                guard BugbookFeatureGate.shouldInitializeLegacyServices else { return }
-                browserManager.configureExtensions(extensionPaths)
             }
             .onChange(of: appState.settings.theme) { _, newTheme in
                 applyTheme(newTheme)
@@ -478,11 +488,6 @@ struct ContentView: View {
             .onChange(of: workspaceManager.activeWorkspaceIndex) { _, _ in
                 updateSidebarContextType()
             }
-            .onChange(of: workspaceManager.workspaces) { _, workspaces in
-                guard BugbookFeatureGate.shouldInitializeLegacyServices else { return }
-                let paneIDs = Set(workspaces.flatMap { $0.allLeaves.map(\.id) })
-                browserManager.cleanup(validPaneIDs: paneIDs)
-            }
             .onChange(of: appState.isRecording) { _, recording in
                 handleRecordingChange(recording)
             }
@@ -495,6 +500,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                 flushDirtyTabs()
+                appState.flushPendingAiThreadWrites()
             }
             .onDisappear {
                 handleViewDisappear()
@@ -680,7 +686,12 @@ struct ContentView: View {
     private func applyPrimaryCommandNotifications<V: View>(to view: V) -> some View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .newNote)) { _ in
-                createNewFile()
+                // Only the key window's ContentView acts — every open window
+                // receives this app-wide notification.
+                guard isHostingWindowKey else { return }
+                // Same pane-aware path as the palette's "New Page" — the legacy
+                // openTabs path created the file but never surfaced it.
+                createNewFile(destination: .inPlace)
             }
             .onReceive(NotificationCenter.default.publisher(for: .newPaneTab)) { _ in
                 guard let leaf = workspaceManager.focusedPane else { return }
@@ -696,9 +707,7 @@ struct ContentView: View {
                 reopenClosedPaneItem()
             }
             .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
-                if !postBrowserCommandIfFocused(.browserSavePage) {
-                    forceSave()
-                }
+                forceSave()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openExternalFiles)) { _ in
                 drainPendingExternalFiles()
@@ -721,12 +730,7 @@ struct ContentView: View {
                 appState.commandPaletteOpen.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .findInPage)) { _ in
-                if !postBrowserCommandIfFocused(.browserFind) {
-                    NotificationCenter.default.post(name: .findInPane, object: nil)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
-                _ = postBrowserCommandIfFocused(.browserFind)
+                NotificationCenter.default.post(name: .findInPane, object: nil)
             }
             .onReceive(NotificationCenter.default.publisher(for: .quickOpenNewTab)) { _ in
                 workspaceManager.addWorkspace()
@@ -771,14 +775,6 @@ struct ContentView: View {
                 guard BugbookFeatureGate.allowsNotification(.openGateway) else { return }
                 presentEditorPane(.gatewayDocument())
             }
-            .onReceive(NotificationCenter.default.publisher(for: .openTerminal)) { _ in
-                guard BugbookFeatureGate.allowsNotification(.openTerminal) else { return }
-                presentEditorPane(.terminal())
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .openBrowser)) { _ in
-                guard BugbookFeatureGate.allowsNotification(.openBrowser) else { return }
-                presentEditorPane(.browserDocument())
-            }
             .onReceive(NotificationCenter.default.publisher(for: .toggleShortcutOverlay)) { _ in
                 withAnimation(.easeInOut(duration: 0.15)) {
                     appState.showShortcutOverlay.toggle()
@@ -788,33 +784,23 @@ struct ContentView: View {
                 createNewDatabase()
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateBack)) { _ in
-                if !postBrowserCommandIfFocused(.browserBack) {
-                    navigateBackInActiveTab()
-                }
+                navigateBackInActiveTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateForward)) { _ in
-                if !postBrowserCommandIfFocused(.browserForward) {
-                    navigateForwardInActiveTab()
-                }
+                navigateForwardInActiveTab()
             }
     }
 
     private func applyZoomNotifications<V: View>(to view: V) -> some View {
         view
             .onReceive(NotificationCenter.default.publisher(for: .editorZoomIn)) { _ in
-                if !postBrowserCommandIfFocused(.browserZoomIn) {
-                    adjustEditorZoom(by: 0.1)
-                }
+                adjustEditorZoom(by: 0.1)
             }
             .onReceive(NotificationCenter.default.publisher(for: .editorZoomOut)) { _ in
-                if !postBrowserCommandIfFocused(.browserZoomOut) {
-                    adjustEditorZoom(by: -0.1)
-                }
+                adjustEditorZoom(by: -0.1)
             }
             .onReceive(NotificationCenter.default.publisher(for: .editorZoomReset)) { _ in
-                if !postBrowserCommandIfFocused(.browserZoomReset) {
-                    resetEditorZoom()
-                }
+                resetEditorZoom()
             }
     }
 
@@ -938,7 +924,7 @@ struct ContentView: View {
                                 guard BugbookFeatureGate.allowsPaneContent(content) else { return }
                                 appState.commandPaletteOpen = false
                                 // For workspace pages, use proper file navigation (loads content from disk).
-                                // For built-in panes (terminal, mail, etc.), use direct content replacement.
+                                // For built-in panes (mail, calendar, etc.), use direct content replacement.
                                 if case .document(let file) = content,
                                    !file.path.hasPrefix("bugbook://"),
                                    !file.path.isEmpty,
@@ -1012,39 +998,12 @@ struct ContentView: View {
         .disabled(!isEnabled)
     }
 
-    @discardableResult
-    private func postBrowserCommandIfFocused(_ name: Notification.Name, object: Any? = nil) -> Bool {
-        guard let targetPaneID = browserCommandPaneID else { return false }
-        guard loadedLegacyPaneServices?.browserManager != nil else { return false }
-        NotificationCenter.default.post(name: name, object: object ?? targetPaneID)
-        return true
-    }
-
-    private var browserCommandPaneID: UUID? {
-        focusedBrowserPaneID ?? soleBrowserPaneID
-    }
-
     private var activeWorkspaceLeaves: [PaneNode.Leaf] {
         workspaceManager.activeWorkspace?.allLeaves ?? []
     }
 
     private var shellShowsSidebarPanel: Bool {
         appState.sidebarVisible
-    }
-
-    private var focusedBrowserPaneID: UUID? {
-        guard let leaf = workspaceManager.focusedPane else { return nil }
-        guard case .document(let file) = leaf.content, file.isBrowser else { return nil }
-        return leaf.id
-    }
-
-    private var soleBrowserPaneID: UUID? {
-        let browserLeaves = activeWorkspaceLeaves.filter { leaf in
-            guard case .document(let file) = leaf.content else { return false }
-            return file.isBrowser
-        }
-        guard browserLeaves.count == 1 else { return nil }
-        return browserLeaves.first?.id
     }
 
     private var contextualSidebarActiveFilePath: String? {
@@ -1060,9 +1019,7 @@ struct ContentView: View {
     private func handleViewDisappear() {
         flushDirtyTabs()
         appSettingsStore.save(appState.settings)
-        loadedLegacyPaneServices?.terminalManager.shutdown()
-        loadedLegacyPaneServices?.browserManager.persistAllSessions()
-        paneReplaceWarningTask?.cancel()
+        appState.flushPendingAiThreadWrites()
         aiInitTask?.cancel()
         aiInitTask = nil
         fileTreeRefreshTask?.cancel()
@@ -1110,8 +1067,6 @@ struct ContentView: View {
         case "home": content = .gatewayDocument()
         case "meeting": content = .meetingsDocument()
         case "calendar": content = .calendarDocument()
-        case "terminal": content = .terminal()
-        case "browser": content = .browserDocument()
         case "mail": content = .mailDocument()
         default: return
         }
@@ -1301,13 +1256,7 @@ struct ContentView: View {
         }
 
         switch leaf.content {
-        case .terminal:
-            return makeTerminalAiDrawerContext(for: leaf.activeTabID)
         case .document(let file):
-            if file.isBrowser {
-                return makeBrowserAiDrawerContext(for: leaf.id)
-            }
-
             if file.isMail {
                 return makeMailAiDrawerContext()
             }
@@ -1318,59 +1267,6 @@ struct ContentView: View {
 
             return makeDocumentAiDrawerContext(for: file)
         }
-    }
-
-    private func makeTerminalAiDrawerContext(for paneID: UUID) -> AiDrawerContext {
-        let session = loadedLegacyPaneServices?.terminalManager.session(for: paneID)
-        let title = session?.title ?? "Terminal"
-        let workingDirectory = session?.workingDirectory ?? ""
-
-        return AiDrawerContext(
-            placeholder: "Ask about this terminal…",
-            title: title,
-            subtitle: workingDirectory.isEmpty ? nil : workingDirectory,
-            contextProvider: {
-                """
-                Terminal title: \(title)
-                Working directory: \(workingDirectory)
-
-                Note: terminal scrollback is not currently exposed. Answer using the available session metadata.
-                """
-            }
-        )
-    }
-
-    private func makeBrowserAiDrawerContext(for paneID: UUID) -> AiDrawerContext {
-        guard let browserManager = loadedLegacyPaneServices?.browserManager else {
-            return AiDrawerContext(placeholder: "Ask about this page…", title: "Browser")
-        }
-        guard let leaf = workspaceManager.leaf(id: paneID),
-              let selectedTabID = leaf.activeOpenFile?.id,
-              let tab = browserManager.activeTab(in: paneID) else {
-            return AiDrawerContext(placeholder: "Ask about this page…", title: "Browser")
-        }
-
-        let title = tab.displayTitle
-        let urlString = tab.urlString
-
-        return AiDrawerContext(
-            placeholder: "Ask about this page…",
-            title: title,
-            subtitle: urlString.isEmpty ? nil : urlString,
-            contextProvider: {
-                let extractedText = await BrowserAgentService().extractPageContent(
-                    from: paneID,
-                    tabID: selectedTabID,
-                    browserManager: browserManager
-                )
-                return """
-                Browser page title: \(title)
-                URL: \(urlString)
-
-                \(extractedText)
-                """
-            }
-        )
     }
 
     private func makeMailAiDrawerContext() -> AiDrawerContext {
@@ -1445,7 +1341,7 @@ struct ContentView: View {
     }
 
     private func usesImmersivePaneLayout(_ file: OpenFile) -> Bool {
-        file.isMail || file.isCalendar || file.isMeetings || file.isGateway || file.isBrowser
+        file.isMail || file.isCalendar || file.isMeetings || file.isGateway
     }
 
     private func showsPageOptionsMenu(for file: OpenFile) -> Bool {
@@ -1488,7 +1384,6 @@ struct ContentView: View {
             if !appState.showSettings && !shouldRenderGraphView {
                 WorkspaceTabBar(
                     workspaceManager: workspaceManager,
-                    browserManager: loadedLegacyPaneServices?.browserManager,
                     sidebarOpen: shellShowsSidebarPanel,
                     currentView: appState.currentView,
                     recordingPagePath: appState.activeMeetingSession?.meetingPagePath,
@@ -1538,7 +1433,6 @@ struct ContentView: View {
         if appState.showSettings {
             SettingsView(
                 appState: appState,
-                browserManager: loadedLegacyPaneServices?.browserManager,
                 onSwitchWorkspace: { path in switchWorkspaceRoot(to: path) }
             )
                 .background(Container.cardBg)
@@ -1709,9 +1603,6 @@ struct ContentView: View {
             documentContentBuilder: { leaf, file in
                 AnyView(self.paneDocumentContent(leaf: leaf, file: file))
             },
-            terminalContentBuilder: { leaf, _ in
-                AnyView(self.paneTerminalContent(leaf: leaf))
-            },
             breadcrumbProvider: { file in
                 self.breadcrumbs(for: file)
             },
@@ -1723,7 +1614,6 @@ struct ContentView: View {
             },
             paneActions: paneActions
         )
-        .environment(\.paneReplaceWarningId, paneReplaceWarningId)
     }
 
     private var paneActions: PaneActions {
@@ -1908,22 +1798,14 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
     private func documentChromeIconView(_ icon: String) -> some View {
-        if icon.hasPrefix("sf:") {
-            Image(systemName: String(icon.dropFirst(3)))
-                .font(ShellZoomMetrics.font(Typography.caption))
-        } else if icon.hasPrefix("custom:") {
-            if let nsImage = NSImage(contentsOfFile: String(icon.dropFirst(7))) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
-            }
-        } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-            Text(icon)
-                .font(ShellZoomMetrics.font(Typography.caption))
-        } else {
+        PageIconView(
+            icon: icon,
+            imageSize: ShellZoomMetrics.size(14),
+            symbolFont: ShellZoomMetrics.font(Typography.caption),
+            emojiFont: ShellZoomMetrics.font(Typography.caption),
+            cornerRadius: ShellZoomMetrics.size(3)
+        ) {
             Image(systemName: icon)
                 .font(ShellZoomMetrics.font(Typography.caption))
         }
@@ -1933,47 +1815,11 @@ struct ContentView: View {
         usesImmersivePaneLayout(file) ? 0 : ShellZoomMetrics.size(8)
     }
 
-    @ViewBuilder
-    private func paneTerminalContent(leaf: PaneNode.Leaf) -> some View {
-        if !BugbookFeatureGate.legacyPanesEnabled {
-            Color.clear
-                .task { openDailyNote() }
-        } else {
-            let sessionID = leaf.activeTabID
-            if let session = terminalManager.session(for: sessionID) {
-                TerminalPaneView(session: session, paneId: leaf.id, workspaceManager: workspaceManager)
-                    .id(sessionID)
-            } else {
-                Color.fallbackEditorBg
-                    .onAppear {
-                        terminalManager.createSession(
-                            id: sessionID,
-                            workingDirectory: appState.workspacePath
-                        )
-                    }
-            }
-        }
-    }
-
     /// Replace the focused pane's content with the given PaneContent.
-    /// Guards against replacing a live terminal — requires double-action confirmation.
     private func openContentInFocusedPane(_ content: PaneContent) {
         guard BugbookFeatureGate.allowsPaneContent(content) else { return }
         guard let leaf = workspaceManager.activeWorkspace?.focusedLeaf else { return }
-        let paneId = leaf.id
-        let activeTabId = leaf.activeTabID
-
-        // Guard: if focused pane is a live terminal, require double-action
-        if isTerminalAlive(tabId: activeTabId) {
-            if paneReplaceWarningId == paneId {
-                clearPaneReplaceWarning()
-            } else {
-                setPaneReplaceWarning(paneId: paneId)
-                return
-            }
-        }
-
-        replacePaneContent(paneId: paneId, with: content)
+        replacePaneContent(paneId: leaf.id, with: content)
     }
 
     private func openOrFocusPane(_ content: PaneContent) {
@@ -2008,19 +1854,13 @@ struct ContentView: View {
 
     private func paneContent(_ existing: PaneContent, matches target: PaneContent) -> Bool {
         switch (existing, target) {
-        case (.terminal, .terminal):
-            return false  // Each terminal gets its own workspace — no reuse
         case let (.document(file), .document(targetFile)):
             return file.kind == targetFile.kind
-        default:
-            return false
         }
     }
 
     private func isReplaceablePlaceholderPane(_ leaf: PaneNode.Leaf) -> Bool {
         switch leaf.content {
-        case .terminal:
-            return false
         case .document(let file):
             return file.isEmptyTab
         }
@@ -2042,14 +1882,8 @@ struct ContentView: View {
               let content = leaf.tabs.first(where: { $0.id == tabId }) else { return }
 
         switch content {
-        case .terminal:
-            loadedLegacyPaneServices?.terminalManager.closeSession(tabId)
-        case .document(let file):
-            if file.isBrowser {
-                loadedLegacyPaneServices?.browserManager.discardTabResources(tabId, in: paneId)
-            } else {
-                cleanupTabDocuments(tabId)
-            }
+        case .document:
+            cleanupTabDocuments(tabId)
         }
     }
 
@@ -2057,26 +1891,16 @@ struct ContentView: View {
         guard let leaf = workspaceManager.leaf(id: paneId) else { return }
         for content in leaf.tabs {
             switch content {
-            case .terminal(let sessionID):
-                loadedLegacyPaneServices?.terminalManager.closeSession(sessionID)
             case .document(let file):
-                if file.isBrowser {
-                    loadedLegacyPaneServices?.browserManager.discardTabResources(file.id, in: paneId)
-                } else {
-                    cleanupTabDocuments(file.id)
-                }
+                cleanupTabDocuments(file.id)
             }
         }
-        loadedLegacyPaneServices?.browserManager.closeSession(paneId)
     }
 
     private func createPaneTab(in leaf: PaneNode.Leaf) {
         guard let newContent = leaf.activeContent.defaultNewPaneTab() else { return }
         guard BugbookFeatureGate.allowsPaneContent(newContent) else { return }
-        let insertedTabId = workspaceManager.addPaneTab(to: leaf.id, content: newContent)
-        if newContent.isBrowser, let insertedTabId, BugbookFeatureGate.shouldInitializeLegacyServices {
-            _ = browserManager.ensurePage(for: leaf.id, tabID: insertedTabId)
-        }
+        _ = workspaceManager.addPaneTab(to: leaf.id, content: newContent)
         updateSidebarContextType()
     }
 
@@ -2140,13 +1964,7 @@ struct ContentView: View {
     }
 
     private func reopenClosedPaneItem() {
-        guard let reopenedTabID = workspaceManager.reopenLastClosedItem() else { return }
-        if let leaf = workspaceManager.leaf(containingTabId: reopenedTabID),
-           let file = leaf.tabs.first(where: { $0.id == reopenedTabID })?.openFile,
-           file.isBrowser,
-           BugbookFeatureGate.shouldInitializeLegacyServices {
-            _ = browserManager.ensurePage(for: leaf.id, tabID: reopenedTabID)
-        }
+        guard workspaceManager.reopenLastClosedItem() != nil else { return }
         updateSidebarContextType()
     }
 
@@ -2210,7 +2028,6 @@ struct ContentView: View {
         file.isMail ||
             file.isCalendar ||
             file.isMeetings ||
-            file.isBrowser ||
             file.isGraphView ||
             file.isSkill ||
             file.isChat ||
@@ -2237,22 +2054,6 @@ struct ContentView: View {
             )
         } else if file.isMeetings {
             meetingsPaneView()
-        } else if file.isBrowser {
-            BrowserPaneView(
-                leaf: leaf,
-                paneID: leaf.id,
-                session: browserManager.session(for: leaf.id),
-                appState: appState,
-                fileTree: appState.fileTree,
-                isSinglePane: !(workspaceManager.activeWorkspace?.hasMultiplePanes ?? false),
-                browserManager: browserManager,
-                workspaceManager: workspaceManager,
-                fileSystem: fileSystem,
-                aiService: legacyAiService,
-                onOpenBugbookEntry: { entry in
-                    navigateToEntryInPane(entry)
-                }
-            )
         } else if file.isGraphView {
             if let workspace = appState.workspacePath {
                 GraphView(
@@ -2289,8 +2090,6 @@ struct ContentView: View {
                         openContentInFocusedPane(.meetingsDocument())
                     case .database(let path):
                         navigateToFilePath(path)
-                    case .terminal:
-                        openContentInFocusedPane(.terminal())
                     }
                 }
             )
@@ -2779,27 +2578,6 @@ struct ContentView: View {
         }
     }
 
-    private func applyTerminalColorScheme(_ mode: TerminalColorSchemeMode) {
-        let light = appState.settings.terminalLightTheme
-        let dark = appState.settings.terminalDarkTheme
-        if !light.isEmpty || !dark.isEmpty {
-            // Custom themes selected — rebuild config with theme overlay
-            terminalManager.applyTheme(lightTheme: light, darkTheme: dark, colorScheme: mode)
-        } else {
-            // No custom themes — just set color scheme hint
-            // (uses whatever theme is in ~/.config/ghostty/config)
-            let scheme: ghostty_color_scheme_e
-            switch mode {
-            case .light: scheme = GHOSTTY_COLOR_SCHEME_LIGHT
-            case .dark: scheme = GHOSTTY_COLOR_SCHEME_DARK
-            case .system:
-                let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                scheme = isDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
-            }
-            terminalManager.applyColorScheme(scheme)
-        }
-    }
-
     // MARK: - Formatting Toolbar
 
     private func updateFormattingPanel(rect: CGRect?) {
@@ -2932,22 +2710,7 @@ struct ContentView: View {
         guard let ws = workspaceManager.activeWorkspace else { return }
 
         let focusedPaneId = ws.focusedPaneId
-        let focusedTabId = ws.focusedLeaf?.activeTabID
-        // Guard: if focused pane is a live terminal, warn before replacing it
-        if let focusedTabId, isTerminalAlive(tabId: focusedTabId) {
-            if paneReplaceWarningId == focusedPaneId {
-                // Second press within timeout — proceed: close terminal, replace in place
-                clearPaneReplaceWarning()
-                replaceEntryInPane(entry, paneId: focusedPaneId, preferExistingTab: preferExistingTab)
-                return
-            } else {
-                // First press — show amber warning on the terminal pane
-                setPaneReplaceWarning(paneId: focusedPaneId)
-                return
-            }
-        }
-
-        // Determine target pane (non-terminal path)
+        // Determine target pane
         let targetPaneId: UUID
         if let focusedLeaf = workspaceManager.focusedPane, isEditorDocumentPane(focusedLeaf) {
             targetPaneId = focusedLeaf.id
@@ -2972,16 +2735,6 @@ struct ContentView: View {
 
         if let currentFile = targetLeaf.activeOpenFile, currentFile.isDirty {
             performSave(tabId: currentFile.id)
-        }
-
-        let targetTabId = targetLeaf.activeTabID
-        if isTerminalAlive(tabId: targetTabId) {
-            if paneReplaceWarningId == targetPaneId {
-                clearPaneReplaceWarning()
-            } else {
-                setPaneReplaceWarning(paneId: targetPaneId)
-                return
-            }
         }
 
         replaceEntryInPane(entry, paneId: targetPaneId, preferExistingTab: preferExistingTab)
@@ -3018,29 +2771,6 @@ struct ContentView: View {
     private func loadFileContentForPaneIfMissing(entry: FileEntry, tabId: UUID) {
         guard blockDocuments[tabId] == nil else { return }
         loadFileContentForPane(entry: entry, tabId: tabId)
-    }
-
-    /// Check if a pane has an active terminal session.
-    private func isTerminalAlive(tabId: UUID) -> Bool {
-        guard let session = loadedLegacyPaneServices?.terminalManager.session(for: tabId) else { return false }
-        return session.isAlive
-    }
-
-    /// Set the amber warning on a pane's chrome bar. Auto-clears after 2 seconds.
-    private func setPaneReplaceWarning(paneId: UUID) {
-        paneReplaceWarningTask?.cancel()
-        paneReplaceWarningId = paneId
-        paneReplaceWarningTask = Task {
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            await MainActor.run { clearPaneReplaceWarning() }
-        }
-    }
-
-    private func clearPaneReplaceWarning() {
-        paneReplaceWarningId = nil
-        paneReplaceWarningTask?.cancel()
-        paneReplaceWarningTask = nil
     }
 
     /// Open a file entry in a new workspace tab (used by Cmd+K new-tab mode).
@@ -3272,7 +3002,6 @@ struct ContentView: View {
               !entry.isCalendar,
               !entry.isMeetings,
               !entry.isGateway,
-              !entry.isBrowser,
               !entry.isChat,
               !entry.isGraphView else { return }
         let signpostState = Log.signpost.beginInterval("loadFileContent")
@@ -3341,40 +3070,18 @@ struct ContentView: View {
         appState.showSettings = true
     }
 
+    /// Pane-aware navigation — the legacy openTabs body created tabs the pane
+    /// UI never rendered (orphaned template pages, no-op row "Open full page").
     private func navigateToEntry(
         _ entry: FileEntry,
         inNewTab: Bool = false,
         preferExistingTab: Bool = true
     ) {
-        appState.currentView = .editor
-        appState.showSettings = false
-
-        if let activeTab = appState.activeTab, activeTab.isDirty {
-            performSave(tabId: activeTab.id)
-        }
-
         if inNewTab {
-            appState.openFileInNewTab(entry)
-            loadFileContent(for: entry)
+            openEntryInNewWorkspaceTab(entry)
             return
         }
-
-        let switchedToExisting = appState.openFileReplacingCurrentTab(
-            entry,
-            pushHistory: true,
-            preferExistingTab: preferExistingTab
-        )
-        if switchedToExisting {
-            loadFileContentIfMissing(for: entry)
-        } else {
-            loadFileContent(for: entry)
-        }
-    }
-
-    private func loadFileContentIfMissing(for entry: FileEntry) {
-        guard let tabId = appState.openTabs.first(where: { $0.path == entry.path })?.id,
-              blockDocuments[tabId] == nil else { return }
-        loadFileContent(for: entry)
+        navigateToEntryInPane(entry, preferExistingTab: preferExistingTab)
     }
 
     private func openDatabaseRowPage(
@@ -3499,9 +3206,6 @@ struct ContentView: View {
     private func loadAppSettings() {
         appState.settings = appSettingsStore.load()
         appState.selectedSettingsTab = BugbookFeatureGate.normalizedSettingsTab(appState.selectedSettingsTab)
-        guard BugbookFeatureGate.shouldInitializeLegacyServices else { return }
-        browserManager.setHistoryEnabled(appState.settings.browserHistoryEnabled)
-        browserManager.configureExtensions(appState.settings.browserExtensionPaths)
     }
 
     private func migrateLegacyWorkspace(_ legacyWorkspace: FileSystemService.LegacyWorkspace) {
@@ -3525,8 +3229,12 @@ struct ContentView: View {
         let configuredWorkspacePath = appState.settings.resolvedNotesFolderPath()
         let usesConfiguredWorkspace = !configuredWorkspacePath.isEmpty
         let workspacePath = usesConfiguredWorkspace ? configuredWorkspacePath : fileSystem.defaultWorkspacePath()
-        if !FileManager.default.fileExists(atPath: workspacePath) {
-            try? FileManager.default.createDirectory(atPath: workspacePath, withIntermediateDirectories: true)
+        do {
+            try WorkspaceResolver.ensureWorkspaceDirectoryExists(at: workspacePath)
+        } catch {
+            // Startup continues; refreshFileTree publishes a truthful empty
+            // tree for the unusable workspace instead of failing silently.
+            Log.fileSystem.error("Failed to create workspace directory at \(workspacePath): \(error.localizedDescription)")
         }
         fileSystem.setWorkspace(workspacePath)
         scheduleTrashPurgeIfNeeded(for: workspacePath)
@@ -3549,20 +3257,11 @@ struct ContentView: View {
                 workspaceManager.workspaces = bootstrap.workspaces
                 workspaceManager.activeWorkspaceIndex = min(bootstrap.activeWorkspaceIndex, bootstrap.workspaces.count - 1)
                 workspaceManager.sanitizeForCurrentMode()
-                if BugbookFeatureGate.shouldInitializeLegacyServices {
-                    browserManager.bind(workspaceManager: workspaceManager)
-                    for (paneID, snapshot) in bootstrap.browserSnapshots {
-                        browserManager.restoreSessionSnapshot(snapshot, for: paneID)
-                    }
-                }
             }
         } else {
             workspaceManager.restoreOrCreateDefault()
         }
         workspaceManager.sanitizeForCurrentMode()
-        if BugbookFeatureGate.shouldInitializeLegacyServices {
-            browserManager.bind(workspaceManager: workspaceManager)
-        }
         restoreWorkspaceDocumentsForCurrentModeIfNeeded()
 
         startWorkspaceWatcher(path: workspacePath)
@@ -3607,8 +3306,18 @@ struct ContentView: View {
     private func switchWorkspaceRoot(to path: String) {
         let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty else { return }
-        if !FileManager.default.fileExists(atPath: trimmedPath) {
-            try? FileManager.default.createDirectory(atPath: trimmedPath, withIntermediateDirectories: true)
+        do {
+            try WorkspaceResolver.ensureWorkspaceDirectoryExists(at: trimmedPath)
+        } catch {
+            // Surface the failure and keep the current workspace — persisting
+            // a notes folder that can't be created would strand the app.
+            Log.fileSystem.error("Failed to switch workspace to \(trimmedPath): \(error.localizedDescription)")
+            let alert = NSAlert()
+            alert.messageText = "Can't Use This Notes Folder"
+            alert.informativeText = "Bugbook couldn't create or access \"\(trimmedPath)\".\n\(error.localizedDescription)"
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
         }
 
         workspaceWatcher?.stop()
@@ -3691,8 +3400,6 @@ struct ContentView: View {
         let workspaceHasMeaningfulContent = workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
             leaf.tabs.contains { content in
                 switch content {
-                case .terminal:
-                    return true
                 case .document(let file):
                     return !file.isEmptyTab
                 }
@@ -3968,6 +3675,21 @@ struct ContentView: View {
 
         fileTreeRefreshTask?.cancel()
         fileTreeRefreshTask = Task.detached(priority: .utility) {
+            guard WorkspaceResolver.workspaceDirectoryExists(at: path) else {
+                await MainActor.run {
+                    guard self.fileTreeRefreshGeneration == generation,
+                          self.appState.workspacePath == path else { return }
+                    // Publish truthful state instead of silently keeping a
+                    // stale tree for a workspace that no longer exists.
+                    Log.fileSystem.error("Workspace directory missing at \(path) — publishing empty file tree")
+                    self.appState.fileTree = []
+                    self.appState.agentSkills = []
+                    self.refreshSidebarReferences(using: [])
+                    self.refreshFavorites(using: [])
+                    self.fileTreeRefreshTask = nil
+                }
+                return
+            }
             let tree = fileSystem.buildFileTree(at: path)
             guard !Task.isCancelled else { return }
             let skills = shouldScanAgentSurfaces ? fileSystem.scanSkills() : []
@@ -4252,37 +3974,6 @@ struct ContentView: View {
             Log.editor.error("Failed to load file: \(message)")
         case .missing, .cancelled:
             return
-        }
-    }
-
-    private func createNewFile() {
-        guard let workspace = appState.workspacePath else { return }
-        do {
-            let path = try fileSystem.createNewFile(in: workspace)
-            let entry = FileEntry(id: path, name: (path as NSString).lastPathComponent, path: path, isDirectory: false)
-            appState.openFile(entry)
-            loadFileContent(for: entry)
-            if let tab = appState.activeTab,
-               let doc = blockDocuments[tab.id],
-               let firstBlock = doc.blocks.first {
-                doc.focusedBlockId = firstBlock.id
-                doc.cursorPosition = 0
-            }
-            refreshFileTree()
-        } catch {
-            Log.fileSystem.error("Failed to create file: \(error.localizedDescription)")
-        }
-    }
-
-    private func createNewFileWithName(_ name: String) {
-        guard let workspace = appState.workspacePath else { return }
-        do {
-            let path = try fileSystem.createNewFile(in: workspace, name: name)
-            let entry = FileEntry(id: path, name: (path as NSString).lastPathComponent, path: path, isDirectory: false)
-            navigateToEntry(entry, inNewTab: true)
-            refreshFileTree()
-        } catch {
-            Log.fileSystem.error("Failed to create file: \(error.localizedDescription)")
         }
     }
 

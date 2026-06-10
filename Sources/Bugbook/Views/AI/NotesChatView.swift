@@ -254,7 +254,7 @@ struct NotesChatView: View {
                     HStack(spacing: 8) {
                         ForEach(referencedFiles) { file in
                             HStack(spacing: 6) {
-                                Text("@\(displayName(for: file.name))")
+                                Text("@\(ChatPromptAssembly.displayName(for: file.name))")
                                     .font(.system(size: 12, weight: .medium))
                                     .lineLimit(1)
                                 Button {
@@ -366,7 +366,7 @@ struct NotesChatView: View {
                                 addReferencedFile(entry)
                             } label: {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(displayName(for: entry.name))
+                                    Text(ChatPromptAssembly.displayName(for: entry.name))
                                         .font(.system(size: 13, weight: .medium))
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
@@ -539,9 +539,12 @@ struct NotesChatView: View {
         ensureActiveThread()
         guard let threadId = threadStore.activeThreadId else { return }
 
+        let promptReferences = selectedReferences.map {
+            ChatPromptAssembly.Reference(path: $0.path, name: $0.name)
+        }
         let userMessage = ChatMessage(
             role: .user,
-            content: displayUserMessage(question: trimmed, references: selectedReferences),
+            content: ChatPromptAssembly.displayMessage(question: trimmed, references: promptReferences),
             timestamp: Date()
         )
         threadStore.appendMessage(userMessage, to: threadId)
@@ -554,11 +557,15 @@ struct NotesChatView: View {
         Task {
             do {
                 let workspacePath = appState.workspacePath ?? ""
-                let prompt = buildPromptWithReferences(
-                    question: trimmed,
-                    references: selectedReferences,
-                    workspacePath: workspacePath
-                )
+                // Assemble off the main thread — the referenced files are read
+                // from disk inside ChatPromptAssembly.
+                let prompt = await Task.detached(priority: .userInitiated) {
+                    ChatPromptAssembly.prompt(
+                        question: trimmed,
+                        references: promptReferences,
+                        workspacePath: workspacePath
+                    )
+                }.value
                 let response = try await aiService.chatWithNotes(
                     engine: selectedEngine,
                     workspacePath: workspacePath,
@@ -627,59 +634,6 @@ struct NotesChatView: View {
         guard let workspace = appState.workspacePath, path.hasPrefix(workspace) else { return path }
         let relative = path.dropFirst(workspace.count)
         return relative.hasPrefix("/") ? String(relative.dropFirst()) : String(relative)
-    }
-
-    private func displayName(for name: String) -> String {
-        if name.hasSuffix(".md") {
-            return String(name.dropLast(3))
-        }
-        return name
-    }
-
-    private func displayUserMessage(question: String, references: [ChatReferencedFile]) -> String {
-        guard !references.isEmpty else { return question }
-        let refs = references.map { "@\(displayName(for: $0.name))" }.joined(separator: " ")
-        return "\(question)\n\n\(refs)"
-    }
-
-    private func buildPromptWithReferences(
-        question: String,
-        references: [ChatReferencedFile],
-        workspacePath: String
-    ) -> String {
-        guard !references.isEmpty else { return question }
-        var sections: [String] = []
-
-        for reference in references.prefix(6) {
-            let path = reference.path
-            let relative = relativePath(for: path)
-            guard !workspacePath.isEmpty, path.hasPrefix(workspacePath) else { continue }
-
-            if let content = try? String(contentsOfFile: path, encoding: .utf8) {
-                let maxCharacters = 8_000
-                let snippet = String(content.prefix(maxCharacters))
-                let truncated = content.count > snippet.count ? "\n...[truncated]" : ""
-                sections.append(
-                    """
-                    File: \(relative)
-                    ```text
-                    \(snippet)\(truncated)
-                    ```
-                    """
-                )
-            } else {
-                sections.append("File: \(relative)\n[Could not read file content]")
-            }
-        }
-
-        if sections.isEmpty { return question }
-        return """
-        \(question)
-
-        Referenced files (treat these as primary context):
-
-        \(sections.joined(separator: "\n\n"))
-        """
     }
 
     // MARK: - Suggestion Chips

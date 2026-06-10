@@ -86,26 +86,11 @@ struct PagePickerView: View {
         }
     }
 
-    @ViewBuilder
     private func pageIcon(_ entry: FileEntry) -> some View {
-        if let icon = entry.icon, !icon.isEmpty {
-            if icon.hasPrefix("custom:") {
-                let path = String(icon.dropFirst(7))
-                AsyncLocalImageView(path: path, width: 14, height: 14) {
-                    defaultIcon(for: entry)
-                }
-            } else if icon.hasPrefix("sf:") {
-                Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 13))
-            } else {
-                defaultIcon(for: entry)
-            }
-        } else {
+        PageIconView(icon: entry.icon) {
             defaultIcon(for: entry)
         }
+        .foregroundStyle(.secondary)
     }
 
     private func defaultIcon(for entry: FileEntry) -> some View {

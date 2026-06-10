@@ -70,8 +70,8 @@ public enum WorkspaceResolver {
         }
 
         // Fall back to default (create if needed).
-        if createIfMissing, !fm.fileExists(atPath: defaultPath) {
-            try? fm.createDirectory(atPath: defaultPath, withIntermediateDirectories: true)
+        if createIfMissing {
+            try? ensureWorkspaceDirectoryExists(at: defaultPath, fileManager: fm)
         }
         return defaultPath
     }
@@ -141,10 +141,41 @@ public enum WorkspaceResolver {
             }
         }
 
-        if createIfMissing, !fm.fileExists(atPath: resolvedDefaultPath) {
-            try? fm.createDirectory(atPath: resolvedDefaultPath, withIntermediateDirectories: true)
+        if createIfMissing {
+            try? ensureWorkspaceDirectoryExists(at: defaultPath, fileManager: fm)
         }
         return defaultPath
+    }
+
+    /// Creates a workspace directory, resolving symlink destinations first.
+    ///
+    /// `FileManager.createDirectory(atPath:)` called directly on a dangling symlink
+    /// can fail without repairing the target. Bugbook's canonical macOS setup often
+    /// uses `~/Documents/Bugbook` as a symlink into iCloud, so all app startup paths
+    /// should create the resolved target and only then treat the workspace as usable.
+    public static func ensureWorkspaceDirectoryExists(
+        at path: String,
+        fileManager fm: FileManager = .default
+    ) throws {
+        let resolvedPath = symlinkDestinationPath(for: path, fileManager: fm) ?? path
+        var isDirectory: ObjCBool = false
+        if fm.fileExists(atPath: resolvedPath, isDirectory: &isDirectory) {
+            guard isDirectory.boolValue else {
+                throw CocoaError(.fileWriteFileExists)
+            }
+            return
+        }
+
+        try fm.createDirectory(atPath: resolvedPath, withIntermediateDirectories: true)
+    }
+
+    public static func workspaceDirectoryExists(
+        at path: String,
+        fileManager fm: FileManager = .default
+    ) -> Bool {
+        let resolvedPath = symlinkDestinationPath(for: path, fileManager: fm) ?? path
+        var isDirectory: ObjCBool = false
+        return fm.fileExists(atPath: resolvedPath, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
     private static func symlinkDestinationPath(

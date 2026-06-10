@@ -9,8 +9,6 @@ enum CommandPaletteDestination {
 
 enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
     case page
-    case terminal
-    case browser
     case mail
     case calendar
     case meetings
@@ -30,8 +28,6 @@ enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
     var noun: String {
         switch self {
         case .page: return "Page"
-        case .terminal: return "Terminal"
-        case .browser: return "Browser"
         case .mail: return "Mail"
         case .calendar: return "Calendar"
         case .meetings: return "Meetings"
@@ -49,8 +45,6 @@ enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .page: return "doc.text"
-        case .terminal: return "terminal"
-        case .browser: return "globe"
         case .mail: return "envelope"
         case .calendar: return "calendar"
         case .meetings: return "person.2"
@@ -62,7 +56,7 @@ enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
         switch self {
         case .mail, .calendar, .meetings, .home:
             return true
-        case .page, .terminal, .browser:
+        case .page:
             return false
         }
     }
@@ -70,8 +64,6 @@ enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
     var content: PaneContent? {
         switch self {
         case .page: return nil
-        case .terminal: return .terminal()
-        case .browser: return .browserDocument(urlString: "bugbook://browser", title: "Browser")
         case .mail: return .mailDocument()
         case .calendar: return .calendarDocument()
         case .meetings: return .meetingsDocument()
@@ -82,8 +74,6 @@ enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
     var searchAliases: [String] {
         switch self {
         case .page: return ["page", "pages", "note", "notes"]
-        case .terminal: return ["terminal", "shell", "cli"]
-        case .browser: return ["browser", "web"]
         case .mail: return ["mail", "email", "inbox"]
         case .calendar: return ["calendar", "schedule"]
         case .meetings: return ["meeting", "meetings"]
@@ -977,28 +967,13 @@ struct CommandPaletteView: View {
 
     private func openPaneDescriptor(for content: PaneContent) -> (title: String, icon: String)? {
         switch content {
-        case .terminal:
-            return ("Terminal", "terminal")
         case .document(let file):
-            if file.isBrowser {
-                return (browserTitle(for: file), "globe")
-            }
             if file.isMail { return ("Mail", "envelope") }
             if file.isCalendar { return ("Calendar", "calendar") }
             if file.isMeetings { return ("Meetings", "person.2") }
             if file.isGateway { return ("Home", "house") }
             return nil
         }
-    }
-
-    private func browserTitle(for file: OpenFile) -> String {
-        if let displayName = file.displayName, !displayName.isEmpty, displayName != "Browser" {
-            return displayName
-        }
-        if let host = URL(string: file.path)?.host, !host.isEmpty {
-            return host
-        }
-        return "Browser"
     }
 
     private func existingSingletonReference(
@@ -1159,30 +1134,17 @@ struct CommandPaletteView: View {
         return relative == entry.path ? entry.name : relative
     }
 
-    @ViewBuilder
     private func fileIcon(for entry: FileEntry) -> some View {
-        if let icon = entry.icon, !icon.isEmpty {
-            if icon.hasPrefix("custom:") {
-                let path = String(icon.dropFirst(7))
-                if let nsImage = NSImage(contentsOfFile: path) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    defaultFileIcon(for: entry)
-                }
-            } else if icon.hasPrefix("sf:") {
-                Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 14))
-            } else {
-                defaultFileIcon(for: entry)
-            }
-        } else {
+        PageIconView(
+            icon: entry.icon,
+            imageSize: 18,
+            symbolFont: .system(size: 13),
+            emojiFont: .system(size: 14),
+            cornerRadius: 0
+        ) {
             defaultFileIcon(for: entry)
         }
+        .foregroundStyle(.secondary)
     }
 
     @ViewBuilder

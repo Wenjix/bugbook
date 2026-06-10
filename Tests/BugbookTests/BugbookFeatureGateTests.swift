@@ -113,11 +113,7 @@ final class BugbookFeatureGateTests: XCTestCase {
             .openGraphView,
             .openMail,
             .openCalendar,
-            .openGateway,
-            .openTerminal,
-            .openBrowser,
-            .browserFocusAddressBar,
-            .browserPrint
+            .openGateway
         ]
         for notification in blockedNotifications {
             XCTAssertFalse(BugbookFeatureGate.allowsNotification(notification), "\(notification.rawValue) should be gated")
@@ -156,8 +152,6 @@ final class BugbookFeatureGateTests: XCTestCase {
         ))))
         XCTAssertTrue(BugbookFeatureGate.allowsTabKind(.database))
 
-        XCTAssertFalse(BugbookFeatureGate.allowsPaneContent(.browserDocument()))
-        XCTAssertFalse(BugbookFeatureGate.allowsPaneContent(.terminal()))
         XCTAssertFalse(BugbookFeatureGate.allowsPaneContent(.mailDocument()))
         XCTAssertFalse(BugbookFeatureGate.allowsPaneContent(.calendarDocument()))
         XCTAssertFalse(BugbookFeatureGate.allowsPaneContent(.gatewayDocument()))
@@ -219,9 +213,9 @@ final class BugbookFeatureGateTests: XCTestCase {
     func testLegacyFlagRestoresHiddenPaneAccess() {
         UserDefaults.standard.set(true, forKey: BugbookFeatureGate.legacyPanesDefaultsKey)
 
-        XCTAssertTrue(BugbookFeatureGate.allowsPaneContent(.browserDocument()))
-        XCTAssertTrue(BugbookFeatureGate.allowsPaneContent(.terminal()))
-        XCTAssertTrue(ShellNavigationItems.visible.contains { $0.id == "browser" })
+        XCTAssertTrue(BugbookFeatureGate.allowsPaneContent(.mailDocument()))
+        XCTAssertTrue(BugbookFeatureGate.allowsPaneContent(.calendarDocument()))
+        XCTAssertTrue(ShellNavigationItems.visible.contains { $0.id == "mail" })
         XCTAssertTrue(BugbookFeatureGate.visibleSettingsTabs.contains { $0.id == "ai" })
         XCTAssertTrue(BugbookFeatureGate.shouldExposeAgentSurfaces)
         XCTAssertTrue(BugbookFeatureGate.shouldInitializeLegacyServices)
@@ -230,7 +224,7 @@ final class BugbookFeatureGateTests: XCTestCase {
         XCTAssertTrue(BugbookFeatureGate.shouldScanLegacyWorkspaces)
         XCTAssertTrue(BugbookFeatureGate.shouldRegisterSearchIndexAtLaunch)
         XCTAssertTrue(BugbookFeatureGate.shouldAutoOpenOnboardingAtLaunch)
-        XCTAssertTrue(BugbookFeatureGate.allowsNotification(.openBrowser))
+        XCTAssertTrue(BugbookFeatureGate.allowsNotification(.openMail))
 
         let overlayLabels = (
             KeyboardShortcutCatalog.primarySections + KeyboardShortcutCatalog.secondarySections
@@ -241,8 +235,6 @@ final class BugbookFeatureGateTests: XCTestCase {
         XCTAssertTrue(overlayLabels.contains("Chat drawer"))
         XCTAssertTrue(overlayLabels.contains("Open Mail beside current pane"))
         XCTAssertTrue(settingsLabels.contains("Toggle Chat Drawer"))
-        XCTAssertTrue(settingsLabels.contains("Focus URL Bar"))
-        XCTAssertTrue(settingsLabels.contains("Save Browser Page"))
     }
 
     private func settingsShortcutKeys(label: String) -> String? {
@@ -254,12 +246,12 @@ final class BugbookFeatureGateTests: XCTestCase {
 
     func testWorkspaceSanitizationDropsHiddenTabsAndKeepsAllowedSelection() {
         let paneID = UUID()
-        let browserID = UUID()
+        let mailID = UUID()
         let meetingsID = UUID()
         let leaf = PaneNode.Leaf(
             id: paneID,
             tabs: [
-                .browserDocument(id: browserID),
+                .mailDocument(id: mailID),
                 .meetingsDocument(id: meetingsID)
             ],
             selectedTabIndex: 0
@@ -290,7 +282,7 @@ final class BugbookFeatureGateTests: XCTestCase {
             id: UUID(),
             name: "Restored",
             icon: nil,
-            root: .leaf(.init(id: paneID, tabs: [.browserDocument(), .terminal()], selectedTabIndex: 0)),
+            root: .leaf(.init(id: paneID, tabs: [.mailDocument(), .calendarDocument()], selectedTabIndex: 0)),
             focusedPaneId: paneID,
             createdAt: Date()
         )
@@ -311,7 +303,7 @@ final class BugbookFeatureGateTests: XCTestCase {
         let manager = WorkspaceManager()
         manager.layoutPersistenceEnabled = false
 
-        manager.addWorkspaceWith(content: .browserDocument())
+        manager.addWorkspaceWith(content: .mailDocument())
 
         guard case .document(let file) = manager.activeWorkspace?.focusedLeaf?.activeContent else {
             XCTFail("Expected sanitized document content")

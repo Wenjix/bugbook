@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 struct BreadcrumbView: View {
     let items: [BreadcrumbItem]
@@ -49,32 +48,15 @@ struct BreadcrumbView: View {
         .background(Color.fallbackEditorBg)
     }
 
-    @ViewBuilder
     private func breadcrumbIcon(_ icon: String?) -> some View {
-        if let icon = icon, !icon.isEmpty {
-            if icon.hasPrefix("custom:") {
-                let path = String(icon.dropFirst(7))
-                if let nsImage = NSImage(contentsOfFile: path) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: ShellZoomMetrics.size(14), height: ShellZoomMetrics.size(14))
-                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
-                }
-            } else if icon.hasPrefix("sf:") {
-                Image(systemName: String(icon.dropFirst(3)))
-                    .font(ShellZoomMetrics.font(Typography.caption))
-            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(ShellZoomMetrics.font(Typography.caption))
-            } else if FileManager.default.fileExists(atPath: icon) {
-                if let nsImage = NSImage(contentsOfFile: icon) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: ShellZoomMetrics.size(14), height: ShellZoomMetrics.size(14))
-                        .clipShape(.rect(cornerRadius: ShellZoomMetrics.size(3)))
-                }
-            }
+        PageIconView(
+            icon: icon,
+            imageSize: ShellZoomMetrics.size(14),
+            symbolFont: ShellZoomMetrics.font(Typography.caption),
+            emojiFont: ShellZoomMetrics.font(Typography.caption),
+            cornerRadius: ShellZoomMetrics.size(3)
+        ) {
+            EmptyView()
         }
     }
 }

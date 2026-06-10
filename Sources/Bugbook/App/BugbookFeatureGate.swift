@@ -74,7 +74,7 @@ enum BugbookFeatureGate {
     }
 
     static var defaultSplitPaneContent: PaneContent {
-        legacyPanesEnabled ? .terminal() : .emptyDocument()
+        .emptyDocument()
     }
 
     static var visibleSettingsTabs: [SettingsTabDescriptor] {
@@ -86,8 +86,6 @@ enum BugbookFeatureGate {
                 SettingsTabDescriptor(id: "search", label: "Search", icon: "magnifyingglass"),
                 SettingsTabDescriptor(id: "ai", label: "AI", icon: "cpu"),
                 SettingsTabDescriptor(id: "google", label: "Google", icon: "person.badge.key"),
-                SettingsTabDescriptor(id: "terminal", label: "Terminal", icon: "terminal"),
-                SettingsTabDescriptor(id: "browser", label: "Browser", icon: "globe"),
                 SettingsTabDescriptor(id: "agents", label: "Agents", icon: "person.2"),
                 SettingsTabDescriptor(id: "shortcuts", label: "Shortcuts", icon: "keyboard"),
             ]
@@ -114,8 +112,10 @@ enum BugbookFeatureGate {
         switch kind {
         case .page, .database, .databaseRow, .meetings:
             return true
-        case .mail, .calendar, .browser, .graphView, .skill, .gateway, .chat:
+        case .mail, .calendar, .graphView, .skill, .gateway, .chat:
             return legacyPanesEnabled
+        case .removed:
+            return false
         }
     }
 
@@ -130,8 +130,6 @@ enum BugbookFeatureGate {
 
     static func allowsPaneContent(_ content: PaneContent) -> Bool {
         switch content {
-        case .terminal:
-            return legacyPanesEnabled
         case .document(let file):
             if file.isEmptyTab {
                 return true
@@ -148,8 +146,6 @@ enum BugbookFeatureGate {
     static var paneLauncherBuiltInPanes: [(label: String, icon: String, content: PaneContent)] {
         if legacyPanesEnabled {
             return [
-                ("Browser", "globe", .browserDocument()),
-                ("Terminal", "terminal", .terminal()),
                 ("Home", "house", .emptyDocument()),
                 ("Mail", "envelope", .mailDocument()),
                 ("Calendar", "calendar", .calendarDocument()),
@@ -173,10 +169,6 @@ enum BugbookFeatureGate {
             Notification.Name.openMail.rawValue,
             Notification.Name.openCalendar.rawValue,
             Notification.Name.openGateway.rawValue,
-            Notification.Name.openTerminal.rawValue,
-            Notification.Name.openBrowser.rawValue,
-            Notification.Name.browserFocusAddressBar.rawValue,
-            Notification.Name.browserPrint.rawValue,
         ]
         return !blocked.contains(name.rawValue)
     }
@@ -188,7 +180,8 @@ enum BugbookFeatureGate {
 }
 
 extension PaneNode.Leaf {
-    func sanitizedForCurrentMode() -> (leaf: PaneNode.Leaf, changed: Bool) {
+    /// nil leaf = every tab was disallowed; the caller prunes this pane.
+    func sanitizedForCurrentMode() -> (leaf: PaneNode.Leaf?, changed: Bool) {
         var changed = false
         let selectedID = activeTabID
         var nextTabs: [PaneContent] = []
@@ -202,9 +195,11 @@ extension PaneNode.Leaf {
             nextTabs.append(tab)
         }
 
+        // No surviving tabs — signal the caller to prune this leaf so a split
+        // collapses to its sibling (the workspace falls back to an empty
+        // document only when the whole tree prunes away).
         if nextTabs.isEmpty {
-            nextTabs = [.emptyDocument(id: id)]
-            changed = true
+            return (nil, true)
         }
 
         var nextSelectedIndex = nextTabs.firstIndex { $0.id == selectedID } ?? 0
@@ -222,24 +217,34 @@ extension PaneNode.Leaf {
 }
 
 extension PaneNode {
-    func sanitizedForCurrentMode() -> (node: PaneNode, changed: Bool) {
+    func sanitizedForCurrentMode() -> (node: PaneNode?, changed: Bool) {
         switch self {
         case .leaf(let leaf):
             let result = leaf.sanitizedForCurrentMode()
-            return (.leaf(result.leaf), result.changed)
+            return (result.leaf.map { .leaf($0) }, result.changed)
         case .split(let split):
             let first = split.first.sanitizedForCurrentMode()
             let second = split.second.sanitizedForCurrentMode()
-            return (
-                .split(PaneNode.Split(
-                    id: split.id,
-                    axis: split.axis,
-                    ratio: split.ratio,
-                    first: first.node,
-                    second: second.node
-                )),
-                first.changed || second.changed
-            )
+            let changed = first.changed || second.changed
+            switch (first.node, second.node) {
+            case let (firstNode?, secondNode?):
+                return (
+                    .split(PaneNode.Split(
+                        id: split.id,
+                        axis: split.axis,
+                        ratio: split.ratio,
+                        first: firstNode,
+                        second: secondNode
+                    )),
+                    changed
+                )
+            case let (firstNode?, nil):
+                return (firstNode, true)
+            case let (nil, secondNode?):
+                return (secondNode, true)
+            case (nil, nil):
+                return (nil, true)
+            }
         }
     }
 }
@@ -247,8 +252,10 @@ extension PaneNode {
 extension Workspace {
     func sanitizedForCurrentMode() -> (workspace: Workspace, changed: Bool) {
         let result = root.sanitizedForCurrentMode()
-        let nextFocusedPaneId = result.node.findLeaf(id: focusedPaneId)?.id
-            ?? result.node.firstLeaf?.id
+        let nextRoot = result.node
+            ?? .leaf(.init(id: focusedPaneId, tabs: [.emptyDocument(id: focusedPaneId)], selectedTabIndex: 0))
+        let nextFocusedPaneId = nextRoot.findLeaf(id: focusedPaneId)?.id
+            ?? nextRoot.firstLeaf?.id
             ?? focusedPaneId
         let changed = result.changed || nextFocusedPaneId != focusedPaneId
 
@@ -257,7 +264,7 @@ extension Workspace {
                 id: id,
                 name: name,
                 icon: icon,
-                root: result.node,
+                root: nextRoot,
                 focusedPaneId: nextFocusedPaneId,
                 createdAt: createdAt
             ),

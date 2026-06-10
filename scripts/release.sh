@@ -21,10 +21,6 @@ if ! command -v xcodegen >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ ! -d "$REPO_ROOT/macos/vendor/cef/current/Release/Chromium Embedded Framework.framework" ]; then
-    bash "$REPO_ROOT/scripts/fetch-cef.sh"
-fi
-
 echo "-- Generating Xcode project"
 (
     cd "$REPO_ROOT/macos"
@@ -33,8 +29,6 @@ echo "-- Generating Xcode project"
 
 echo "-- Building Xcode app target"
 rm -rf "$DERIVED_DATA"
-# arm64-only: the vendored frameworks (CEF, GhosttyKit) ship arm64 slices only,
-# so a universal build fails at the x86_64 link step.
 xcodebuild \
     -project "$REPO_ROOT/macos/Bugbook.xcodeproj" \
     -scheme BugbookApp \

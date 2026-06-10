@@ -2,9 +2,6 @@ import SwiftUI
 import Sentry
 import os
 import UserNotifications
-#if BUGBOOK_BROWSER_CHROMIUM && canImport(ChromiumBridge)
-import ChromiumBridge
-#endif
 
 @main
 struct BugbookApp: App {
@@ -79,18 +76,6 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("f")
 
-                if BugbookFeatureGate.legacyPanesEnabled {
-                    Button("Focus Address Bar") {
-                        NotificationCenter.default.post(name: .browserFocusAddressBar, object: nil)
-                    }
-                    .keyboardShortcut("l")
-
-                    Button("Print Page") {
-                        NotificationCenter.default.post(name: .browserPrint, object: nil)
-                    }
-                    .keyboardShortcut("p")
-                }
-
                 Button("Previous Pane Item") {
                     NotificationCenter.default.post(name: .cyclePaneTabsBackward, object: nil)
                 }
@@ -142,11 +127,6 @@ struct BugbookApp: App {
                         NotificationCenter.default.post(name: .openCalendar, object: nil)
                     }
                     .keyboardShortcut("y", modifiers: [.command, .shift])
-
-                    Button("Browser") {
-                        NotificationCenter.default.post(name: .openBrowser, object: nil)
-                    }
-                    .keyboardShortcut("b", modifiers: [.command, .shift])
 
                     Button("Home") {
                         NotificationCenter.default.post(name: .openGateway, object: nil)
@@ -372,6 +352,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             DetachedWindowManager.shared.openWindow(title: "Bugbook")
         }
         return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Durability is owned by the app lifecycle: flush write-behind AI
+        // thread persistence for whatever stores exist (no-op if none).
+        AiThreadStore.flushAllPendingWrites()
     }
 
     // MARK: - External File Open Handler
@@ -716,8 +702,6 @@ extension Notification.Name {
     static let openCalendar = Notification.Name("openCalendar")
     static let openMeetings = Notification.Name("openMeetings")
     static let openGateway = Notification.Name("openGateway")
-    static let openTerminal = Notification.Name("openTerminal")
-    static let openBrowser = Notification.Name("openBrowser")
     static let toggleShortcutOverlay = Notification.Name("toggleShortcutOverlay")
     static let openExternalFiles = Notification.Name("openExternalFiles")
     static let fileDeleted = Notification.Name("fileDeleted")
@@ -745,17 +729,4 @@ extension Notification.Name {
     static let cyclePaneTabsForward = Notification.Name("cyclePaneTabsForward")
     static let cyclePaneTabsBackward = Notification.Name("cyclePaneTabsBackward")
     static let reopenClosedItem = Notification.Name("reopenClosedItem")
-
-    static let browserFocusAddressBar = Notification.Name("browserFocusAddressBar")
-    static let browserNewTab = Notification.Name("browserNewTab")
-    static let browserCloseTab = Notification.Name("browserCloseTab")
-    static let browserBack = Notification.Name("browserBack")
-    static let browserForward = Notification.Name("browserForward")
-    static let browserFind = Notification.Name("browserFind")
-    static let browserPrint = Notification.Name("browserPrint")
-    static let browserSavePage = Notification.Name("browserSavePage")
-    static let browserZoomIn = Notification.Name("browserZoomIn")
-    static let browserZoomOut = Notification.Name("browserZoomOut")
-    static let browserZoomReset = Notification.Name("browserZoomReset")
-    static let browserOpenCleanup = Notification.Name("browserOpenCleanup")
 }

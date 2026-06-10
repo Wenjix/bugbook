@@ -153,19 +153,17 @@ struct MovePagePickerView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
-        } else if let icon = dest.icon, !icon.isEmpty {
-            if icon.hasPrefix("sf:") {
-                Image(systemName: String(icon.dropFirst(3)))
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-            } else if icon.unicodeScalars.first?.properties.isEmoji == true {
-                Text(icon).font(.system(size: 15)).frame(width: 20)
-            } else {
-                defaultPageIcon.frame(width: 20)
-            }
         } else {
-            defaultPageIcon.frame(width: 20)
+            PageIconView(
+                icon: dest.icon,
+                imageSize: 16,
+                symbolFont: .system(size: 14),
+                emojiFont: .system(size: 15)
+            ) {
+                defaultPageIcon
+            }
+            .foregroundStyle(.secondary)
+            .frame(width: 20)
         }
     }
 

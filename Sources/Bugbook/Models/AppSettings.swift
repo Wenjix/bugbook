@@ -27,98 +27,10 @@ enum AnthropicModel: String, Codable, CaseIterable {
     }
 }
 
-enum TerminalColorSchemeMode: String, Codable, CaseIterable {
-    case light
-    case dark
-    case system
-}
-
 enum ExecutionPolicy: String, Codable, CaseIterable {
     case ask = "Ask Before Running"
     case autoApprove = "Auto-Approve"
     case denyAll = "Deny All"
-}
-
-enum BrowserSearchEngine: String, Codable, CaseIterable {
-    case google
-    case duckDuckGo
-    case kagi
-
-    var displayName: String {
-        switch self {
-        case .google: return "Google"
-        case .duckDuckGo: return "DuckDuckGo"
-        case .kagi: return "Kagi"
-        }
-    }
-
-    func searchURL(for query: String) -> URL? {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return nil
-        }
-
-        switch self {
-        case .google:
-            return URL(string: "https://www.google.com/search?q=\(encoded)")
-        case .duckDuckGo:
-            return URL(string: "https://duckduckgo.com/?q=\(encoded)")
-        case .kagi:
-            return URL(string: "https://kagi.com/search?q=\(encoded)")
-        }
-    }
-}
-
-struct BrowserQuickLaunchItem: Codable, Equatable, Identifiable {
-    var id: UUID
-    var title: String
-    var url: String
-    var icon: String
-
-    init(id: UUID = UUID(), title: String, url: String, icon: String) {
-        self.id = id
-        self.title = title
-        self.url = url
-        self.icon = icon
-    }
-}
-
-private func sanitizeBrowserExtensionPaths(_ paths: [String]) -> [String] {
-    var seen: Set<String> = []
-    var normalized: [String] = []
-
-    for rawPath in paths {
-        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { continue }
-
-        let expanded = (trimmed as NSString).expandingTildeInPath
-        let standardized = URL(fileURLWithPath: expanded).standardizedFileURL.path
-        guard seen.insert(standardized).inserted else { continue }
-        normalized.append(standardized)
-    }
-
-    return normalized
-}
-
-struct BrowserChromeConfiguration: Codable, Equatable {
-    var showsBackForwardButtons: Bool
-    var showsBookmarksBar: Bool
-    var autoHidesTabPills: Bool
-    var showsSaveButton: Bool
-    var showsStatusBar: Bool
-    var showsNewTabGreeting: Bool
-    var showsNewTabQuickLaunch: Bool
-    var showsNewTabRecentVisits: Bool
-
-    static let minimal = BrowserChromeConfiguration(
-        showsBackForwardButtons: false,
-        showsBookmarksBar: false,
-        autoHidesTabPills: true,
-        showsSaveButton: true,
-        showsStatusBar: false,
-        showsNewTabGreeting: true,
-        showsNewTabQuickLaunch: true,
-        showsNewTabRecentVisits: true
-    )
 }
 
 /// A single connected Google account. Tokens are kept in Keychain by `AppSettingsStore`;
@@ -184,9 +96,6 @@ struct AppSettings: Codable, Equatable {
     var qmdSearchMode: QmdSearchMode
     var anthropicApiKey: String
     var anthropicModel: AnthropicModel
-    var terminalColorScheme: TerminalColorSchemeMode
-    var terminalLightTheme: String
-    var terminalDarkTheme: String
     var mailBackgroundAnalysisEnabled: Bool
     var mailBackgroundDraftGenerationEnabled: Bool
     var mailSenderLookupEnabled: Bool
@@ -198,15 +107,6 @@ struct AppSettings: Codable, Equatable {
     var recordingConsentAcknowledged: Bool
     var meetingSummaryEnabled: Bool
     var meetingSummaryCommand: String
-    var browserSearchEngine: BrowserSearchEngine
-    var browserHistoryEnabled: Bool
-    var browserSuggestionsEnabled: Bool
-    var browserSuggestionLimit: Int
-    var browserSuggestsBugbookPages: Bool
-    var browserChrome: BrowserChromeConfiguration
-    var browserQuickLaunchItems: [BrowserQuickLaunchItem]
-    var browserExtensionPaths: [String]
-    var browserDefaultSaveFolder: String
 
     // Shared Google OAuth client configuration (one client, N accounts)
     var googleClientID: String
@@ -228,9 +128,6 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode: .bm25,
         anthropicApiKey: "",
         anthropicModel: .sonnet,
-        terminalColorScheme: .system,
-        terminalLightTheme: "",
-        terminalDarkTheme: "",
         mailBackgroundAnalysisEnabled: true,
         mailBackgroundDraftGenerationEnabled: true,
         mailSenderLookupEnabled: true,
@@ -240,19 +137,6 @@ struct AppSettings: Codable, Equatable {
         recordingConsentAcknowledged: false,
         meetingSummaryEnabled: true,
         meetingSummaryCommand: "claude --model haiku -p",
-        browserSearchEngine: .duckDuckGo,
-        browserHistoryEnabled: true,
-        browserSuggestionsEnabled: true,
-        browserSuggestionLimit: 8,
-        browserSuggestsBugbookPages: true,
-        browserChrome: .minimal,
-        browserQuickLaunchItems: [
-            BrowserQuickLaunchItem(title: "Bugbook", url: "https://github.com/maxforsey/bugbook", icon: "book.pages"),
-            BrowserQuickLaunchItem(title: "GitHub", url: "https://github.com", icon: "chevron.left.forwardslash.chevron.right"),
-            BrowserQuickLaunchItem(title: "Apple Docs", url: "https://developer.apple.com/documentation", icon: "doc.text.magnifyingglass"),
-        ],
-        browserExtensionPaths: [],
-        browserDefaultSaveFolder: "Web Clippings",
         googleClientID: "",
         googleClientSecret: "",
         googleAccounts: [],
@@ -282,9 +166,6 @@ struct AppSettings: Codable, Equatable {
         case qmdSearchMode
         case anthropicApiKey
         case anthropicModel
-        case terminalColorScheme
-        case terminalLightTheme
-        case terminalDarkTheme
         case mailBackgroundAnalysisEnabled
         case mailBackgroundDraftGenerationEnabled
         case mailSenderLookupEnabled
@@ -294,15 +175,6 @@ struct AppSettings: Codable, Equatable {
         case recordingConsentAcknowledged
         case meetingSummaryEnabled
         case meetingSummaryCommand
-        case browserSearchEngine
-        case browserHistoryEnabled
-        case browserSuggestionsEnabled
-        case browserSuggestionLimit
-        case browserSuggestsBugbookPages
-        case browserChrome
-        case browserQuickLaunchItems
-        case browserExtensionPaths
-        case browserDefaultSaveFolder
         case googleClientID
         case googleClientSecret
         case googleAccounts
@@ -334,9 +206,6 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode = try container.decodeIfPresent(QmdSearchMode.self, forKey: .qmdSearchMode) ?? .bm25
         anthropicApiKey = try container.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
         anthropicModel = try container.decodeIfPresent(AnthropicModel.self, forKey: .anthropicModel) ?? .sonnet
-        terminalColorScheme = try container.decodeIfPresent(TerminalColorSchemeMode.self, forKey: .terminalColorScheme) ?? .system
-        terminalLightTheme = try container.decodeIfPresent(String.self, forKey: .terminalLightTheme) ?? ""
-        terminalDarkTheme = try container.decodeIfPresent(String.self, forKey: .terminalDarkTheme) ?? ""
         mailBackgroundAnalysisEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundAnalysisEnabled) ?? true
         mailBackgroundDraftGenerationEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailBackgroundDraftGenerationEnabled) ?? true
         mailSenderLookupEnabled = try container.decodeIfPresent(Bool.self, forKey: .mailSenderLookupEnabled) ?? true
@@ -346,20 +215,6 @@ struct AppSettings: Codable, Equatable {
         recordingConsentAcknowledged = try container.decodeIfPresent(Bool.self, forKey: .recordingConsentAcknowledged) ?? false
         meetingSummaryEnabled = try container.decodeIfPresent(Bool.self, forKey: .meetingSummaryEnabled) ?? true
         meetingSummaryCommand = try container.decodeIfPresent(String.self, forKey: .meetingSummaryCommand) ?? "claude --model haiku -p"
-        browserSearchEngine = try container.decodeIfPresent(BrowserSearchEngine.self, forKey: .browserSearchEngine) ?? .duckDuckGo
-        browserHistoryEnabled = try container.decodeIfPresent(Bool.self, forKey: .browserHistoryEnabled) ?? true
-        browserSuggestionsEnabled = try container.decodeIfPresent(Bool.self, forKey: .browserSuggestionsEnabled) ?? true
-        browserSuggestionLimit = max(3, min(12, try container.decodeIfPresent(Int.self, forKey: .browserSuggestionLimit) ?? 8))
-        browserSuggestsBugbookPages = try container.decodeIfPresent(Bool.self, forKey: .browserSuggestsBugbookPages) ?? true
-        browserChrome = try container.decodeIfPresent(BrowserChromeConfiguration.self, forKey: .browserChrome) ?? .minimal
-        browserQuickLaunchItems = try container.decodeIfPresent(
-            [BrowserQuickLaunchItem].self,
-            forKey: .browserQuickLaunchItems
-        ) ?? AppSettings.default.browserQuickLaunchItems
-        browserExtensionPaths = sanitizeBrowserExtensionPaths(
-            try container.decodeIfPresent([String].self, forKey: .browserExtensionPaths) ?? []
-        )
-        browserDefaultSaveFolder = try container.decodeIfPresent(String.self, forKey: .browserDefaultSaveFolder) ?? "Web Clippings"
         googleClientID = try container.decodeIfPresent(String.self, forKey: .googleClientID) ?? ""
         googleClientSecret = try container.decodeIfPresent(String.self, forKey: .googleClientSecret) ?? ""
 
@@ -407,9 +262,6 @@ struct AppSettings: Codable, Equatable {
         qmdSearchMode: QmdSearchMode,
         anthropicApiKey: String,
         anthropicModel: AnthropicModel = .sonnet,
-        terminalColorScheme: TerminalColorSchemeMode = .system,
-        terminalLightTheme: String = "",
-        terminalDarkTheme: String = "",
         mailBackgroundAnalysisEnabled: Bool = true,
         mailBackgroundDraftGenerationEnabled: Bool = true,
         mailSenderLookupEnabled: Bool = true,
@@ -419,15 +271,6 @@ struct AppSettings: Codable, Equatable {
         recordingConsentAcknowledged: Bool = false,
         meetingSummaryEnabled: Bool = true,
         meetingSummaryCommand: String = "claude --model haiku -p",
-        browserSearchEngine: BrowserSearchEngine = .duckDuckGo,
-        browserHistoryEnabled: Bool = true,
-        browserSuggestionsEnabled: Bool = true,
-        browserSuggestionLimit: Int = 8,
-        browserSuggestsBugbookPages: Bool = true,
-        browserChrome: BrowserChromeConfiguration = .minimal,
-        browserQuickLaunchItems: [BrowserQuickLaunchItem] = [],
-        browserExtensionPaths: [String] = [],
-        browserDefaultSaveFolder: String = "Web Clippings",
         googleClientID: String = "",
         googleClientSecret: String = "",
         googleAccounts: [GoogleAccount] = [],
@@ -442,9 +285,6 @@ struct AppSettings: Codable, Equatable {
         self.qmdSearchMode = qmdSearchMode
         self.anthropicApiKey = anthropicApiKey
         self.anthropicModel = anthropicModel
-        self.terminalColorScheme = terminalColorScheme
-        self.terminalLightTheme = terminalLightTheme
-        self.terminalDarkTheme = terminalDarkTheme
         self.mailBackgroundAnalysisEnabled = mailBackgroundAnalysisEnabled
         self.mailBackgroundDraftGenerationEnabled = mailBackgroundDraftGenerationEnabled
         self.mailSenderLookupEnabled = mailSenderLookupEnabled
@@ -454,15 +294,6 @@ struct AppSettings: Codable, Equatable {
         self.recordingConsentAcknowledged = recordingConsentAcknowledged
         self.meetingSummaryEnabled = meetingSummaryEnabled
         self.meetingSummaryCommand = meetingSummaryCommand
-        self.browserSearchEngine = browserSearchEngine
-        self.browserHistoryEnabled = browserHistoryEnabled
-        self.browserSuggestionsEnabled = browserSuggestionsEnabled
-        self.browserSuggestionLimit = max(3, min(12, browserSuggestionLimit))
-        self.browserSuggestsBugbookPages = browserSuggestsBugbookPages
-        self.browserChrome = browserChrome
-        self.browserQuickLaunchItems = browserQuickLaunchItems
-        self.browserExtensionPaths = sanitizeBrowserExtensionPaths(browserExtensionPaths)
-        self.browserDefaultSaveFolder = browserDefaultSaveFolder
         self.googleClientID = googleClientID
         self.googleClientSecret = googleClientSecret
         self.googleAccounts = googleAccounts
@@ -480,9 +311,6 @@ struct AppSettings: Codable, Equatable {
         try container.encode(qmdSearchMode, forKey: .qmdSearchMode)
         try container.encode(anthropicApiKey, forKey: .anthropicApiKey)
         try container.encode(anthropicModel, forKey: .anthropicModel)
-        try container.encode(terminalColorScheme, forKey: .terminalColorScheme)
-        try container.encode(terminalLightTheme, forKey: .terminalLightTheme)
-        try container.encode(terminalDarkTheme, forKey: .terminalDarkTheme)
         try container.encode(mailBackgroundAnalysisEnabled, forKey: .mailBackgroundAnalysisEnabled)
         try container.encode(mailBackgroundDraftGenerationEnabled, forKey: .mailBackgroundDraftGenerationEnabled)
         try container.encode(mailSenderLookupEnabled, forKey: .mailSenderLookupEnabled)
@@ -492,15 +320,6 @@ struct AppSettings: Codable, Equatable {
         try container.encode(recordingConsentAcknowledged, forKey: .recordingConsentAcknowledged)
         try container.encode(meetingSummaryEnabled, forKey: .meetingSummaryEnabled)
         try container.encode(meetingSummaryCommand, forKey: .meetingSummaryCommand)
-        try container.encode(browserSearchEngine, forKey: .browserSearchEngine)
-        try container.encode(browserHistoryEnabled, forKey: .browserHistoryEnabled)
-        try container.encode(browserSuggestionsEnabled, forKey: .browserSuggestionsEnabled)
-        try container.encode(browserSuggestionLimit, forKey: .browserSuggestionLimit)
-        try container.encode(browserSuggestsBugbookPages, forKey: .browserSuggestsBugbookPages)
-        try container.encode(browserChrome, forKey: .browserChrome)
-        try container.encode(browserQuickLaunchItems, forKey: .browserQuickLaunchItems)
-        try container.encode(sanitizeBrowserExtensionPaths(browserExtensionPaths), forKey: .browserExtensionPaths)
-        try container.encode(browserDefaultSaveFolder, forKey: .browserDefaultSaveFolder)
         try container.encode(googleClientID, forKey: .googleClientID)
         try container.encode(googleClientSecret, forKey: .googleClientSecret)
         try container.encode(googleAccounts, forKey: .googleAccounts)

@@ -202,44 +202,38 @@ struct HomeTimeView: View {
 
             // Agent blocked card
             if vm.blockedAgentCount > 0 {
-                Button {
-                    onOpenGatewayLink?(.terminal)
-                } label: {
-                    HStack(spacing: 0) {
-                        Rectangle()
-                            .fill(TagColor.color(for: "blue"))
-                            .frame(width: 2)
+                HStack(spacing: 0) {
+                    Rectangle()
+                        .fill(TagColor.color(for: "blue"))
+                        .frame(width: 2)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("AGENT NEEDS YOU")
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .tracking(0.8)
-                                .foregroundStyle(TagColor.color(for: "blue"))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AGENT NEEDS YOU")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .tracking(0.8)
+                            .foregroundStyle(TagColor.color(for: "blue"))
 
-                            Text(vm.blockedAgentTask ?? "A blocked agent is waiting.")
-                                .font(.system(size: Typography.bodySmall, weight: .medium))
-                                .foregroundStyle(Color.fallbackTextPrimary)
+                        Text(vm.blockedAgentTask ?? "A blocked agent is waiting.")
+                            .font(.system(size: Typography.bodySmall, weight: .medium))
+                            .foregroundStyle(Color.fallbackTextPrimary)
 
-                            Text(
-                                vm.blockedAgentFinishedAt.map { "finished \($0) · tap to open terminal" }
-                                    ?? "tap to open terminal"
-                            )
-                            .font(.system(size: Typography.caption2))
-                            .foregroundStyle(Color.fallbackTextSecondary)
+                        if let finishedAt = vm.blockedAgentFinishedAt {
+                            Text("finished \(finishedAt)")
+                                .font(.system(size: Typography.caption2))
+                                .foregroundStyle(Color.fallbackTextSecondary)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(TagColor.color(for: "blue").opacity(0.05))
-                    .clipShape(.rect(cornerRadius: Radius.md))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md)
-                            .strokeBorder(TagColor.color(for: "blue").opacity(0.15), lineWidth: 1)
-                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(TagColor.color(for: "blue").opacity(0.05))
+                .clipShape(.rect(cornerRadius: Radius.md))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md)
+                        .strokeBorder(TagColor.color(for: "blue").opacity(0.15), lineWidth: 1)
+                )
             }
         }
     }
