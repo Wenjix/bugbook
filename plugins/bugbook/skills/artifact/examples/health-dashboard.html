@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="bugbook-artifact" content="1">
+<meta name="bugbook-title" content="Health Dashboard — Sample 14 Days">
+<meta name="bugbook-icon" content="sf:heart.text.square">
+<meta name="bugbook-generator" content="bugbook-skill/artifact-example">
+<style>
+:root {
+  --bg: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --card: #f5f5f7;
+  --grid: #e3e3e8; --accent: #0a84ff; --deep: #5e5ce6; --rem: #bf5af2;
+  --light: #b8c9f5; --steps: #30b0c7; --bb: rgba(48, 209, 88, 0.35); --stress: #ff9f0a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e; --fg: #f5f5f7; --muted: #98989d; --card: #2c2c2e;
+    --grid: #3a3a3c; --light: #4a5878; --bb: rgba(48, 209, 88, 0.3);
+  }
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--bg); color: var(--fg); padding: 20px; max-width: 760px; margin: 0 auto;
+       font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+h1 { font-size: 20px; }
+h2 { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase;
+     letter-spacing: 0.4px; margin: 18px 0 6px; }
+.toggle button { background: var(--card); color: var(--fg); border: 1px solid var(--grid);
+                 padding: 4px 12px; font: inherit; cursor: pointer; }
+.toggle button:first-child { border-radius: 6px 0 0 6px; }
+.toggle button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.toggle button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
+.card { background: var(--card); border-radius: 10px; padding: 10px 12px; }
+.card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.card .value { font-size: 20px; font-weight: 600; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.card .sub { font-size: 11px; color: var(--muted); }
+svg { width: 100%; height: auto; display: block; background: var(--card); border-radius: 10px; }
+.grid { stroke: var(--grid); stroke-width: 1; }
+.tick { fill: var(--muted); font-size: 9px; font-family: inherit; }
+rect.deep { fill: var(--deep); } rect.rem { fill: var(--rem); } rect.light { fill: var(--light); }
+rect.steps { fill: var(--steps); } rect.bb { fill: var(--bb); }
+.line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.line.rhr { stroke: var(--accent); } .line.stress { stroke: var(--stress); }
+.dot { fill: var(--accent); }
+.legend { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 12px; }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+          margin-right: 4px; vertical-align: -1px; }
+footer { margin-top: 18px; font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Health Dashboard</h1>
+  <div class="toggle" id="toggle">
+    <button data-days="7">7d</button>
+    <button data-days="14" class="active">14d</button>
+  </div>
+</header>
+
+<section id="stats" class="cards"></section>
+
+<h2>Sleep</h2>
+<div id="sleep"></div>
+<div class="legend">
+  <span><span class="swatch" style="background:var(--deep)"></span>Deep</span>
+  <span><span class="swatch" style="background:var(--rem)"></span>REM</span>
+  <span><span class="swatch" style="background:var(--light)"></span>Light</span>
+</div>
+
+<h2>Resting Heart Rate</h2>
+<div id="rhr"></div>
+
+<h2>Steps</h2>
+<div id="steps"></div>
+
+<h2>Stress &amp; Body Battery</h2>
+<div id="energy"></div>
+<div class="legend">
+  <span><span class="swatch" style="background:var(--bb)"></span>Body battery range</span>
+  <span><span class="swatch" style="background:var(--stress)"></span>Avg stress</span>
+</div>
+
+<footer>Sample data — regenerate with real Garmin rows (e.g. via /wreview).</footer>
+
+<script type="application/json" id="data">
+[
+{"date":"2026-05-25","sleep":7.4,"deep":1.2,"rem":1.6,"rhr":49,"steps":9420,"stress":31,"bbMin":28,"bbMax":88},
+{"date":"2026-05-26","sleep":6.8,"deep":1.0,"rem":1.3,"rhr":50,"steps":11250,"stress":36,"bbMin":22,"bbMax":81},
+{"date":"2026-05-27","sleep":7.9,"deep":1.4,"rem":1.8,"rhr":48,"steps":7680,"stress":27,"bbMin":35,"bbMax":92},
+{"date":"2026-05-28","sleep":6.1,"deep":0.8,"rem":1.1,"rhr":52,"steps":13400,"stress":41,"bbMin":15,"bbMax":74},
+{"date":"2026-05-29","sleep":7.2,"deep":1.1,"rem":1.5,"rhr":51,"steps":8210,"stress":34,"bbMin":24,"bbMax":83},
+{"date":"2026-05-30","sleep":8.3,"deep":1.6,"rem":2.0,"rhr":47,"steps":5140,"stress":22,"bbMin":41,"bbMax":96},
+{"date":"2026-05-31","sleep":7.7,"deep":1.3,"rem":1.7,"rhr":48,"steps":6890,"stress":25,"bbMin":37,"bbMax":94},
+{"date":"2026-06-01","sleep":6.5,"deep":0.9,"rem":1.2,"rhr":51,"steps":12080,"stress":38,"bbMin":19,"bbMax":78},
+{"date":"2026-06-02","sleep":7.1,"deep":1.1,"rem":1.4,"rhr":50,"steps":9860,"stress":33,"bbMin":26,"bbMax":84},
+{"date":"2026-06-03","sleep":7.6,"deep":1.3,"rem":1.6,"rhr":49,"steps":8540,"stress":29,"bbMin":31,"bbMax":89},
+{"date":"2026-06-04","sleep":6.3,"deep":0.9,"rem":1.1,"rhr":53,"steps":14210,"stress":43,"bbMin":12,"bbMax":71},
+{"date":"2026-06-05","sleep":7.8,"deep":1.4,"rem":1.7,"rhr":49,"steps":7320,"stress":28,"bbMin":33,"bbMax":91},
+{"date":"2026-06-06","sleep":8.1,"deep":1.5,"rem":1.9,"rhr":46,"steps":4980,"stress":21,"bbMin":44,"bbMax":97},
+{"date":"2026-06-07","sleep":7.0,"deep":1.1,"rem":1.4,"rhr":48,"steps":10350,"stress":30,"bbMin":27,"bbMax":86}
+]
+</script>
+<script>
+const ALL = JSON.parse(document.getElementById("data").textContent);
+let days = 14;
+
+const W = 660, H = 170, PT = 12, PR = 8, PB = 22, PL = 36;
+const IW = W - PL - PR, IH = H - PT - PB;
+const scaleX = (i, n) => PL + (i + 0.5) * IW / n;
+const bandX = (i, n) => { const bw = IW / n; return [PL + i * bw + bw * 0.15, bw * 0.7]; };
+const scaleY = (v, lo, hi) => PT + IH - (v - lo) / (hi - lo) * IH;
+const svg = inner => `<svg viewBox="0 0 ${W} ${H}" role="img">${inner}</svg>`;
+
+function frame(lo, hi, fmtTick) {
+  let s = "";
+  for (let k = 0; k <= 3; k++) {
+    const v = lo + (hi - lo) * k / 3, y = scaleY(v, lo, hi);
+    s += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" class="grid"/>`;
+    s += `<text x="${PL - 6}" y="${y + 3}" class="tick" text-anchor="end">${fmtTick(v)}</text>`;
+  }
+  return s;
+}
+
+function dayLabels(rows) {
+  const idx = [...new Set([0, Math.floor((rows.length - 1) / 2), rows.length - 1])];
+  return idx.map(i =>
+    `<text x="${scaleX(i, rows.length)}" y="${H - 6}" class="tick" text-anchor="middle">${rows[i].date.slice(5)}</text>`
+  ).join("");
+}
+
+function sleepChart(rows) {
+  const hi = Math.max(9, ...rows.map(r => r.sleep));
+  let s = frame(0, hi, v => v.toFixed(0) + "h");
+  rows.forEach((r, i) => {
+    const [x, w] = bandX(i, rows.length);
+    const light = Math.max(0, r.sleep - r.deep - r.rem);
+    let y = scaleY(0, 0, hi);
+    for (const [v, cls] of [[r.deep, "deep"], [r.rem, "rem"], [light, "light"]]) {
+      const h = IH * v / hi;
+      y -= h;
+      s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${cls}"><title>${r.date} ${cls}: ${v.toFixed(1)}h (total ${r.sleep.toFixed(1)}h)</title></rect>`;
+    }
+  });
+  return svg(s + dayLabels(rows));
+}
+
+function rhrChart(rows) {
+  const lo = Math.min(...rows.map(r => r.rhr)) - 2, hi = Math.max(...rows.map(r => r.rhr)) + 2;
+  let s = frame(lo, hi, v => Math.round(v));
+  s += `<polyline points="${rows.map((r, i) => `${scaleX(i, rows.length)},${scaleY(r.rhr, lo, hi)}`).join(" ")}" class="line rhr"/>`;
+  rows.forEach((r, i) => {
+    s += `<circle cx="${scaleX(i, rows.length)}" cy="${scaleY(r.rhr, lo, hi)}" r="2.5" class="dot"><title>${r.date}: ${r.rhr} bpm</title></circle>`;
+  });
+  return svg(s + dayLabels(rows));
+}
+
+function stepsChart(rows) {
+  const hi = Math.max(...rows.map(r => r.steps)) * 1.1;
+  let s = frame(0, hi, v => Math.round(v / 1000) + "k");
+  rows.forEach((r, i) => {
+    const [x, w] = bandX(i, rows.length);
+    const y = scaleY(r.steps, 0, hi);
+    s += `<rect x="${x}" y="${y}" width="${w}" height="${scaleY(0, 0, hi) - y}" class="steps" rx="2"><title>${r.date}: ${r.steps.toLocaleString()} steps</title></rect>`;
+  });
+  return svg(s + dayLabels(rows));
+}
+
+function energyChart(rows) {
+  let s = frame(0, 100, v => Math.round(v));
+  rows.forEach((r, i) => {
+    const [x, w] = bandX(i, rows.length);
+    const yTop = scaleY(r.bbMax, 0, 100), yBot = scaleY(r.bbMin, 0, 100);
+    s += `<rect x="${x}" y="${yTop}" width="${w}" height="${yBot - yTop}" class="bb" rx="2"><title>${r.date} body battery ${r.bbMin}–${r.bbMax}</title></rect>`;
+  });
+  s += `<polyline points="${rows.map((r, i) => `${scaleX(i, rows.length)},${scaleY(r.stress, 0, 100)}`).join(" ")}" class="line stress"/>`;
+  return svg(s + dayLabels(rows));
+}
+
+const card = (label, value, sub) =>
+  `<div class="card"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+
+function render() {
+  const rows = ALL.slice(-days);
+  const avg = k => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  document.getElementById("stats").innerHTML = [
+    card("Sleep", avg("sleep").toFixed(1) + " h", "deep " + avg("deep").toFixed(1) + " · REM " + avg("rem").toFixed(1)),
+    card("Resting HR", Math.round(avg("rhr")) + " bpm",
+      "range " + Math.min(...rows.map(r => r.rhr)) + "–" + Math.max(...rows.map(r => r.rhr))),
+    card("Steps", Math.round(avg("steps")).toLocaleString(),
+      "total " + rows.reduce((a, r) => a + r.steps, 0).toLocaleString()),
+    card("Stress", Math.round(avg("stress")), "avg of daily averages"),
+    card("Body Battery", Math.round(avg("bbMax")), "avg daily peak"),
+  ].join("");
+  document.getElementById("sleep").innerHTML = sleepChart(rows);
+  document.getElementById("rhr").innerHTML = rhrChart(rows);
+  document.getElementById("steps").innerHTML = stepsChart(rows);
+  document.getElementById("energy").innerHTML = energyChart(rows);
+}
+
+document.querySelectorAll("#toggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    days = Number(btn.dataset.days);
+    document.querySelectorAll("#toggle button").forEach(b => b.classList.toggle("active", b === btn));
+    render();
+  });
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+render();
+</script>
+</body>
+</html>
