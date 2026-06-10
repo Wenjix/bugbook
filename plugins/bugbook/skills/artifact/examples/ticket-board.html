@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="bugbook-artifact" content="1">
+<meta name="bugbook-title" content="Ticket Board — Sample Snapshot">
+<meta name="bugbook-icon" content="sf:square.grid.3x1.below.line.grid.1x2">
+<meta name="bugbook-generator" content="bugbook-skill/artifact-example">
+<style>
+:root {
+  --bg: #ffffff; --fg: #1d1d1f; --muted: #6e6e73; --card: #f5f5f7; --col: #ececf0;
+  --border: #d2d2d7; --accent: #0a84ff; --p0: #ff453a; --p1: #ff9f0a; --p2: #8e8e93;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e; --fg: #f5f5f7; --muted: #98989d; --card: #3a3a3c; --col: #2c2c2e;
+    --border: #48484a;
+  }
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--bg); color: var(--fg); padding: 20px;
+       font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+h1 { font-size: 20px; margin-right: auto; }
+#q { background: var(--col); color: var(--fg); border: 1px solid var(--border);
+     border-radius: 8px; padding: 6px 10px; font: inherit; width: 200px; }
+#chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.chip { background: var(--col); color: var(--muted); border: 1px solid var(--border);
+        border-radius: 999px; padding: 3px 11px; font-size: 12px; cursor: pointer; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+#board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: start; }
+.column { background: var(--col); border-radius: 10px; padding: 8px; min-height: 120px; }
+.column h2 { font-size: 12px; color: var(--muted); text-transform: uppercase;
+             letter-spacing: 0.4px; padding: 2px 4px 8px; }
+.column.dragover { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.ticket { background: var(--card); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+          cursor: grab; border: 1px solid var(--border); }
+.ticket .title { font-size: 13px; margin-bottom: 6px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+        font-size: 11px; color: var(--muted); }
+.badge { font-weight: 700; }
+.badge.P0 { color: var(--p0); } .badge.P1 { color: var(--p1); } .badge.P2 { color: var(--p2); }
+.label { background: var(--col); border-radius: 4px; padding: 1px 5px; }
+footer { margin-top: 16px; font-size: 11px; color: var(--muted); }
+#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+         background: var(--fg); color: var(--bg); border-radius: 8px; padding: 8px 14px;
+         font-size: 12px; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+#toast.show { opacity: 1; }
+@media (max-width: 640px) { #board { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Tickets</h1>
+  <input id="q" type="search" placeholder="Search title or ID…">
+</header>
+<div id="chips"></div>
+<main id="board"></main>
+<footer>Snapshot — write-back arrives with the Level 2 bridge. Drag moves cards in this view only.</footer>
+<div id="toast"></div>
+
+<script type="application/json" id="data">
+[
+{"id":"BB-141","title":"Sidebar loses expansion state after rename","status":"To Do","priority":"P1","labels":["sidebar","bug"],"assignee":"agent"},
+{"id":"BB-142","title":"Add CSV export to database views","status":"To Do","priority":"P2","labels":["databases","feature"],"assignee":"max"},
+{"id":"BB-143","title":"Slash menu flickers on first open","status":"To Do","priority":"P2","labels":["editor","bug"],"assignee":"agent"},
+{"id":"BB-144","title":"Backlinks pane misses links inside toggles","status":"In Progress","priority":"P1","labels":["backlinks","bug"],"assignee":"agent"},
+{"id":"BB-145","title":"Weekly review health artifact","status":"In Progress","priority":"P1","labels":["skills","feature"],"assignee":"agent"},
+{"id":"BB-146","title":"Drag-drop rows between boards","status":"In Progress","priority":"P2","labels":["boards","feature"],"assignee":"max"},
+{"id":"BB-147","title":"Artifact pane live-reload debounce","status":"In Review","priority":"P0","labels":["artifacts","feature"],"assignee":"agent"},
+{"id":"BB-148","title":"Fix date filter off-by-one on week boundaries","status":"In Review","priority":"P0","labels":["databases","bug"],"assignee":"agent"},
+{"id":"BB-149","title":"Calendar pane: double events after sync","status":"Done","priority":"P1","labels":["calendar","bug"],"assignee":"agent"},
+{"id":"BB-150","title":"Search: rank title matches above body","status":"Done","priority":"P2","labels":["search","feature"],"assignee":"max"},
+{"id":"BB-151","title":"Mail triage keyboard shortcuts","status":"Done","priority":"P2","labels":["mail","feature"],"assignee":"agent"},
+{"id":"BB-152","title":"Quick capture hotkey opens wrong workspace","status":"Done","priority":"P1","labels":["capture","bug"],"assignee":"max"}
+]
+</script>
+<script>
+const TICKETS = JSON.parse(document.getElementById("data").textContent);
+const STATUSES = ["To Do", "In Progress", "In Review", "Done"];
+const state = { q: "", prio: new Set(), labels: new Set() };
+
+const allPrios = [...new Set(TICKETS.map(t => t.priority))].sort();
+const allLabels = [...new Set(TICKETS.flatMap(t => t.labels))].sort();
+
+function renderChips() {
+  const chip = (kind, value, on) =>
+    `<button class="chip${on ? " on" : ""}" data-kind="${kind}" data-value="${value}">${value}</button>`;
+  document.getElementById("chips").innerHTML =
+    allPrios.map(p => chip("prio", p, state.prio.has(p))).join("") +
+    allLabels.map(l => chip("labels", l, state.labels.has(l))).join("");
+}
+
+function matches(t) {
+  const q = state.q.trim().toLowerCase();
+  if (q && !(t.title.toLowerCase().includes(q) || t.id.toLowerCase().includes(q))) return false;
+  if (state.prio.size && !state.prio.has(t.priority)) return false;
+  if (state.labels.size && !t.labels.some(l => state.labels.has(l))) return false;
+  return true;
+}
+
+function ticketCard(t) {
+  return `<div class="ticket" draggable="true" data-id="${t.id}">
+    <div class="title">${t.title}</div>
+    <div class="meta">
+      <span class="badge ${t.priority}">${t.priority}</span>
+      <span>${t.id}</span>
+      ${t.labels.map(l => `<span class="label">${l}</span>`).join("")}
+      <span>@${t.assignee}</span>
+    </div>
+  </div>`;
+}
+
+function renderBoard() {
+  const visible = TICKETS.filter(matches);
+  document.getElementById("board").innerHTML = STATUSES.map(status => {
+    const cards = visible.filter(t => t.status === status);
+    return `<section class="column" data-status="${status}">
+      <h2>${status} · ${cards.length}</h2>
+      ${cards.map(ticketCard).join("")}
+    </section>`;
+  }).join("");
+  wireDrag();
+}
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+function wireDrag() {
+  document.querySelectorAll(".ticket").forEach(card => {
+    card.addEventListener("dragstart", e => e.dataTransfer.setData("text/plain", card.dataset.id));
+  });
+  document.querySelectorAll(".column").forEach(col => {
+    col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("dragover"); });
+    col.addEventListener("dragleave", () => col.classList.remove("dragover"));
+    col.addEventListener("drop", e => {
+      e.preventDefault();
+      col.classList.remove("dragover");
+      const id = e.dataTransfer.getData("text/plain");
+      const ticket = TICKETS.find(t => t.id === id);
+      if (ticket && ticket.status !== col.dataset.status) {
+        ticket.status = col.dataset.status;
+        renderBoard();
+        toast(`${id} → ${ticket.status} (snapshot only — not written back)`);
+      }
+    });
+  });
+}
+
+document.getElementById("q").addEventListener("input", e => { state.q = e.target.value; renderBoard(); });
+document.getElementById("chips").addEventListener("click", e => {
+  const btn = e.target.closest(".chip");
+  if (!btn) return;
+  const set = state[btn.dataset.kind];
+  set.has(btn.dataset.value) ? set.delete(btn.dataset.value) : set.add(btn.dataset.value);
+  renderChips();
+  renderBoard();
+});
+
+renderChips();
+renderBoard();
+</script>
+</body>
+</html>
