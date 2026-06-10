@@ -212,10 +212,8 @@ struct FileTreeItemView: View {
     }
 
     private var displayName: String {
-        if entry.name.hasSuffix(".md") && !entry.isDatabase {
-            return String(entry.name.dropLast(3))
-        }
-        return entry.name
+        if entry.isDatabase { return entry.name }
+        return entry.name.removingPageExtension
     }
 
     private var parentPathLabel: String? {
@@ -366,7 +364,13 @@ struct FileTreeItemView: View {
         guard !trimmed.isEmpty, trimmed != displayName else { return }
 
         let dir = (entry.path as NSString).deletingLastPathComponent
-        let ext = (entry.isDatabase || entry.isDirectory) ? "" : ".md"
+        let ext: String
+        if entry.isDatabase || entry.isDirectory {
+            ext = ""
+        } else {
+            let pathExt = (entry.path as NSString).pathExtension
+            ext = pathExt.isEmpty ? "" : ".\(pathExt)"
+        }
         let newPath = (dir as NSString).appendingPathComponent("\(trimmed)\(ext)")
 
         try? fileSystem.renameFile(from: entry.path, to: newPath)

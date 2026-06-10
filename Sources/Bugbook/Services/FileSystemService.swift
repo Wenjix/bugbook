@@ -990,7 +990,8 @@ class FileSystemService {
         let originalName = (path as NSString).lastPathComponent
         let baseName = (originalName as NSString).deletingPathExtension
 
-        let newFilename = uniqueFilename(in: dir, base: "\(baseName) copy", ext: "md")
+        let ext = (originalName as NSString).pathExtension
+        let newFilename = uniqueFilename(in: dir, base: "\(baseName) copy", ext: ext.isEmpty ? "md" : ext)
         let newPath = (dir as NSString).appendingPathComponent(newFilename)
         try content.write(toFile: newPath, atomically: true, encoding: .utf8)
         return newPath
@@ -1335,7 +1336,7 @@ class FileSystemService {
                 ))
             } else {
                 // The file itself
-                var displayName = part.hasSuffix(".md") ? String(part.dropLast(3)) : part
+                var displayName = part.removingPageExtension
                 // For database folders, use schema name instead of folder name
                 if isDatabaseFolder(at: currentPath) {
                     let schemaPath = (currentPath as NSString).appendingPathComponent("_schema.json")
@@ -1928,6 +1929,10 @@ class FileSystemService {
         return fm.fileExists(atPath: path) ? path : nil
     }
 
+    /// Companion folders are a page (.md) concept. Artifacts (.html) and other
+    /// file types have no companion; every caller that moves/trashes companions
+    /// is additionally gated on `.hasSuffix(".md")`, so this returns the input
+    /// unchanged for them.
     nonisolated private func companionFolderPath(for mdPath: String) -> String {
         guard mdPath.hasSuffix(".md") else { return mdPath }
         return String(mdPath.dropLast(3))

@@ -949,4 +949,54 @@ final class FileSystemServiceTests: XCTestCase {
         let tree = FileSystemService().buildFileTree(at: root)
         XCTAssertTrue(tree.isEmpty)
     }
+
+    func testArtifactSiblingFolderIsNotItsCompanion() throws {
+        // chart/ next to chart.html is an ordinary folder (decision 3):
+        // visible in the tree, untouched by rename of the artifact.
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let chartPath = (root as NSString).appendingPathComponent("chart.html")
+        try "<!doctype html>".write(toFile: chartPath, atomically: true, encoding: .utf8)
+        let chartDir = (root as NSString).appendingPathComponent("chart")
+        try FileManager.default.createDirectory(atPath: chartDir, withIntermediateDirectories: true)
+        try "# Note\n\nlong enough".write(
+            toFile: (chartDir as NSString).appendingPathComponent("note.md"),
+            atomically: true, encoding: .utf8)
+
+        let service = FileSystemService()
+        let tree = service.buildFileTree(at: root)
+        XCTAssertTrue(tree.contains { $0.name == "chart" && $0.isDirectory },
+                      "sibling folder must stay an independent visible entry")
+
+        let renamed = (root as NSString).appendingPathComponent("graph.html")
+        try service.renameFile(from: chartPath, to: renamed)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: chartDir),
+                      "renaming an artifact must not move the sibling folder")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: renamed))
+    }
+
+    func testDuplicateHtmlKeepsExtension() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let chartPath = (root as NSString).appendingPathComponent("chart.html")
+        try "<!doctype html>".write(toFile: chartPath, atomically: true, encoding: .utf8)
+
+        let newPath = try FileSystemService().duplicateFile(at: chartPath)
+        XCTAssertEqual((newPath as NSString).lastPathComponent, "chart copy.html")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newPath))
+    }
+
+    func testTrashHtmlMovesOnlyTheFile() throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let chartPath = (root as NSString).appendingPathComponent("chart.html")
+        try "<!doctype html>".write(toFile: chartPath, atomically: true, encoding: .utf8)
+        let chartDir = (root as NSString).appendingPathComponent("chart")
+        try FileManager.default.createDirectory(atPath: chartDir, withIntermediateDirectories: true)
+
+        try FileSystemService().trashFile(at: chartPath, workspace: root)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: chartPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: chartDir),
+                      "an artifact has no companion; its sibling folder must survive trash")
+    }
 }
