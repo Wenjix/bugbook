@@ -286,6 +286,61 @@ server.tool(
   }
 );
 
+// bugbook_artifact_create
+server.tool(
+  "bugbook_artifact_create",
+  "Create a self-contained interactive HTML artifact in the Bugbook workspace. " +
+  "Artifacts render in a sandboxed OFFLINE webview, so the HTML must be ONE fully " +
+  "self-contained file: all CSS and JS inline, data embedded as <script " +
+  "type=\"application/json\">, NO external resources (no CDN scripts, remote " +
+  "stylesheets, images, fonts — fetch/WebSocket are blocked at render time too). " +
+  "Plain <a href=\"https://...\"> links are allowed (they open behind a native " +
+  "confirmation). Required in <head>: <meta name=\"bugbook-artifact\" content=\"1\"> " +
+  "and <meta name=\"bugbook-title\" content=\"...\">. Place page-attached artifacts " +
+  "at '<Page Name>/<topic>.html' and row-attached at '<Database>/_artifacts/" +
+  "<row-slug>-<topic>.html'. Validation runs automatically: on failure nothing is " +
+  "written and the errors are returned. The result includes a markdown_link line — " +
+  "always add it to the parent page or row body.",
+  {
+    path: z.string().describe("Workspace-relative target path ending in .html"),
+    html: z.string().describe("Complete self-contained HTML document"),
+  },
+  async ({ path, html }) => {
+    let tmp;
+    try {
+      tmp = await writeTmp(html, ".html");
+      const { code, stdout, stderr } = await runStatus(["artifact", "create", path, "--content-file", tmp]);
+      return code === 0 ? ok(stdout) : fail(stdout.trim() || stderr || "artifact create failed");
+    } catch (e) {
+      return fail(e.message);
+    } finally {
+      if (tmp) await cleanTmp(tmp);
+    }
+  }
+);
+
+// bugbook_artifact_validate
+server.tool(
+  "bugbook_artifact_validate",
+  "Validate an existing HTML artifact in the Bugbook workspace. Checks the required " +
+  "<meta name=\"bugbook-artifact\" content=\"1\"> marker, rejects any external " +
+  "resource reference (script/link/img/css url()/@import/meta-refresh — artifacts " +
+  "must inline everything; only clickable <a href> links are allowed), and enforces " +
+  "size limits (warn >2MB, error >10MB). Returns a JSON report with errors and " +
+  "warnings; fix every error and re-validate.",
+  {
+    path: z.string().describe("Workspace-relative or absolute path to a .html artifact"),
+  },
+  async ({ path }) => {
+    try {
+      const { code, stdout, stderr } = await runStatus(["artifact", "validate", path]);
+      return code === 0 ? ok(stdout) : fail(stdout.trim() || stderr || "artifact validation failed");
+    } catch (e) {
+      return fail(e.message);
+    }
+  }
+);
+
 // Start the server
 const transport = new StdioServerTransport();
 await server.connect(transport);
