@@ -112,20 +112,20 @@ extension AppState {
     var legacyWorkspaces: [FileSystemService.LegacyWorkspace] = []
     var migratingLegacyWorkspaceKeys: Set<String> = []
     var legacyWorkspaceErrorMessages: [String: String] = [:]
-    @ObservationIgnored private var _aiThreadStore: AiThreadStore?
+    @ObservationIgnored private var loadedAiThreadStore: AiThreadStore?
     var aiThreadStore: AiThreadStore {
-        if let _aiThreadStore { return _aiThreadStore }
+        if let loadedAiThreadStore { return loadedAiThreadStore }
         // Process singleton — every window shares one in-memory thread list
         // and one write queue; still created only on first chat use.
         let store = AiThreadStore.shared
-        _aiThreadStore = store
+        loadedAiThreadStore = store
         return store
     }
 
     /// Flush write-behind AI thread persistence to disk without forcing the
     /// store into existence when it was never used this session.
     func flushPendingAiThreadWrites() {
-        _aiThreadStore?.flushPendingWrites()
+        loadedAiThreadStore?.flushPendingWrites()
     }
 
     @ObservationIgnored private let userDefaults: UserDefaults
