@@ -7,7 +7,6 @@ enum CommandPaletteMode {
     case search
     case commands
     case newTab
-    case splitLauncher
 }
 
 enum ViewMode {
@@ -322,38 +321,38 @@ extension AppState {
         SentryBreadcrumbs.add(crumb)
     }
 
-    /// Pane-aware replacement path used by the unified pane/tab workspace model.
-    /// Returns true when caller should not load content because an existing pane tab
-    /// was focused, false when the active pane tab was replaced and needs loading.
+    /// Replace the active tab's document with the given file. Returns true
+    /// when the caller should not load content because an existing tab was
+    /// switched to, false when the active tab was replaced and needs loading.
     @discardableResult
     func openFileReplacingCurrentTab(
         _ entry: FileEntry,
         workspaceManager: WorkspaceManager,
-        paneId: UUID,
         pushHistory: Bool = true,
         preferExistingTab: Bool = true
     ) -> Bool {
         if preferExistingTab,
-           let workspace = workspaceManager.activeWorkspace {
-            for leaf in workspace.allLeaves {
-                if let existingFile = leaf.tabs.compactMap(\.openFile).first(where: { $0.path == entry.path }) {
-                    workspaceManager.selectPaneTab(paneId: leaf.id, tabId: existingFile.id)
-                    return true
-                }
+           let existingIndex = workspaceManager.workspaces.firstIndex(where: { $0.openFile?.path == entry.path }) {
+            // Switching away from a fresh empty tab (e.g. Cmd+T whose start
+            // page is already open elsewhere) must not strand it as an
+            // unreachable zombie — prune it as part of the switch.
+            let previousIndex = workspaceManager.activeWorkspaceIndex
+            let previousWasEmptyTab = workspaceManager.focusedOpenFile?.isEmptyTab == true
+                && previousIndex != existingIndex
+            workspaceManager.switchWorkspace(to: existingIndex)
+            if previousWasEmptyTab {
+                workspaceManager.closeWorkspace(at: previousIndex)
             }
+            return true
         }
 
-        guard let leaf = workspaceManager.leaf(id: paneId) else { return true }
+        guard let current = workspaceManager.activeWorkspace else { return true }
 
-        let tabId = leaf.activeTabID
-        let baseTab = leaf.activeOpenFile.map { reidentified($0, as: tabId) } ?? makeTab(for: entry, id: tabId)
+        let tabId = current.content.id
+        let baseTab = current.openFile.map { reidentified($0, as: tabId) } ?? makeTab(for: entry, id: tabId)
         let updatedTab = applyingEntry(entry, to: baseTab, pushHistory: pushHistory)
 
-        workspaceManager.updatePaneContent(
-            paneId: paneId,
-            content: .document(openFile: updatedTab)
-        )
-        workspaceManager.setFocusedPane(id: paneId)
+        workspaceManager.updateActiveContent(.document(openFile: updatedTab))
         return false
     }
 

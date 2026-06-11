@@ -58,7 +58,7 @@ struct HarborSidebarView<ContextualContent: View>: View {
             .padding(.trailing, -ShellZoomMetrics.size(2))
 
             // ── Fixed Zone ──────────────────────────────────
-            // Vertical navigation list. Click replaces focused pane; Cmd+click opens new workspace tab.
+            // Vertical navigation list. Click replaces the active tab; Cmd+click opens a new tab.
             VStack(alignment: .leading, spacing: ShellZoomMetrics.size(1)) {
                 ForEach(ShellNavigationItems.visible) { item in
                     ShellSidebarShortcutRow(
@@ -435,6 +435,9 @@ struct SidebarResizeHandle: View {
         Rectangle()
             .fill(Color.clear)
             .frame(width: 6)
+            // Zero layout width: the handle overlays the sidebar/content seam
+            // instead of inserting a window-background gutter between them.
+            .padding(.horizontal, -3)
             .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {

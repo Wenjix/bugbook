@@ -3,27 +3,34 @@ import os
 
 private let log = Logger(subsystem: "com.bugbook.app", category: "WorkspaceManager")
 
-/// Manages all workspaces, the active workspace, pane operations, and layout persistence.
+/// Manages the top tab strip: an ordered list of workspaces (one document per
+/// tab), the active tab, and layout persistence.
 @MainActor
 @Observable
 class WorkspaceManager {
-    struct ClosedPaneItem: Equatable {
-        let workspaceID: UUID
-        let paneID: UUID
+    struct ClosedTabItem: Equatable {
+        let index: Int
         let content: PaneContent
         let closedAt: Date
     }
 
     var workspaces: [Workspace] = []
     var activeWorkspaceIndex: Int = 0
-    private(set) var recentlyClosedItems: [ClosedPaneItem] = []
+    private(set) var recentlyClosedItems: [ClosedTabItem] = []
     /// Set after each successful layout save; UI can observe this for a brief indicator.
     var lastSavedAt: Date?
     var layoutPersistenceEnabled = true
 
+    /// Where the layout persists. Injectable so tests can round-trip against
+    /// a temp file instead of the real profile.
+    @ObservationIgnored private let layoutFileURL: URL
     @ObservationIgnored private var persistTask: Task<Void, Never>?
 
-    // MARK: - Active Workspace
+    init(layoutFileURL: URL? = nil) {
+        self.layoutFileURL = layoutFileURL ?? Self.defaultLayoutFileURL
+    }
+
+    // MARK: - Active Tab
 
     var activeWorkspace: Workspace? {
         get {
@@ -36,25 +43,29 @@ class WorkspaceManager {
         }
     }
 
-    /// The currently focused leaf in the active workspace.
-    var focusedPane: PaneNode.Leaf? {
-        activeWorkspace?.focusedLeaf
+    /// The active tab's content.
+    var activeContent: PaneContent? {
+        activeWorkspace?.content
     }
 
-    /// The OpenFile for the focused pane (nil if no workspace).
+    /// The active tab's document (nil if no workspace).
     var focusedOpenFile: OpenFile? {
-        activeWorkspace?.focusedOpenFile
+        activeWorkspace?.openFile
     }
 
-    var focusedPaneContent: PaneContent? {
-        activeWorkspace?.focusedLeaf?.activeContent
+    /// The active tab's content identity (== the document/tab id).
+    var activeTabID: UUID? {
+        activeWorkspace?.content.id
     }
 
-    var focusedPaneTabID: UUID? {
-        activeWorkspace?.focusedLeaf?.activeTabID
+    /// True when the active tab holds a real restored document (not an empty
+    /// placeholder) — used by launch navigation to avoid clobbering it.
+    var hasRestoredDocument: Bool {
+        guard let file = focusedOpenFile else { return false }
+        return !file.isEmptyTab
     }
 
-    // MARK: - Workspace Lifecycle
+    // MARK: - Tab Lifecycle
 
     func addWorkspace(name: String? = nil) {
         let ws = Workspace.makeDefault(name: name ?? "Home")
@@ -64,14 +75,12 @@ class WorkspaceManager {
     }
 
     func addWorkspaceWith(content: PaneContent) {
-        let paneId = UUID()
-        let adjustedContent = BugbookFeatureGate.sanitizedContent(content).reidentified(as: paneId)
+        let adjustedContent = BugbookFeatureGate.sanitizedContent(content)
         let ws = Workspace(
             id: UUID(),
             name: adjustedContent.paneItemTitle,
             icon: nil,
-            root: .leaf(.init(id: paneId, tabs: [adjustedContent])),
-            focusedPaneId: paneId,
+            content: adjustedContent,
             createdAt: Date()
         )
         workspaces.append(ws)
@@ -81,7 +90,8 @@ class WorkspaceManager {
 
     func closeWorkspace(at index: Int) {
         guard index >= 0, index < workspaces.count else { return }
-        workspaces.remove(at: index)
+        let removed = workspaces.remove(at: index)
+        recordClosedItem(removed.content, at: index)
 
         if workspaces.isEmpty {
             addWorkspace()
@@ -97,8 +107,19 @@ class WorkspaceManager {
     }
 
     func switchWorkspace(to index: Int) {
-        guard index >= 0, index < workspaces.count else { return }
+        guard index >= 0, index < workspaces.count, index != activeWorkspaceIndex else { return }
         activeWorkspaceIndex = index
+        // The active tab is part of the persisted layout — without this a
+        // relaunch restores a stale focused tab.
+        schedulePersist()
+    }
+
+    /// Cycle the active tab forward/backward (wraps).
+    func cycleWorkspace(step: Int) {
+        guard workspaces.count > 1, step != 0 else { return }
+        let count = workspaces.count
+        activeWorkspaceIndex = ((activeWorkspaceIndex + step) % count + count) % count
+        schedulePersist()
     }
 
     func reorderWorkspace(from sourceIndex: Int, to destinationIndex: Int) {
@@ -133,389 +154,82 @@ class WorkspaceManager {
         return detachedWorkspace
     }
 
-    // MARK: - Pane Operations
+    // MARK: - Content Operations
 
-    /// Split the focused pane, inserting a new sibling pane.
-    func splitFocusedPane(
-        axis: PaneNode.Split.Axis,
-        newContent: PaneContent = .emptyDocument()
-    ) -> UUID? {
-        guard var ws = activeWorkspace else { return nil }
-        let newLeafId = UUID()
-        let allowedContent = BugbookFeatureGate.sanitizedContent(newContent)
-        let newLeaf = PaneNode.leaf(.init(id: newLeafId, content: allowedContent.reidentified(as: newLeafId)))
-        ws.root = ws.root.insertingSplit(replacing: ws.focusedPaneId, axis: axis, newSibling: newLeaf)
-        ws.focusedPaneId = newLeafId
-        activeWorkspace = ws
-        schedulePersist()
-        return newLeafId
-    }
-
-    /// Pop a pane out of its current split into a new tab.
-    /// If it's already the only pane, this is a no-op.
-    func popOutPane(id: UUID) {
+    /// Replace the active tab's content.
+    func updateActiveContent(_ content: PaneContent) {
         guard var ws = activeWorkspace else { return }
-        guard let leaf = ws.root.findLeaf(id: id) else { return }
-        // Already the only pane — nothing to pop out
-        if case .leaf = ws.root { return }
-
-        // Remove from current workspace
-        let (newRoot, siblingId) = ws.root.removingLeaf(id: id)
-        if let newRoot {
-            ws.root = newRoot
-            if ws.focusedPaneId == id {
-                ws.focusedPaneId = siblingId ?? newRoot.firstLeaf?.id ?? ws.focusedPaneId
-            }
-            activeWorkspace = ws
-        }
-
-        // Create new workspace with the popped-out pane
-        let newWs = Workspace(
-            id: UUID(),
-            name: leaf.activeContent.paneItemTitle,
-            icon: nil,
-            root: .leaf(leaf),
-            focusedPaneId: leaf.id,
-            createdAt: Date()
-        )
-        workspaces.append(newWs)
-        activeWorkspaceIndex = workspaces.count - 1
-        schedulePersist()
-    }
-
-    /// Close a pane by its ID.
-    func closePane(id: UUID) {
-        closePane(id: id, inWorkspaceAt: activeWorkspaceIndex)
-    }
-
-    /// Collapse the active workspace down to a single pane.
-    func keepOnlyPane(id: UUID) {
-        guard var workspace = activeWorkspace,
-              let leaf = workspace.root.findLeaf(id: id) else { return }
-
-        for otherLeaf in workspace.root.allLeaves where otherLeaf.id != id {
-            recordClosedItem(otherLeaf.activeContent, paneID: otherLeaf.id, workspaceID: workspace.id)
-        }
-
-        workspace.root = .leaf(leaf)
-        workspace.focusedPaneId = leaf.id
-        activeWorkspace = workspace
-        schedulePersist()
-    }
-
-    func setFocusedPane(id: UUID) {
-        guard var ws = activeWorkspace else { return }
-        guard ws.focusedPaneId != id else { return }
-        ws.focusedPaneId = id
-        activeWorkspace = ws
-    }
-
-    func focusPaneTab(workspaceIndex: Int, paneID: UUID, tabID: UUID? = nil) {
-        guard workspaceIndex >= 0, workspaceIndex < workspaces.count else { return }
-        var workspace = workspaces[workspaceIndex]
-        guard workspace.root.findLeaf(id: paneID) != nil else { return }
-
-        if let tabID {
-            workspace.root = workspace.root.updatingLeaf(id: paneID) { leaf in
-                var updated = leaf
-                updated.selectTab(id: tabID)
-                return updated
-            }
-        }
-
-        workspace.focusedPaneId = paneID
-        workspaces[workspaceIndex] = workspace
-        activeWorkspaceIndex = workspaceIndex
-    }
-
-    func updateSplitRatio(splitId: UUID, ratio: Double) {
-        guard var ws = activeWorkspace else { return }
-        let clamped = min(max(ratio, 0.15), 0.85)
-        ws.root = ws.root.updatingRatio(splitId: splitId, ratio: clamped)
+        ws.content = BugbookFeatureGate.sanitizedContent(content)
         activeWorkspace = ws
         schedulePersist()
     }
 
-    /// Replace the content of a specific pane leaf.
-    func updatePaneContent(paneId: UUID, content: PaneContent) {
-        guard var ws = activeWorkspace else { return }
-        ws.root = ws.root.updatingLeafContent(
-            leafId: paneId,
-            content: BugbookFeatureGate.sanitizedContent(content)
-        )
-        activeWorkspace = ws
-        schedulePersist()
-    }
-
-    /// Update the OpenFile inside a document pane (e.g. after navigation or dirty flag change).
-    func updatePaneOpenFile(paneId: UUID, tabId: UUID? = nil, transform: (inout OpenFile) -> Void) {
-        guard var ws = activeWorkspace else { return }
-        guard let leaf = ws.root.findLeaf(id: paneId) else { return }
-        let targetTabId = tabId ?? leaf.activeTabID
-        guard
-              let content = leaf.tabs.first(where: { $0.id == targetTabId }),
-              case .document(var file) = content else { return }
-        transform(&file)
-        ws.root = ws.root.updatingTabContent(tabId: targetTabId) { _ in
-            .document(openFile: file)
-        }
-        activeWorkspace = ws
-    }
-
-    /// Swap the content of two panes by their IDs.
-    func swapPaneContents(paneA: UUID, paneB: UUID) {
-        guard var ws = activeWorkspace else { return }
-        guard let leafA = ws.root.findLeaf(id: paneA),
-              let leafB = ws.root.findLeaf(id: paneB) else { return }
-        let contentA = leafA.activeContent
-        let contentB = leafB.activeContent
-        ws.root = ws.root.updatingLeafContent(leafId: paneA, content: contentB)
-        ws.root = ws.root.updatingLeafContent(leafId: paneB, content: contentA)
-        activeWorkspace = ws
-        schedulePersist()
-    }
-
-    // MARK: - Queries
-
-    /// All document-type leaves across all workspaces.
-    func allDocumentLeaves() -> [(workspaceIndex: Int, leaf: PaneNode.Leaf, file: OpenFile)] {
-        var results: [(Int, PaneNode.Leaf, OpenFile)] = []
-        for (i, ws) in workspaces.enumerated() {
-            for leaf in ws.allLeaves {
-                for content in leaf.tabs {
-                    guard case .document(let file) = content else { continue }
-                    results.append((i, leaf, file))
-                }
-            }
-        }
-        return results
-    }
-
-    func leaf(containingTabId tabId: UUID) -> PaneNode.Leaf? {
-        for workspace in workspaces {
-            if let leaf = workspace.root.findLeaf(containingTabId: tabId) {
-                return leaf
-            }
-        }
-        return nil
-    }
-
-    func leaf(id paneId: UUID) -> PaneNode.Leaf? {
-        for workspace in workspaces {
-            if let leaf = workspace.root.findLeaf(id: paneId) {
-                return leaf
-            }
-        }
-        return nil
-    }
-
-    func openFile(tabId: UUID) -> OpenFile? {
-        leaf(containingTabId: tabId)?.tabs.compactMap(\.openFile).first { $0.id == tabId }
-    }
-
+    /// Update the OpenFile of the tab holding `tabId` (e.g. after navigation
+    /// or a dirty-flag change).
     func updateOpenFile(tabId: UUID, persist: Bool = true, transform: (inout OpenFile) -> Void) {
-        guard let workspaceIndex = workspaces.firstIndex(where: { $0.root.findLeaf(containingTabId: tabId) != nil }) else { return }
-        var workspace = workspaces[workspaceIndex]
-        guard let leaf = workspace.root.findLeaf(containingTabId: tabId),
-              let content = leaf.tabs.first(where: { $0.id == tabId }),
-              case .document(var file) = content else { return }
+        guard let index = workspaceIndex(containingTabId: tabId),
+              case .document(var file) = workspaces[index].content else { return }
         transform(&file)
-        workspace.root = workspace.root.updatingTabContent(tabId: tabId) { _ in
-            .document(openFile: file)
-        }
-        workspaces[workspaceIndex] = workspace
-        if workspaceIndex == activeWorkspaceIndex {
-            activeWorkspace = workspace
-        }
+        workspaces[index].content = .document(openFile: file)
         if persist {
             schedulePersist()
         }
     }
 
-    @discardableResult
-    func addPaneTab(to paneId: UUID, content: PaneContent, select: Bool = true) -> UUID? {
-        guard var ws = activeWorkspace,
-              let leaf = ws.root.findLeaf(id: paneId) else { return nil }
+    func openFile(tabId: UUID) -> OpenFile? {
+        guard let index = workspaceIndex(containingTabId: tabId) else { return nil }
+        return workspaces[index].openFile
+    }
 
-        let allowedContent = BugbookFeatureGate.sanitizedContent(content)
-        let tabId = allowedContent.id
-        var updatedLeaf = leaf
-        guard updatedLeaf.appendTab(allowedContent, select: select) else { return nil }
-        ws.root = ws.root.updatingLeaf(id: paneId) { _ in updatedLeaf }
-        if select {
-            ws.focusedPaneId = paneId
+    func workspaceIndex(containingTabId tabId: UUID) -> Int? {
+        workspaces.firstIndex { $0.content.id == tabId }
+    }
+
+    /// All document tabs across the strip, in order.
+    func allDocuments() -> [(workspaceIndex: Int, file: OpenFile)] {
+        workspaces.enumerated().compactMap { index, workspace in
+            workspace.openFile.map { (index, $0) }
         }
-        activeWorkspace = ws
-        schedulePersist()
-        return tabId
     }
 
+    /// Close the tab holding `tabId`. Returns the removed content.
     @discardableResult
-    func closePaneTab(paneId: UUID, tabId: UUID) -> PaneContent? {
-        closePaneTab(paneId: paneId, tabId: tabId, inWorkspaceAt: activeWorkspaceIndex)
+    func closeTab(tabId: UUID) -> PaneContent? {
+        guard let index = workspaceIndex(containingTabId: tabId) else { return nil }
+        let removed = workspaces[index].content
+        closeWorkspace(at: index)
+        return removed
     }
 
-    @discardableResult
-    func closeFocusedPaneTab() -> PaneContent? {
-        guard let ws = activeWorkspace,
-              let leaf = ws.focusedLeaf else { return nil }
-        return closePaneTab(paneId: leaf.id, tabId: leaf.activeTabID)
-    }
-
-    func selectPaneTab(paneId: UUID, tabId: UUID) {
-        guard var ws = activeWorkspace else { return }
-        ws.root = ws.root.updatingLeaf(id: paneId) { leaf in
-            var updatedLeaf = leaf
-            updatedLeaf.selectTab(id: tabId)
-            return updatedLeaf
-        }
-        ws.focusedPaneId = paneId
-        activeWorkspace = ws
-    }
-
-    func cyclePaneTabs(in paneId: UUID, step: Int) {
-        guard step != 0,
-              var ws = activeWorkspace,
-              let leaf = ws.root.findLeaf(id: paneId),
-              leaf.tabs.count > 1 else { return }
-
-        var updatedLeaf = leaf
-        let nextIndex = (leaf.selectedTabIndex + step + leaf.tabs.count) % leaf.tabs.count
-        updatedLeaf.selectTab(at: nextIndex)
-        ws.root = ws.root.updatingLeaf(id: paneId) { _ in updatedLeaf }
-        ws.focusedPaneId = paneId
-        activeWorkspace = ws
-    }
-
+    /// Reopen the most recently closed tab (skipping content the current mode
+    /// disallows). Returns the reopened tab's content id.
     @discardableResult
     func reopenLastClosedItem() -> UUID? {
         while !recentlyClosedItems.isEmpty {
             let item = recentlyClosedItems.removeFirst()
             guard BugbookFeatureGate.allowsPaneContent(item.content) else { continue }
-            let content = paneContentWithUniqueID(from: item.content)
-            let targetWorkspaceIndex = workspaces.firstIndex { $0.id == item.workspaceID } ?? activeWorkspaceIndex
-
-            if let reopenedTabID = reopen(content, inWorkspaceAt: targetWorkspaceIndex, preferredPaneID: item.paneID) {
-                schedulePersist()
-                return reopenedTabID
-            }
+            let content = contentWithUniqueID(from: item.content)
+            let ws = Workspace(
+                id: UUID(),
+                name: content.paneItemTitle,
+                icon: nil,
+                content: content,
+                createdAt: Date()
+            )
+            let index = min(max(item.index, 0), workspaces.count)
+            workspaces.insert(ws, at: index)
+            activeWorkspaceIndex = index
+            schedulePersist()
+            return content.id
         }
         return nil
     }
 
-    func movePaneTab(paneId: UUID, from sourceIndex: Int, to destinationIndex: Int) {
-        guard var ws = activeWorkspace,
-              let leaf = ws.root.findLeaf(id: paneId) else { return }
-        var updatedLeaf = leaf
-        updatedLeaf.moveTab(from: sourceIndex, to: destinationIndex)
-        ws.root = ws.root.updatingLeaf(id: paneId) { _ in updatedLeaf }
-        activeWorkspace = ws
-        schedulePersist()
-    }
-
-    func setPaneTabs(paneId: UUID, tabs: [PaneContent], selectedTabID: UUID? = nil) {
-        let allowedTabs = tabs.filter { BugbookFeatureGate.allowsPaneContent($0) }
-        let normalizedTabs = allowedTabs.isEmpty ? [.emptyDocument(id: paneId)] : allowedTabs
-        let selectedIndex = selectedTabID.flatMap { tabID in
-            normalizedTabs.firstIndex { $0.id == tabID }
-        } ?? 0
-
-        if let workspaceIndex = workspaces.firstIndex(where: { $0.root.findLeaf(id: paneId) != nil }) {
-            var workspace = workspaces[workspaceIndex]
-            let replacement = PaneNode.Leaf(id: paneId, tabs: normalizedTabs, selectedTabIndex: selectedIndex)
-            workspace.root = workspace.root.updatingLeaf(id: paneId) { _ in replacement }
-            workspaces[workspaceIndex] = workspace
-            if workspaceIndex == activeWorkspaceIndex {
-                activeWorkspace = workspace
-            }
-            schedulePersist()
-            return
-        }
-
-        let workspace = Workspace(
-            id: UUID(),
-            name: normalizedTabs[selectedIndex].paneItemTitle,
-            icon: nil,
-            root: .leaf(.init(id: paneId, tabs: normalizedTabs, selectedTabIndex: selectedIndex)),
-            focusedPaneId: paneId,
-            createdAt: Date()
-        )
-        workspaces.append(workspace)
-        activeWorkspaceIndex = workspaces.count - 1
-        schedulePersist()
-    }
-
-    @discardableResult
-    func closeTab(tabId: UUID, closePaneWhenLastTab: Bool = false) -> PaneContent? {
-        guard let workspaceIndex = workspaces.firstIndex(where: { $0.root.findLeaf(containingTabId: tabId) != nil }),
-              let leaf = workspaces[workspaceIndex].root.findLeaf(containingTabId: tabId) else { return nil }
-
-        if leaf.tabs.count > 1 {
-            return closePaneTab(paneId: leaf.id, tabId: tabId, inWorkspaceAt: workspaceIndex)
-        }
-
-        guard closePaneWhenLastTab else { return nil }
-        let removed = leaf.activeContent
-        closePane(id: leaf.id, inWorkspaceAt: workspaceIndex)
-        return removed
-    }
-
-    // MARK: - Persistence
-
-    @discardableResult
-    private func closePaneTab(paneId: UUID, tabId: UUID, inWorkspaceAt workspaceIndex: Int) -> PaneContent? {
-        guard workspaceIndex >= 0, workspaceIndex < workspaces.count else { return nil }
-
-        var workspace = workspaces[workspaceIndex]
-        guard let leaf = workspace.root.findLeaf(id: paneId),
-              leaf.tabs.count > 1 else { return nil }
-
-        var updatedLeaf = leaf
-        let removed = updatedLeaf.removeTab(id: tabId)
-        guard removed != nil else { return nil }
-        if let removed {
-            recordClosedItem(removed, paneID: paneId, workspaceID: workspace.id)
-        }
-
-        workspace.root = workspace.root.updatingLeaf(id: paneId) { _ in updatedLeaf }
-        workspaces[workspaceIndex] = workspace
-        if workspaceIndex == activeWorkspaceIndex {
-            activeWorkspace = workspace
-        }
-        schedulePersist()
-        return removed
-    }
-
-    private func closePane(id: UUID, inWorkspaceAt workspaceIndex: Int) {
-        guard workspaceIndex >= 0, workspaceIndex < workspaces.count else { return }
-
-        var workspace = workspaces[workspaceIndex]
-        guard let leaf = workspace.root.findLeaf(id: id) else { return }
-        recordClosedItem(leaf.activeContent, paneID: leaf.id, workspaceID: workspace.id)
-
-        if case .leaf(let leaf) = workspace.root, leaf.id == id {
-            closeWorkspace(at: workspaceIndex)
-            return
-        }
-
-        let (newRoot, siblingId) = workspace.root.removingLeaf(id: id)
-        guard let newRoot else { return }
-
-        workspace.root = newRoot
-        if workspace.focusedPaneId == id {
-            workspace.focusedPaneId = siblingId ?? newRoot.firstLeaf?.id ?? workspace.focusedPaneId
-        }
-        workspaces[workspaceIndex] = workspace
-        if workspaceIndex == activeWorkspaceIndex {
-            activeWorkspace = workspace
-        }
-        schedulePersist()
-    }
-
-    private func recordClosedItem(_ content: PaneContent, paneID: UUID, workspaceID: UUID) {
+    private func recordClosedItem(_ content: PaneContent, at index: Int) {
+        guard content.openFile?.isEmptyTab != true else { return }
         recentlyClosedItems.removeAll { $0.content.id == content.id }
         recentlyClosedItems.insert(
-            ClosedPaneItem(workspaceID: workspaceID, paneID: paneID, content: content, closedAt: Date()),
+            ClosedTabItem(index: index, content: content, closedAt: Date()),
             at: 0
         )
         if recentlyClosedItems.count > 30 {
@@ -523,61 +237,21 @@ class WorkspaceManager {
         }
     }
 
-    private func paneContentWithUniqueID(from content: PaneContent) -> PaneContent {
-        let existingIDs = Set(workspaces.flatMap { workspace in
-            workspace.allLeaves.flatMap { leaf in leaf.tabs.map(\.id) }
-        })
+    private func contentWithUniqueID(from content: PaneContent) -> PaneContent {
+        let existingIDs = Set(workspaces.map { $0.content.id })
         guard existingIDs.contains(content.id) else { return content }
         return content.reidentified(as: UUID())
     }
 
-    @discardableResult
-    private func reopen(_ content: PaneContent, inWorkspaceAt workspaceIndex: Int, preferredPaneID: UUID) -> UUID? {
-        guard workspaceIndex >= 0, workspaceIndex < workspaces.count else {
-            addWorkspaceWith(content: content)
-            return content.id
-        }
+    // MARK: - Persistence
 
-        var workspace = workspaces[workspaceIndex]
-        let targetPaneID = workspace.root.findLeaf(id: preferredPaneID)?.id
-            ?? workspace.focusedLeaf?.id
-            ?? workspace.root.firstLeaf?.id
-
-        guard let targetPaneID else {
-            workspaces[workspaceIndex] = Workspace(
-                id: workspace.id,
-                name: workspace.name,
-                icon: workspace.icon,
-                root: .leaf(.init(id: preferredPaneID, tabs: [content])),
-                focusedPaneId: preferredPaneID,
-                createdAt: workspace.createdAt
-            )
-            activeWorkspaceIndex = workspaceIndex
-            return content.id
-        }
-
-        var didAppend = false
-        workspace.root = workspace.root.updatingLeaf(id: targetPaneID) { leaf in
-            var updatedLeaf = leaf
-            didAppend = updatedLeaf.appendTab(content, select: true)
-            return updatedLeaf
-        }
-        guard didAppend else { return nil }
-
-        workspace.focusedPaneId = targetPaneID
-        workspaces[workspaceIndex] = workspace
-        activeWorkspaceIndex = workspaceIndex
-        return content.id
-    }
-
-    private static var layoutFileURL: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport
-            .appendingPathComponent("Bugbook/WorkspaceLayouts", isDirectory: true)
+    private static var defaultLayoutFileURL: URL {
+        BugbookPaths.profileDirectory()
+            .appendingPathComponent("WorkspaceLayouts", isDirectory: true)
             .appendingPathComponent("layouts.json")
     }
 
-    private static func ensureLayoutDirectory() {
+    private func ensureLayoutDirectory() {
         let dir = layoutFileURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
@@ -598,57 +272,84 @@ class WorkspaceManager {
         }
     }
 
-    /// Drop external-file tabs from a workspace list: whole workspaces holding only
-    /// external files are removed, mixed workspaces keep their non-external tabs.
-    /// External tabs are session-only and never written to the saved layout.
+    /// Drop external-file tabs: they are session-only and never written to the
+    /// saved layout.
     private static func withoutExternalFiles(_ input: [Workspace]) -> [Workspace] {
-        input.compactMap { workspace in
-            workspace.isEntirelyExternalFiles ? nil : workspace.strippingExternalFileTabs()
-        }
+        input.filter { !$0.isExternalFile }
     }
 
     private func persist() {
-        Self.ensureLayoutDirectory()
+        ensureLayoutDirectory()
         let persistable = Self.withoutExternalFiles(workspaces)
         let layout = PersistedLayout(
-            version: 1,
+            version: 2,
             activeWorkspaceIndex: min(activeWorkspaceIndex, max(persistable.count - 1, 0)),
             workspaces: persistable
         )
         do {
             let data = try JSONEncoder().encode(layout)
-            try data.write(to: Self.layoutFileURL, options: .atomic)
+            try data.write(to: layoutFileURL, options: .atomic)
             lastSavedAt = Date()
         } catch {
             log.error("Failed to persist workspace layout: \(error)")
         }
     }
 
+    /// Flush any scheduled persist immediately (tests, shutdown).
+    func persistNow() {
+        guard layoutPersistenceEnabled else { return }
+        persistTask?.cancel()
+        persist()
+    }
+
     /// Restore from disk or create a default workspace.
     func restoreOrCreateDefault() {
-        let url = Self.layoutFileURL
+        let url = layoutFileURL
         guard FileManager.default.fileExists(atPath: url.path) else {
             addWorkspace(name: "Workspace")
             return
         }
         do {
             let data = try Data(contentsOf: url)
-            let layout = try JSONDecoder().decode(PersistedLayout.self, from: data)
-            // Discard any external-file tabs a prior session left in the saved layout.
-            let restored = Self.withoutExternalFiles(layout.workspaces)
+            let layout = try Self.decodeLayout(from: data)
+            // Discard external-file tabs a prior session left behind, and
+            // page tabs whose file no longer exists (deleted or renamed away
+            // outside the rename propagation) — those would restore as
+            // silently blank tabs.
+            let restored = Self.prunedMissingDocuments(
+                Self.withoutExternalFiles(layout.workspaces)
+            )
             guard !restored.isEmpty else {
                 addWorkspace(name: "Workspace")
                 return
             }
             let sanitized = sanitize(workspaces: restored)
             workspaces = sanitized.workspaces
-            activeWorkspaceIndex = min(layout.activeWorkspaceIndex, workspaces.count - 1)
-            if sanitized.changed {
+            activeWorkspaceIndex = min(max(layout.activeWorkspaceIndex, 0), workspaces.count - 1)
+            if sanitized.changed || layout.migrated || restored.count != layout.workspaces.count {
                 schedulePersist()
             }
         } catch {
             log.error("Failed to restore workspace layout: \(error)")
             addWorkspace(name: "Workspace")
+        }
+    }
+
+    /// Drop page tabs whose backing file is gone — a restored tab pointing at
+    /// a nonexistent path renders blank with no error. Non-page content
+    /// (databases, rows, built-ins, empty tabs) resolves its own state and is
+    /// kept. Internal + injectable for tests.
+    static func prunedMissingDocuments(
+        _ input: [Workspace],
+        fileManager: FileManager = .default
+    ) -> [Workspace] {
+        input.filter { workspace in
+            guard let file = workspace.openFile,
+                  file.kind == .page,
+                  !file.isEmptyTab,
+                  !file.path.isEmpty,
+                  !file.path.hasPrefix("bugbook://") else { return true }
+            return fileManager.fileExists(atPath: file.path)
         }
     }
 
@@ -664,13 +365,165 @@ class WorkspaceManager {
 
     private func sanitize(workspaces input: [Workspace]) -> (workspaces: [Workspace], changed: Bool) {
         var changed = false
-        let next = input.map { workspace in
-            let result = workspace.sanitizedForCurrentMode()
-            if result.changed {
+        let next = input.compactMap { workspace -> Workspace? in
+            guard let sanitized = workspace.sanitizedForCurrentMode() else {
                 changed = true
+                return nil
             }
-            return result.workspace
+            return sanitized
         }
         return (next.isEmpty ? [Workspace.makeDefault(name: "Workspace")] : next, changed || next.isEmpty)
+    }
+
+    // MARK: - Layout Decoding & v1 Migration
+
+    /// Decoded layout plus whether it came from a pre-tabs (v1) file and was
+    /// migrated. Internal so raw-JSON fixture tests can exercise the seam.
+    struct DecodedLayout {
+        let activeWorkspaceIndex: Int
+        let workspaces: [Workspace]
+        let migrated: Bool
+    }
+
+    /// Decode a persisted layout. Version 2 is the current one-document-per-tab
+    /// shape. Version 1 files (the old pane-tree layout: workspaces holding a
+    /// recursive split tree of leaves, each leaf holding its own tab strip)
+    /// flatten IN TREE ORDER into one top-level tab per document — no open
+    /// document is dropped. The old active workspace's focused document becomes
+    /// the active tab.
+    static func decodeLayout(from data: Data) throws -> DecodedLayout {
+        let decoder = JSONDecoder()
+        let probe = try decoder.decode(LayoutVersionProbe.self, from: data)
+        if probe.version >= 2 {
+            let layout = try decoder.decode(PersistedLayout.self, from: data)
+            return DecodedLayout(
+                activeWorkspaceIndex: layout.activeWorkspaceIndex,
+                workspaces: layout.workspaces,
+                migrated: false
+            )
+        }
+        let legacy = try decoder.decode(LegacyLayoutV1.self, from: data)
+        return migrate(legacy: legacy)
+    }
+
+    private struct LayoutVersionProbe: Codable {
+        let version: Int
+    }
+
+    /// Minimal decode-only model of the v1 pane-tree layout. This is the only
+    /// surviving trace of the pane system — it exists solely at the persistence
+    /// seam so existing layouts.json files migrate cleanly on first launch.
+    private struct LegacyLayoutV1: Decodable {
+        let version: Int
+        var activeWorkspaceIndex: Int
+        var workspaces: [LegacyWorkspaceV1]
+    }
+
+    private struct LegacyWorkspaceV1: Decodable {
+        let id: UUID
+        var name: String
+        var icon: String?
+        var root: LegacyPaneNodeV1
+        var focusedPaneId: UUID
+        var createdAt: Date
+    }
+
+    private indirect enum LegacyPaneNodeV1: Decodable {
+        case leaf(LegacyLeafV1)
+        case split(first: LegacyPaneNodeV1, second: LegacyPaneNodeV1)
+
+        struct LegacyLeafV1: Decodable {
+            let id: UUID
+            var tabs: [PaneContent]
+            var selectedTabIndex: Int
+
+            private enum CodingKeys: String, CodingKey {
+                case id, tabs, selectedTabIndex, content
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                id = try container.decode(UUID.self, forKey: .id)
+                if let decoded = try container.decodeIfPresent([PaneContent].self, forKey: .tabs), !decoded.isEmpty {
+                    tabs = decoded
+                    selectedTabIndex = try container.decodeIfPresent(Int.self, forKey: .selectedTabIndex) ?? 0
+                } else {
+                    tabs = [try container.decode(PaneContent.self, forKey: .content)]
+                    selectedTabIndex = 0
+                }
+                selectedTabIndex = min(max(selectedTabIndex, 0), max(tabs.count - 1, 0))
+            }
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case type, leaf, split
+        }
+
+        private enum SplitKeys: String, CodingKey {
+            case first, second
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try container.decode(String.self, forKey: .type)
+            switch type {
+            case "split":
+                let split = try container.nestedContainer(keyedBy: SplitKeys.self, forKey: .split)
+                self = .split(
+                    first: try split.decode(LegacyPaneNodeV1.self, forKey: .first),
+                    second: try split.decode(LegacyPaneNodeV1.self, forKey: .second)
+                )
+            default:
+                self = .leaf(try container.decode(LegacyLeafV1.self, forKey: .leaf))
+            }
+        }
+
+        /// (leaf id, tabs, selected tab id) for every leaf, depth-first.
+        var leavesInTreeOrder: [(id: UUID, tabs: [PaneContent], selectedTabID: UUID?)] {
+            switch self {
+            case .leaf(let leaf):
+                let selected = leaf.tabs.indices.contains(leaf.selectedTabIndex)
+                    ? leaf.tabs[leaf.selectedTabIndex].id
+                    : leaf.tabs.first?.id
+                return [(leaf.id, leaf.tabs, selected)]
+            case .split(let first, let second):
+                return first.leavesInTreeOrder + second.leavesInTreeOrder
+            }
+        }
+    }
+
+    private static func migrate(legacy: LegacyLayoutV1) -> DecodedLayout {
+        var flattened: [Workspace] = []
+        var activeIndex = 0
+
+        for (workspaceIndex, legacyWorkspace) in legacy.workspaces.enumerated() {
+            let isActiveWorkspace = workspaceIndex == legacy.activeWorkspaceIndex
+            let leaves = legacyWorkspace.root.leavesInTreeOrder
+            let focusedLeaf = leaves.first { $0.id == legacyWorkspace.focusedPaneId }
+
+            for leaf in leaves {
+                for content in leaf.tabs {
+                    let tab = Workspace(
+                        id: UUID(),
+                        name: content.paneItemTitle,
+                        icon: nil,
+                        content: content,
+                        createdAt: legacyWorkspace.createdAt
+                    )
+                    if isActiveWorkspace,
+                       leaf.id == focusedLeaf?.id ?? leaves.first?.id,
+                       content.id == (focusedLeaf ?? leaves.first)?.selectedTabID {
+                        activeIndex = flattened.count
+                    }
+                    flattened.append(tab)
+                }
+            }
+        }
+
+        return DecodedLayout(
+            activeWorkspaceIndex: min(max(activeIndex, 0), max(flattened.count - 1, 0)),
+            workspaces: flattened,
+            migrated: true
+        )
     }
 }

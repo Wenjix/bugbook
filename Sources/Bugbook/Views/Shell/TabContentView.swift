@@ -1,51 +1,34 @@
 import AppKit
 import SwiftUI
 
-private enum PaneFindMatch: Equatable {
+private enum TabFindMatch: Equatable {
     case block(BlockFindSelection)
     case databaseRow(String)
 }
 
-/// Renders a single pane leaf: chrome bar (30px) + content below.
-///
-/// Focus state is observed by PaneChromeBar and PaneFocusOverlay internally —
-/// the document content is NOT re-rendered when focus changes.
-struct PaneContentView: View {
-    let leaf: PaneNode.Leaf
-    let workspaceManager: WorkspaceManager
-    let showFocusBorder: Bool
-    var fileTree: [FileEntry] = []
-
-    let documentContentBuilder: (PaneNode.Leaf, OpenFile) -> AnyView
-    var breadcrumbProvider: ((OpenFile) -> [BreadcrumbItem])? = nil
-    var onBreadcrumbNavigate: ((BreadcrumbItem, UUID) -> Void)? = nil
+/// Renders the active tab's document: optional find-in-page bar + content.
+struct TabContentView: View {
+    let content: PaneContent
+    let documentContentBuilder: (OpenFile) -> AnyView
     var blockDocumentLookup: ((UUID) -> BlockDocument?)? = nil
-    let paneActions: PaneActions
 
-    @Environment(\.editorTypingFocusActive) private var editorTypingFocusActive
     @Environment(\.editorTypingFocusFullBleed) private var editorTypingFocusFullBleed
-    @State private var isDropTarget = false
 
-    // Find-in-page state (per-pane)
+    // Find-in-page state
     @State private var showFindBar = false
     @State private var findQuery = ""
     @State private var findCurrentIndex: Int?
-    @State private var findMatchCache: [PaneFindMatch] = []
+    @State private var findMatchCache: [TabFindMatch] = []
     @State private var findAutoExpandedToggleIds: Set<UUID> = []
     @State private var databaseFindState: DatabaseViewState?
     @FocusState private var findFieldFocused: Bool
 
-    private var isFocusedPane: Bool {
-        workspaceManager.activeWorkspace?.focusedPaneId == leaf.id
-    }
-
     private var activeBlockDocument: BlockDocument? {
-        guard case .document = leaf.content else { return nil }
-        return blockDocumentLookup?(leaf.activeTabID)
+        blockDocumentLookup?(content.id)
     }
 
     private var activeDatabaseFindState: DatabaseViewState? {
-        guard case .document(let file) = leaf.content,
+        guard case .document(let file) = content,
               file.isDatabase else { return nil }
         return databaseFindState
     }
@@ -69,7 +52,7 @@ struct PaneContentView: View {
 
         if let databaseState = activeDatabaseFindState {
             let rowIds = databaseState.matches(for: findQuery)
-            let results = rowIds.map(PaneFindMatch.databaseRow)
+            let results = rowIds.map(TabFindMatch.databaseRow)
             findMatchCache = results
             if let findCurrentIndex, findCurrentIndex < results.count {
                 selectFindMatch(at: findCurrentIndex, in: results, shouldScroll: false)
@@ -110,11 +93,11 @@ struct PaneContentView: View {
             }
         }
         searchBlocks(doc.blocks)
-        findMatchCache = results.map(PaneFindMatch.block)
+        findMatchCache = results.map(TabFindMatch.block)
         if let findCurrentIndex, findCurrentIndex < results.count {
             selectFindMatch(
                 at: findCurrentIndex,
-                in: results.map(PaneFindMatch.block),
+                in: results.map(TabFindMatch.block),
                 shouldScroll: false
             )
         } else {
@@ -123,57 +106,19 @@ struct PaneContentView: View {
     }
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                if shouldShowChromeBar {
-                    PaneChromeBar(
-                        leaf: leaf,
-                        workspaceManager: workspaceManager,
-                        isOnlyPane: !showFocusBorder,
-                        fileTree: fileTree,
-                        breadcrumbs: chromeBreadcrumbs,
-                        onBreadcrumbNavigate: onBreadcrumbNavigate,
-                        paneActions: paneActions
-                    )
-                }
-
-                if showFindBar {
-                    editorFindBar
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                contentForLeaf
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            if showFindBar {
+                editorFindBar
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            PaneFocusOverlay(
-                paneId: leaf.id,
-                workspaceManager: workspaceManager
-            )
-
-            // Drop target highlight for pane swap
-            if isDropTarget {
-                RoundedRectangle(cornerRadius: Container.cardRadius)
-                    .strokeBorder(Color.fallbackAccent.opacity(Opacity.strong), lineWidth: 2)
-                    .allowsHitTesting(false)
-            }
+            tabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(editorTypingFocusFullBleed ? Color.fallbackEditorBg : Container.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: editorTypingFocusFullBleed ? 0 : Container.cardRadius))
-        .onDrop(of: [.text], isTargeted: $isDropTarget) { providers in
-            guard let provider = providers.first else { return false }
-            _ = provider.loadObject(ofClass: NSString.self) { item, _ in
-                guard let idString = item as? String,
-                      let sourceId = UUID(uuidString: idString),
-                      sourceId != leaf.id else { return }
-                DispatchQueue.main.async {
-                    workspaceManager.swapPaneContents(paneA: sourceId, paneB: leaf.id)
-                }
-            }
-            return true
-        }
         .onReceive(NotificationCenter.default.publisher(for: .findInPane)) { _ in
-            guard isFocusedPane, supportsInlineFindBar else { return }
+            guard supportsInlineFindBar else { return }
             if showFindBar {
                 focusFindField()
             } else {
@@ -203,77 +148,10 @@ struct PaneContentView: View {
             guard showFindBar else { return }
             recomputeFindMatches()
         }
-        .contextMenu {
-            Menu("Split Right") {
-                paneTypeMenu { content in
-                    splitPane(axis: .horizontal, content: content)
-                }
-            }
-            Menu("Split Down") {
-                paneTypeMenu { content in
-                    splitPane(axis: .vertical, content: content)
-                }
-            }
-            Divider()
-            Menu("Replace With") {
-                paneTypeMenu { content in
-                    workspaceManager.updatePaneContent(paneId: leaf.id, content: content)
-                }
-            }
-            if leaf.activeContent.defaultNewPaneTab() != nil {
-                Button("New Pane Item") {
-                    paneActions.createPaneTab(leaf)
-                }
-            }
-            if showFocusBorder {
-                Button("Unsplit") {
-                    paneActions.closeOtherPanes(leaf)
-                }
-                Button("Close Other Panes") {
-                    paneActions.closeOtherPanes(leaf)
-                }
-                Button("Pop Out to Tab") {
-                    workspaceManager.popOutPane(id: leaf.id)
-                }
-            }
-            Divider()
-            Button("Close Pane") {
-                paneActions.closePane(leaf)
-            }
-        }
-    }
-
-    private func splitPane(axis: PaneNode.Split.Axis, content: PaneContent) {
-        guard BugbookFeatureGate.allowsPaneContent(content) else { return }
-        workspaceManager.setFocusedPane(id: leaf.id)
-        _ = workspaceManager.splitFocusedPane(axis: axis, newContent: content)
-    }
-
-    @ViewBuilder
-    private func paneTypeMenu(action: @escaping (PaneContent) -> Void) -> some View {
-        ForEach(Array(BugbookFeatureGate.paneLauncherBuiltInPanes.enumerated()), id: \.offset) { _, pane in
-            Button(pane.label) { action(pane.content) }
-        }
-        if BugbookFeatureGate.legacyPanesEnabled {
-            Button("Graph View") { action(.graphDocument()) }
-        }
-    }
-
-    private var chromeBreadcrumbs: [BreadcrumbItem] {
-        guard let provider = breadcrumbProvider,
-              case .document(let file) = leaf.content,
-              isPlainDocumentPage(file) else {
-            return []
-        }
-        return provider(file)
-    }
-
-    private var shouldShowChromeBar: Bool {
-        showFocusBorder || leaf.hasMultipleTabs
     }
 
     private var supportsInlineFindBar: Bool {
-        guard case .document(let file) = leaf.content else { return false }
+        guard case .document(let file) = content else { return false }
         return isPlainDocumentPage(file)
     }
 
@@ -288,10 +166,10 @@ struct PaneContentView: View {
     }
 
     @ViewBuilder
-    private var contentForLeaf: some View {
-        switch leaf.content {
+    private var tabContent: some View {
+        switch content {
         case .document(let file):
-            documentContentBuilder(leaf, file)
+            documentContentBuilder(file)
         }
     }
 
@@ -381,7 +259,7 @@ struct PaneContentView: View {
 
     private func selectFindMatch(
         at index: Int,
-        in matches: [PaneFindMatch]? = nil,
+        in matches: [TabFindMatch]? = nil,
         shouldScroll: Bool = true
     ) {
         let resolvedMatches = matches ?? findMatchCache
@@ -408,7 +286,7 @@ struct PaneContentView: View {
         }
     }
 
-    private func databaseRowIds(in matches: [PaneFindMatch]) -> [String] {
+    private func databaseRowIds(in matches: [TabFindMatch]) -> [String] {
         matches.compactMap {
             guard case .databaseRow(let rowId) = $0 else { return nil }
             return rowId
@@ -439,69 +317,5 @@ struct PaneContentView: View {
         DispatchQueue.main.async {
             findFieldFocused = true
         }
-    }
-}
-
-// MARK: - Split Direction Icon
-
-/// Correctly oriented split icon: a rectangle with a divider line.
-/// `.right` = vertical divider (splits left|right). `.down` = horizontal divider (splits top/bottom).
-struct SplitIcon: View {
-    enum Direction { case right, down }
-    let direction: Direction
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 2)
-                .strokeBorder(Color.secondary, lineWidth: 1.5)
-                .frame(width: 12, height: 10)
-
-            if direction == .right {
-                // Vertical line = split left|right
-                Rectangle().fill(Color.secondary).frame(width: 1.5, height: 10)
-            } else {
-                // Horizontal line = split top/bottom
-                Rectangle().fill(Color.secondary).frame(width: 12, height: 1.5)
-            }
-        }
-    }
-}
-
-// MARK: - Button Style
-
-struct PaneActionButtonStyle: ButtonStyle {
-    let isDestructive: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: Radius.xs)
-                    .fill(backgroundColor(configuration.isPressed))
-            )
-    }
-
-    private func backgroundColor(_ isPressed: Bool) -> Color {
-        if isPressed {
-            return isDestructive ? Color.red.opacity(0.12) : Color.primary.opacity(0.08)
-        }
-        return .clear
-    }
-}
-
-// MARK: - Focus Overlay
-
-private struct PaneFocusOverlay: View {
-    let paneId: UUID
-    let workspaceManager: WorkspaceManager
-
-    var body: some View {
-        // Focus tracking only — chrome bar handles focus visual indication.
-        #if os(macOS)
-        PaneFocusTracker(paneId: paneId) { id in
-            workspaceManager.setFocusedPane(id: id)
-        }
-        #else
-        EmptyView()
-        #endif
     }
 }

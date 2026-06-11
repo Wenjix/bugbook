@@ -40,11 +40,9 @@ final class NewNoteFlowTests: XCTestCase {
             path: path,
             isDirectory: false
         )
-        let focusedPaneId = try XCTUnwrap(manager.activeWorkspace?.focusedPaneId)
         let switchedToExisting = appState.openFileReplacingCurrentTab(
             entry,
             workspaceManager: manager,
-            paneId: focusedPaneId,
             pushHistory: true,
             preferExistingTab: false
         )
@@ -75,11 +73,9 @@ final class NewNoteFlowTests: XCTestCase {
             path: path,
             isDirectory: false
         )
-        let focusedPaneId = try XCTUnwrap(manager.activeWorkspace?.focusedPaneId)
         appState.openFileReplacingCurrentTab(
             entry,
             workspaceManager: manager,
-            paneId: focusedPaneId,
             pushHistory: true,
             preferExistingTab: false
         )
@@ -105,11 +101,9 @@ final class NewNoteFlowTests: XCTestCase {
             isDirectory: false,
             kind: .databaseRow(dbPath: "/ws/Tasks", rowId: "row_42")
         )
-        let focusedPaneId = try XCTUnwrap(manager.activeWorkspace?.focusedPaneId)
         appState.openFileReplacingCurrentTab(
             entry,
             workspaceManager: manager,
-            paneId: focusedPaneId,
             pushHistory: true,
             preferExistingTab: true
         )
@@ -137,11 +131,9 @@ final class NewNoteFlowTests: XCTestCase {
                 path: path,
                 isDirectory: false
             )
-            let focusedPaneId = try XCTUnwrap(manager.activeWorkspace?.focusedPaneId)
             appState.openFileReplacingCurrentTab(
                 entry,
                 workspaceManager: manager,
-                paneId: focusedPaneId,
                 pushHistory: true,
                 preferExistingTab: false
             )

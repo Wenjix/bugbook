@@ -473,10 +473,11 @@ struct ContentView: View {
             .onChange(of: appState.settings.focusModeOnType) { _, enabled in
                 editorUI.setFocusModeEnabled(enabled)
             }
-            .onChange(of: workspaceManager.activeWorkspace?.focusedPaneId) { _, _ in
+            .onChange(of: workspaceManager.activeWorkspaceIndex) { _, _ in
                 hideFormattingPanel()
                 closeDatabaseRowModal()
                 updateSidebarContextType()
+                ensureActiveTabDocumentLoaded()
             }
             .onChange(of: appState.currentView) { _, newView in
                 handleCurrentViewChange(newView)
@@ -514,12 +515,12 @@ struct ContentView: View {
                     saveTask?.cancel()
                     saveTask = nil
                     editorDraftStore.clearPageDraft(path: path)
-                    let matchingWorkspaceTabIDs = workspaceManager.allDocumentLeaves()
+                    let matchingWorkspaceTabIDs = workspaceManager.allDocuments()
                         .filter { $0.file.path == path }
                         .map(\.file.id)
                     for tabID in matchingWorkspaceTabIDs {
                         cleanupTabDocuments(tabID)
-                        _ = workspaceManager.closeTab(tabId: tabID, closePaneWhenLastTab: true)
+                        _ = workspaceManager.closeTab(tabId: tabID)
                     }
                     // Also clean up legacy tab system
                     let closingIds = appState.openTabs.filter { $0.path == path }.map(\.id)
@@ -600,7 +601,7 @@ struct ContentView: View {
     }
 
     private func applyCommandNotifications<V: View>(to view: V) -> some View {
-        applyPaneNotifications(
+        applyTabNotifications(
             to: applyZoomNotifications(
                 to: applySecondaryCommandNotifications(
                     to: applyPrimaryCommandNotifications(to: view)
@@ -609,78 +610,24 @@ struct ContentView: View {
         )
     }
 
-    private func applyPaneNotifications<V: View>(to view: V) -> some View {
+    private func applyTabNotifications<V: View>(to view: V) -> some View {
         view
             .onChange(of: pendingCmdKNavigation) { _, request in
                 handlePendingCmdKNavigation(request)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .splitPaneRight)) { _ in
-                _ = workspaceManager.splitFocusedPane(
-                    axis: .horizontal,
-                    newContent: BugbookFeatureGate.defaultSplitPaneContent
-                )
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .splitPaneDown)) { _ in
-                _ = workspaceManager.splitFocusedPane(
-                    axis: .vertical,
-                    newContent: BugbookFeatureGate.defaultSplitPaneContent
-                )
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .closeWorkspace)) { _ in
-                closeActiveWorkspace()
             }
             .onReceive(NotificationCenter.default.publisher(for: .switchWorkspace)) { notification in
                 if let index = notification.object as? Int {
                     workspaceManager.switchWorkspace(to: index)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .focusPaneByIndex)) { notification in
-                if let index = notification.object as? Int,
-                   let ws = workspaceManager.activeWorkspace {
-                    let leaves = ws.root.allLeaves
-                    if index < leaves.count {
-                        workspaceManager.setFocusedPane(id: leaves[index].id)
-                    }
-                }
+            .onReceive(NotificationCenter.default.publisher(for: .cycleTabsForward)) { _ in
+                workspaceManager.cycleWorkspace(step: 1)
+                updateSidebarContextType()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .movePaneFocusLeft)) { _ in
-                moveFocusToAdjacentPane(direction: .left)
+            .onReceive(NotificationCenter.default.publisher(for: .cycleTabsBackward)) { _ in
+                workspaceManager.cycleWorkspace(step: -1)
+                updateSidebarContextType()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .movePaneFocusRight)) { _ in
-                moveFocusToAdjacentPane(direction: .right)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .movePaneFocusUp)) { _ in
-                moveFocusToAdjacentPane(direction: .up)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .movePaneFocusDown)) { _ in
-                moveFocusToAdjacentPane(direction: .down)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .cyclePaneTabsForward)) { _ in
-                cycleFocusedPaneTabs(step: 1)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .cyclePaneTabsBackward)) { _ in
-                cycleFocusedPaneTabs(step: -1)
-            }
-    }
-
-    private enum FocusDirection { case left, right, up, down }
-
-    /// Move focus to the next pane in the given direction.
-    /// Simple approach: cycle through all leaves in tree order.
-    private func moveFocusToAdjacentPane(direction: FocusDirection) {
-        guard let ws = workspaceManager.activeWorkspace else { return }
-        let leaves = ws.allLeaves
-        guard leaves.count > 1 else { return }
-        guard let currentIndex = leaves.firstIndex(where: { $0.id == ws.focusedPaneId }) else { return }
-
-        let nextIndex: Int
-        switch direction {
-        case .right, .down:
-            nextIndex = (currentIndex + 1) % leaves.count
-        case .left, .up:
-            nextIndex = (currentIndex - 1 + leaves.count) % leaves.count
-        }
-        workspaceManager.setFocusedPane(id: leaves[nextIndex].id)
     }
 
     private func applyPrimaryCommandNotifications<V: View>(to view: V) -> some View {
@@ -693,18 +640,14 @@ struct ContentView: View {
                 // openTabs path created the file but never surfaced it.
                 createNewFile(destination: .inPlace)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .newPaneTab)) { _ in
-                guard let leaf = workspaceManager.focusedPane else { return }
-                createPaneTab(in: leaf)
-            }
             .onReceive(NotificationCenter.default.publisher(for: .newTab)) { _ in
                 appState.newEmptyTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-                closeFocusedPaneTabOrWorkspace()
+                closeActiveTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .reopenClosedItem)) { _ in
-                reopenClosedPaneItem()
+                reopenClosedTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
                 forceSave()
@@ -888,9 +831,8 @@ struct ContentView: View {
     }
 
     private func updateSidebarContextType() {
-        guard let ws = workspaceManager.activeWorkspace,
-              let focusedLeaf = ws.focusedLeaf else { return }
-        appState.sidebarContextType = SidebarContextType.from(focusedLeaf.content)
+        guard let content = workspaceManager.activeContent else { return }
+        appState.sidebarContextType = SidebarContextType.from(content)
     }
 
     @ViewBuilder
@@ -899,83 +841,40 @@ struct ContentView: View {
             Color.black.opacity(0.3)
                 .onTapGesture { appState.commandPaletteOpen = false }
 
-            if appState.commandPaletteMode == .splitLauncher {
-                VStack {
+            VStack {
+                Spacer()
+                HStack {
                     Spacer()
-                    HStack {
-                        Spacer()
-                        PaneLauncher(
-                            variant: .wide,
-                            fileTree: appState.fileTree,
-                            onSelect: { content, direction in
-                                guard BugbookFeatureGate.allowsPaneContent(content) else { return }
-                                appState.commandPaletteOpen = false
-                                switch direction {
-                                case .right:
-                                    _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content)
-                                case .down:
-                                    _ = workspaceManager.splitFocusedPane(axis: .vertical, newContent: content)
-                                case .newTab:
-                                    workspaceManager.addWorkspaceWith(content: content)
-                                }
-                            },
-                            onDismiss: { appState.commandPaletteOpen = false },
-                            onNavigateInPlace: { content in
-                                guard BugbookFeatureGate.allowsPaneContent(content) else { return }
-                                appState.commandPaletteOpen = false
-                                // For workspace pages, use proper file navigation (loads content from disk).
-                                // For built-in panes (mail, calendar, etc.), use direct content replacement.
-                                if case .document(let file) = content,
-                                   !file.path.hasPrefix("bugbook://"),
-                                   !file.path.isEmpty,
-                                   !file.isEmptyTab {
-                                    navigateToFilePath(file.path)
-                                } else {
-                                    openContentInFocusedPane(content)
-                                }
+                    CommandPaletteView(
+                        appState: appState,
+                        workspaceManager: workspaceManager,
+                        isPresented: $appState.commandPaletteOpen,
+                        onSelectFile: { entry, destination in
+                            DispatchQueue.main.async {
+                                openLauncherFile(entry, destination: destination)
                             }
-                        )
-                        .popoverSurface(cornerRadius: Radius.xl)
-                        Spacer()
-                    }
+                        },
+                        onCreate: { kind, destination in
+                            DispatchQueue.main.async {
+                                createLauncherItem(kind, destination: destination)
+                            }
+                        },
+                        onOpenPane: { reference, destination in
+                            DispatchQueue.main.async {
+                                openLauncherPane(reference, destination: destination)
+                            }
+                        },
+                        onAskAI: { prompt in
+                            NotificationCenter.default.post(
+                                name: .askAI,
+                                object: nil,
+                                userInfo: ["prompt": prompt]
+                            )
+                        }
+                    )
                     Spacer()
                 }
-            } else {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        CommandPaletteView(
-                            appState: appState,
-                            workspaceManager: workspaceManager,
-                            isPresented: $appState.commandPaletteOpen,
-                            onSelectFile: { entry, destination in
-                                DispatchQueue.main.async {
-                                    openLauncherFile(entry, destination: destination)
-                                }
-                            },
-                            onCreate: { kind, destination in
-                                DispatchQueue.main.async {
-                                    createLauncherItem(kind, destination: destination)
-                                }
-                            },
-                            onOpenPane: { reference, destination in
-                                DispatchQueue.main.async {
-                                    openLauncherPane(reference, destination: destination)
-                                }
-                            },
-                            onAskAI: { prompt in
-                                NotificationCenter.default.post(
-                                    name: .askAI,
-                                    object: nil,
-                                    userInfo: ["prompt": prompt]
-                                )
-                            }
-                        )
-                        Spacer()
-                    }
-                    Spacer()
-                }
+                Spacer()
             }
         }
     }
@@ -998,17 +897,12 @@ struct ContentView: View {
         .disabled(!isEnabled)
     }
 
-    private var activeWorkspaceLeaves: [PaneNode.Leaf] {
-        workspaceManager.activeWorkspace?.allLeaves ?? []
-    }
-
     private var shellShowsSidebarPanel: Bool {
         appState.sidebarVisible
     }
 
     private var contextualSidebarActiveFilePath: String? {
-        guard let leaf = workspaceManager.activeWorkspace?.focusedLeaf,
-              case .document(let file) = leaf.content,
+        guard let file = workspaceManager.focusedOpenFile,
               !file.path.isEmpty,
               !file.path.hasPrefix("bugbook://") else {
             return nil
@@ -1037,11 +931,11 @@ struct ContentView: View {
         guard BugbookFeatureGate.allowsPaneContent(content) else { return }
         appState.currentView = .editor
         appState.showSettings = false
-        openOrFocusPane(content)
+        openOrFocusTab(content)
     }
 
     /// Handle a tap on a sidebar fixed-zone navigation item.
-    /// Default: replace the focused pane. Cmd-click: open in a new workspace tab.
+    /// Default: replace the active tab. Cmd-click: open in a new tab.
     private func handleNavItemTap(_ item: ShellNavItem, inNewTab: Bool) {
         guard BugbookFeatureGate.allowsSidebarItem(id: item.id) else { return }
         appState.currentView = .editor
@@ -1074,7 +968,7 @@ struct ContentView: View {
         if inNewTab {
             workspaceManager.addWorkspaceWith(content: content)
         } else {
-            openContentInFocusedPane(content)
+            openContentInActiveTab(content)
         }
     }
 
@@ -1245,17 +1139,15 @@ struct ContentView: View {
     // MARK: - Main Content
 
     private var activeDocumentForAiDrawer: BlockDocument? {
-        workspaceManager.activeWorkspace.flatMap { ws in
-            ws.focusedLeaf.flatMap { blockDocuments[$0.activeTabID] }
-        }
+        workspaceManager.activeTabID.flatMap { blockDocuments[$0] }
     }
 
     private var aiDrawerContext: AiDrawerContext {
-        guard let leaf = workspaceManager.focusedPane else {
+        guard let content = workspaceManager.activeContent else {
             return AiDrawerContext(placeholder: "Ask anything…")
         }
 
-        switch leaf.content {
+        switch content {
         case .document(let file):
             if file.isMail {
                 return makeMailAiDrawerContext()
@@ -1475,13 +1367,6 @@ struct ContentView: View {
         }
     }
 
-    private var activeTabLeadingPadding: CGFloat {
-        guard let activeTab = appState.activeTab else {
-            return ShellZoomMetrics.size(8)
-        }
-        return usesImmersivePaneLayout(activeTab) ? 0 : ShellZoomMetrics.size(8)
-    }
-
     private let shellUsesTopChromeUnderlap = false
     private let usesFullBleedShellLayout = false
 
@@ -1513,7 +1398,7 @@ struct ContentView: View {
     private var paneTreeContent: some View {
         Group {
             if let ws = workspaceManager.activeWorkspace {
-                paneTreeView(for: ws)
+                tabContent(for: ws)
             }
         }
         .environment(\.workspacePath, appState.workspacePath)
@@ -1594,72 +1479,53 @@ struct ContentView: View {
         }
     }
 
-    private func paneTreeView(for workspace: Workspace) -> some View {
-        PaneTreeView(
-            node: workspace.root,
-            workspaceManager: workspaceManager,
-            hasMultiplePanes: workspace.hasMultiplePanes,
-            fileTree: appState.fileTree,
-            documentContentBuilder: { leaf, file in
-                AnyView(self.paneDocumentContent(leaf: leaf, file: file))
-            },
-            breadcrumbProvider: { file in
-                self.breadcrumbs(for: file)
-            },
-            onBreadcrumbNavigate: { item, paneId in
-                self.navigateToBreadcrumb(item, inPane: paneId)
+    private func tabContent(for workspace: Workspace) -> some View {
+        TabContentView(
+            content: workspace.content,
+            documentContentBuilder: { file in
+                AnyView(self.documentContent(for: file))
             },
             blockDocumentLookup: { tabId in
                 self.blockDocuments[tabId]
-            },
-            paneActions: paneActions
+            }
         )
     }
 
-    private var paneActions: PaneActions {
-        PaneActions(
-            createPaneTab: createPaneTab(in:),
-            closePaneTab: closePaneTab(in:tabId:),
-            closePane: closePane(_:),
-            closeOtherPanes: closeOtherPanes(keeping:)
-        )
-    }
+    // MARK: - Tab Document Content
 
-    // MARK: - Pane Document Content
-
-    /// Renders document content for a single pane leaf. Handles breadcrumbs, options menu,
+    /// Renders a tab's document content. Handles breadcrumbs, options menu,
     /// and routes to the appropriate view based on the OpenFile's TabKind.
     @ViewBuilder
-    private func paneDocumentContent(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
+    private func documentContent(for file: OpenFile) -> some View {
         VStack(spacing: 0) {
             if showsPageOptionsMenu(for: file) {
-                documentTopChromeBar(for: file, in: leaf)
+                documentTopChromeBar(for: file)
             }
 
             if file.path.contains("/.claude/skills/") {
                 skillFileBanner(path: file.path)
             }
 
-            paneContentRouting(leaf: leaf, file: file)
+            tabContentRouting(file: file)
         }
-        .padding(.leading, paneLeadingPadding(for: file))
     }
 
-    private func documentTopChromeBar(for file: OpenFile, in leaf: PaneNode.Leaf) -> some View {
-        let pageOptionsOpen = pageOptionsMenuPaneId == leaf.id
-        let pageOptionsActive = hoveredPageOptionsPaneId == leaf.id || pageOptionsOpen
+    private func documentTopChromeBar(for file: OpenFile) -> some View {
+        let tabId = file.id
+        let pageOptionsOpen = pageOptionsMenuPaneId == tabId
+        let pageOptionsActive = hoveredPageOptionsPaneId == tabId || pageOptionsOpen
 
         return HStack(spacing: ShellZoomMetrics.size(10)) {
             documentBreadcrumbTrail(
                 items: breadcrumbs(for: file),
                 fallbackFile: file,
-                onNavigate: { item in navigateToBreadcrumb(item, inPane: leaf.id) }
+                onNavigate: { item in navigateToBreadcrumb(item) }
             )
 
             Spacer(minLength: ShellZoomMetrics.size(12))
 
             Button {
-                togglePageOptionsMenu(for: leaf.id)
+                togglePageOptionsMenu(for: tabId)
             } label: {
                 Image(systemName: "ellipsis")
                     .font(ShellZoomMetrics.font(Typography.bodySmall, weight: .semibold))
@@ -1681,15 +1547,15 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .onHover { isHovered in
                 if isHovered {
-                    hoveredPageOptionsPaneId = leaf.id
-                } else if hoveredPageOptionsPaneId == leaf.id {
+                    hoveredPageOptionsPaneId = tabId
+                } else if hoveredPageOptionsPaneId == tabId {
                     hoveredPageOptionsPaneId = nil
                 }
             }
             .help("Page options")
             .accessibilityLabel("Page options")
             .animation(.easeInOut(duration: 0.12), value: pageOptionsActive)
-            .floatingPopover(isPresented: pageOptionsMenuBinding(for: leaf.id)) {
+            .floatingPopover(isPresented: pageOptionsMenuBinding(for: tabId)) {
                 if file.isDatabaseRow {
                     databaseRowOptionsMenu(for: file)
                 } else if let doc = blockDocuments[file.id] {
@@ -1811,21 +1677,17 @@ struct ContentView: View {
         }
     }
 
-    private func paneLeadingPadding(for file: OpenFile) -> CGFloat {
-        usesImmersivePaneLayout(file) ? 0 : ShellZoomMetrics.size(8)
+    /// Replace the active tab's content with the given PaneContent.
+    private func openContentInActiveTab(_ content: PaneContent) {
+        guard BugbookFeatureGate.allowsPaneContent(content) else { return }
+        replaceActiveTabContent(with: content)
     }
 
-    /// Replace the focused pane's content with the given PaneContent.
-    private func openContentInFocusedPane(_ content: PaneContent) {
+    private func openOrFocusTab(_ content: PaneContent) {
         guard BugbookFeatureGate.allowsPaneContent(content) else { return }
-        guard let leaf = workspaceManager.activeWorkspace?.focusedLeaf else { return }
-        replacePaneContent(paneId: leaf.id, with: content)
-    }
-
-    private func openOrFocusPane(_ content: PaneContent) {
-        guard BugbookFeatureGate.allowsPaneContent(content) else { return }
-        if let paneID = matchingPaneID(for: content) {
-            workspaceManager.setFocusedPane(id: paneID)
+        if let index = matchingTabIndex(for: content) {
+            workspaceManager.switchWorkspace(to: index)
+            updateSidebarContextType()
             return
         }
 
@@ -1834,109 +1696,39 @@ struct ContentView: View {
             return
         }
 
-        if workspace.allLeaves.count == 1,
-           let leaf = workspace.focusedLeaf,
-           isReplaceablePlaceholderPane(leaf) {
-            replacePaneContent(paneId: leaf.id, with: content)
-            workspaceManager.setFocusedPane(id: leaf.id)
+        if workspace.openFile?.isEmptyTab == true {
+            replaceActiveTabContent(with: content)
             return
         }
 
         workspaceManager.addWorkspaceWith(content: content)
     }
 
-    private func matchingPaneID(for content: PaneContent) -> UUID? {
-        guard let workspace = workspaceManager.activeWorkspace else { return nil }
-        return workspace.allLeaves.first { leaf in
-            paneContent(leaf.content, matches: content)
-        }?.id
+    private func matchingTabIndex(for content: PaneContent) -> Int? {
+        workspaceManager.workspaces.firstIndex { workspace in
+            tabContent(workspace.content, matches: content)
+        }
     }
 
-    private func paneContent(_ existing: PaneContent, matches target: PaneContent) -> Bool {
+    private func tabContent(_ existing: PaneContent, matches target: PaneContent) -> Bool {
         switch (existing, target) {
         case let (.document(file), .document(targetFile)):
             return file.kind == targetFile.kind
         }
     }
 
-    private func isReplaceablePlaceholderPane(_ leaf: PaneNode.Leaf) -> Bool {
-        switch leaf.content {
-        case .document(let file):
-            return file.isEmptyTab
-        }
-    }
-
-    private func replacePaneContent(paneId: UUID, with content: PaneContent) {
+    private func replaceActiveTabContent(with content: PaneContent) {
         guard BugbookFeatureGate.allowsPaneContent(content) else { return }
-        guard let leaf = workspaceManager.leaf(id: paneId) else { return }
-        cleanupPaneTabResources(paneId: paneId, tabId: leaf.activeTabID)
-        workspaceManager.updatePaneContent(
-            paneId: paneId,
-            content: content.reidentified(as: leaf.activeTabID)
-        )
+        guard let currentTabId = workspaceManager.activeTabID else { return }
+        cleanupTabDocuments(currentTabId)
+        workspaceManager.updateActiveContent(content.reidentified(as: currentTabId))
         updateSidebarContextType()
     }
 
-    private func cleanupPaneTabResources(paneId: UUID, tabId: UUID) {
-        guard let leaf = workspaceManager.leaf(id: paneId),
-              let content = leaf.tabs.first(where: { $0.id == tabId }) else { return }
-
-        switch content {
-        case .document:
-            cleanupTabDocuments(tabId)
-        }
-    }
-
-    private func cleanupPaneResources(_ paneId: UUID) {
-        guard let leaf = workspaceManager.leaf(id: paneId) else { return }
-        for content in leaf.tabs {
-            switch content {
-            case .document(let file):
-                cleanupTabDocuments(file.id)
-            }
-        }
-    }
-
-    private func createPaneTab(in leaf: PaneNode.Leaf) {
-        guard let newContent = leaf.activeContent.defaultNewPaneTab() else { return }
-        guard BugbookFeatureGate.allowsPaneContent(newContent) else { return }
-        _ = workspaceManager.addPaneTab(to: leaf.id, content: newContent)
-        updateSidebarContextType()
-    }
-
-    private func closePaneTab(in leaf: PaneNode.Leaf, tabId: UUID) {
-        cleanupPaneTabResources(paneId: leaf.id, tabId: tabId)
-        _ = workspaceManager.closePaneTab(paneId: leaf.id, tabId: tabId)
-        updateSidebarContextType()
-    }
-
-    private func closePane(_ leaf: PaneNode.Leaf) {
-        cleanupPaneResources(leaf.id)
-        workspaceManager.closePane(id: leaf.id)
-        updateSidebarContextType()
-    }
-
-    private func closeOtherPanes(keeping leaf: PaneNode.Leaf) {
-        guard let workspace = workspaceManager.activeWorkspace else { return }
-        for otherLeaf in workspace.allLeaves where otherLeaf.id != leaf.id {
-            cleanupPaneResources(otherLeaf.id)
-        }
-        workspaceManager.keepOnlyPane(id: leaf.id)
-        updateSidebarContextType()
-    }
-
-    private func closeActiveWorkspace() {
-        guard let workspace = workspaceManager.activeWorkspace else { return }
-        for leaf in workspace.allLeaves {
-            cleanupPaneResources(leaf.id)
-        }
-        workspaceManager.closeWorkspace(at: workspaceManager.activeWorkspaceIndex)
-        updateSidebarContextType()
-    }
-
-    private func shouldAllowClosingFocusedTab(in leaf: PaneNode.Leaf) -> Bool {
+    private func shouldAllowClosingActiveTab() -> Bool {
         guard let session = appState.activeMeetingSession,
-              let doc = blockDocuments[leaf.activeTabID],
+              let tabId = workspaceManager.activeTabID,
+              let doc = blockDocuments[tabId],
               doc.filePath == session.meetingPagePath else {
             return true
         }
@@ -1952,41 +1744,26 @@ struct ContentView: View {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func closeFocusedPaneTabOrWorkspace() {
-        guard let leaf = workspaceManager.focusedPane else { return }
-        guard shouldAllowClosingFocusedTab(in: leaf) else { return }
-
-        if leaf.tabs.count > 1 {
-            closePaneTab(in: leaf, tabId: leaf.activeTabID)
-        } else {
-            closePane(leaf)
-        }
+    private func closeActiveTab() {
+        guard let tabId = workspaceManager.activeTabID else { return }
+        guard shouldAllowClosingActiveTab() else { return }
+        cleanupTabDocuments(tabId)
+        workspaceManager.closeWorkspace(at: workspaceManager.activeWorkspaceIndex)
+        updateSidebarContextType()
     }
 
-    private func reopenClosedPaneItem() {
+    private func reopenClosedTab() {
         guard workspaceManager.reopenLastClosedItem() != nil else { return }
         updateSidebarContextType()
-    }
-
-    private func cycleFocusedPaneTabs(step: Int) {
-        guard let leaf = workspaceManager.focusedPane else { return }
-        workspaceManager.cyclePaneTabs(in: leaf.id, step: step)
-        updateSidebarContextType()
-    }
-
-    private func isEditorDocumentPane(_ leaf: PaneNode.Leaf) -> Bool {
-        guard case .document(let file) = leaf.content else { return false }
-        return isDocumentEditorFile(file)
-    }
-
-    private func nearestEditorDocumentLeaf(from paneId: UUID) -> PaneNode.Leaf? {
-        guard let workspace = workspaceManager.activeWorkspace else { return nil }
-        return workspace.allLeaves.first { $0.id != paneId && isEditorDocumentPane($0) }
+        // Reopened tabs have no loaded document yet — load it now so the tab
+        // doesn't render blank (the index onChange may not fire if the value
+        // didn't change).
+        ensureActiveTabDocumentLoaded()
     }
 
     /// Routes a pane's OpenFile to the correct content view based on its TabKind.
     @ViewBuilder
-    private func paneContentRouting(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
+    private func tabContentRouting(file: OpenFile) -> some View {
         if file.isEmptyTab {
             Color.clear
                 .task {
@@ -2003,7 +1780,7 @@ struct ContentView: View {
                 onTitleChange: { title in
                     updateDatabaseRowTabTitle(tabId: file.id, title: title)
                 },
-                fullWidth: databaseRowFullWidth[leaf.id, default: false]
+                fullWidth: databaseRowFullWidth[file.id, default: false]
             )
             .id(file.id)
         } else if file.isMeetings, !BugbookFeatureGate.legacyPanesEnabled {
@@ -2015,7 +1792,7 @@ struct ContentView: View {
         } else if let doc = blockDocuments[file.id], doc.isMeetingPage, !doc.isCompletedMeetingPage {
             meetingPageView(for: file, document: doc)
         } else if isLegacyPaneFile(file), BugbookFeatureGate.legacyPanesEnabled {
-            legacyPaneContentRouting(leaf: leaf, file: file)
+            legacyPaneContentRouting(file: file)
         } else if isLegacyPaneFile(file) {
             Color.clear
                 .task { openDailyNote() }
@@ -2035,7 +1812,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func legacyPaneContentRouting(leaf: PaneNode.Leaf, file: OpenFile) -> some View {
+    private func legacyPaneContentRouting(file: OpenFile) -> some View {
         if file.isMail {
             MailPaneView(
                 appState: appState,
@@ -2083,11 +1860,11 @@ struct ContentView: View {
                 onOpenGatewayLink: { link in
                     switch link {
                     case .calendar:
-                        openContentInFocusedPane(.calendarDocument())
+                        openContentInActiveTab(.calendarDocument())
                     case .graph:
-                        openContentInFocusedPane(.graphDocument())
+                        openContentInActiveTab(.graphDocument())
                     case .meetings:
-                        openContentInFocusedPane(.meetingsDocument())
+                        openContentInActiveTab(.meetingsDocument())
                     case .database(let path):
                         navigateToFilePath(path)
                     }
@@ -2103,7 +1880,13 @@ struct ContentView: View {
     @ViewBuilder
     private func editorView(for tab: OpenFile) -> some View {
         if let document = blockDocuments[tab.id] {
+            // Identity-keyed per tab (matching DatabaseRowFullPageView's
+            // `.id(file.id)`) so switching tabs builds a fresh editor tree
+            // instead of diffing one document's views into another — the
+            // cross-document reuse intermittently rendered the previous
+            // tab's content for a few seconds after a switch.
             editorDocumentView(document)
+                .id(tab.id)
         } else {
             editorLoadingView()
         }
@@ -2255,9 +2038,7 @@ struct ContentView: View {
     private func updateDocumentIcon(_ newIcon: String?, document: BlockDocument) {
         document.icon = newIcon
         markActiveEditorTabDirty()
-        if let workspace = workspaceManager.activeWorkspace,
-           let leaf = workspace.focusedLeaf,
-           case .document(let openFile) = leaf.content {
+        if let openFile = workspaceManager.focusedOpenFile {
             workspaceManager.updateOpenFile(tabId: openFile.id, persist: false) { file in
                 file.icon = newIcon
             }
@@ -2668,21 +2449,17 @@ struct ContentView: View {
 
         let cmdHeld = NSEvent.modifierFlags.contains(.command)
         if cmdHeld {
-            // Cmd+click: split the focused pane and open in the new split
-            let paneId = UUID()
-            let file = makeOpenFile(for: entry, id: paneId)
-            if let newPaneId = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: .document(openFile: file)) {
-                loadFileContentForPane(entry: entry, tabId: newPaneId)
-            }
+            // Cmd+click: open in a new tab
+            openEntryInNewWorkspaceTab(entry)
         } else {
-            // Normal click: open in the focused pane (or nearest document pane)
-            navigateToEntryInPane(entry)
+            // Normal click: open in the active tab
+            navigateToEntryInActiveTab(entry)
         }
     }
 
-    // MARK: - Pane Navigation Helpers
+    // MARK: - Tab Navigation Helpers
 
-    /// Create an OpenFile from a FileEntry with a specific UUID (for pane leaf identity).
+    /// Create an OpenFile from a FileEntry with a specific UUID (the tab identity).
     private func makeOpenFile(for entry: FileEntry, id: UUID) -> OpenFile {
         let history = entry.path.isEmpty ? [] : [entry.path]
         let historyIndex = history.isEmpty ? -1 : 0
@@ -2701,65 +2478,34 @@ struct ContentView: View {
         )
     }
 
-    /// Navigate to a file entry in the appropriate pane.
-    /// Uses the focused pane if it's a document pane, otherwise finds the nearest document pane.
-    private func navigateToEntryInPane(_ entry: FileEntry, preferExistingTab: Bool = true) {
+    /// Navigate to a file entry: replace the active tab's document (or switch
+    /// to an existing tab already showing the file).
+    private func navigateToEntryInActiveTab(_ entry: FileEntry, preferExistingTab: Bool = true) {
         appState.currentView = .editor
         appState.showSettings = false
 
-        guard let ws = workspaceManager.activeWorkspace else { return }
-
-        let focusedPaneId = ws.focusedPaneId
-        // Determine target pane
-        let targetPaneId: UUID
-        if let focusedLeaf = workspaceManager.focusedPane, isEditorDocumentPane(focusedLeaf) {
-            targetPaneId = focusedLeaf.id
-        } else if let nearestDoc = nearestEditorDocumentLeaf(from: focusedPaneId) {
-            targetPaneId = nearestDoc.id
-        } else {
-            targetPaneId = focusedPaneId
-        }
-
-        navigateToEntryInPane(entry, paneId: targetPaneId, preferExistingTab: preferExistingTab)
-    }
-
-    private func navigateToEntryInPane(
-        _ entry: FileEntry,
-        paneId targetPaneId: UUID,
-        preferExistingTab: Bool = true
-    ) {
-        appState.currentView = .editor
-        appState.showSettings = false
-
-        guard let targetLeaf = workspaceManager.leaf(id: targetPaneId) else { return }
-
-        if let currentFile = targetLeaf.activeOpenFile, currentFile.isDirty {
+        if let currentFile = workspaceManager.focusedOpenFile, currentFile.isDirty {
             performSave(tabId: currentFile.id)
         }
 
-        replaceEntryInPane(entry, paneId: targetPaneId, preferExistingTab: preferExistingTab)
-    }
-
-    private func replaceEntryInPane(_ entry: FileEntry, paneId targetPaneId: UUID, preferExistingTab: Bool) {
-        let willReuseExistingTab = preferExistingTab && (workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
-            leaf.tabs.compactMap(\.openFile).contains { $0.path == entry.path }
-        } == true)
+        let willReuseExistingTab = preferExistingTab && workspaceManager.workspaces.contains {
+            $0.openFile?.path == entry.path
+        }
 
         if !willReuseExistingTab,
-           let targetTabId = workspaceManager.leaf(id: targetPaneId)?.activeTabID {
-            cleanupPaneTabResources(paneId: targetPaneId, tabId: targetTabId)
+           let currentTabId = workspaceManager.activeTabID {
+            cleanupTabDocuments(currentTabId)
         }
 
         let handledWithoutLoad = appState.openFileReplacingCurrentTab(
             entry,
             workspaceManager: workspaceManager,
-            paneId: targetPaneId,
             pushHistory: true,
             preferExistingTab: preferExistingTab
         )
         updateSidebarContextType()
 
-        if let updatedTabId = workspaceManager.focusedPaneTabID {
+        if let updatedTabId = workspaceManager.activeTabID {
             if handledWithoutLoad {
                 loadFileContentForPaneIfMissing(entry: entry, tabId: updatedTabId)
             } else {
@@ -2778,10 +2524,9 @@ struct ContentView: View {
         appState.currentView = .editor
         appState.showSettings = false
 
-        let paneId = UUID()
-        let file = makeOpenFile(for: entry, id: paneId)
+        let file = makeOpenFile(for: entry, id: UUID())
         workspaceManager.addWorkspaceWith(content: .document(openFile: file))
-        if let actualTabId = workspaceManager.activeWorkspace?.focusedLeaf?.activeTabID {
+        if let actualTabId = workspaceManager.activeTabID {
             loadFileContentForPane(entry: entry, tabId: actualTabId)
         }
     }
@@ -2794,7 +2539,7 @@ struct ContentView: View {
     /// Retries up to ~5s, then opens anyway so a buffered file is never lost.
     private func drainPendingExternalFiles(attempt: Int = 0) {
         guard !AppDelegate.peekPendingExternalFilePaths().isEmpty else { return }
-        let ready = (workspaceManager.focusedPane != nil && launchNavigationSettled) || attempt >= 25
+        let ready = (workspaceManager.activeWorkspace != nil && launchNavigationSettled) || attempt >= 25
         guard ready else {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 200_000_000)
@@ -2821,12 +2566,8 @@ struct ContentView: View {
         appState.currentView = .editor
         appState.showSettings = false
 
-        // Already open in a workspace — switch to that workspace instead of reopening.
-        if let existingIndex = workspaceManager.workspaces.firstIndex(where: { ws in
-            ws.allLeaves.contains { leaf in
-                leaf.tabs.contains { $0.openFile?.path == path }
-            }
-        }) {
+        // Already open in a tab — switch to it instead of reopening.
+        if let existingIndex = workspaceManager.workspaces.firstIndex(where: { $0.openFile?.path == path }) {
             workspaceManager.switchWorkspace(to: existingIndex)
             return
         }
@@ -2837,7 +2578,7 @@ struct ContentView: View {
         var file = makeOpenFile(for: entry, id: UUID())
         file.isExternal = true
         workspaceManager.addWorkspaceWith(content: .document(openFile: file))
-        if let actualTabId = workspaceManager.activeWorkspace?.focusedLeaf?.activeTabID {
+        if let actualTabId = workspaceManager.activeTabID {
             loadFileContentForPane(entry: entry, tabId: actualTabId)
         }
         updateSidebarContextType()
@@ -2894,11 +2635,9 @@ struct ContentView: View {
     private func openLauncherFile(_ entry: FileEntry, destination: CommandPaletteDestination) {
         switch destination {
         case .inPlace:
-            navigateToEntryInPane(entry, preferExistingTab: false)
+            navigateToEntryInActiveTab(entry, preferExistingTab: false)
         case .newWorkspaceTab:
             openEntryInNewWorkspaceTab(entry)
-        case .splitRight:
-            splitLauncherFileRight(entry)
         }
     }
 
@@ -2918,41 +2657,18 @@ struct ContentView: View {
         destination: CommandPaletteDestination
     ) {
         guard BugbookFeatureGate.allowsPaneContent(reference.content) else { return }
-        switch destination {
-        case .inPlace, .newWorkspaceTab:
-            workspaceManager.focusPaneTab(
-                workspaceIndex: reference.workspaceIndex,
-                paneID: reference.paneID,
-                tabID: reference.tabID
-            )
-            updateSidebarContextType()
-        case .splitRight:
-            _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: reference.content)
-            updateSidebarContextType()
-        }
+        workspaceManager.switchWorkspace(to: reference.workspaceIndex)
+        updateSidebarContextType()
     }
 
     private func openLauncherContent(_ content: PaneContent, destination: CommandPaletteDestination) {
         guard BugbookFeatureGate.allowsPaneContent(content) else { return }
         switch destination {
         case .inPlace:
-            openContentInFocusedPane(content)
+            openContentInActiveTab(content)
         case .newWorkspaceTab:
             workspaceManager.addWorkspaceWith(content: content)
-        case .splitRight:
-            _ = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content)
         }
-        updateSidebarContextType()
-    }
-
-    private func splitLauncherFileRight(_ entry: FileEntry) {
-        let tabId = UUID()
-        let content = PaneContent.document(openFile: makeOpenFile(for: entry, id: tabId))
-        guard let newLeafId = workspaceManager.splitFocusedPane(axis: .horizontal, newContent: content),
-              let insertedTabId = workspaceManager.leaf(id: newLeafId)?.activeTabID else {
-            return
-        }
-        loadFileContentForPane(entry: entry, tabId: insertedTabId)
         updateSidebarContextType()
     }
 
@@ -2975,13 +2691,12 @@ struct ContentView: View {
         if request.inNewTab {
             openEntryInNewWorkspaceTab(request.entry)
         } else {
-            navigateToEntryInPane(request.entry)
+            navigateToEntryInActiveTab(request.entry)
         }
         if let query = request.searchQuery {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                guard let ws = workspaceManager.activeWorkspace,
-                      let focusedLeaf = ws.focusedLeaf,
-                      let doc = blockDocuments[focusedLeaf.activeTabID] else { return }
+                guard let tabId = workspaceManager.activeTabID,
+                      let doc = blockDocuments[tabId] else { return }
                 let lowerQuery = query.lowercased()
                 if let block = doc.blocks.first(where: {
                     $0.text.lowercased().contains(lowerQuery)
@@ -3081,7 +2796,7 @@ struct ContentView: View {
             openEntryInNewWorkspaceTab(entry)
             return
         }
-        navigateToEntryInPane(entry, preferExistingTab: preferExistingTab)
+        navigateToEntryInActiveTab(entry, preferExistingTab: preferExistingTab)
     }
 
     private func openDatabaseRowPage(
@@ -3146,16 +2861,10 @@ struct ContentView: View {
         }
     }
 
-    private func navigateToBreadcrumb(_ item: BreadcrumbItem, inPane paneId: UUID? = nil) {
+    private func navigateToBreadcrumb(_ item: BreadcrumbItem) {
         guard let entry = breadcrumbEntry(for: item) else { return }
-
-        if let paneId {
-            guard workspaceManager.leaf(id: paneId)?.activeOpenFile?.path != entry.path else { return }
-            navigateToEntryInPane(entry, paneId: paneId, preferExistingTab: false)
-        } else {
-            guard workspaceManager.focusedOpenFile?.path != entry.path else { return }
-            navigateToEntryInPane(entry, preferExistingTab: false)
-        }
+        guard workspaceManager.focusedOpenFile?.path != entry.path else { return }
+        navigateToEntryInActiveTab(entry, preferExistingTab: false)
     }
 
     private func breadcrumbEntry(for item: BreadcrumbItem) -> FileEntry? {
@@ -3347,7 +3056,12 @@ struct ContentView: View {
         }
 
         if !BugbookFeatureGate.shouldAutoOpenOnboardingAtLaunch {
-            openDailyNote()
+            // Open the daily note only when there is no restored document to
+            // show — a restored layout's focused document must not be
+            // clobbered by the launch start page.
+            if !workspaceManager.hasRestoredDocument {
+                openDailyNote()
+            }
             return
         }
 
@@ -3358,7 +3072,7 @@ struct ContentView: View {
         }
 
         refreshFileTree()
-        navigateToEntryInPane(
+        navigateToEntryInActiveTab(
             FileEntry(
                 id: onboardingPath,
                 name: (onboardingPath as NSString).lastPathComponent,
@@ -3397,14 +3111,9 @@ struct ContentView: View {
     }
 
     private var shouldAutoOpenOnboarding: Bool {
-        let workspaceHasMeaningfulContent = workspaceManager.activeWorkspace?.allLeaves.contains { leaf in
-            leaf.tabs.contains { content in
-                switch content {
-                case .document(let file):
-                    return !file.isEmptyTab
-                }
-            }
-        } ?? false
+        let workspaceHasMeaningfulContent = workspaceManager.workspaces.contains { workspace in
+            workspace.openFile?.isEmptyTab == false
+        }
 
         guard !workspaceHasMeaningfulContent else { return false }
         return appState.openTabs.allSatisfy(\.isEmptyTab)
@@ -3435,8 +3144,8 @@ struct ContentView: View {
     }
 
     private func workspaceDocumentRestoreTargetsPrioritizingFocusedTab() -> [WorkspaceDocumentRestoreTarget] {
-        let focusedTabId = workspaceManager.focusedPaneTabID
-        var targets = workspaceManager.allDocumentLeaves().compactMap { _, _, file -> WorkspaceDocumentRestoreTarget? in
+        let focusedTabId = workspaceManager.activeTabID
+        var targets = workspaceManager.allDocuments().compactMap { _, file -> WorkspaceDocumentRestoreTarget? in
             guard file.kind == .page,
                   !file.path.isEmpty,
                   let entry = restoredEntry(for: file) else { return nil }
@@ -3495,6 +3204,18 @@ struct ContentView: View {
         }
 
         restoreWorkspaceDocumentsIfNeeded()
+    }
+
+    /// Lazy-load the active tab's document when it has none (a reopened tab,
+    /// or a restored tab the launch pass missed) so it never renders blank.
+    private func ensureActiveTabDocumentLoaded() {
+        guard let file = workspaceManager.focusedOpenFile,
+              file.kind == .page,
+              !file.path.isEmpty,
+              !file.isEmptyTab,
+              blockDocuments[file.id] == nil,
+              let entry = restoredEntry(for: file) else { return }
+        loadFileContentForPane(entry: entry, tabId: file.id)
     }
 
     private func restoredEntry(for file: OpenFile) -> FileEntry? {
@@ -3572,7 +3293,7 @@ struct ContentView: View {
         for file in appState.openTabs where shouldReloadFromDisk(file) {
             filesByTabId[file.id] = file
         }
-        for file in workspaceManager.allDocumentLeaves().map(\.file) where shouldReloadFromDisk(file) {
+        for file in workspaceManager.allDocuments().map(\.file) where shouldReloadFromDisk(file) {
             filesByTabId[file.id] = file
         }
 
@@ -4292,7 +4013,7 @@ struct ContentView: View {
                 guard !Task.isCancelled else { return }
                 let name = (path as NSString).lastPathComponent
                 let entry = FileEntry(id: path, name: name, path: path, isDirectory: false)
-                navigateToEntryInPane(entry)
+                navigateToEntryInActiveTab(entry)
                 refreshFileTree()
             } catch {
                 Log.fileSystem.error("Failed to open daily note: \(error.localizedDescription)")
@@ -4321,7 +4042,7 @@ struct ContentView: View {
                 guard !Task.isCancelled else { return }
                 let name = (location.hubPath as NSString).lastPathComponent
                 let entry = FileEntry(id: location.hubPath, name: name, path: location.hubPath, isDirectory: false)
-                navigateToEntryInPane(entry)
+                navigateToEntryInActiveTab(entry)
                 refreshFileTree()
             } catch {
                 Log.fileSystem.error("Failed to open meetings hub: \(error.localizedDescription)")
@@ -4503,17 +4224,13 @@ struct ContentView: View {
         }
     }
 
-    private func activeWorkspaceDocumentContext() -> (paneId: UUID, file: OpenFile)? {
-        guard let leaf = workspaceManager.focusedPane,
-              case .document(let file) = leaf.content else {
-            return nil
-        }
-        return (leaf.id, file)
+    private func activeWorkspaceDocumentContext() -> (tabId: UUID, file: OpenFile)? {
+        guard let file = workspaceManager.focusedOpenFile else { return nil }
+        return (file.id, file)
     }
 
     private func updateWorkspaceOpenFile(tabId: UUID, transform: (inout OpenFile) -> Void) {
-        guard let paneId = workspaceManager.leaf(containingTabId: tabId)?.id else { return }
-        workspaceManager.updatePaneOpenFile(paneId: paneId, tabId: tabId, transform: transform)
+        workspaceManager.updateOpenFile(tabId: tabId, persist: false, transform: transform)
     }
 
     private func rewriteOpenDocumentPathsAfterPageRename(from oldPath: String, to newPath: String) {
@@ -4532,7 +4249,7 @@ struct ContentView: View {
             )
         }
 
-        let workspaceTabIDs = Set(workspaceManager.allDocumentLeaves().map(\.file.id))
+        let workspaceTabIDs = Set(workspaceManager.allDocuments().map(\.file.id))
         for tabID in workspaceTabIDs {
             workspaceManager.updateOpenFile(tabId: tabID, persist: false) { file in
                 rewriteOpenFilePath(
@@ -4544,6 +4261,9 @@ struct ContentView: View {
                 )
             }
         }
+        // A rename changes tab identity on disk — persist the layout so a
+        // relaunch doesn't restore tabs pointing at the old path.
+        workspaceManager.schedulePersist()
 
         for document in blockDocuments.values {
             if let filePath = document.filePath {
@@ -4680,7 +4400,7 @@ struct ContentView: View {
 
         // Update on-disk markdown files that aren't currently open
         guard let workspace = appState.workspacePath else { return }
-        let workspaceOpenPaths = Set(workspaceManager.allDocumentLeaves().map(\.file.path))
+        let workspaceOpenPaths = Set(workspaceManager.allDocuments().map(\.file.path))
         let openPaths = Set(appState.openTabs.map(\.path)).union(workspaceOpenPaths)
         let oldLink = "[[\(oldName)]]"
         let newLink = "[[\(newName)]]"
@@ -4727,7 +4447,7 @@ struct ContentView: View {
     private func flushDirtyTabs() {
         saveTask?.cancel()
         saveTask = nil
-        let workspaceDirtyIds = workspaceManager.allDocumentLeaves()
+        let workspaceDirtyIds = workspaceManager.allDocuments()
             .map(\.file)
             .filter {
                 $0.isDirty
@@ -4990,8 +4710,8 @@ struct ContentView: View {
         let currentName = (oldPath as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
         guard title != currentName else { return oldPath }
 
-        let sanitized = title.replacingOccurrences(of: "[/\\\\?%*:|\"<>]", with: "-", options: .regularExpression)
-        guard !sanitized.isEmpty else { return oldPath }
+        let sanitized = FileSystemService.filenameSafeTitle(title)
+        guard !sanitized.isEmpty, sanitized != currentName else { return oldPath }
 
         let newPath = (parentDir as NSString).appendingPathComponent("\(sanitized).md")
         guard !FileManager.default.fileExists(atPath: newPath) else { return oldPath }
@@ -5316,7 +5036,7 @@ struct ContentView: View {
         }
 
         if let entry = findEntry(in: appState.fileTree) {
-            navigateToEntryInPane(entry)
+            navigateToEntryInActiveTab(entry)
         }
     }
 
@@ -5324,7 +5044,7 @@ struct ContentView: View {
         guard FileManager.default.fileExists(atPath: path) else { return }
 
         if let existing = fileSystem.findEntry(path: path, in: appState.fileTree) {
-            navigateToEntryInPane(existing)
+            navigateToEntryInActiveTab(existing)
             return
         }
 
@@ -5335,7 +5055,7 @@ struct ContentView: View {
             isDirectory: false,
             kind: .database
         )
-        navigateToEntryInPane(entry)
+        navigateToEntryInActiveTab(entry)
     }
 
     private func resolveDatabasePath(from raw: String) -> String? {
@@ -5453,7 +5173,7 @@ struct ContentView: View {
             let kind: TabKind = isDatabase ? .database : .page
             entry = FileEntry(id: path, name: name, path: path, isDirectory: false, kind: kind)
         }
-        navigateToEntryInPane(entry)
+        navigateToEntryInActiveTab(entry)
     }
 
     @ViewBuilder

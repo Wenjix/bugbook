@@ -6,6 +6,7 @@ final class BugbookUITests: XCTestCase {
 
     var app: XCUIApplication!
     private var workspaceURL: URL!
+    private var profileURL: URL!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -13,6 +14,12 @@ final class BugbookUITests: XCTestCase {
         workspaceURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("BugbookUITests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        // Isolated Application Support profile — the app honors
+        // BUGBOOK_APP_SUPPORT_DIR so tests can never touch the real
+        // Settings/WorkspaceLayouts directories.
+        profileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BugbookUITestsProfile-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
         try seedDailyNotesDatabase(in: workspaceURL)
     }
 
@@ -21,13 +28,18 @@ final class BugbookUITests: XCTestCase {
         if let workspaceURL {
             try? FileManager.default.removeItem(at: workspaceURL)
         }
+        if let profileURL {
+            try? FileManager.default.removeItem(at: profileURL)
+        }
         workspaceURL = nil
+        profileURL = nil
         app = nil
     }
 
     private func launchApp(legacyPanes: Bool = false) {
         app.launchEnvironment["BUGBOOK_LEGACY_PANES"] = legacyPanes ? "1" : "0"
         app.launchEnvironment["BUGBOOK_PROFILE_WORKSPACE_PATH"] = workspaceURL.path
+        app.launchEnvironment["BUGBOOK_APP_SUPPORT_DIR"] = profileURL.path
         app.launchEnvironment["BUGBOOK_SKIP_KEYCHAIN_SECRETS"] = "1"
         app.launchEnvironment["BUGBOOK_DISABLE_SENTRY"] = "1"
         app.launch()

@@ -4,7 +4,6 @@ import AppKit
 enum CommandPaletteDestination {
     case inPlace
     case newWorkspaceTab
-    case splitRight
 }
 
 enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
@@ -37,7 +36,7 @@ enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
 
     var newLabel: String {
         switch self {
-        case .mail: return "New Mail Pane"
+        case .mail: return "New Mail Tab"
         default: return "New \(noun)"
         }
     }
@@ -101,14 +100,12 @@ enum CommandPaletteCreateKind: String, CaseIterable, Identifiable {
 struct CommandPaletteOpenPaneReference: Identifiable, Equatable {
     let workspaceIndex: Int
     let workspaceID: UUID
-    let paneID: UUID
-    let tabID: UUID
     let content: PaneContent
     let title: String
     let icon: String
 
     var id: String {
-        "open:\(workspaceID.uuidString):\(paneID.uuidString):\(tabID.uuidString)"
+        "open:\(workspaceID.uuidString):\(content.id.uuidString)"
     }
 }
 
@@ -569,7 +566,6 @@ private struct PaletteSection: Identifiable {
 private enum CommandPaletteSubmitVariant {
     case primary
     case flip
-    case splitRight
 }
 
 // MARK: - Section Header
@@ -692,7 +688,7 @@ struct CommandPaletteView: View {
     }
 
     private var placeholderText: String {
-        isNewTabMode ? "Open in new workspace…" : "Go to…"
+        isNewTabMode ? "Open in new tab…" : "Go to…"
     }
 
     private var query: String {
@@ -870,9 +866,6 @@ struct CommandPaletteView: View {
             Text("·")
                 .foregroundStyle(.quaternary)
             Text("⌘↵ \(flipActionLabel(for: selectedItem))")
-            Text("·")
-                .foregroundStyle(.quaternary)
-            Text("⌥↵ Split →")
         }
         .font(.system(size: Typography.caption, weight: .medium))
         .foregroundStyle(.secondary)
@@ -915,33 +908,21 @@ struct CommandPaletteView: View {
         var refs: [(rank: Int, ref: CommandPaletteOpenPaneReference)] = []
 
         for (workspaceIndex, workspace) in workspaceManager.workspaces.enumerated() {
-            for leaf in workspace.allLeaves {
-                for content in leaf.tabs {
-                    guard BugbookFeatureGate.allowsPaneContent(content) else { continue }
-                    guard let descriptor = openPaneDescriptor(for: content) else { continue }
+            let content = workspace.content
+            guard BugbookFeatureGate.allowsPaneContent(content) else { continue }
+            guard let descriptor = openPaneDescriptor(for: content) else { continue }
 
-                    let rank = openPaneRank(
-                        workspaceIndex: workspaceIndex,
-                        activeWorkspaceIndex: activeIndex,
-                        workspace: workspace,
-                        leaf: leaf,
-                        content: content
-                    )
-
-                    refs.append((
-                        rank,
-                        CommandPaletteOpenPaneReference(
-                            workspaceIndex: workspaceIndex,
-                            workspaceID: workspace.id,
-                            paneID: leaf.id,
-                            tabID: content.id,
-                            content: content,
-                            title: descriptor.title,
-                            icon: descriptor.icon
-                        )
-                    ))
-                }
-            }
+            let rank = workspaceIndex == activeIndex ? 0 : 10_000 + workspaceIndex * 100
+            refs.append((
+                rank,
+                CommandPaletteOpenPaneReference(
+                    workspaceIndex: workspaceIndex,
+                    workspaceID: workspace.id,
+                    content: content,
+                    title: descriptor.title,
+                    icon: descriptor.icon
+                )
+            ))
         }
 
         return refs
@@ -950,19 +931,6 @@ struct CommandPaletteView: View {
                 return lhs.ref.title.localizedStandardCompare(rhs.ref.title) == .orderedAscending
             }
             .map(\.ref)
-    }
-
-    private func openPaneRank(
-        workspaceIndex: Int,
-        activeWorkspaceIndex: Int,
-        workspace: Workspace,
-        leaf: PaneNode.Leaf,
-        content: PaneContent
-    ) -> Int {
-        let workspacePenalty = workspaceIndex == activeWorkspaceIndex ? 0 : 10_000 + workspaceIndex * 100
-        let leafPenalty = workspace.focusedPaneId == leaf.id ? 0 : 20
-        let tabPenalty = leaf.activeTabID == content.id ? 0 : 5
-        return workspacePenalty + leafPenalty + tabPenalty
     }
 
     private func openPaneDescriptor(for content: PaneContent) -> (title: String, icon: String)? {
@@ -997,7 +965,7 @@ struct CommandPaletteView: View {
     }
 
     private func isOpenPage(_ entry: FileEntry) -> Bool {
-        workspaceManager.allDocumentLeaves().contains { _, _, file in
+        workspaceManager.allDocuments().contains { _, file in
             file.kind == .page && file.path == entry.path
         }
     }
@@ -1045,20 +1013,15 @@ struct CommandPaletteView: View {
             return isNewTabMode ? .newWorkspaceTab : .inPlace
         case .flip:
             return isNewTabMode ? .inPlace : .newWorkspaceTab
-        case .splitRight:
-            return .splitRight
         }
     }
 
     private func openPaneDestination(for variant: CommandPaletteSubmitVariant) -> CommandPaletteDestination {
-        if variant == .splitRight {
-            return .splitRight
-        }
-        return .inPlace
+        .inPlace
     }
 
     private func primaryActionLabel(for item: PaletteItem?) -> String {
-        guard let item else { return isNewTabMode ? "Open in New Workspace" : "Navigate" }
+        guard let item else { return isNewTabMode ? "Open in New Tab" : "Navigate" }
         switch item {
         case .askAI:
             return "Ask AI"
@@ -1067,12 +1030,12 @@ struct CommandPaletteView: View {
         case .create(let action) where action.existingReference != nil:
             return "Focus"
         default:
-            return isNewTabMode ? "Open in New Workspace" : "Navigate"
+            return isNewTabMode ? "Open in New Tab" : "Navigate"
         }
     }
 
     private func flipActionLabel(for item: PaletteItem?) -> String {
-        guard let item else { return isNewTabMode ? "Navigate" : "Open in Workspace" }
+        guard let item else { return isNewTabMode ? "Navigate" : "Open in New Tab" }
         switch item {
         case .askAI:
             return "Ask AI"
@@ -1081,7 +1044,7 @@ struct CommandPaletteView: View {
         case .create(let action) where action.existingReference != nil:
             return "Focus"
         default:
-            return isNewTabMode ? "Navigate" : "Open in Workspace"
+            return isNewTabMode ? "Navigate" : "Open in New Tab"
         }
     }
 
@@ -1106,12 +1069,9 @@ struct CommandPaletteView: View {
                 let hasShift = modifiers.contains(.shift)
                 let hasControl = modifiers.contains(.control)
                 let commandOnly = hasCommand && !hasOption && !hasShift && !hasControl
-                let optionOnly = hasOption && !hasCommand && !hasShift && !hasControl
 
                 if commandOnly {
                     submitCurrent(.flip)
-                } else if optionOnly {
-                    submitCurrent(.splitRight)
                 } else {
                     submitCurrent(.primary)
                 }

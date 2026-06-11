@@ -4,7 +4,7 @@ import SwiftUI
 import AppKit
 #endif
 
-/// Tab bar at the top of the content area. Each tab owns a pane layout.
+/// Tab bar at the top of the content area. Each tab owns one document.
 struct WorkspaceTabBar: View {
     var workspaceManager: WorkspaceManager
     var sidebarOpen: Bool
@@ -130,7 +130,7 @@ struct WorkspaceTabBar: View {
                 .buttonStyle(.plain)
                 .padding(.horizontal, ShellZoomMetrics.size(8))
                 .padding(.bottom, ShellZoomMetrics.size(2))
-                .help("Open in new workspace")
+                .help("Open in new tab")
                 .onHover { isAddWorkspaceHovered = $0 }
             }
             .padding(.leading, 0)
@@ -199,21 +199,12 @@ struct WorkspaceTabBar: View {
             if currentView == .graphView { return "Graph" }
             if currentView == .calendar { return "Calendar" }
         }
-        // In splits, prefer the first document pane for the tab title
-        let leaf = ws.root.firstDocumentLeaf ?? ws.focusedLeaf
-        if let leaf {
-            return leaf.content.paneItemTitle
-        }
-        return ws.name
+        return ws.content.paneItemTitle
     }
 
     private func isWorkspaceRecording(_ ws: Workspace) -> Bool {
         guard let path = recordingPagePath else { return false }
-        guard let leaf = ws.focusedLeaf else { return false }
-        if case .document(let file) = leaf.content {
-            return file.path == path
-        }
-        return false
+        return ws.openFile?.path == path
     }
 
     private func tabIcon(for ws: Workspace) -> String? {
@@ -222,8 +213,7 @@ struct WorkspaceTabBar: View {
             if currentView == .graphView { return "sf:point.3.connected.trianglepath.dotted" }
             if currentView == .calendar { return "sf:calendar" }
         }
-        guard let leaf = ws.focusedLeaf else { return nil }
-        return leaf.content.paneItemIcon
+        return ws.content.paneItemIcon
     }
 
     private func workspaceTabFrameReader(for workspaceID: UUID) -> some View {
