@@ -13,17 +13,14 @@ struct KeyboardShortcutSection: Equatable {
 enum KeyboardShortcutCatalog {
     static var primarySections: [KeyboardShortcutSection] {
         [
-            KeyboardShortcutSection(title: "Panes", shortcuts: [
-                KeyboardShortcutEntry(keys: "\u{2318}\u{2325}\u{2190}/\u{2192}/\u{2191}/\u{2193}", label: "Move focus between panes"),
-                KeyboardShortcutEntry(keys: "\u{2318}D", label: "Split pane right"),
-                KeyboardShortcutEntry(keys: "\u{2318}\u{2303}D", label: "Split pane down"),
-                KeyboardShortcutEntry(keys: "\u{2318}\u{21E7}W", label: "Close workspace"),
+            KeyboardShortcutSection(title: "Tabs", shortcuts: [
+                KeyboardShortcutEntry(keys: "\u{2318}T", label: "New tab"),
+                KeyboardShortcutEntry(keys: "\u{2318}W", label: "Close tab"),
+                KeyboardShortcutEntry(keys: "\u{2318}1\u{2013}9", label: "Switch tab"),
+                KeyboardShortcutEntry(keys: "\u{2318}\u{21E7}[  \u{2318}\u{21E7}]", label: "Previous / Next tab"),
             ]),
             KeyboardShortcutSection(title: "Navigation", shortcuts: [
                 KeyboardShortcutEntry(keys: "\u{2318}K / \u{2318}\u{21E7}P", label: "Quick open"),
-                KeyboardShortcutEntry(keys: "\u{2318}1\u{2013}9", label: "Switch workspace"),
-                KeyboardShortcutEntry(keys: "\u{2318}T", label: "New tab"),
-                KeyboardShortcutEntry(keys: "\u{2318}W", label: "Close tab"),
                 KeyboardShortcutEntry(keys: "\u{2318}.", label: "Toggle sidebar"),
                 KeyboardShortcutEntry(keys: "\u{2318}[  \u{2318}]", label: "Back / Forward"),
             ]),
@@ -59,9 +56,6 @@ enum KeyboardShortcutCatalog {
     static var workflows: [KeyboardShortcutEntry] {
         guard BugbookFeatureGate.legacyPanesEnabled else { return [] }
         return [
-            KeyboardShortcutEntry(keys: "\u{2318}D \u{2192} \u{2318}\u{21E7}Y", label: "Open Calendar beside current pane"),
-            KeyboardShortcutEntry(keys: "\u{2318}D \u{2192} \u{2318}\u{21E7}M", label: "Open Mail beside current pane"),
-            KeyboardShortcutEntry(keys: "\u{2318}\u{2325}\u{2192} \u{2192} \u{2318}D", label: "Focus right pane, then split it"),
             KeyboardShortcutEntry(keys: "\u{2318}T \u{2192} \u{2318}\u{21E7}0", label: "New workspace tab with Home"),
         ]
     }

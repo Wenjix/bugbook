@@ -102,7 +102,9 @@ final class BugbookFeatureGateTests: XCTestCase {
         XCTAssertFalse(BugbookFeatureGate.shouldStartMeetingNotificationPolling)
         XCTAssertFalse(BugbookFeatureGate.shouldWarmTranscriptionAtLaunch)
         XCTAssertFalse(BugbookFeatureGate.shouldExposeAgentSurfaces)
-        XCTAssertFalse(BugbookFeatureGate.shouldRestoreWorkspaceDocumentsAtLaunch)
+        // Tabs-only: restored tabs must load their documents in every mode,
+        // otherwise they render permanently blank.
+        XCTAssertTrue(BugbookFeatureGate.shouldRestoreWorkspaceDocumentsAtLaunch)
         XCTAssertFalse(BugbookFeatureGate.shouldScanLegacyWorkspaces)
         XCTAssertFalse(BugbookFeatureGate.shouldRegisterSearchIndexAtLaunch)
         XCTAssertFalse(BugbookFeatureGate.shouldAutoOpenOnboardingAtLaunch)
@@ -165,8 +167,7 @@ final class BugbookFeatureGateTests: XCTestCase {
         XCTAssertFalse(BugbookFeatureGate.allowsViewMode(.calendar))
     }
 
-    func testDefaultPaneLaunchersExposeOnlyNotesAndMeeting() {
-        XCTAssertEqual(BugbookFeatureGate.paneLauncherBuiltInPanes.map(\.label), ["Notes", "Meeting"])
+    func testDefaultPaletteCreateKindsExposeOnlyPageAndMeetings() {
         XCTAssertEqual(CommandPaletteCreateKind.availableCases.map(\.id), ["page", "meetings"])
     }
 
@@ -202,11 +203,16 @@ final class BugbookFeatureGateTests: XCTestCase {
             KeyboardShortcutCatalog.primarySections + KeyboardShortcutCatalog.secondarySections
         ).flatMap(\.shortcuts)
         XCTAssertEqual(overlayShortcuts.first { $0.label == "Quick open" }?.keys, "\u{2318}K / \u{2318}\u{21E7}P")
-        XCTAssertEqual(overlayShortcuts.first { $0.label == "Split pane down" }?.keys, "\u{2318}\u{2303}D")
+        XCTAssertEqual(overlayShortcuts.first { $0.label == "New tab" }?.keys, "\u{2318}T")
         XCTAssertEqual(overlayShortcuts.first { $0.label == "Toggle sidebar" }?.keys, "\u{2318}.")
         XCTAssertFalse(overlayShortcuts.contains { $0.label == "Toggle rail" })
+        // The pane/split era is gone from the catalogs entirely.
+        XCTAssertFalse(overlayShortcuts.contains { $0.label.localizedCaseInsensitiveContains("split") })
+        XCTAssertFalse(overlayShortcuts.contains { $0.label.localizedCaseInsensitiveContains("pane") })
+        XCTAssertNil(settingsShortcutKeys(label: "Split Pane Down"))
+        XCTAssertNil(settingsShortcutKeys(label: "New Pane Item"))
         XCTAssertEqual(settingsShortcutKeys(label: "Quick Open"), "Cmd + K / Cmd + Shift + P")
-        XCTAssertEqual(settingsShortcutKeys(label: "Split Pane Down"), "Cmd + Ctrl + D")
+        XCTAssertEqual(settingsShortcutKeys(label: "New Tab"), "Cmd + T")
         XCTAssertEqual(settingsShortcutKeys(label: "Toggle Sidebar"), "Cmd + .")
     }
 
@@ -233,7 +239,6 @@ final class BugbookFeatureGateTests: XCTestCase {
         XCTAssertTrue(overlayLabels.contains("Mail"))
         XCTAssertTrue(overlayLabels.contains("Calendar"))
         XCTAssertTrue(overlayLabels.contains("Chat drawer"))
-        XCTAssertTrue(overlayLabels.contains("Open Mail beside current pane"))
         XCTAssertTrue(settingsLabels.contains("Toggle Chat Drawer"))
     }
 
@@ -244,59 +249,31 @@ final class BugbookFeatureGateTests: XCTestCase {
             .keys
     }
 
-    func testWorkspaceSanitizationDropsHiddenTabsAndKeepsAllowedSelection() {
-        let paneID = UUID()
-        let mailID = UUID()
-        let meetingsID = UUID()
-        let leaf = PaneNode.Leaf(
-            id: paneID,
-            tabs: [
-                .mailDocument(id: mailID),
-                .meetingsDocument(id: meetingsID)
-            ],
-            selectedTabIndex: 0
+    func testWorkspaceSanitizationPrunesHiddenTabAndKeepsAllowedOne() {
+        let mailTab = Workspace(
+            id: UUID(), name: "Mail", icon: nil, content: .mailDocument(), createdAt: Date()
         )
-        let workspace = Workspace(
-            id: UUID(),
-            name: "Restored",
-            icon: nil,
-            root: .leaf(leaf),
-            focusedPaneId: paneID,
-            createdAt: Date()
+        let meetingsTab = Workspace(
+            id: UUID(), name: "Meetings", icon: nil, content: .meetingsDocument(), createdAt: Date()
         )
 
-        let result = workspace.sanitizedForCurrentMode()
-
-        XCTAssertTrue(result.changed)
-        guard case .leaf(let sanitizedLeaf) = result.workspace.root else {
-            XCTFail("Expected a single leaf workspace")
-            return
-        }
-        XCTAssertEqual(sanitizedLeaf.tabs.map(\.id), [meetingsID])
-        XCTAssertEqual(sanitizedLeaf.activeTabID, meetingsID)
+        XCTAssertNil(mailTab.sanitizedForCurrentMode(), "hidden legacy content must prune in default mode")
+        XCTAssertEqual(meetingsTab.sanitizedForCurrentMode()?.id, meetingsTab.id)
     }
 
-    func testWorkspaceSanitizationReplacesAllHiddenTabsWithEmptyDocument() {
-        let paneID = UUID()
-        let workspace = Workspace(
-            id: UUID(),
-            name: "Restored",
-            icon: nil,
-            root: .leaf(.init(id: paneID, tabs: [.mailDocument(), .calendarDocument()], selectedTabIndex: 0)),
-            focusedPaneId: paneID,
-            createdAt: Date()
-        )
+    func testWorkspaceManagerSanitizationFallsBackToEmptyTab() {
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+        manager.workspaces = [
+            Workspace(id: UUID(), name: "Mail", icon: nil, content: .mailDocument(), createdAt: Date()),
+            Workspace(id: UUID(), name: "Calendar", icon: nil, content: .calendarDocument(), createdAt: Date()),
+        ]
+        manager.activeWorkspaceIndex = 0
 
-        let result = workspace.sanitizedForCurrentMode()
+        XCTAssertTrue(manager.sanitizeForCurrentMode())
 
-        XCTAssertTrue(result.changed)
-        guard case .leaf(let sanitizedLeaf) = result.workspace.root,
-              case .document(let file) = sanitizedLeaf.activeContent else {
-            XCTFail("Expected hidden content to become an empty document")
-            return
-        }
-        XCTAssertEqual(sanitizedLeaf.tabs.count, 1)
-        XCTAssertTrue(file.isEmptyTab)
+        XCTAssertEqual(manager.workspaces.count, 1)
+        XCTAssertTrue(manager.focusedOpenFile?.isEmptyTab == true)
     }
 
     func testWorkspaceManagerSanitizesDirectHiddenPaneInsertion() {
@@ -305,10 +282,6 @@ final class BugbookFeatureGateTests: XCTestCase {
 
         manager.addWorkspaceWith(content: .mailDocument())
 
-        guard case .document(let file) = manager.activeWorkspace?.focusedLeaf?.activeContent else {
-            XCTFail("Expected sanitized document content")
-            return
-        }
-        XCTAssertTrue(file.isEmptyTab)
+        XCTAssertTrue(manager.focusedOpenFile?.isEmptyTab == true)
     }
 }

@@ -14,13 +14,13 @@ Bugbook keeps plain `.md` files on disk as the source of truth. The desktop app 
 
 **Databases.** Schema-based local databases back the Daily Notes and Meetings hubs. Database rows are still plain markdown files.
 
-**Search.** The Search pane is hidden in daily-driver mode, but filename filtering and qmd-backed search infrastructure remain available for notes workflows.
+**Search.** Search UI is reachable through the command palette; filename filtering and qmd-backed search infrastructure power notes workflows.
 
-## Pane system
+## Tabs
 
-The default desktop workspace keeps Notes available through the left file tree and exposes Meeting as the only fixed sidebar destination. Panes can be split, dragged, swapped, and closed; tabs let you save and switch between layouts.
+The desktop workspace is a single tab strip: one document per tab, with the file tree in the left sidebar and Meeting as the only fixed sidebar destination. Tabs can be opened (Cmd+T or the "+" button), switched (Cmd+1–9, Cmd+Shift+[ and ]), reordered by dragging, closed (Cmd+W), and dragged downward to detach into their own window.
 
-A launcher (Cmd+K or the chrome bar split button) searches pages, databases, and the enabled built-in panes, then lets you open them in place, split right, split down, or in a new tab.
+A launcher (Cmd+K) searches pages and databases, then opens them in the active tab or a new one.
 
 ## Targets
 

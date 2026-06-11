@@ -31,7 +31,7 @@ struct GeneralSettingsView: View {
                 Toggle("Focus mode while typing", isOn: $appState.settings.focusModeOnType)
             }
 
-            SettingsSection("New Workspace") {
+            SettingsSection("New Tab") {
                 HStack {
                     if appState.settings.defaultNewTabPage.isEmpty {
                         Text("Bugbook start page")
@@ -59,7 +59,7 @@ struct GeneralSettingsView: View {
                     }
                     .fixedSize()
                 }
-                Text("Opens this page instead of the default start page when creating a new workspace.")
+                Text("Opens this page instead of the default start page when creating a new tab.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

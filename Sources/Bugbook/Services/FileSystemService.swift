@@ -5,9 +5,50 @@ import Darwin
 import os
 import Sentry
 
+/// Thread-safe cache of parsed page icons keyed by path and validated by file
+/// mtime. Tree rebuilds run on every workspace-watcher event over the whole
+/// workspace; without the cache each rebuild re-reads every file head (the
+/// naive per-node read measured +51% on 1000-file tree builds and was
+/// rejected). With it, only new or changed files pay the read — warm rebuilds
+/// are dictionary lookups.
+final class PageIconHydrationCache: @unchecked Sendable {
+    /// Process-wide instance used by tree builds.
+    static let shared = PageIconHydrationCache()
+
+    private let lock = NSLock()
+    private var entries: [String: (mtime: Date?, icon: String?)] = [:]
+
+    func icon(
+        at path: String,
+        modifiedAt mtime: Date?,
+        parse: (String) -> String?
+    ) -> String? {
+        // Paths built via NSString.appendingPathComponent are NSString-backed;
+        // dictionary hashing on bridged strings is an order of magnitude
+        // slower than on native ones. Make the key contiguous UTF-8 first.
+        var path = path
+        path.makeContiguousUTF8()
+        lock.lock()
+        if let entry = entries[path], entry.mtime == mtime {
+            let icon = entry.icon
+            lock.unlock()
+            return icon
+        }
+        lock.unlock()
+
+        let icon = parse(path)
+
+        lock.lock()
+        entries[path] = (mtime, icon)
+        lock.unlock()
+        return icon
+    }
+}
+
 @MainActor
 @Observable
 class FileSystemService {
+
     private enum ReleaseDefaultsMigration {
         static let markerKey = "releaseDefaultsMigratedFromDevelopmentBundle.v1"
         static let productionBundleIdentifier = "com.maxforsey.Bugbook"
@@ -826,7 +867,13 @@ class FileSystemService {
             path: path,
             isDirectory: false,
             kind: isDbFile ? .database : .page,
-            icon: nil,
+            // Hydrated from the file head via the mtime-keyed cache so the
+            // sidebar/favorites/palette receive real icon data without
+            // re-reading unchanged files on every rebuild.
+            icon: PageIconHydrationCache.shared.icon(
+                at: path,
+                modifiedAt: resourceValues.contentModificationDate
+            ) { Self.parseIconFromFile(at: $0) },
             children: children
         ))
     }
@@ -1314,7 +1361,7 @@ class FileSystemService {
                     id: currentPath,
                     name: segmentName,
                     path: segmentPath,
-                    icon: parseIconFromFile(at: segmentPath)
+                    icon: Self.parseIconFromFile(at: segmentPath)
                 ))
             } else {
                 // The file itself
@@ -1332,7 +1379,7 @@ class FileSystemService {
                     id: currentPath,
                     name: displayName,
                     path: currentPath,
-                    icon: parseIconFromFile(at: currentPath)
+                    icon: Self.parseIconFromFile(at: currentPath)
                 ))
             }
         }
@@ -1937,7 +1984,7 @@ class FileSystemService {
         try updated.write(to: URL(fileURLWithPath: schemaPath), options: .atomic)
     }
 
-    nonisolated private func parseIconFromFile(at path: String) -> String? {
+    nonisolated private static func parseIconFromFile(at path: String) -> String? {
         let fd = Darwin.open(path, O_RDONLY)
         guard fd >= 0 else { return nil }
         defer { Darwin.close(fd) }
@@ -1969,6 +2016,26 @@ class FileSystemService {
             recentWorkspaces = Array(recentWorkspaces.prefix(maxRecentWorkspaces))
         }
         UserDefaults.standard.set(recentWorkspaces, forKey: recentWorkspacesKey)
+    }
+
+    /// Derive a filesystem-safe filename base from a page title: strips
+    /// markdown formatting markers the title block may carry (emphasis,
+    /// code, strikethrough, leading heading hashes), replaces
+    /// filesystem-reserved characters with dashes, collapses whitespace,
+    /// and trims leftover separator noise. Underscores are kept — they are
+    /// common in real page names and filename-safe.
+    nonisolated static func filenameSafeTitle(_ title: String) -> String {
+        var name = title
+        // Leading markdown heading markers.
+        name = name.replacingOccurrences(of: "^#+\\s*", with: "", options: .regularExpression)
+        // Inline markdown formatting markers never belong in a filename.
+        name = name.replacingOccurrences(of: "[*`~]", with: "", options: .regularExpression)
+        // Filesystem-reserved characters become dashes.
+        name = name.replacingOccurrences(of: "[/\\\\?%:|\"<>]", with: "-", options: .regularExpression)
+        // Collapse whitespace runs and trim stray separators/dots at the edges.
+        name = name.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        name = name.trimmingCharacters(in: CharacterSet(charactersIn: " -."))
+        return name
     }
 
     private func uniqueFilename(in directory: String, base: String, ext: String) -> String {
@@ -2021,18 +2088,8 @@ class FileSystemService {
 
     // MARK: - App Data Directories (Icons & Covers)
 
-    private static let appSupportBase: URL = {
-        guard let url = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
-            fatalError("Application Support directory is unavailable for the current user domain.")
-        }
-        return url
-    }()
-
     private static var appSupportDirectory: String {
-        appSupportBase.appendingPathComponent("Bugbook").path
+        BugbookPaths.profileDirectory().path
     }
 
     static var iconsDirectory: String {

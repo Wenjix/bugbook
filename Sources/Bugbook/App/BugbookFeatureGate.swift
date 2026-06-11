@@ -57,8 +57,10 @@ enum BugbookFeatureGate {
         legacyPanesEnabled
     }
 
+    /// Always on: in the tabs-only model every restored tab needs its document
+    /// loaded at launch, otherwise restored/migrated/reopened tabs render blank.
     static var shouldRestoreWorkspaceDocumentsAtLaunch: Bool {
-        legacyPanesEnabled
+        true
     }
 
     static var shouldScanLegacyWorkspaces: Bool {
@@ -71,10 +73,6 @@ enum BugbookFeatureGate {
 
     static var shouldAutoOpenOnboardingAtLaunch: Bool {
         legacyPanesEnabled
-    }
-
-    static var defaultSplitPaneContent: PaneContent {
-        .emptyDocument()
     }
 
     static var visibleSettingsTabs: [SettingsTabDescriptor] {
@@ -143,23 +141,6 @@ enum BugbookFeatureGate {
         return .emptyDocument(id: content.id)
     }
 
-    static var paneLauncherBuiltInPanes: [(label: String, icon: String, content: PaneContent)] {
-        if legacyPanesEnabled {
-            return [
-                ("Home", "house", .emptyDocument()),
-                ("Mail", "envelope", .mailDocument()),
-                ("Calendar", "calendar", .calendarDocument()),
-                ("Meetings", "person.2", .meetingsDocument()),
-                ("Gateway", "square.grid.2x2", .gatewayDocument()),
-            ]
-        }
-
-        return [
-            ("Notes", "doc.text", .emptyDocument()),
-            ("Meeting", "waveform", .meetingsDocument()),
-        ]
-    }
-
     static func allowsNotification(_ name: Notification.Name) -> Bool {
         guard !legacyPanesEnabled else { return true }
         let blocked: Set<String> = [
@@ -179,96 +160,10 @@ enum BugbookFeatureGate {
     }
 }
 
-extension PaneNode.Leaf {
-    /// nil leaf = every tab was disallowed; the caller prunes this pane.
-    func sanitizedForCurrentMode() -> (leaf: PaneNode.Leaf?, changed: Bool) {
-        var changed = false
-        let selectedID = activeTabID
-        var nextTabs: [PaneContent] = []
-        nextTabs.reserveCapacity(tabs.count)
-
-        for tab in tabs {
-            guard BugbookFeatureGate.allowsPaneContent(tab) else {
-                changed = true
-                continue
-            }
-            nextTabs.append(tab)
-        }
-
-        // No surviving tabs — signal the caller to prune this leaf so a split
-        // collapses to its sibling (the workspace falls back to an empty
-        // document only when the whole tree prunes away).
-        if nextTabs.isEmpty {
-            return (nil, true)
-        }
-
-        var nextSelectedIndex = nextTabs.firstIndex { $0.id == selectedID } ?? 0
-        nextSelectedIndex = min(max(nextSelectedIndex, 0), nextTabs.count - 1)
-
-        if nextSelectedIndex != selectedTabIndex {
-            changed = true
-        }
-
-        return (
-            PaneNode.Leaf(id: id, tabs: nextTabs, selectedTabIndex: nextSelectedIndex),
-            changed
-        )
-    }
-}
-
-extension PaneNode {
-    func sanitizedForCurrentMode() -> (node: PaneNode?, changed: Bool) {
-        switch self {
-        case .leaf(let leaf):
-            let result = leaf.sanitizedForCurrentMode()
-            return (result.leaf.map { .leaf($0) }, result.changed)
-        case .split(let split):
-            let first = split.first.sanitizedForCurrentMode()
-            let second = split.second.sanitizedForCurrentMode()
-            let changed = first.changed || second.changed
-            switch (first.node, second.node) {
-            case let (firstNode?, secondNode?):
-                return (
-                    .split(PaneNode.Split(
-                        id: split.id,
-                        axis: split.axis,
-                        ratio: split.ratio,
-                        first: firstNode,
-                        second: secondNode
-                    )),
-                    changed
-                )
-            case let (firstNode?, nil):
-                return (firstNode, true)
-            case let (nil, secondNode?):
-                return (secondNode, true)
-            case (nil, nil):
-                return (nil, true)
-            }
-        }
-    }
-}
-
 extension Workspace {
-    func sanitizedForCurrentMode() -> (workspace: Workspace, changed: Bool) {
-        let result = root.sanitizedForCurrentMode()
-        let nextRoot = result.node
-            ?? .leaf(.init(id: focusedPaneId, tabs: [.emptyDocument(id: focusedPaneId)], selectedTabIndex: 0))
-        let nextFocusedPaneId = nextRoot.findLeaf(id: focusedPaneId)?.id
-            ?? nextRoot.firstLeaf?.id
-            ?? focusedPaneId
-        let changed = result.changed || nextFocusedPaneId != focusedPaneId
-
-        return (
-            Workspace(
-                id: id,
-                name: name,
-                icon: icon,
-                root: nextRoot,
-                focusedPaneId: nextFocusedPaneId,
-                createdAt: createdAt
-            ),
-            changed
-        )
+    /// nil = this tab's content is not allowed in the current mode (e.g. a
+    /// `.removed`-kind sentinel from an old layout); the caller prunes the tab.
+    func sanitizedForCurrentMode() -> Workspace? {
+        BugbookFeatureGate.allowsPaneContent(content) ? self : nil
     }
 }

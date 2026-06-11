@@ -54,10 +54,7 @@ struct MailIntelligenceStore {
     }
 
     private static func defaultDirectory(fileManager: FileManager) -> URL {
-        let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.temporaryDirectory
-        return baseDirectory
-            .appendingPathComponent("Bugbook", isDirectory: true)
+        BugbookPaths.profileDirectory(fileManager: fileManager)
             .appendingPathComponent("MailIntelligence", isDirectory: true)
     }
 }

@@ -6,16 +6,13 @@ enum ShortcutsSettingsCatalog {
             KeyboardShortcutEntry(keys: "Cmd + K / Cmd + Shift + P", label: "Quick Open"),
             KeyboardShortcutEntry(keys: "Cmd + .", label: "Toggle Sidebar"),
             KeyboardShortcutEntry(keys: "Cmd + Shift + D", label: "Today's Note"),
-            KeyboardShortcutEntry(keys: "Cmd + T", label: "New Workspace"),
-            KeyboardShortcutEntry(keys: "Cmd + Opt + T", label: "New Pane Item"),
-            KeyboardShortcutEntry(keys: "Cmd + W", label: "Close Item / Pane"),
         ]
 
-        let panes = [
-            KeyboardShortcutEntry(keys: "Cmd + Opt + Arrows", label: "Move focus between panes"),
-            KeyboardShortcutEntry(keys: "Cmd + D", label: "Split Pane Right"),
-            KeyboardShortcutEntry(keys: "Cmd + Ctrl + D", label: "Split Pane Down"),
-            KeyboardShortcutEntry(keys: "Cmd + Shift + W", label: "Close Workspace"),
+        let tabs = [
+            KeyboardShortcutEntry(keys: "Cmd + T", label: "New Tab"),
+            KeyboardShortcutEntry(keys: "Cmd + W", label: "Close Tab"),
+            KeyboardShortcutEntry(keys: "Cmd + 1-9", label: "Switch Tab"),
+            KeyboardShortcutEntry(keys: "Cmd + Shift + [ / ]", label: "Previous / Next Tab"),
         ]
 
         if BugbookFeatureGate.legacyPanesEnabled {
@@ -47,7 +44,7 @@ enum ShortcutsSettingsCatalog {
                 KeyboardShortcutEntry(keys: "Cmd + Opt + 8", label: "Code Block"),
                 KeyboardShortcutEntry(keys: "Cmd + Opt + 9", label: "Create Page"),
             ]),
-            KeyboardShortcutSection(title: "Panes", shortcuts: panes),
+            KeyboardShortcutSection(title: "Tabs", shortcuts: tabs),
             KeyboardShortcutSection(title: "Navigation", shortcuts: navigation),
             KeyboardShortcutSection(title: "General", shortcuts: [
                 KeyboardShortcutEntry(keys: "Cmd + ,", label: "Settings"),

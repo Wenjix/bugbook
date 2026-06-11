@@ -817,34 +817,48 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.activeTabIndex, 0)
     }
 
-    func testPaneScopedReplaceUpdatesRequestedPaneWhenAnotherPaneIsFocused() throws {
+    func testActiveTabReplaceLeavesOtherTabsUntouched() throws {
         let state = AppState()
         let manager = WorkspaceManager()
         manager.layoutPersistenceEnabled = false
 
+        manager.addWorkspaceWith(content: .document(openFile: makeOpenFile(name: "Other.md", path: "/test/Other.md")))
         manager.addWorkspaceWith(content: .document(openFile: makeOpenFile(name: "Child.md", path: "/test/Child.md")))
-        let sourcePaneId = try XCTUnwrap(manager.focusedPane?.id)
-
-        let otherFile = makeOpenFile(name: "Other.md", path: "/test/Other.md")
-        let otherPaneId = try XCTUnwrap(
-            manager.splitFocusedPane(axis: .horizontal, newContent: .document(openFile: otherFile))
-        )
-        XCTAssertEqual(manager.activeWorkspace?.focusedPaneId, otherPaneId)
+        XCTAssertEqual(manager.activeWorkspaceIndex, 1)
 
         let target = makeEntry(name: "Parent.md", path: "/test/Parent.md")
         let handledWithoutLoad = state.openFileReplacingCurrentTab(
             target,
             workspaceManager: manager,
-            paneId: sourcePaneId,
             pushHistory: true,
             preferExistingTab: false
         )
 
         XCTAssertFalse(handledWithoutLoad)
-        XCTAssertEqual(manager.leaf(id: sourcePaneId)?.activeOpenFile?.path, "/test/Parent.md")
-        XCTAssertEqual(manager.leaf(id: otherPaneId)?.activeOpenFile?.path, "/test/Other.md")
-        XCTAssertEqual(manager.activeWorkspace?.focusedPaneId, sourcePaneId)
+        XCTAssertEqual(manager.workspaces[1].openFile?.path, "/test/Parent.md")
+        XCTAssertEqual(manager.workspaces[0].openFile?.path, "/test/Other.md", "background tab untouched")
+        XCTAssertEqual(manager.activeWorkspaceIndex, 1)
         XCTAssertTrue(state.openTabs.isEmpty)
+    }
+
+    func testReplaceSwitchesToExistingTabForSamePath() throws {
+        let state = AppState()
+        let manager = WorkspaceManager()
+        manager.layoutPersistenceEnabled = false
+
+        manager.addWorkspaceWith(content: .document(openFile: makeOpenFile(name: "A.md", path: "/test/A.md")))
+        manager.addWorkspaceWith(content: .document(openFile: makeOpenFile(name: "B.md", path: "/test/B.md")))
+
+        let switched = state.openFileReplacingCurrentTab(
+            makeEntry(name: "A.md", path: "/test/A.md"),
+            workspaceManager: manager,
+            pushHistory: true,
+            preferExistingTab: true
+        )
+
+        XCTAssertTrue(switched)
+        XCTAssertEqual(manager.activeWorkspaceIndex, 0)
+        XCTAssertEqual(manager.focusedOpenFile?.path, "/test/A.md")
     }
 
     func testCloseTab() {

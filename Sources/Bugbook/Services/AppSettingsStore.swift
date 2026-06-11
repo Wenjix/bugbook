@@ -148,10 +148,7 @@ struct AppSettingsStore {
     }
 
     private static func defaultFileURL(fileManager: FileManager) -> URL {
-        let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.temporaryDirectory
-        return baseDirectory
-            .appendingPathComponent("Bugbook", isDirectory: true)
+        BugbookPaths.profileDirectory(fileManager: fileManager)
             .appendingPathComponent("Settings", isDirectory: true)
             .appendingPathComponent("app-settings.json")
     }

@@ -28,12 +28,7 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("n")
 
-                Button("New Pane Item") {
-                    NotificationCenter.default.post(name: .newPaneTab, object: nil)
-                }
-                .keyboardShortcut("t", modifiers: [.command, .option])
-
-                Button("New Workspace") {
+                Button("New Tab") {
                     NotificationCenter.default.post(name: .quickOpenNewTab, object: nil)
                 }
                 .keyboardShortcut("t")
@@ -76,13 +71,13 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("f")
 
-                Button("Previous Pane Item") {
-                    NotificationCenter.default.post(name: .cyclePaneTabsBackward, object: nil)
+                Button("Previous Tab") {
+                    NotificationCenter.default.post(name: .cycleTabsBackward, object: nil)
                 }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
 
-                Button("Next Pane Item") {
-                    NotificationCenter.default.post(name: .cyclePaneTabsForward, object: nil)
+                Button("Next Tab") {
+                    NotificationCenter.default.post(name: .cycleTabsForward, object: nil)
                 }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
 
@@ -154,22 +149,6 @@ struct BugbookApp: App {
                 }
                 .keyboardShortcut("0", modifiers: .command)
 
-                Divider()
-
-                Button("Split Pane Right") {
-                    NotificationCenter.default.post(name: .splitPaneRight, object: nil)
-                }
-                .keyboardShortcut("d")
-
-                Button("Split Pane Down") {
-                    NotificationCenter.default.post(name: .splitPaneDown, object: nil)
-                }
-                .keyboardShortcut("d", modifiers: [.command, .control])
-
-                Button("Close Workspace") {
-                    NotificationCenter.default.post(name: .closeWorkspace, object: nil)
-                }
-                .keyboardShortcut("w", modifiers: [.command, .shift])
             }
 
             // Block type shortcuts: Cmd+Option+0-9
@@ -453,12 +432,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private func installKeyboardMonitors() {
         installBlockTypeShortcutMonitor()
         installEditorZoomMonitor()
-        installPaneFocusMonitor()
         installWorkspaceSwitchingMonitor()
-        installPaneFocusSwitchingMonitor()
         installQuickOpenMonitor()
         installFindMonitor()
-        installPaneTabCyclingMonitor()
+        installTabCyclingMonitor()
     }
 
     private func installBlockTypeShortcutMonitor() {
@@ -518,48 +495,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    private func installPaneFocusMonitor() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard flags.contains([.command, .option]),
-                  !flags.contains(.shift),
-                  !flags.contains(.control) else { return event }
-
-            switch event.keyCode {
-            case 123:
-                NotificationCenter.default.post(name: .movePaneFocusLeft, object: nil)
-                return nil
-            case 124:
-                NotificationCenter.default.post(name: .movePaneFocusRight, object: nil)
-                return nil
-            case 126:
-                NotificationCenter.default.post(name: .movePaneFocusUp, object: nil)
-                return nil
-            case 125:
-                NotificationCenter.default.post(name: .movePaneFocusDown, object: nil)
-                return nil
-            default:
-                return event
-            }
-        }
-    }
-
     private func installWorkspaceSwitchingMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags == .command,
                   let index = Self.digitKeyCodes[event.keyCode] else { return event }
             NotificationCenter.default.post(name: .switchWorkspace, object: index)
-            return nil
-        }
-    }
-
-    private func installPaneFocusSwitchingMonitor() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard flags == [.command, .shift],
-                  let index = Self.digitKeyCodes[event.keyCode] else { return event }
-            NotificationCenter.default.post(name: .focusPaneByIndex, object: index)
             return nil
         }
     }
@@ -582,7 +523,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    private func installPaneTabCyclingMonitor() {
+    private func installTabCyclingMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.contains(.control),
@@ -591,9 +532,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                   event.keyCode == 48 else { return event }
 
             if flags.contains(.shift) {
-                NotificationCenter.default.post(name: .cyclePaneTabsBackward, object: nil)
+                NotificationCenter.default.post(name: .cycleTabsBackward, object: nil)
             } else {
-                NotificationCenter.default.post(name: .cyclePaneTabsForward, object: nil)
+                NotificationCenter.default.post(name: .cycleTabsForward, object: nil)
             }
             return nil
         }
@@ -678,7 +619,6 @@ private func configureBugbookWindowChrome(_ window: NSWindow, title: String = "B
 
 extension Notification.Name {
     static let newNote = Notification.Name("newNote")
-    static let newPaneTab = Notification.Name("newPaneTab")
     static let newTab = Notification.Name("newTab")
     static let closeTab = Notification.Name("closeTab")
     static let saveFile = Notification.Name("saveFile")
@@ -716,17 +656,9 @@ extension Notification.Name {
     static let findInPage = Notification.Name("findInPage")
     static let findInPane = Notification.Name("findInPane")
 
-    // Pane/Workspace system
-    static let splitPaneRight = Notification.Name("splitPaneRight")
-    static let splitPaneDown = Notification.Name("splitPaneDown")
-    static let closeWorkspace = Notification.Name("closeWorkspace")
-    static let movePaneFocusLeft = Notification.Name("movePaneFocusLeft")
-    static let movePaneFocusRight = Notification.Name("movePaneFocusRight")
-    static let movePaneFocusUp = Notification.Name("movePaneFocusUp")
-    static let movePaneFocusDown = Notification.Name("movePaneFocusDown")
+    // Tab strip
     static let switchWorkspace = Notification.Name("switchWorkspace")
-    static let focusPaneByIndex = Notification.Name("focusPaneByIndex")
-    static let cyclePaneTabsForward = Notification.Name("cyclePaneTabsForward")
-    static let cyclePaneTabsBackward = Notification.Name("cyclePaneTabsBackward")
+    static let cycleTabsForward = Notification.Name("cycleTabsForward")
+    static let cycleTabsBackward = Notification.Name("cycleTabsBackward")
     static let reopenClosedItem = Notification.Name("reopenClosedItem")
 }
